@@ -154,9 +154,9 @@ def _back(script) -> str:
     return script.down_revision[0] if script.is_merge_point else f"{script.revision}@-1"
 
 
-async def _schema(engine) -> frozenset[tuple[str, str, str]]:
-    async with engine.connect() as connection:
-        rows = (await connection.execute(SCHEMA)).all()
+async def _schema(connection) -> frozenset[tuple[str, str, str]]:
+    rows = (await connection.execute(SCHEMA)).all()
+    await connection.rollback()  # holds nothing while Alembic migrates
     return frozenset((kind, name, definition) for kind, name, definition in rows if not name.startswith("alembic_version"))
 
 
@@ -165,35 +165,35 @@ def _unlike(expected: frozenset, found: frozenset, step: str) -> str | None:
 
 
 async def test_upgrade_head_downgrade_base_upgrade_head():
-    async with _database() as (url, engine):
+    async with _database() as (url, engine), engine.connect() as catalog:
         await _alembic(url, "upgrade", "head")
-        head = await _schema(engine)
+        head = await _schema(catalog)
         await _alembic(url, "downgrade", "base")
-        assert await _schema(engine) == frozenset()
+        assert await _schema(catalog) == frozenset()
         await _alembic(url, "upgrade", "head")
-        assert await _schema(engine) == head
+        assert await _schema(catalog) == head
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def stairway() -> dict[str, str | None]:
     """Each revision in turn on an empty database: up, down, up again, each step held to the schema it should leave."""
     found: dict[str, str | None] = {}
-    async with _database() as (url, engine):
-        before = await _schema(engine)
+    async with _database() as (url, engine), engine.connect() as catalog:
+        before = await _schema(catalog)
         for script in SCRIPTS:
             problems = []
             try:
                 await _alembic(url, "upgrade", script.revision)
-                after = await _schema(engine)
+                after = await _schema(catalog)
                 await _alembic(url, "downgrade", _back(script))
-                problems.append(_unlike(before, await _schema(engine), "the downgrade"))
+                problems.append(_unlike(before, await _schema(catalog), "the downgrade"))
                 await _alembic(url, "upgrade", script.revision)
-                problems.append(_unlike(after, await _schema(engine), "the second upgrade"))
+                before = await _schema(catalog)  # what the next revision's downgrade has to put back
+                problems.append(_unlike(after, before, "the second upgrade"))
             except Exception as exc:
                 found[script.revision] = "; ".join(filter(None, [*problems, f"{type(exc).__name__}: {exc}"]))
                 break  # every revision above it would fail the same way, so they report as not reached
             found[script.revision] = "; ".join(filter(None, problems)) or None
-            before = await _schema(engine)
     return found
 
 
