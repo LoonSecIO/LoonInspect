@@ -175,7 +175,7 @@ already running, and leaves the running one alone.
 
 ## Measurements
 
-From the last clean build, of commit `4796bd0`, on this Mac. Each first launch had no data
+From the clean build of commit `4796bd0`, on this Mac. Each first launch had no data
 directory and no keychain items; the later launches followed the third.
 
 | What | Number |
@@ -332,11 +332,14 @@ None of these needs Kyle's hands, but all of them are work:
 - **No troubleshooting entry.** A spike's failure sentences live in the shell, and each one
   names its log. A real app adds the step-through to
   [troubleshooting.md](troubleshooting.md) (CLAUDE.md).
+- **Test hooks.** `LOON_SPIKE_SNAPSHOT` and `LOON_SPIKE_WINDOW_SCRIPT`, which the validation
+  below uses to see and drive the window, come out.
 
 ## Validation
 
 Everything here was run on this Mac on 2026-10-06, from the worktree of `spike/macos-app`. The
-numbers above and the checks below are from the last run, against a clean build of `4796bd0`.
+numbers above and the checks below are from a clean build of `4796bd0`, except the claim-token
+checks at the end, which ran against a clean build of `b085bf8`.
 
 - `rm -rf macos/build && macos/scripts/build-app.sh`, four times over the day: exit 0 each
   time. An earlier run failed on the unsigned x86_64 slices, which led to the thinning.
@@ -393,12 +396,43 @@ numbers above and the checks below are from the last run, against a clean build 
 - A second `--headless` while one ran: exit 1, "Another LoonInspect is already running", and
   the first was untouched.
 
+**The claim token in the window**, `b085bf8`: `rm -rf macos/build && macos/scripts/build-app.sh`
+exited 0 in 73 s (the wheels step took 25 s, against 9 s in the table's build), and the bundle
+was again 217 MB and 7,679 files. The three launches below started with no support directory
+and no keychain items.
+
+- Frontend, on the host: `npm ci`, then `typecheck` exit 0, `lint` 0 errors (the 4 warnings
+  main has), `test -- --run` 55 files and 656 tests (the new `SetupPage.test.tsx` holds 3), and
+  `build`. Without a host token the page renders byte for byte as origin/main's does: 11,764
+  bytes in English and 11,805 in German, compared once and not committed.
+- `swift build -c release`: no warnings. The shell's binary has no pasteboard call left.
+- First launch, healthy 2.88 s after `open` (initdb and the role took 1.10 s of it, against
+  0.60 s in the table's runs): `shell.log` says the token was handed to the window, which reported
+  `{"path":"/setup","passwordField":true,"claimField":false,"tokenHanded":true}`. A snapshot
+  showed the setup page with no claim field and no `docker compose logs` help. `/` and `/setup`
+  as curl fetches them held the token 0 times, and so did every process's command line.
+- Second launch, still unclaimed: a new token was handed over. A test-only hook,
+  `LOON_SPIKE_WINDOW_SCRIPT` (a file of JavaScript the window runs once), read the property's
+  descriptor (`writable`, `configurable` and `enumerable` false; overwriting and deleting it
+  failed) and an empty query string. It then filled in and submitted the page's own form with
+  sharing unticked: `POST /api/auth/setup` answered 201 and the page moved to `/`. Sign-in
+  through the API then returned 200, and `/api/auth/me` named the administrator.
+- Third launch, claimed: nothing was handed over, and the window showed `/`, still signed in
+  from setup. Sign-in through the API returned 200 again.
+- Each of the backend's two tokens was in one file only, its own line in `logs/backend.log`, and
+  in nothing under the WebKit, cache and preferences paths. `shell.log` records each handover
+  without the value.
+- Each `osascript` quit left no process from the bundle, after 0.61, 0.53 and 0.49 s.
+
 Not run: anything on a second Mac, on Intel, or on a copy downloaded with quarantine; a
 Developer ID signature or notarization; sign-in through the window itself (the session was made
-with `curl`); a download; and anything longer than a few minutes of running. At the end, the
-test data directory and the three keychain items were removed; this session created them. The
-WebKit and preferences paths were left, since earlier sessions created them. The built
-`macos/build/LoonInspect.app` is left in place, so the next `open` is a first launch.
+with `curl`); Open in Browser during setup (a browser without the token gets the page's ordinary
+branch, which the test and the byte comparison cover); a download; and anything longer than a
+few minutes of running. At the end, the test data directory was taken out of `~/Library` and
+the three keychain items were removed; this session created them (no support directory existed
+before the claim-token run, so none was moved aside). The WebKit and preferences paths were
+left, since earlier sessions created them. The built `macos/build/LoonInspect.app` is left in
+place, so the next `open` is a first launch.
 
 ## Reproduce
 
