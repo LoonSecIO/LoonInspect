@@ -120,6 +120,7 @@ export function SetupPage() {
             <Input
               id="displayName"
               required
+              autoFocus={hostToken !== null}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />

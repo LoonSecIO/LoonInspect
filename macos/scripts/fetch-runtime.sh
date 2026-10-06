@@ -39,8 +39,9 @@ fetch() {
       echo "fetch-runtime: $name is cached and matches its pin"
       return
     fi
-    echo "fetch-runtime: cached $name has sha256 $got, not the pinned $want; downloading it again" >&2
-    rm -f "$downloads/$name"
+    echo "fetch-runtime: cached $name has sha256 $got, but the pin is $want. Nothing was changed." >&2
+    echo "fetch-runtime: remove $downloads/$name to download it again." >&2
+    exit 1
   fi
   echo "fetch-runtime: downloading $name"
   curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 --retry 3 \

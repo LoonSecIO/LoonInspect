@@ -24,7 +24,7 @@ image, with PostgreSQL 17 beside them as a child process instead of a sidecar co
 | Measure | Result |
 | --- | --- |
 | Bundle on disk | 217 MB, 7,679 files (81 MB zipped with `ditto -c -k`) |
-| First launch, `open` to `/api/health` 200 | 2.00 to 2.06 s over three runs, initdb and all 73 migrations included |
+| First launch, `open` to `/api/health` 200 | 1.87 to 2.06 s over six runs, initdb and all 73 migrations included; 2.76 to 3.10 s in five other runs, among them the first launch after each new build |
 | Later launches, `open` to `/api/health` 200 | 1.03 to 1.08 s over three runs |
 | Quit (`osascript -e 'quit app "LoonInspect"'`) to no process left | 0.43 to 0.66 s over seven quits |
 | Clean build, `rm -rf macos/build` to a signed bundle | 43 s, downloads included (npm cache and the uv image already local) |
@@ -75,15 +75,21 @@ The `-Spike` suffix keeps it apart from any future real app.
 | `data/` | The backend's `./data`: the backend runs with this directory as its working directory, so the audit log lands here as it lands on the container's volume. |
 | `preferred-port` | Last launch's port, which the next launch reuses if it is free. The UI's origin then stays the same, and so does its per-origin browser storage. |
 
-The window adds three paths, which macOS and WebKit name after the bundle identifier as they do
-for any app with a web view:
+The window adds paths of its own, which macOS and WebKit name after the bundle identifier as
+they do for any app with a web view:
 
 - `~/Library/WebKit/io.loonsec.looninspect.spike`, the page's site data, such as local storage.
 - `~/Library/Caches/io.loonsec.looninspect.spike`, WebKit's HTTP cache.
 - `~/Library/Preferences/io.loonsec.looninspect.spike.plist`, the window's frame.
+- In the per-user temporary folder (`getconf DARWIN_USER_TEMP_DIR`, under `/var/folders`), and
+  in the cache folder beside it (`getconf DARWIN_USER_CACHE_DIR`): `io.loonsec.looninspect.spike`
+  and `com.apple.WebKit.WebContent+`, `com.apple.WebKit.Networking+` and
+  `com.apple.WebKit.GPU+io.loonsec.looninspect.spike`, eight entries in all.
 
-After all of today's runs they held 0.8 MB, 1.9 MB and one setting, and none held a keychain
-value. The reset in [macos/README.md](../macos/README.md) removes all three.
+After all of today's runs the first three held 0.8 MB, 1.9 MB and one setting, and none of the
+paths held a keychain value. The reset in [macos/README.md](../macos/README.md) removes the
+first three; the eight under `/var/folders` are the operating system's to manage, and it leaves
+them.
 
 The secrets are three generic passwords in the login keychain under the service
 `LoonInspect-Spike`: `ENCRYPTION_KEY` (a Fernet key), `postgres-looninspect_app` and
@@ -156,10 +162,10 @@ as in the container, and `INITIAL_ADMIN_*` is not used. The shell reads this ses
 from `backend.log` and hands it to its own window and nothing else: a `WKUserScript`, run at
 document start in the main frame only, defines a read-only `window.looninspectSetupClaimToken`
 when the page's origin is `http://127.0.0.1:<port>`. The setup page sends that token and draws
-no claim field and no `docker compose logs` help. No URL, file, pasteboard or shell log line
-carries it. Setup is meant to happen in the app window: a browser opened with Open in Browser
-gets no token and shows the container's page, whose token is in this session's
-`logs/backend.log`.
+no claim field and no `docker compose logs` help; the display name field takes the focus the
+claim field had. No URL, file, pasteboard or shell log line carries it. Setup is meant to happen
+in the app window: a browser opened with Open in Browser gets no token and shows the container's
+page, whose token is in this session's `logs/backend.log`.
 
 **Quit.** Quitting from the menu, with ⌘Q, through AppleScript or at logout, or with SIGTERM,
 SIGINT or SIGHUP, stops the backend first: SIGTERM, which uvicorn answers with its graceful
@@ -184,7 +190,7 @@ directory and no keychain items; the later launches followed the third.
 | Build, clean | 43 s wall (41, 46 and 50 s on the three clean builds before it); the steps took 3 s (downloads), 6 s (frontend), 9 s (Python and wheels), 1 s (backend and bytecode), 6 s (Postgres), 7 s (Swift), 3 s (signature check), 7 s (sizes and zip) |
 | Bundle | 217 MB: Python 136 MB (site-packages 97 MB; `.pyc` files across both, 46 MB); Postgres 70 MB, of which 29 MB is ICU data; backend 7.7 MB, of which the SPA is 1.7 MB; shell 324 KB |
 | Zipped | 81 MB |
-| First launch | 2.00, 2.06 and 2.04 s from `open` to health 200. The shell's clock for the third read 2.04 s in all: 0.16 s for AppKit to start and call the supervisor, 0.18 s keychain (three items made), 0.60 s initdb and role, 0.05 s Postgres start, 1.05 s backend. Of the backend's time, 0.09 s goes to uvicorn's binding line, 0.54 s more to imports and Alembic's setup, 0.25 s to the 73 migrations on the empty database, and up to 0.2 s to the shell's next look at `/api/health`. The window's page load finishes about 0.2 s after health. An earlier build's single sample was 2.76 s, with a 1.12 s initdb. |
+| First launch | 2.00, 2.06 and 2.04 s from `open` to health 200; the verifier's three cold runs on `b085bf8` took 1.87 to 1.89 s. The shell's clock for the third read 2.04 s in all: 0.16 s for AppKit to start and call the supervisor, 0.18 s keychain (three items made), 0.60 s initdb and role, 0.05 s Postgres start, 1.05 s backend. Of the backend's time, 0.09 s goes to uvicorn's binding line, 0.54 s more to imports and Alembic's setup, 0.25 s to the 73 migrations on the empty database, and up to 0.2 s to the shell's next look at `/api/health`. The window's page load finishes about 0.2 s after health. Five other samples took 2.76 to 3.10 s, with initdb and the role at 1.06 to 1.19 s: three were each the first launch after a new build (2.88, 3.01 and 3.03 s), one an earlier build's single sample (2.76 s), and one ran beside other Docker jobs (3.10 s). The cause of the slower first launch after a build was not isolated. |
 | Later launches | 1.04, 1.03 and 1.08 s from `open` to health 200; 0.86 s headless. Postgres is ready 0.09 s into the supervisor's start, and uvicorn's startup completes at 0.77 s. |
 | Quit | 0.43 to 0.66 s through AppleScript, over seven quits; 0.38 s on SIGTERM to the windowed app; 0.29 and 0.38 s headless; 0.33 s when quit 0.6 s into a later launch |
 | First launch cut short | No process and nothing on disk left, 0.12 s after a SIGTERM during initdb, 0.20 s after one during single-user `CREATE DATABASE`, and 0.45 s after an AppleScript quit during initdb. The next launch was an ordinary first launch, healthy in 2.04 s. |
@@ -419,20 +425,38 @@ and no keychain items.
   through the API then returned 200, and `/api/auth/me` named the administrator.
 - Third launch, claimed: nothing was handed over, and the window showed `/`, still signed in
   from setup. Sign-in through the API returned 200 again.
+- Sign-in through the window, from the verifier's run on the same build: its window script
+  signed the window out with the page's own logout (204, then `/api/auth/me` 401). On the next
+  launch the window showed `/login`, nothing was handed over, and the page's own form sent
+  `POST /api/auth/login` (200). The page moved to `/`, and `/api/auth/me` named the administrator.
 - Each of the backend's two tokens was in one file only, its own line in `logs/backend.log`, and
   in nothing under the WebKit, cache and preferences paths. `shell.log` records each handover
   without the value.
 - Each `osascript` quit left no process from the bundle, after 0.61, 0.53 and 0.49 s.
 
 Not run: anything on a second Mac, on Intel, or on a copy downloaded with quarantine; a
-Developer ID signature or notarization; sign-in through the window itself (the session was made
-with `curl`); Open in Browser during setup (a browser without the token gets the page's ordinary
-branch, which the test and the byte comparison cover); a download; and anything longer than a
-few minutes of running. At the end, the test data directory was taken out of `~/Library` and
-the three keychain items were removed; this session created them (no support directory existed
-before the claim-token run, so none was moved aside). The WebKit and preferences paths were
-left, since earlier sessions created them. The built `macos/build/LoonInspect.app` is left in
-place, so the next `open` is a first launch.
+Developer ID signature or notarization; Open in Browser during setup (a browser without the
+token gets the page's ordinary branch, which the test and the byte comparison cover); a
+download; and anything longer than a few minutes of running. At the end, the test data directory
+was taken out of `~/Library` and the three keychain items were removed; this session created
+them (no support directory existed before the claim-token run, so none was moved aside). The
+WebKit, cache, preferences and `/var/folders` paths were left, since earlier sessions created
+them. The built `macos/build/LoonInspect.app` is left in place, so the next `open` is a first
+launch.
+
+**Polish**, a clean build of the working tree on `5949959` with the change committed after it:
+
+- `rm -rf macos/build && macos/scripts/build-app.sh`: exit 0 in 43 s, 217 MB.
+- `fetch-runtime.sh` with one byte appended to the cached CPython archive: exit 1, the file
+  untouched. With the file restored: exit 0, both cached and matching. `shellcheck` on both
+  scripts: clean.
+- Frontend, on the host: `npm ci`, `typecheck` exit 0, `lint` 0 errors (4 warnings), `test --
+  --run` 55 files and 656 tests, `build` exit 0.
+- One first launch, from no support directory and no keychain items: healthy 3.03 s after
+  `open`, initdb and the role 1.06 s of it. The window's script reported
+  `{"path":"/setup","active":"displayName","claimField":false}`, and a snapshot showed the caret
+  in the display name field. An `osascript` quit left no process from the bundle after 0.54 s.
+  The support directory and the three keychain items were then removed.
 
 ## Reproduce
 

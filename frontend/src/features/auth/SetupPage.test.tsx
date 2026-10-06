@@ -37,9 +37,13 @@ describe("first-run setup's claim token", () => {
     vi.stubGlobal("looninspectSetupClaimToken", "a-claim-token");
     const app = page();
     for (const gone of ["claimToken", en.auth.claimTokenHelp, "docker compose", "a-claim-token"]) expect(app).not.toContain(gone);
+    // The first field drawn takes the focus the claim field had; that attribute is the only other difference.
+    const focused = 'id="displayName" required="" autofocus=""';
+    expect(app).toContain(focused);
+    expect(browser).not.toContain(focused);
     const [start, end] = [browser.indexOf(CLAIM_BLOCK), browser.indexOf(NEXT_BLOCK)];
     expect(start).toBeGreaterThan(0);
-    expect(app).toBe(browser.slice(0, start) + browser.slice(end));
+    expect(app.replace(focused, 'id="displayName" required=""')).toBe(browser.slice(0, start) + browser.slice(end));
   });
 
   it("takes only a non-empty string from the host", () => {
