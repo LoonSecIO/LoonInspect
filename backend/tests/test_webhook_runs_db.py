@@ -81,16 +81,18 @@ async def connection(db):
 
 async def _post(connection_id: int, jss_id: str) -> httpx.Response:
     """One delivery as Jamf Pro sends it, through the whole application. With
-    `raise_app_exceptions=False` an unhandled error comes back as the 500 Jamf Pro gets."""
+    `raise_app_exceptions=False` an unhandled error comes back as the 500 Jamf Pro gets, and
+    a delivery that blocks fails its test after `_PATIENCE` rather than hanging it."""
     from app.main import app
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="https://loon.test") as client:
-        return await client.post(
+        delivery = client.post(
             f"/webhooks/jamf/{connection_id}",
             json={"webhook": {"webhookEvent": _EVENT}, "event": {"jssID": jss_id}},
             headers={"X-API-Key": _SECRET},
         )
+        return await asyncio.wait_for(delivery, _PATIENCE)
 
 
 async def _runs(db, connection_id: int) -> list:
@@ -172,7 +174,7 @@ async def test_a_held_sweep_neither_blocks_a_webhook_nor_is_touched_by_it(db, co
     (sweep,) = await _runs(db, connection.id)
     before, logged = state(sweep), await _log(db, sweep.id)
     try:
-        response = await asyncio.wait_for(_post(connection.id, jamf.real["id"]), _PATIENCE)
+        response = await _post(connection.id, jamf.real["id"])
 
         assert response.status_code == 200, response.text
         sweep, hook = await _runs(db, connection.id)
@@ -198,7 +200,7 @@ async def test_webhooks_for_one_connection_run_side_by_side(db, connection, jamf
     waiting = asyncio.create_task(_post(connection.id, first))
     try:
         await asyncio.wait_for(held.wait(), _PATIENCE)
-        overtaking = await asyncio.wait_for(asyncio.gather(_post(connection.id, second), _post(connection.id, third)), _PATIENCE)
+        overtaking = await asyncio.gather(_post(connection.id, second), _post(connection.id, third))
     finally:
         release.set()
         last = await waiting
