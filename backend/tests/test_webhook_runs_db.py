@@ -120,11 +120,12 @@ async def _events(db, run_id) -> list[str]:
     return list((await db.execute(query)).scalars())
 
 
-def _jamf_answers(monkeypatch: pytest.MonkeyPatch, jamf: FakeJamf, answer) -> None:
-    """Jamf Pro answers each computer-detail read with `answer(request)`, the rest as the fake does."""
+def _jamf_answers(monkeypatch: pytest.MonkeyPatch, jamf: FakeJamf, answer, where: str = "/computers-inventory-detail/") -> None:
+    """Jamf Pro answers each request to `where` (the computer-detail read unless named) with
+    `answer(request)`, the rest as the fake does."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "/computers-inventory-detail/" in request.url.path:
+        if where in request.url.path:
             return answer(request)
         return FakeJamf.handler(jamf, request)
 
@@ -309,11 +310,23 @@ async def test_a_throttled_detail_read_holds_the_answer_through_the_retry_ladder
     raises=AssertionError,
     reason="a Jamf answer that is not JSON closes the run failed, then reaches Jamf Pro as a bare 500",
 )
-async def test_a_jamf_answer_that_is_not_json_is_answered_as_a_failed_fetch(connection, jamf: FakeJamf, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "where",
+    [
+        pytest.param("/api/oauth/token", id="sign-in"),
+        pytest.param("/api/v1/jamf-pro-version", id="aperture-read"),
+        pytest.param("/computers-inventory-detail/", id="detail-read"),
+    ],
+)
+async def test_a_jamf_answer_that_is_not_json_is_answered_as_a_failed_fetch(
+    connection, jamf: FakeJamf, monkeypatch, where
+) -> None:
     """Pinned until it changes. The decode error is neither exception the route answers
-    (`CredentialUnusable`, `httpx.HTTPError`), so it leaves as Starlette's plain-text 500,
-    a traceback in the log and `Expecting value: line 1 column 1 (char 0)` on the run."""
-    _jamf_answers(monkeypatch, jamf, _not_json)
+    (`CredentialUnusable`, `httpx.HTTPError`), and the aperture reads swallow only the second,
+    so a page that is not JSON at the sign-in, an aperture read or the detail read leaves as
+    Starlette's plain-text 500, a traceback in the log and `Expecting value: line 1 column 1
+    (char 0)` on the run."""
+    _jamf_answers(monkeypatch, jamf, _not_json, where)
 
     response = await _post(connection.id, jamf.real["id"])
 
@@ -324,7 +337,8 @@ async def test_the_reclaim_a_webhook_runs_stays_inside_its_tenant(db, connection
     """Every acquisition reclaims stale runs first, a webhook's included, and the webhook
     route is bound to the operational tenant. Row-level security keeps that reclaim there: a
     stale sweep on the webhook's own connection is failed, a stale sweep in a second tenant
-    is left exactly as it was."""
+    is left exactly as it was. Both sweeps go stale only once both are held, so the webhook's
+    is the one acquisition that meets them stale."""
     from app.core.config import settings
     from app.core.database import session_for_tenant, unscoped_session
     from app.core.runs import LOCK_DEVICE_SWEEP, TRIGGER_SWEEP, acquire
@@ -332,6 +346,11 @@ async def test_the_reclaim_a_webhook_runs_stays_inside_its_tenant(db, connection
 
     stale = datetime.now(UTC) - timedelta(seconds=settings.run_stale_after_seconds + 60)
     tenant_id, elsewhere_id = uuidlib.uuid4(), None
+
+    async def theirs_now(run_id) -> tuple:
+        async with session_for_tenant(tenant_id) as other:
+            return tuple((await other.execute(select(Run.status, Run.heartbeat_at).where(Run.id == run_id))).one())
+
     async with unscoped_session() as unscoped:
         unscoped.add(Tenant(id=tenant_id, slug=f"webhook-runs-{tenant_id.hex[:8]}", name="Webhook runs", kind="operational"))
         await unscoped.commit()
@@ -342,18 +361,19 @@ async def test_the_reclaim_a_webhook_runs_stays_inside_its_tenant(db, connection
             await other.commit()
             elsewhere_id = elsewhere.id
             theirs = (await acquire(other, elsewhere, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)).run.id
+        ours = (await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)).run.id
+        async with session_for_tenant(tenant_id) as other:
             await other.execute(update(Run).where(Run.id == theirs).values(heartbeat_at=stale))
             await other.commit()
-        ours = (await acquire(db, connection, trigger=TRIGGER_SWEEP, lock_class=LOCK_DEVICE_SWEEP)).run.id
         await db.execute(update(Run).where(Run.id == ours).values(heartbeat_at=stale))
         await db.commit()
+        assert await theirs_now(theirs) == ("running", stale)
 
         response = await _post(connection.id, jamf.real["id"])
 
         assert response.status_code == 200, response.text
         assert {run.id: run.status for run in await _runs(db, connection.id)}[ours] == "failed"
-        async with session_for_tenant(tenant_id) as other:
-            assert (await other.execute(select(Run.status, Run.heartbeat_at).where(Run.id == theirs))).one() == ("running", stale)
+        assert await theirs_now(theirs) == ("running", stale)
     finally:
         async with session_for_tenant(tenant_id) as other:
             # Its run and run log go with it by cascade.
