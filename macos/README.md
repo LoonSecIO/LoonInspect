@@ -22,10 +22,13 @@ macos/build/LoonInspect.app/Contents/MacOS/LoonInspect --headless   # everything
 
 The app keeps its database and logs in `~/Library/Application Support/LoonInspect-Spike`,
 its secrets in the login keychain under the service `LoonInspect-Spike`, and the port it
-chose in `run/port` there. To start over, quit it and remove both:
+chose in `run/port` there. The window's web view data, cache and frame are kept under the
+bundle identifier, `io.loonsec.looninspect.spike`. To start over, quit it and remove them all:
 
 ```sh
-rm -rf ~/Library/Application\ Support/LoonInspect-Spike
+rm -rf ~/Library/Application\ Support/LoonInspect-Spike \
+  ~/Library/WebKit/io.loonsec.looninspect.spike ~/Library/Caches/io.loonsec.looninspect.spike
+defaults delete io.loonsec.looninspect.spike
 for a in ENCRYPTION_KEY postgres-looninspect_app postgres-looninspect; do
   security delete-generic-password -s LoonInspect-Spike -a "$a"; done
 ```
