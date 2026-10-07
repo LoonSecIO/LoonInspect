@@ -689,11 +689,26 @@ clicking "Run now" during a cron sweep is asking "is my fleet syncing?", and sho
 the running sweep's log answers that better than an error does
 (`ingest-scheduling.md` §4.2).
 
-The UI (`RunLogPanel.tsx`) polls every two seconds and stops on two conditions, both
-required: the run reaching a terminal status (**not** an empty page — a sweep mid-fleet
-can be quiet for a minute and still be alive), and the tab becoming hidden
-(`visibilitychange`, resumed on return; the cursor means resuming costs one request for
-everything missed).
+The UI (`useRunLog.ts`, behind `RunLogPanel.tsx` and the overview hero) polls every two
+seconds with one request out at a time (given up after 30 seconds without an answer, and
+asked again), and stops on two conditions: the run reaching a
+terminal status (**not** an empty page — a sweep mid-fleet can be quiet for a minute and
+still be alive) with its log read to the end (a page stops at 500 lines, so a finished
+run is asked again until a page brings nothing new), and the tab becoming hidden
+(`visibilitychange`, resumed on return; the cursor means resuming asks only for what was
+missed). An answer for a job the panel has since left is dropped.
+
+Mounting while hidden starts no polling; showing the tab requests immediately. Only one
+request is outstanding per job, and late responses from a previous job are discarded.
+Resuming a long completed log can issue several sequential requests. Draining pauses on
+hide and stops after two complete pages without cursor progress, separated by a grace tick. Completion fires once for the current job.
+
+The terminal `complete` flag describes the saved run status. Closing events and log lines
+can follow that status. The poller drains fresh pages immediately, then waits one ordinary
+two-second grace tick after the first empty (or duplicate-only) complete page before
+stopping. New lines reset that grace tick. Lines delayed longer than the final grace tick
+appear when the panel is reopened. Closing or switching the panel aborts its active
+request and discards any late response, including A → B → A navigation.
 
 ## 6. Retention
 
