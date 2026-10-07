@@ -74,4 +74,4 @@ def hash_token(token: str) -> str:
 
 
 def tokens_equal(left: str, right: str) -> bool:
-    return hmac.compare_digest(left, right)
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))

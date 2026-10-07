@@ -99,7 +99,7 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
     """The first instant strictly after `after` at which the schedule fires, in UTC.
 
     `anchor` matters only for every_n_days, where "every 3 days" counts from the last
-    run (or creation) rather than from an arbitrary epoch; without one the count starts
+    materialized occurrence rather than the last manual run; without one the count starts
     at `after`. Wall-clock arithmetic is done in the schedule's zone, so a 02:00 daily
     sweep stays at 02:00 local across a DST change rather than drifting an hour.
     """
@@ -111,15 +111,13 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
     hour = schedule.at_hour or 0
 
     if schedule.frequency == "hourly":
-        candidate = local.replace(minute=minute, second=0, microsecond=0)
-        if candidate <= local:
-            candidate = (candidate + timedelta(hours=1)).replace(minute=minute)
-        return candidate.astimezone(UTC)
+        candidate = after.astimezone(UTC).replace(minute=minute, second=0, microsecond=0)
+        return candidate + timedelta(hours=1) if candidate <= after else candidate
 
-    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0, fold=0)
 
     if schedule.frequency == "daily":
-        if candidate <= local:
+        if candidate.astimezone(UTC) <= after:
             candidate = _same_wall_time(candidate + timedelta(days=1), hour, minute)
         return candidate.astimezone(UTC)
 
@@ -127,15 +125,16 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
         weekday = schedule.weekday or 0
         ahead = (weekday - candidate.weekday()) % 7
         candidate = _same_wall_time(candidate + timedelta(days=ahead), hour, minute)
-        if candidate <= local:
+        if candidate.astimezone(UTC) <= after:
             candidate = _same_wall_time(candidate + timedelta(days=7), hour, minute)
         return candidate.astimezone(UTC)
 
     if schedule.frequency == "every_n_days":
         n = schedule.interval_n or 2
-        start = (anchor or after).astimezone(tz).replace(hour=hour, minute=minute, second=0, microsecond=0)
-        candidate = start
-        while candidate <= local:
+        start = (anchor or after).astimezone(tz).replace(hour=hour, minute=minute, second=0, microsecond=0, fold=0)
+        steps = max(0, (local.date() - start.date()).days // n)
+        candidate = _same_wall_time(start + timedelta(days=steps * n), hour, minute)
+        if candidate.astimezone(UTC) <= after:
             candidate = _same_wall_time(candidate + timedelta(days=n), hour, minute)
         return candidate.astimezone(UTC)
 
@@ -146,6 +145,38 @@ def _same_wall_time(value: datetime, hour: int, minute: int) -> datetime:
     # timedelta arithmetic on an aware datetime is wall-clock arithmetic; re-pinning the
     # hour and minute keeps a daily 02:00 at 02:00 when the offset changed underneath.
     return value.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def latest_due(schedule: Schedule, first_due: datetime, now: datetime) -> datetime:
+    """The most recent missed occurrence, anchored to the already materialized due time.
+
+    Calendar steps happen in the collection's timezone; comparisons happen in UTC.
+    Repeated wall times use their first occurrence, as next_due does when approaching
+    the transition. Nonexistent wall times map forward through the timezone offset.
+    No elapsed-time loop is needed, even after years without a successful run.
+    """
+    if schedule.frequency is None or first_due > now:
+        return first_due
+    tz = ZoneInfo(schedule.timezone or "UTC")
+    local = now.astimezone(tz)
+    minute, hour = schedule.at_minute or 0, schedule.at_hour or 0
+    if schedule.frequency == "hourly":
+        candidate = now.astimezone(UTC).replace(minute=minute, second=0, microsecond=0)
+        if candidate > now:
+            candidate -= timedelta(hours=1)
+        return max(first_due, candidate)
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0, fold=0)
+    step = 1
+    if schedule.frequency == "weekly":
+        step = 7
+        candidate -= timedelta(days=(candidate.weekday() - (schedule.weekday or 0)) % 7)
+    elif schedule.frequency == "every_n_days":
+        step = schedule.interval_n or 2
+        elapsed = (candidate.date() - first_due.astimezone(tz).date()).days
+        candidate -= timedelta(days=elapsed % step)
+    if candidate.astimezone(UTC) > now:
+        candidate -= timedelta(days=step)
+    return max(first_due, candidate.astimezone(UTC))
 
 
 def cadence(schedule: Schedule) -> timedelta | None:

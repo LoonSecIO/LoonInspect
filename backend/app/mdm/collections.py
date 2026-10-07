@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.runs import (
     LOCK_CATALOG,
     LOCK_DEVICE_SWEEP,
+    AcquisitionBusy,
     RunReclaimed,
     acquire,
     active_connection_ids,
@@ -31,6 +32,7 @@ from app.core.scheduling import (
     KIND_WEBHOOK,
     RUNNABLE_KINDS,
     Schedule,
+    latest_due,
     next_due,
     validate_schedule,
     within_rate_floor,
@@ -73,7 +75,7 @@ def apply_schedule(collection: Collection, now: datetime | None = None) -> None:
     """Validate the row's schedule against its kind and materialise next_due_at."""
     schedule = schedule_of(collection)
     validate_schedule(collection.kind, schedule)
-    collection.next_due_at = next_due(schedule, now or _utcnow(), anchor=collection.last_run_at)
+    collection.next_due_at = next_due(schedule, now or _utcnow(), anchor=collection.next_due_at)
 
 
 def default_collections(connection: MdmConnection, now: datetime | None = None) -> list[Collection]:
@@ -359,7 +361,7 @@ async def run_enabled_collections(
 # --- the tick -----------------------------------------------------------------------
 
 
-async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple[Collection, datetime]]:
+async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple[Collection, datetime, datetime | None]]:
     """Claim every collection that is due in this tenant.
 
     The claim is one conditional UPDATE per row — `WHERE next_due_at <= now` — that
@@ -394,14 +396,15 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple
     # sweep a whole occurrence out instead of retrying next minute.
     busy = await active_connection_ids(db, LOCK_DEVICE_SWEEP)
 
-    claimed: list[tuple[Collection, datetime]] = []
-    for collection in candidates:
+    claimed: list[tuple[Collection, datetime, datetime | None]] = []
+    for collection in sorted(candidates, key=lambda row: row.id):
         if collection.kind == KIND_DEVICE_SWEEP and collection.mdm_connection_id in busy:
             continue
         # Captured before the UPDATE overwrites it. This is the occurrence being served —
         # the run's window, and so the `_time` every event of this sweep is stamped with.
-        due_at = collection.next_due_at
-        following = next_due(schedule_of(collection), now, anchor=collection.last_run_at)
+        schedule = schedule_of(collection)
+        due_at = latest_due(schedule, collection.next_due_at, now)
+        following = next_due(schedule, now, anchor=due_at)
         won = (
             await db.execute(
                 update(Collection)
@@ -411,7 +414,7 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple
             )
         ).scalar_one_or_none()
         if won is not None and due_at is not None:
-            claimed.append((collection, due_at))
+            claimed.append((collection, due_at, following))
     await db.commit()
     return claimed
 
@@ -420,7 +423,10 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
     """One tenant's slice of the minute tick: claim what is due, run it in turn."""
     now = now or _utcnow()
     results: list[ConnectionSyncResult] = []
-    for collection, due_at in await claim_due(db, now):
+    for collection, due_at, following in await claim_due(db, now):
+        # A previous collection can roll back on contention, expiring every row
+        # returned by claim_due. Refresh explicitly before reading ORM attributes.
+        await db.refresh(collection)
         if within_rate_floor(collection.kind, collection.last_run_at, now):
             # A skip is not a result, and must not erase one.
             #
@@ -469,7 +475,30 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
                 },
             )
             continue
-        results.append(await run_one_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
+        collection_id, connection_id = collection.id, collection.mdm_connection_id
+        try:
+            results.append(await run_one_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
+        except AcquisitionBusy as exc:
+            await db.rollback()
+            # Restore only our own claim; a later worker or schedule edit wins.
+            await db.execute(
+                update(Collection)
+                .where(
+                    Collection.id == collection_id,
+                    Collection.next_due_at == following,
+                    Collection.last_claimed_at == now,
+                )
+                .values(next_due_at=due_at)
+            )
+            await db.commit()
+            logger.warning(
+                "%s The scheduled collection will retry on the next tick.",
+                exc,
+                extra={"collection_id": collection_id, "connection_id": connection_id},
+            )
+            results.append(
+                ConnectionSyncResult(connection_id=connection_id, collection_id=collection_id, ok=False, error=str(exc))
+            )
     return results
 
 
