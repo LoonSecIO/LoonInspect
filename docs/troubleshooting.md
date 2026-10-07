@@ -1268,9 +1268,9 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
 
    A different `503` can mean `Webhook capacity is busy`, a computer write lock could
    not be obtained, or run acquisition stayed busy through its retry. These carry
-   `Retry-After: 1`. Admission allows eight requests per worker before database lookup;
-   a computer write waits at most one second for its lock. Check active runs and Jamf
-   response times, then retry. No inventory success is acknowledged for refused work.
+   `Retry-After: 1`. Admission allows eight reactive events per worker, counted after
+   authentication and event filtering; a computer write waits at most five seconds for its
+   lock. Check active runs and Jamf response times, then retry. No inventory success is acknowledged for refused work.
    A tick that exhausts run acquisition restores its own claim for retry on the next
    tick. For timeout configuration and delivery recovery, see [`jamf-webhooks.md`](jamf-webhooks.md) §9.
 
