@@ -16,12 +16,14 @@ import asyncio
 import logging
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -46,6 +48,7 @@ from app.core.runs import (
     event_time,
     finish,
     get_run,
+    note_progress,
     pull_event_id,
     run_meta,
 )
@@ -55,6 +58,7 @@ from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import read_tenant_tier
 from app.core.wire import ENVELOPE, envelope, instance_label
 from app.mdm.census import _log_collapsed_departures, _reconcile_departures, _reconcile_device_census
+from app.mdm.concurrency import IngestBusy, lock_device
 from app.mdm.credentials import CredentialUnusable
 from app.mdm.factory import get_mdm_client
 from app.mdm.jamf.client import (
@@ -76,6 +80,7 @@ from app.mdm.jamf.contract import (
     canonicalize_smart_group,
     with_extension_attribute_carriers,
 )
+from app.mdm.jamf.errors import fetch_error
 from app.mdm.org_units import BUILDING, DEPARTMENT, record_org_units
 from app.mdm.patch.matching import cached_title_detection, cached_title_names
 from app.mdm.snapshot import build_inventory_snapshot
@@ -429,12 +434,19 @@ async def run_jamf_catalog(
             aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
             connection.last_successful_auth_at = datetime.now(UTC)
             await db.commit()
-            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            if run is not None:
+                # Through the pass, not only at its end (#757): a census of a thousand groups or more,
+                # or of a throttled tenant, can outlast the stale window, and the reclaim then fails a
+                # catalog run that was still reading. Throttled, so a quick pass writes nothing.
+                await beat(db, run)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes, run=run)
             group_count = len(groups)
             definitions = await _observe_extension_attribute_definitions(
                 db, connection, client, http, aperture_digest, trigger, outcomes
             )
             await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
+            if run is not None:
+                await beat(db, run)
             # The catalog class is where the label catalogs belong too: a department
             # renamed between sweeps is visible at the catalog's cadence, without a
             # device read.
@@ -493,13 +505,14 @@ async def _observe_groups(
     aperture_digest: str,
     trigger: str,
     outcomes: Counter[str],
+    run: Run | None = None,
 ) -> list[str]:
     """Observe every smart-group definition; returns the ids the census named (#181).
     `fetch_smart_groups` answers an empty list for a refused read as well as for a tenant
     with no groups — the breaker in `reconcile_census` is what keeps that from reading as
-    every group departing at once."""
+    every group departing at once. The run beats between the read's waves (#757)."""
     observed: list[str] = []
-    raw_groups = await client.fetch_smart_groups(http)
+    raw_groups = await client.fetch_smart_groups(http, between_waves=None if run is None else lambda: beat(db, run))
     # One select for the whole census, not one per group (#569): at 300 groups and the
     # default 25 passes a day, asking per object was 7,500 selects a day for objects that
     # rarely move. `ingest_computer` already hands `record_observation` the span it loaded;
@@ -667,6 +680,12 @@ async def _stream_jamf_fleet(
                 sections=list(sections),
                 selector=selector,
             )
+            # Not only between devices (#757). The reads before the first device (the org-unit
+            # catalogs, a census of one read per smart group, the definition census, the first
+            # inventory page) can keep a large or throttled tenant past the stale window, and the
+            # reclaim then fails the sweep at its first device. So the run beats here, after the
+            # catalogs, between the census's waves and before the loop, at the loop's throttle.
+            await beat(db, run)
 
         # Names before ids. The loop below writes `departmentId` and `buildingId` onto
         # every device it touches, and those are only ever displayed through this
@@ -678,6 +697,7 @@ async def _stream_jamf_fleet(
         await db.commit()
         if run is not None:
             await _log_org_units(db, run, org_units)
+            await beat(db, run)
 
         # Group definitions ride along with the device sweep, and they go *first* (#136).
         # A membership change is judged by `changes.derive._membership_cause` as the
@@ -690,7 +710,7 @@ async def _stream_jamf_fleet(
         # at most one sweep older than the memberships that reference it, which the
         # hourly catalog collection (docs/ingest-scheduling.md §6.2) closes on its own.
         if include_catalog:
-            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes)
+            groups = await _observe_groups(db, connection, client, http, aperture_digest, trigger, outcomes, run=run)
             group_count = len(groups)
             await db.commit()
             if run is not None:
@@ -706,6 +726,8 @@ async def _stream_jamf_fleet(
                 await _log_definition_census(db, run, definitions)
             # And what the two censuses did not name (#181).
             await _reconcile_departures(db, connection, run, groups=groups, definitions=definitions)
+        if run is not None:
+            await beat(db, run)
 
         # Streamed, not collected: a 40,000-device tenant is paged through one record
         # at a time, and each device commits on its own (process_sync), so a failure on
@@ -716,6 +738,7 @@ async def _stream_jamf_fleet(
         # default — the collection knows its sections, the connection its worst case.
         effective_page_size = page_size or connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
         async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
+            note_progress()
             device_count += 1
             jamf_id = raw.get("id")
             serial = (raw.get("hardware") or {}).get("serialNumber")
@@ -872,6 +895,10 @@ async def ingest_computer(
         # takes it before updating installed apps; the reverse order can deadlock.
         await lock_assessment(db)
     observation = canonicalize_computer(raw, sections, quarantined_extension_attributes=quarantined_extension_attributes)
+    from app.core.runs import fence_write
+
+    fence_write(db)
+    await lock_device(db, connection.id, "macos", observation.subject_id)
     current = await current_span(
         db,
         connection_id=connection.id,
@@ -958,89 +985,136 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
         return None
     if event.jamf_id is None:
         logger.info(
-            "jamf webhook carried no computer id; nothing to ingest",
-            extra={"connection_id": connection.id, "event": event.event_name},
+            "jamf webhook carried a rejected computer id; check the sender's id format"
+            if event.id_present
+            else "jamf webhook carried no computer id; nothing to ingest",
+            extra={
+                "connection_id": connection.id,
+                "event": event.event_name,
+                "id_present": event.id_present,
+                "id_type": event.id_type,
+                "id_length": event.id_length,
+            },
         )
         return None
 
-    # One read of the tier per webhook, for the same reason the sweep reads it once per
-    # run: one event is one device, and `loaded_corpus()` must not go asking per app.
-    #
-    # **Below both guards, not above them.** The dropped paths above never reach
-    # `process_sync`, so nothing there ever reads the tier — and a ComputerCheckIn is a
-    # heartbeat times the whole fleet, so a read above the guards would put a query on the
-    # one path whose entire purpose is to cost nothing (#76).
-    await read_tenant_tier(db)
+    run_id = None
+    committed = False
+    raw = None
+    result = None
 
-    sections, quarantine = await webhook_scope(db, connection)
+    def remember(candidate: Run) -> None:
+        nonlocal run_id
+        run_id = candidate.id
 
-    # A webhook is a run with one device in it — it needs the jobID so its event is
-    # correlatable and the log so it is accountable. It does *not* take the lock: the
-    # index predicate excludes the webhook class, so a burst of them from a busy tenant
-    # runs concurrently and never queues behind a forty-minute sweep (§4.4).
-    acquisition = await acquire(db, connection, trigger=TRIGGER_WEBHOOK, lock_class=LOCK_WEBHOOK, actor_label=event.event_name)
-    run = acquisition.run
-    # One device is not an echo, but a membership its deleted group took with it is still
-    # dropped at the default preset (#182) — and on this path the sweep's line is not
-    # coming, so the webhook's own run carries it.
-    async with entered(run), collecting_departures() as collapsed:
+    async def close(*, ok: bool, error: str | None = None, standing: bool = False, alarm: bool = True) -> None:
+        if run_id is None:
+            return
         try:
-            # **Below `acquire`, not above it (#477).** Building the client is where the
-            # stored credential is validated, and a credential that is not a credential
-            # refuses here — so the refusal has to happen inside a run, or it has no row
-            # to be written on and no previous failed run to be rationed against. Built
-            # above the guards until #477, which cost a `ComputerCheckIn` a 500 and a
-            # traceback on a connection that would have dropped it for free.
-            client = get_mdm_client(connection)
-            async with client.http() as http:
-                aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
-                aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
-                raw = await client.fetch_computer_detail(http, event.jamf_id)
-
-            result = await ingest_computer(
-                db,
-                connection,
-                raw,
-                aperture_digest=aperture_digest,
-                trigger=TRIGGER_WEBHOOK,
-                sections=sections,
-                quarantined_extension_attributes=quarantine,
-            )
-        except CredentialUnusable as exc:
-            # The stored credential is not a credential (#393). The sweep's refusal, on
-            # the one path that is allowed to run concurrently: Jamf Pro retries a
-            # webhook and a busy tenant's webhooks are a stream, so this is the path
-            # where an unbounded alarm would hurt most. `standing=True` is what rations
-            # it to one `run.failed` per connection per UTC day; the run row still
-            # records every refusal, which is what the ration is measured against.
-            await db.rollback()
+            # Recovery reads have their own bound; the one-second release budget is
+            # reserved for the terminal UPDATE and commit, never outbox/log work.
+            async with asyncio.timeout(1):
+                await db.rollback()
+                closing = await db.get(Run, run_id, populate_existing=True)
+            if closing is not None:
+                await finish(
+                    db,
+                    closing,
+                    ok=ok,
+                    error=error,
+                    standing=standing,
+                    alarm=alarm,
+                    device_count=1 if ok else 0,
+                    devices_processed=1 if ok else 0,
+                    observations={result.outcome: 1} if ok and result is not None else None,
+                    release_timeout=1,
+                    bookkeeping_timeout=1,
+                )
+        except Exception:
             logger.warning(
-                "jamf webhook refused: the stored credential is not a credential. "
-                "Settings › Connections carries the same sentence on this connection's row",
-                extra={"connection_id": connection_id, "event": event.event_name},
+                "The webhook could not close its run; check database connectivity. A running row remains reclaimable.",
+                extra={"run_id": str(run_id), "connection_id": connection_id},
+                exc_info=True,
             )
-            await db.refresh(run)
-            await finish(db, run, ok=False, error=str(exc), standing=True)
+
+    async with AsyncExitStack() as stack:
+        try:
+            async with asyncio.timeout(settings.webhook_timeout_seconds or None) as budget:
+                await read_tenant_tier(db)
+                sections, quarantine = await webhook_scope(db, connection)
+                acquisition = await acquire(
+                    db,
+                    connection,
+                    trigger=TRIGGER_WEBHOOK,
+                    lock_class=LOCK_WEBHOOK,
+                    actor_label=event.event_name,
+                    on_acquired=remember,
+                )
+                if not acquisition.started:
+                    raise IngestBusy("A webhook run could not be started. Retry shortly and check the connection's active runs.")
+                run = acquisition.run
+                await stack.enter_async_context(entered(run))
+                collapsed = await stack.enter_async_context(collecting_departures())
+                client = get_mdm_client(connection)
+                client.deadline = budget.when() or asyncio.get_running_loop().time() + 4.0
+                async with client.http() as http:
+                    aperture = await capture_aperture(
+                        client, http, sections=sections, quarantined_extension_attributes=quarantine
+                    )
+                    raw = await client.fetch_computer_detail(http, event.jamf_id)
+                aperture_digest = await ensure_aperture(db, connection_id=connection_id, aperture=aperture)
+                await db.commit()
+                try:
+                    result = await ingest_computer(
+                        db,
+                        connection,
+                        raw,
+                        aperture_digest=aperture_digest,
+                        trigger=TRIGGER_WEBHOOK,
+                        sections=sections,
+                        quarantined_extension_attributes=quarantine,
+                    )
+                    committed = True
+                except DBAPIError as exc:
+                    if getattr(exc.orig, "sqlstate", None) not in {"23505", "40P01"}:
+                        raise
+                    raise IngestBusy(
+                        "Another inventory write overlapped this delivery. Retry shortly; "
+                        "if this continues, check the connection's active runs."
+                    ) from None
+            # The inventory deadline ends at commit. A slow closing log cannot turn
+            # saved inventory into a failed delivery. Release first, then best effort logs.
+            await close(ok=True)
+            try:
+                async with asyncio.timeout(1):
+                    await db.refresh(run)
+                    await _log_collapsed_departures(db, run, collapsed)
+            except TimeoutError:
+                await db.rollback()
+                logger.warning(
+                    "Inventory was saved; the run's close was interrupted. Check this run's log and database connectivity.",
+                    extra={"run_id": str(run_id), "connection_id": connection_id},
+                )
+            return result
+        except (asyncio.CancelledError, TimeoutError):
+            error = (
+                "Webhook processing was interrupted before any inventory was read. Check Jamf connectivity and retry."
+                if raw is None
+                else "Webhook processing was interrupted before inventory could be saved. Check this run and retry."
+            )
+            await close(ok=committed, error=None if committed else error)
+            # External cancellation must still reach the caller; inventory and its
+            # succeeded verdict survive cancellation during post-commit bookkeeping.
+            raise
+        except CredentialUnusable as exc:
+            await close(ok=False, error=str(exc), standing=True)
             raise
         except Exception as exc:
-            await db.rollback()
-            # The rollback expired every ORM instance in the session; reload the run
-            # before finish() reads its id, or the MissingGreenlet raised there let
-            # the route 500 instead of answering its designed error and left the run
-            # 'running' until the reclaim (#125). A fetch failure fails the run
-            # deliberately — including Jamf answering 404 for a computer deleted
-            # between the webhook and the fetch: there is no inventory to ingest, the
-            # row records why, and run.failed carries it to the wire (#103).
-            await db.refresh(run)
-            await finish(db, run, ok=False, error=str(exc))
+            await close(ok=committed, error=None if committed else fetch_error(exc), alarm=not isinstance(exc, IngestBusy))
+            if committed:
+                logger.warning("Inventory was saved; closing bookkeeping failed. Check this run's log.", exc_info=True)
+                return result
             raise
-        await _log_collapsed_departures(db, run, collapsed)
-        # The return is deliberately unchecked: if a slow fetch let the reclaim take
-        # this run, the refused finish leaves that verdict standing, and the device
-        # write above stands on its own — it is fresh from Jamf, and staleness is the
-        # ledger's monotonic guard's call, not the run bookkeeping's.
-        await finish(db, run, ok=True, device_count=1, devices_processed=1, observations={result.outcome: 1})
-        return result
 
 
 async def webhook_scope(db: AsyncSession, connection: MdmConnection) -> tuple[tuple[str, ...], tuple[str, ...]]:

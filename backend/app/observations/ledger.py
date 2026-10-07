@@ -208,10 +208,12 @@ async def _write_sections(db: AsyncSession, sections: Iterable[SectionContent]) 
 
     if section_rows:
         await db.execute(
-            pg_insert(ObservationSection).values(section_rows).on_conflict_do_nothing(constraint="uq_observation_section_digest")
+            pg_insert(ObservationSection)
+            .values(sorted(section_rows, key=lambda row: row["digest"]))
+            .on_conflict_do_nothing(constraint="uq_observation_section_digest")
         )
 
-    rows = list(entry_rows.values())
+    rows = [entry_rows[digest] for digest in sorted(entry_rows)]
     for start in range(0, len(rows), _ENTRY_BATCH):
         statement = pg_insert(ObservationEntry).values(rows[start : start + _ENTRY_BATCH])
         # Content rows are immutable except for the label, which the contract keeps
@@ -246,6 +248,9 @@ async def record_observation(
     span to decide whether to proceed at all; otherwise it is fetched here.
     """
     collected_at = collected_at or _utcnow()
+    from app.core.runs import fence_write
+
+    fence_write(db)
     observed_at = observation.observed_at or collected_at
     head_digest = compute_head_digest(
         observation.subject_kind, observation.subject_id, aperture_digest, observation.section_digests

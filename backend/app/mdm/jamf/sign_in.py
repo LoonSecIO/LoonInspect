@@ -71,7 +71,7 @@ KEEPALIVE_EXPIRY_SECONDS = 120.0
 REQUEST_TIMEOUT_SECONDS = 30.0
 
 # A failed renewal waits, doubling, before trying again — and never takes the connection
-# down: until a renewal succeeds, each read signs in as it needs to, as under Cache and hold.
+# down: until a renewal succeeds, reads may sign in after the shared five-second failure cooldown, as under Cache and hold.
 RENEWAL_BACKOFF_START_SECONDS = 30.0
 RENEWAL_BACKOFF_CAP_SECONDS = 600.0
 
@@ -99,6 +99,8 @@ class TokenState:
     token: str | None = None
     expires_at: float | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    failed_until: float = 0.0
+    failure_message: str | None = None
 
 
 class _Credentials(Protocol):
@@ -207,7 +209,7 @@ async def renew_until_retired(held: HeldSignIn) -> None:
     refresh margin — the deadline `_token_lifetime` already put on it — never on a fixed
     interval. A renewal takes the same lock a run's sign-in does, so the two never both
     mint a token. A failure is logged, waited out with doubling backoff, and costs nothing
-    else: until a renewal succeeds, each read signs in as it needs to."""
+    else: until a renewal succeeds, reads may sign in after the shared five-second failure cooldown."""
     backoff = RENEWAL_BACKOFF_START_SECONDS
     tenant_id, connection_id = held.key
     while not held.retired:
@@ -230,7 +232,7 @@ async def renew_until_retired(held: HeldSignIn) -> None:
         except Exception as exc:  # every failure is logged and retried; none may end the loop
             logger.warning(
                 "could not renew the Jamf Pro sign-in: %s. Retrying in %d s; until then each read "
-                "signs in as it needs to. Test connection on this connection checks its credentials "
+                "can try again after the five-second failure cooldown. Test connection on this connection checks its credentials "
                 "and base URL",
                 _describe(exc),
                 int(backoff),
@@ -248,6 +250,10 @@ def _describe(exc: BaseException) -> str:
     by name."""
     if isinstance(exc, httpx.HTTPStatusError):
         return f"Jamf Pro answered {exc.response.status_code} on {exc.request.url.path}"
+    from app.mdm.jamf.errors import JamfSignInError
+
+    if isinstance(exc, JamfSignInError):
+        return str(exc)
     return type(exc).__name__
 
 

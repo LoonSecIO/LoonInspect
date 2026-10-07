@@ -21,7 +21,7 @@ import random
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import httpx
@@ -29,12 +29,14 @@ import httpx
 from app.core.user_agent import build_user_agent
 from app.core.wire import instance_label
 from app.mdm.jamf.contract import (
+    SECTIONS,
     V0_SECTIONS,
     HoistedExtensionAttribute,
     hoist_extension_attributes,
     jamf_section_param,
     parse_jamf_datetime,
 )
+from app.mdm.jamf.errors import JamfResponseError, JamfSignInError, json_object
 from app.mdm.jamf.sign_in import HeldSignIn, TokenState, clock
 from app.schemas.payload import (
     MdmProvider,
@@ -185,13 +187,21 @@ def _token_lifetime(body: dict) -> float | None:
     return max(seconds - _TOKEN_REFRESH_MARGIN_SECONDS, seconds / 2)
 
 
-def _retry_delay(response: httpx.Response, attempt: int) -> float:
-    """Retry-After when Jamf names a number of seconds, exponential backoff with
-    jitter when it doesn't (Retry-After may also be an HTTP-date; not worth parsing
-    when the fallback is a sane wait)."""
+def _retry_delay(response: httpx.Response, attempt: int, *, cap: float | None = _RETRY_AFTER_CAP_SECONDS) -> float:
+    """Sweeps retain capped numeric waits. Webhooks honor numeric and HTTP-date
+    Retry-After fully; their optional elapsed-time budget can expire during the wait.
+    Other responses use exponential backoff with jitter."""
     header = response.headers.get("Retry-After", "").strip()
-    if header.isdigit():
-        return min(float(header), _RETRY_AFTER_CAP_SECONDS)
+    if header.isascii() and header.isdecimal():
+        seconds = float(header)
+        return seconds if cap is None else min(seconds, cap)
+    if header and cap is None:
+        from email.utils import parsedate_to_datetime
+
+        try:
+            return max(0.0, (parsedate_to_datetime(header) - datetime.now(UTC)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            pass
     return _RETRY_BASE_SECONDS * (2**attempt) + random.uniform(0, 0.5)
 
 
@@ -230,6 +240,18 @@ class JamfWebhookEvent:
     jamf_id: str | None
     udid: str | None
     serial_number: str | None
+    id_present: bool = False
+    id_type: str | None = None
+    id_length: int | None = None
+
+
+def computer_id(value: object) -> str | None:
+    """A bounded ASCII decimal Jamf computer id, safe to use as one URL segment."""
+    if type(value) is int:
+        return str(value) if 0 <= value < 10**20 else None
+    if isinstance(value, str) and 0 < len(value) <= 20 and value.isascii() and value.isdecimal():
+        return value.lstrip("0") or "0"
+    return None
 
 
 def parse_webhook_event(payload: dict) -> JamfWebhookEvent:
@@ -240,15 +262,20 @@ def parse_webhook_event(payload: dict) -> JamfWebhookEvent:
     jamf_id = computer.get("jssID")
     if jamf_id is None:
         jamf_id = computer.get("id")
+    event_name = webhook.get("webhookEvent")
     return JamfWebhookEvent(
-        event_name=webhook.get("webhookEvent"),
-        jamf_id=str(jamf_id) if jamf_id is not None else None,
+        event_name=event_name if isinstance(event_name, str) else None,
+        jamf_id=computer_id(jamf_id),
         udid=computer.get("udid"),
         serial_number=computer.get("serialNumber"),
+        id_present="jssID" in computer or "id" in computer,
+        id_type=type(jamf_id).__name__,
+        id_length=len(jamf_id) if isinstance(jamf_id, (str, list, dict)) else None,
     )
 
 
 class JamfClient:
+    deadline: float | None = None
     provider = MdmProvider.jamf.value
 
     def __init__(
@@ -360,24 +387,55 @@ class JamfClient:
             if token:
                 return token
 
-            response = await self._send_once_more_if_dropped(
-                lambda: client.post(
-                    f"{self._base_url}/api/oauth/token",
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": self._client_id,
-                        "client_secret": self._client_secret,
-                    },
-                    headers={"User-Agent": self._user_agent("auth")},
-                ),
-                path="/api/oauth/token",
-            )
-            response.raise_for_status()
-            body = response.json()
-            token = body["access_token"]
+            if self._tokens.failure_message is not None and clock() < self._tokens.failed_until:
+                raise JamfSignInError(self._tokens.failure_message)
+            try:
+                response = await self._send_once_more_if_dropped(
+                    lambda: client.post(
+                        f"{self._base_url}/api/oauth/token",
+                        data={
+                            "grant_type": "client_credentials",
+                            "client_id": self._client_id,
+                            "client_secret": self._client_secret,
+                        },
+                        headers={"User-Agent": self._user_agent("auth")},
+                    ),
+                    path="/api/oauth/token",
+                )
+                response.raise_for_status()
+                body = json_object(response, "token")
+                token = body.get("access_token")
+                if not isinstance(token, str) or not token.strip() or not token.isascii() or any(ord(c) < 33 for c in token):
+                    raise JamfResponseError("Jamf Pro returned an invalid token response")
+            except JamfResponseError:
+                message = (
+                    "Jamf Pro returned an invalid token response from /api/oauth/token — "
+                    "Check the connection's base URL and run Test connection."
+                )
+                self._tokens.failed_until = clock() + 5.0
+                self._tokens.failure_message = message
+                raise JamfSignInError(message) from None
+            except httpx.HTTPError as exc:
+                # Only persistent credential/endpoint failures are shared. A cancelled
+                # webhook or temporary outage must leave the next caller free to try.
+                status = (
+                    f"Jamf Pro answered {exc.response.status_code} on /api/oauth/token — "
+                    if isinstance(exc, httpx.HTTPStatusError)
+                    else ""
+                )
+                message = (
+                    f"Signing in to Jamf Pro failed. {status}"
+                    "Check the connection's base URL and credentials, then run Test connection."
+                )
+                if isinstance(exc, httpx.HTTPStatusError) and 400 <= exc.response.status_code < 500:
+                    self._tokens.failed_until = clock() + 5.0
+                    self._tokens.failure_message = message
+                raise JamfSignInError(message) from None
             lifetime = _token_lifetime(body)
             self._tokens.expires_at = None if lifetime is None else clock() + lifetime
             self._tokens.token = token
+            self._tokens.failed_until = 0.0
+            self._tokens.failure_message = None
             return token
 
     async def _send_once_more_if_dropped(self, send: Callable[[], Awaitable[httpx.Response]], *, path: str) -> httpx.Response:
@@ -428,11 +486,19 @@ class JamfClient:
                 reauthenticated = True
                 continue
             if response.status_code in _TRANSIENT_STATUSES and transient_retries < _MAX_TRANSIENT_RETRIES:
-                delay = _retry_delay(response, transient_retries)
+                delay = _retry_delay(
+                    response, transient_retries, cap=None if self.deadline is not None else _RETRY_AFTER_CAP_SECONDS
+                )
                 if response.status_code == 429:
                     self.throttle.throttled_429 += 1
                 else:
                     self.throttle.retried_5xx += 1
+                if self.deadline is not None and delay >= self.deadline - asyncio.get_running_loop().time():
+                    logger.info(
+                        "Jamf retry delay exceeds the webhook retry window; returning the upstream response",
+                        extra={"status": response.status_code, "path": path},
+                    )
+                    return response
                 self.throttle.backoff_ms_total += int(delay * 1000)
                 logger.info(
                     "transient response from jamf; backing off and retrying",
@@ -480,8 +546,10 @@ class JamfClient:
         try:
             response = await self._get(client, "/api/v1/jamf-pro-version", comment="aperture")
             response.raise_for_status()
-            version = response.json().get("version")
+            version = json_object(response, "version").get("version")
             return str(version) if version else None
+        except JamfSignInError:
+            raise
         except httpx.HTTPError:
             logger.warning("jamf version unavailable for aperture", exc_info=True)
             return None
@@ -503,8 +571,9 @@ class JamfClient:
                 )
                 return None
             response.raise_for_status()
-            body = response.json()
-            return body if isinstance(body, dict) else None
+            return json_object(response, "inventory collection settings")
+        except JamfSignInError:
+            raise
         except httpx.HTTPError:
             logger.warning("inventory collection settings unavailable for aperture", exc_info=True)
             return None
@@ -617,9 +686,47 @@ class JamfClient:
     async def fetch_computer_detail(self, client: httpx.AsyncClient, jamf_id: str) -> dict:
         """Every section of one computer. The webhook path's fetch: one device already
         known to have changed, so the full record is cheap and maximally useful."""
-        response = await self._get(client, f"/api/v4/computers-inventory-detail/{jamf_id}", comment="detail")
+        identifier = computer_id(jamf_id)
+        if identifier is None:
+            raise ValueError("Jamf computer id must be an ASCII decimal identifier of at most 20 digits")
+        response = await self._get(client, f"/api/v4/computers-inventory-detail/{identifier}", comment="detail")
         response.raise_for_status()
-        return response.json()
+        body = json_object(response, "computer inventory")
+        general = body.get("general")
+        returned_id = body.get("id")
+        if returned_id is None and isinstance(general, dict):
+            returned_id = general.get("id")
+        if computer_id(returned_id) != identifier or not isinstance(general, dict):
+            raise JamfResponseError(
+                "Jamf Pro returned invalid inventory for the requested computer. "
+                "Check the connection's base URL and run Test connection."
+            )
+
+        def invalid_shape(field: str) -> None:
+            raise JamfResponseError(
+                f"Jamf Pro returned invalid computer inventory: {field} has an unexpected shape. "
+                "Check the connection's base URL and run Test connection."
+            )
+
+        def object_list(value: object, field: str) -> None:
+            if value is not None and (not isinstance(value, list) or any(not isinstance(item, dict) for item in value)):
+                invalid_shape(field)
+
+        for spec in SECTIONS.values():
+            value = body.get(spec.response_key)
+            if spec.entry_kind:
+                object_list(value, spec.response_key)
+            elif value is not None and not isinstance(value, dict):
+                invalid_shape(spec.response_key)
+        # EAs may be carried by any top-level object as well as their own section.
+        for value in body.values():
+            if isinstance(value, dict):
+                object_list(value.get("extensionAttributes"), "extensionAttributes")
+        if general.get("reportDate") is not None and not isinstance(general["reportDate"], str):
+            invalid_shape("general.reportDate")
+        if general.get("remoteManagement") is not None and not isinstance(general["remoteManagement"], dict):
+            invalid_shape("general.remoteManagement")
+        return body
 
     # --- smart groups ----------------------------------------------------------------
 
@@ -663,7 +770,13 @@ class JamfClient:
             page += 1
         return definitions
 
-    async def fetch_smart_groups(self, client: httpx.AsyncClient, *, page_size: int = _PAGE_SIZE) -> list[dict]:
+    async def fetch_smart_groups(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        page_size: int = _PAGE_SIZE,
+        between_waves: Callable[[], Awaitable[None]] | None = None,
+    ) -> list[dict]:
         """Every smart computer group with its criteria.
 
         The v3 list endpoint returns ids and names; criteria come from the per-group
@@ -673,6 +786,10 @@ class JamfClient:
         refresh. Needs "Read Smart Computer Groups"; a tenant without the privilege
         (or an older Jamf Pro without the v3 endpoint) yields an empty list and a log
         line rather than failing the device sweep it rides along with.
+
+        `between_waves` is awaited after each list page and each wave of detail reads. The
+        caller passes its run's heartbeat: past a thousand groups, or under throttling, this
+        read alone can outlast the stale window, and nothing here may touch the database.
         """
         groups: list[dict] = []
         page = 0
@@ -692,12 +809,21 @@ class JamfClient:
             response.raise_for_status()
             results = response.json().get("results", [])
             groups.extend(item for item in results if isinstance(item, dict))
+            if between_waves is not None:
+                await between_waves()
             if len(results) < page_size:
                 break
             page += 1
 
         async def fetch_detail(group: dict) -> dict | None:
-            group_id = group["id"]
+            group_id = computer_id(group.get("id"))
+            if group_id is None:
+                value = group.get("id")
+                logger.warning(
+                    "Jamf Pro returned an invalid smart-group id; group skipped. Check the smart-group list in Jamf Pro.",
+                    extra={"id_type": type(value).__name__, "id_length": len(value) if isinstance(value, str) else None},
+                )
+                return None
             response = await self._get(client, f"/api/v3/computer-groups/smart-groups/{group_id}", comment="groups")
             if response.status_code == 404:
                 return None  # deleted between the list and the read
@@ -717,6 +843,8 @@ class JamfClient:
             detailed.extend(detail for detail in details if detail is not None)
             self.adaptive.after_wave(self.throttle.throttled_429 > throttled_before)
             start += len(wave)
+            if between_waves is not None:
+                await between_waves()
         return detailed
 
     # --- departments and buildings ----------------------------------------------------

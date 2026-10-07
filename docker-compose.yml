@@ -144,6 +144,7 @@ services:
       # once more devices fail than the larger of the count and the percentage of devices
       # attempted so far (docs/runs.md §2 and §7).
       RUN_STALE_AFTER_SECONDS: ${RUN_STALE_AFTER_SECONDS:-300}
+      WEBHOOK_TIMEOUT_SECONDS: ${WEBHOOK_TIMEOUT_SECONDS:-0}
       SWEEP_FAILURE_MAX_ABSOLUTE: ${SWEEP_FAILURE_MAX_ABSOLUTE:-25}
       SWEEP_FAILURE_MAX_PERCENT: ${SWEEP_FAILURE_MAX_PERCENT:-1.0}
       # The largest request body sent to a destination, in bytes: Splunk HEC, then the other

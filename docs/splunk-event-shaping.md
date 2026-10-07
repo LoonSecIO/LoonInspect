@@ -167,7 +167,7 @@ correlation fields so split-apart events can still be searched and correlated to
 | Field | Purpose | Status |
 | --- | --- | --- |
 | Serial number | Device identity/correlation key | Free — `Device.serial_number` already exists |
-| `shortDate` | Cheap daily-grain dedup (`\| dedup serialNumber shortDate`) without inline `strftime` | Shipped — derived at **enqueue** from the run's window, not at delivery |
+| `shortDate` | Cheap daily-grain dedup (`\| dedup serialNumber shortDate`) without inline `strftime` | Shipped — the UTC calendar date of the run window, derived at **enqueue**. It can differ from the device report date or the schedule's local date |
 | Inventory/sync UUID | Ties together every sub-event that came from one device's one sync pass, so you can "rebuild" (reconstruct) or cross-search everything from that pull | **New work.** Nothing today ties sub-events to one device-sync-pass. `EventOutbox.request_id` is scoped to the triggering job (a whole sweep/manual trigger can cover many devices) — wrong granularity. Needs a fresh id minted per device-sync, stamped on all N resulting Splunk sub-events. |
 | `days_since` (with DTG-style timestamps) | Precomputed staleness/gap field so searches don't need inline time math | **Ambiguous — never resolved.** Could be purely device-check-in staleness (`Device.last_check_in`/`last_inventory_at` already support this, cheap) or a generalized "days since any timestamp this event carries" pattern that would also apply to app-lifecycle and group-join timestamps (see "Adjacent unbuilt features" below). Question was asked and the conversation hit the context limit before it was answered. |
 
@@ -262,7 +262,10 @@ stamped at HEC *arrival*. That is no longer true, and the SPL workaround it taug
 no longer needed.
 
 `_build_body()` now sets `time` from the event's own `occurredAt`, computed at enqueue
-(`backend/app/core/wire.py`). Occurrence semantics are unchanged and still authoritative:
+(`backend/app/core/wire.py`). From the 2026-10-07 catch-up clarification, after an outage
+a scheduled run serves the **latest missed occurrence**. New catch-up events therefore
+use that window for `occurredAt` and HEC `time`; historical events are unchanged.
+The other occurrence rules remain authoritative:
 sweep events back-date to the run's window, webhook events carry Jamf's `reportDate`
 (`backend/app/core/runs.py::event_time`). So `_time` now means *when the device changed*,
 which is what dashboards already assumed.

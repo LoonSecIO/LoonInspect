@@ -44,9 +44,9 @@ it (`ingest-scheduling.md` §6.2).
 **Webhooks are exempt, in the predicate rather than in code.** They must ACK fast, a busy
 tenant fires many, and serializing them behind a sweep makes the real-time path useless.
 A webhook still gets a run — it needs the jobID and the log — but never the lock. Their
-ordering against a sweep is handled by the ledger's monotonic guard instead, which is
-independently correct: an observation older than what the ledger already holds is
-refused, so sweep/webhook interleaving is irrelevant rather than coordinated.
+ordering against a sweep is handled by the ledger's monotonic guard under the shared
+per-computer write lock. An observation older than the ledger's current reading is
+refused after the lock is acquired, so the comparison and write stay atomic.
 
 **The run is acquired before the Jamf client is built (#477).** Building the client is
 where a connection's stored credential is validated, so a credential that is not a
@@ -57,6 +57,16 @@ the sentence on `runs.error`, one `run.failed` per connection per UTC day
 ([`troubleshooting.md`](troubleshooting.md) §12). The two event guards stay *above* the
 acquisition — a `ComputerCheckIn` must still mint nothing and cost nothing (#76).
 
+Acquisition makes at most two INSERT attempts. If a holder finishes before it can be
+read after both conflicts, API actions answer `503` with `Retry-After: 1`; a scheduled
+collection restores its own claim for the next tick. Other constraint failures propagate.
+A caller receiving `started=False` must promptly finish its transaction; it can still
+hold locks from checking a stale run. It must never perform work or finish the holder's run.
+
+Webhook writes and sweep writes for the same computer share a transaction-scoped lock
+keyed by tenant, connection, platform and computer ID. The ledger is read after this lock
+is acquired, including first creation. Different computers can write concurrently.
+
 ## 2. The heartbeat, which is not optional
 
 A mutex without a heartbeat is a deadlock. A process that dies holding a run leaves the
@@ -64,10 +74,23 @@ row `running` forever and **nothing on that connection can sync again** — wors
 race it replaces, because duplicate load is noisy and self-limiting while permanent
 silence pages nobody.
 
-`heartbeat_at` is written every 15 seconds from the device loop (throttled, so it is one
-small `UPDATE` per interval and not one per device). A run whose heartbeat is older than
-`RUN_STALE_AFTER_SECONDS` (default 300 — twenty missed beats, not a slow one) is failed
-by the next acquirer.
+An entered run maintains a heartbeat every 15 seconds through its own tenant-bound
+database session, including while the main task waits for Jamf. Boundary beats remain
+throttled and record worker progress, as does each device iteration. After no worker
+progress for `RUN_STALE_AFTER_SECONDS`, the keeper logs `Run progress stopped; heartbeat
+keeper stopped` and stops updating the row. A stalled worker therefore becomes reclaimable
+after its last heartbeat also ages past that window; a keeper alone cannot hold the lock
+forever. Check the last run log line and Jamf connectivity when that warning appears.
+The heartbeat task is cancelled and awaited when the run context exits; it
+never shares the ingest session. Its database work has a five-second timeout and reports
+failures in the container log. A run without a heartbeat for `RUN_STALE_AFTER_SECONDS`
+(default 300) remains reclaimable by the next acquirer.
+
+Observation transactions check ownership at commit while holding a shared lock on the
+running row. Reclaim either precedes the check, refusing the observation commit, or waits
+until that commit completes. A reclaimed worker cannot commit inventory afterward.
+This adds a query per observation transaction and a small independent transaction per
+heartbeat interval; see [`troubleshooting.md`](troubleshooting.md) §1 step 7.
 
 Reclaim happens **on acquisition, not at startup**. Startup was the wrong moment twice
 over: it never fires in a process that stays up for a month, and the blanket sweep it
@@ -87,13 +110,18 @@ them, not by when anything happened.
 | `webhook` | device time (Jamf's `reportDate`) | It is a real-time signal about a device; the device's clock is the truth. |
 | `manual` | now | Someone is watching it happen. There is no window to belong to, and back-dating an interactive action is a lie about when it occurred. |
 
-`window_start` for a scheduled run is the occurrence being served — the `next_due_at`
-value the tick claimed, captured *before* the claim advances it, not the moment the tick
-got around to it.
+`window_start` for a scheduled run is the most recent due occurrence at or before the
+claim time. After several missed occurrences, one catch-up sweep represents that window,
+and the next due time is the first future occurrence. Arithmetic uses the collection's
+timezone and interval anchor. Hourly schedules use a UTC minute grid, every 60 minutes, including both repeated hours.
+Daily, weekly and every-n-days repeated wall times use the first occurrence; a nonexistent
+wall time moves forward through the DST gap. Historical events are unchanged.
 
-This is what makes the contract's *"verify webhooks always land after the run stamp"* a
-checkable statement rather than a hope: the sweep's events sit at the window, the
-webhook's sit later at device time, and the ordering falls out. `test_runs.py` asserts it.
+A delayed webhook can carry a `reportDate` before the latest sweep window. No universal
+ordering between webhook and sweep timestamps is promised. `deviceMeta.shortDate` is
+the UTC calendar date of the run window, including for webhooks; it can differ from the
+device report date and from the collection's local calendar date. Weekly events can still
+fall outside a last-24-hours search.
 
 ## 4. `runtype` and `run_type` became `trigger` and `comparison`
 

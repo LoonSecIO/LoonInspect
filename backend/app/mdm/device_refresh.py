@@ -41,6 +41,7 @@ async def refresh_device(db: AsyncSession, connection: MdmConnection, external_i
                 await read_tenant_tier(db)
                 sections, quarantine = await webhook_scope(db, connection)
                 client = get_mdm_client(connection)
+                await db.commit()
                 async with client.http() as http:
                     aperture = await capture_aperture(
                         client, http, sections=sections, quarantined_extension_attributes=quarantine

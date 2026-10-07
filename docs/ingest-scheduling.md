@@ -15,7 +15,7 @@ Target: V0
 > tick (`collections_tick`) claims due rows with one conditional `UPDATE … WHERE
 > next_due_at <= now RETURNING` (§5 — correct across processes without the run row), runs
 > them sequentially, and advances `next_due_at` in the row's own zone. Rate floors (§4.2)
-> are enforced on save and at claim time; a manual run resets the scheduled one. A device
+> are enforced on save and at claim time; a manual run affects the rate floor without resetting the interval anchor. A device
 > sweep whose connection is mid-sync is left unclaimed and retried next minute.
 >
 > **Then #31 (2026-08-23), which took every correction §4 and §11 propose.** The mutex is
@@ -24,7 +24,7 @@ Target: V0
 > heartbeat shipped with it and replaced the startup blanket reset (§4.5); run-now returns
 > 202 with a jobID on contention rather than a 409 (§4.2); the tick's busy check now reads
 > the run table rather than `mdm_sync_state.status`; and `claim_due` hands back the
-> occurrence it claimed, so a run's window is the time it was *due*. Full design in
+> latest missed occurrence at claim time, so one catch-up run serves that window. Full design in
 > [runs.md](runs.md). Still open and owned by #27: the concurrency cap of §4.3 — a tick
 > runs one collection at a time because it is sequential, not because anything bounds it.
 
@@ -207,8 +207,15 @@ Two consequences worth stating, because both are counterintuitive:
   them the running sweep's log answers that better than an error does. #31 already wants
   run-now to gray to "processing" with a jobID-filtered log view, so this points the
   same component at a run it did not start. The contract becomes: `POST
-  /connections/{id}/sync` always returns 202 with a jobID plus a flag for whether it
+  /connections/{id}/sync` normally returns 202 with a jobID plus a flag for whether it
   started a new run or joined one.
+
+When more than one occurrence was missed, the tick coalesces them into one catch-up run
+for the most recent due occurrence at claim time. It advances to the first future
+occurrence using the schedule's timezone and interval anchor. Claim ownership stays an
+atomic conditional update. Rate floors and busy-run checks still apply. An exhausted
+acquisition returns `503` to API callers; the tick restores only its own unchanged claim
+and retries on a later tick. See [`runs.md`](runs.md) §3 for timestamp semantics.
 
 ### 4.3 Concurrency cap — the guard the MSP case exposes
 
@@ -580,3 +587,11 @@ Nothing here should be assumed resolved.
 3. **Catalog profiles** — new client methods for definitions, plus the freshness
    ordering in §6.2. Separate issue; possibly post-V0 per open question 5.
 4. **MSP inheritance** — after #35, per §8.2.
+
+
+Schedule arithmetic clarification (2026-10-07): hourly runs use a UTC minute grid,
+every 60 minutes at the configured minute, including both repeated hours. Daily,
+weekly and every-n-days schedules use wall time and the first repeated occurrence.
+Every-n-days is anchored to the materialized scheduled occurrence; a manual run affects
+the rate floor but does not reset cadence. Saving a schedule keeps the existing due
+occurrence's date as its anchor; a new schedule starts from the save date.
