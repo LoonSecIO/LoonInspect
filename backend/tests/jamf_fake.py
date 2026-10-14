@@ -39,7 +39,7 @@ class FakeJamf:
         self.synthetic = json.loads((FIXTURES / "computer_inventory_detail.json").read_text())
         self.real = json.loads((FIXTURES / "computer_inventory_detail_real.json").read_text())
         # Unique ids per run so re-running locally never collides with a previous pass.
-        suffix = uuidlib.uuid4().hex[:6]
+        suffix = str(uuidlib.uuid4().int % 10**12)
         self.synthetic["id"] = f"42{suffix}"
         self.real["id"] = f"3{suffix}"
         self._extra: list[dict] = []
@@ -111,7 +111,7 @@ class FakeJamf:
         and UDIDs, so each clone is its own device to the ledger."""
         for index in range(count):
             clone = json.loads(json.dumps(self.synthetic))
-            clone["id"] = f"9{index:04d}{uuidlib.uuid4().hex[:4]}"
+            clone["id"] = f"9{index:04d}{uuidlib.uuid4().int % 10**8:08d}"
             clone["udid"] = str(uuidlib.uuid4()).upper()
             clone.setdefault("hardware", {})["serialNumber"] = f"CLONE{uuidlib.uuid4().hex[:8].upper()}"
             self._extra.append(clone)

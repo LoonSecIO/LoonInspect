@@ -55,6 +55,9 @@ async def record_org_units(db: AsyncSession, *, connection_id: int, kind: str, u
     Jamf keep a stale row whose `last_seen_at` stops moving — departure is #181's subject,
     and a label nobody references any more costs one row.
     """
+    from app.core.runs import fence_write
+
+    fence_write(db)
     if units is None:
         await db.execute(delete(JamfOrgUnit).where(JamfOrgUnit.mdm_connection_id == connection_id, JamfOrgUnit.kind == kind))
         return None
