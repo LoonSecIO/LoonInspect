@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.context import get_request_id
 from app.core.outbox import enqueue_event
-from app.core.runs import RunReclaimed, beat, event_time
+from app.core.runs import RunReclaimed, beat, event_time, fence_write, note_progress
 from app.core.runs import log as run_log
 from app.core.vuln_answer import stored_corpus
 from app.core.vuln_library import earned_corpus
@@ -179,6 +179,9 @@ async def re_emit_connection(
             await run_log(
                 db, run, "info", "re-emit progress", enqueued=processed, skipped=skipped, failed=failed, of=len(device_ids)
             )
+        if (index - 1) % _BATCH == 0:
+            fence_write(db)
+        note_progress()
         if index == 1 or (settings.vuln_tenant_selection and (index - 1) % _BATCH == 0):
             if settings.vuln_tenant_selection:
                 from app.core.vuln_selection import lock_assessment

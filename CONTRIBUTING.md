@@ -43,7 +43,8 @@ Every PR must pass the same gates `main` enforces:
   the same counts, so a failure that appears only on the second run is a defect in the
   suite rather than a reason to recreate the database (#514).
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
-  environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
+  environment, over the pure modules; a test of effects opts into jsdom on its first line, as
+  `useRunLog.test.tsx` does), `npm run build` (Node 22, `npm ci`).
   `react-hooks/set-state-in-effect` is an error, and it follows a call in an effect body
   into a function declared in the component body: every `setState` that call can reach is
   reported at the call site, including ones that run after an `await`, so making the
