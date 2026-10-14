@@ -154,3 +154,34 @@ async def test_refresh_uses_targeted_scope_and_preserves_older_observation(admin
     observation = (await admin.get(f"/api/devices/{device.id}/observation")).json()
     applications = next(section for section in observation["sections"] if section["name"] == "applications")
     assert applications["state"] == "not_observed" and not applications["entries"]
+
+
+@pytest.mark.parametrize("action", ["sync", "collection", "re-emit", "refresh"])
+async def test_acquisition_contention_is_retryable_on_each_manual_route(admin, db, connection, jamf, monkeypatch, action):
+    from app.api import collections, connections
+    from app.core.runs import LOCK_DEVICE_SWEEP, AcquisitionBusy
+    from app.mdm import device_refresh
+    from app.models.schema import Collection
+
+    device = await ingest(db, connection, jamf)
+    collection = await db.scalar(
+        select(Collection).where(Collection.mdm_connection_id == connection.id, Collection.kind == "device_sweep")
+    )
+
+    async def busy(*args, **kwargs):
+        raise AcquisitionBusy(connection.id, LOCK_DEVICE_SWEEP)
+
+    for module in (collections, connections, device_refresh):
+        monkeypatch.setattr(module, "acquire", busy)
+    urls = {
+        "sync": f"/api/mdm/connections/{connection.id}/sync",
+        "collection": f"/api/mdm/collections/{collection.id}/run",
+        "re-emit": f"/api/mdm/connections/{connection.id}/re-emit",
+        "refresh": f"/api/devices/{device.id}/refresh",
+    }
+    jamf.requests.clear()
+    response = await admin.post(urls[action])
+    assert response.status_code == 503, response.text
+    assert response.headers["Retry-After"] == "1"
+    assert "Retry shortly" in response.json()["detail"]
+    assert jamf.requests == []

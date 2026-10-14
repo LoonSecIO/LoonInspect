@@ -200,15 +200,15 @@ async def test_claim_is_atomic_and_advances_next_due(db, connection) -> None:
     # sweep's defaults, on a shared local database); only this row's claim is asserted.
     now = _now()
     first = await claim_due(db, now)
-    # claim_due hands back (collection, due_at): the occurrence being served, captured
+    # claim_due hands back (collection, due_at, following): the occurrence being served, captured
     # before the UPDATE advances next_due_at past it. That value becomes the run's
     # window, so a sweep the tick reaches late still stamps its events at the hour the
     # customer configured (#31).
-    assert row.id in [c.id for c, _ in first]
-    due_at = next(due for c, due in first if c.id == row.id)
+    assert row.id in [c.id for c, _, _ in first]
+    due_at = next(due for c, due, _ in first if c.id == row.id)
     assert due_at < now
     second = await claim_due(db, now)
-    assert row.id not in [c.id for c, _ in second]
+    assert row.id not in [c.id for c, _, _ in second]
     await db.refresh(row)
     assert row.last_claimed_at is not None and row.next_due_at is not None and row.next_due_at > now
 
@@ -255,7 +255,7 @@ async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) 
     held = await acquire(db, connection, trigger=TRIGGER_MANUAL, lock_class=LOCK_DEVICE_SWEEP)
     assert held.started
 
-    mine = {c.kind for c, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
+    mine = {c.kind for c, _, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
     # The catalog is a different lock class and runs regardless — a fifteen-minute
     # definitions refresh has no reason to wait behind a forty-minute device sweep.
     assert mine == {"catalog"}
@@ -263,7 +263,7 @@ async def test_claim_leaves_a_busy_connection_for_the_next_tick(db, connection) 
     assert sweep.next_due_at < _now()
 
     await finish(db, held.run, ok=True)
-    mine = {c.kind for c, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
+    mine = {c.kind for c, _, _ in await claim_due(db, _now()) if c.mdm_connection_id == connection.id}
     assert mine == {"device_sweep"}
 
 
