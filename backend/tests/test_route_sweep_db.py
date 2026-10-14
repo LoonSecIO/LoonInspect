@@ -130,9 +130,7 @@ SKIP: dict[tuple[str, str], str] = {}
 # A lane a route crashes in for a reason that is not tenancy: a strict xfail on exactly that crash, so a fix
 # that answers anything else, another 5xx included, turns this file red until its entry goes. Keyed
 # (lane, test id).
-KNOWN: dict[tuple[str, str], str] = {
-    ("own", "POST /api/jamf-patch/sync"): "an unreachable patch catalog is a 500, not a sentence naming what failed",
-}
+KNOWN: dict[tuple[str, str], str] = {}
 # The own lane's routes that end at a designed refusal, by what the second tenant lacks for their main path.
 # Asserted both ways: a route that starts refusing, or stops, moves in or out of this table.
 STOPS = {
@@ -158,6 +156,9 @@ STOPS = {
     "sharing is off": ["POST /api/system/data-sharing/send"],
     "no Jamf patch title: titles are global, and the sweep loads none": [
         *("GET /api/jamf-patch/titles/{title_id}", "PUT /api/settings/patching-policy/overrides/{title_id}"),
+    ],
+    "the patch catalog is unreachable: the sweep opens no connections, and the sync's first read is of it": [
+        "POST /api/jamf-patch/sync",
     ],
     "the connection holds no Jamf credential": ["POST /api/devices/{device_id}/refresh"],
 }

@@ -87,7 +87,7 @@ from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
 from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
-from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
+from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable, sync_catalog
 from app.models.schema import MdmConnection, UserSession
 from app.summaries.service import run_worker as inventory_summary_worker
 
@@ -189,12 +189,14 @@ async def hourly_jamf_patch_sync() -> None:
                 await db.commit()
             if judged:
                 logger.info("app catalog refreshed", extra={"tenant_id": str(tenant_id), "rows": judged})
-    except JamfPatchCatalogUnconfigured as exc:
-        # The one way this job can be misconfigured rather than merely unlucky, and the
-        # container log is the only surface it has. One sentence at ERROR with no
-        # traceback, so `docker compose logs app` reads the line that names the setting
-        # instead of a stack that does not (docs/diagnosability.md rule 3). Nothing was
-        # written: the catalog the container already had still answers.
+    except (JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable) as exc:
+        # The two ways this job fails for a reason that is not ours — an address that is
+        # not an address, and a server this container cannot read — and the container log
+        # is the only surface it has. One sentence at ERROR with no traceback, so
+        # `docker compose logs app` reads the line that names the setting, or the host and
+        # what to check, instead of a stack that names httpx (docs/diagnosability.md rule
+        # 3). Nothing was written: the catalog the container already had still answers,
+        # and the next tick tries again.
         logger.error(str(exc))
     finally:
         reset_actor(actor_token)
