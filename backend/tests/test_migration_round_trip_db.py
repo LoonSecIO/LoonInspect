@@ -101,19 +101,10 @@ STEP_PAST = {
         "restores a key without platform; a Mac and an iPad with one Jamf id share it",
     ),
 }
-# Where the models and the migrations disagree, as autogenerate words it, and a CHECK only the migrations or only the
-# models name (autogenerate compares none). None is marked deliberate, so each is a strict xfail below: declare it on its
-# model or create it, and its test fails until its line here goes.
-DRIFT = {
-    "remove_index ix_app_catalog_vuln_ids": "b8d4f1a6c2e7 creates it; AppCatalogEntry does not declare it",
-    "remove_index ix_app_catalog_vuln_served": "a7c21e9f4b83 creates it; AppCatalogEntry does not declare it",
-    "remove_index ix_observation_sections_entry_digests": "4a8c1f2e7b93 creates it; ObservationSection does not declare it",
-    "remove_index ix_observation_spans_section_digests": "4a8c1f2e7b93 creates it; ObservationSpan does not declare it",
-    "add_index ix_devices_platform": "Device.platform says index=True; no migration creates it",
-    "migrations_only_check vuln_library_epoch.ck_vuln_library_epoch_single_row": (
-        "d1f8b6a34e07 creates it; VulnLibraryEpoch does not declare it"
-    ),
-}
+# Autogenerate holds an index to its columns and uniqueness, not to its method, operator classes or predicate. So each
+# index the models declare is also built from its model, beside the migrated one renamed, and Postgres's own
+# definitions of the two are compared.
+INDEXDEF = text("SELECT pg_get_indexdef(to_regclass(:name))")
 
 
 def _xfail(reason: str):
@@ -337,10 +328,26 @@ def _word(difference) -> str:
     return f"{difference[0]} " + ".".join(str(getattr(part, "name", part)) for part in difference[1:] if part is not None)
 
 
+async def _rebuilt(connection) -> set[str]:
+    """Each index the models declare that its model builds otherwise than the migrations did, worded. Every build rolls
+    back, so the next starts from the migrated schema."""
+    differs = set()
+    for index in (index for table in database.Base.metadata.sorted_tables for index in table.indexes):
+        if (migrated := (await connection.execute(INDEXDEF, {"name": index.name})).scalar()) is None:
+            continue  # the migrations have none: autogenerate says add_index
+        await connection.execute(text(f'ALTER INDEX "{index.name}" RENAME TO drift_probe'))
+        await connection.run_sync(index.create)
+        modelled = (await connection.execute(INDEXDEF, {"name": index.name})).scalar()
+        await connection.rollback()
+        if modelled != migrated:
+            differs.add(f"modify_index {index.name}: migrated as {migrated}; modelled as {modelled}")
+    return differs
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def drift() -> set[str]:
-    """What `alembic check` compares at head, configured as migrations/env.py configures it, worded; and each CHECK
-    only the migrations or only the models name."""
+    """What `alembic check` compares at head, configured as migrations/env.py configures it, worded; each CHECK only
+    the migrations or only the models name; and each index its model builds otherwise."""
     async with _database() as (url, engine):
         await _alembic(url, "upgrade", "head")
         async with engine.connect() as connection:
@@ -348,16 +355,12 @@ async def drift() -> set[str]:
                 lambda sync: compare_metadata(MigrationContext.configure(sync), database.Base.metadata)
             )
             built = {name for kind, name, how in await _schema(connection) if kind == "constraint" and how.startswith("CHECK")}
+            rebuilt = await _rebuilt(connection)
     tables = database.Base.metadata.tables.values()
     declared = {f"{t.name}.{c.name}" for t in tables for c in t.constraints if isinstance(c, CheckConstraint)}
     checks = {f"migrations_only_check {n}" for n in built - declared} | {f"models_only_check {n}" for n in declared - built}
-    return {_word(difference) for difference in found} | checks
+    return {_word(difference) for difference in found} | checks | rebuilt
 
 
-async def test_nothing_differs_beyond_the_listed_drift(drift):
-    assert drift <= set(DRIFT), sorted(drift - set(DRIFT))
-
-
-@pytest.mark.parametrize("difference", [pytest.param(d, marks=_xfail(why)) for d, why in DRIFT.items()])
-async def test_the_models_and_the_migrations_agree_on(drift, difference):
-    assert difference not in drift
+async def test_the_models_and_the_migrations_agree(drift):
+    assert not drift, sorted(drift)
