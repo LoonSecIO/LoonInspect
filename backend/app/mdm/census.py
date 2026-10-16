@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.alerts.service import close_departed_device_latches
 from app.changes.derive import CollapsedDeparture
 from app.core.findings import close_departed_device_findings
+from app.core.runs import fence_write
 from app.core.runs import log as run_log
 from app.mdm.jamf.contract import SUBJECT_COMPUTER, SUBJECT_COMPUTER_GROUP, SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION
 from app.models.schema import MdmConnection, Run
@@ -48,6 +49,7 @@ async def _reconcile_departures(
     told no SIEM that it did."""
     at = datetime.now(UTC)
     for subject_kind, observed in ((SUBJECT_COMPUTER_GROUP, groups), (SUBJECT_EXTENSION_ATTRIBUTE_DEFINITION, definitions)):
+        fence_write(db)
         verdict = await reconcile_census(
             db,
             connection_id=connection.id,
@@ -151,6 +153,7 @@ async def _reconcile_device_census(
     for ever.
     """
     at = datetime.now(UTC)
+    fence_write(db)
     if selector is not None or devices_failed:
         # Above the gate deliberately (#179 4.5): the terminal is GUARANTEED and a tail runs out on
         # the wall clock, so a sweep too dirty to judge anybody still closes one. No census to contradict.
