@@ -112,6 +112,9 @@ def _client(connection: MdmConnection | None, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(webhooks, "ingest_webhook", _fake_ingest_webhook)
 
     class _FakeSession:
+        async def commit(self):
+            pass
+
         async def get(self, model, primary_key):
             return connection
 

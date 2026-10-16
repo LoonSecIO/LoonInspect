@@ -382,13 +382,18 @@ class TestPerpetualCache:
         assert line.connection_id == 7
         assert "client_secret" not in caplog.text
 
-    async def test_a_failed_renewal_never_blocks_a_read(self, fake: FakeJamf, fake_clock: _FakeClock) -> None:
+    async def test_a_read_can_retry_after_the_shared_failure_cooldown(self, fake: FakeJamf, fake_clock: _FakeClock) -> None:
         """Until a renewal succeeds, each read signs in as it needs to — Cache and hold."""
         fake.transient.append(("/api/oauth/token", 401, {}))
         registry = SignIns()
         held = registry.held_for(_connection(MODE_PERPETUAL), CREDENTIALS, _build)
         await _until(lambda: fake_clock.parked)  # the renewal failed and is backing off
 
+        from app.mdm.jamf.errors import JamfSignInError
+
+        with pytest.raises(JamfSignInError):
+            await _read(held.client())
+        fake_clock.now += 5
         await _read(held.client())
 
         assert fake.requests[-2:] == [TOKEN, f"GET {VERSION}"]
