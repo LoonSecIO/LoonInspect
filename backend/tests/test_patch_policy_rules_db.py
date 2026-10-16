@@ -90,9 +90,9 @@ async def test_a_draft_fills_the_boxes_from_the_statement_and_saves_no_rule(admi
     assert body["cannot"] == [] and len(body["repairs"]) == 1 and "1 release" in body["repairs"][0]
     assert (body["provider"], body["model"], body["truncated"]) == ("apple_fm", "system", False)
 
-    # One disclosure row, naming the field, committed before the call.
+    # One disclosure row, naming the field and the model asked for (#739), committed before the call.
     rows = await _ai_rows(db)
-    assert [(row.payload["feature"], row.payload["fields"]) for row in rows] == [("patch_policy_rules", ["policy_statement"])]
+    assert [row.payload for row in rows] == [{"feature": "patch_policy_rules", "fields": ["policy_statement"], "model": "system"}]
     assert rows[0].occurred_at <= endpoint.called_at
 
     # The instructions and the statement, and nothing else.

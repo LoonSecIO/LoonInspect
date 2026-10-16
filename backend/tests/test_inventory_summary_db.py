@@ -605,6 +605,7 @@ async def test_extension_attribute_change_is_briefed_and_follows_the_change_log_
         assert len(calls) == 1 and "Extension attribute Device Security EA: (empty) -> SomeValue." in calls[0]
         disclosed = await db.scalar(select(ShareLog.payload).where(ShareLog.tier == "ai"))
         assert "extension_attribute_values" in disclosed["fields"]
+        assert disclosed["model"] == "system"  # the saved card's, as sent (#739)
         briefing = await db.scalar(select(EventOutbox.payload).where(EventOutbox.event_type == "device.inventory.summary"))
         assert briefing["shortSummary"] == "Device Security EA changed from empty to SomeValue."
         assert "extension_attributes" in briefing["evidenceScope"]

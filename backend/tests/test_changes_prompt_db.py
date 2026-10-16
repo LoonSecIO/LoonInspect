@@ -460,12 +460,12 @@ async def test_a_question_comes_back_as_the_pages_filters_with_a_summary(
     wire = json.dumps(sent, ensure_ascii=False)
     assert "VKM73DMG47" not in wire and MAC_MINI not in wire
 
-    # One disclosure row, naming the destination and the one field that left, committed
-    # before the endpoint saw the first byte.
+    # One disclosure row, naming the destination, the model asked for (#739) and the one
+    # field that left, committed before the endpoint saw the first byte.
     rows = await _ai_rows(db)
     assert len(rows) == 1
     assert rows[0].endpoint == "http://host.docker.internal:1976"
-    assert rows[0].payload == {"feature": "changes_prompt", "fields": ["query_text"]}
+    assert rows[0].payload == {"feature": "changes_prompt", "fields": ["query_text"], "model": "system"}
     assert rows[0].occurred_at <= endpoint.called_at
 
     # On the trail: who asked where and how it went. Never the question.

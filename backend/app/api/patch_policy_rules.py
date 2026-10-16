@@ -136,7 +136,7 @@ async def draft(payload: RuleDraftIn, db: AsyncSession = Depends(get_db)) -> Rul
     reach = HostReach(config.host_reach) if config.host_reach else None
     wire, base_url, destination, host_header = await judged_endpoint(provider, reach, config.base_url, carries_key=bool(api_key))
     try:
-        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS)
+        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

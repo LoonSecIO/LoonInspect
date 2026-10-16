@@ -453,7 +453,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # The gate, before anything is dialled. Its refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence.
     try:
-        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS)
+        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

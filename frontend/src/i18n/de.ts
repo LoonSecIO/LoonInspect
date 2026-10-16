@@ -172,7 +172,7 @@ export const de: Translations = {
         `${when} — übersprungen. COMMUNITY_SHARING=false ist gesetzt, daher lief der tägliche Austausch und sendete nichts. Das wiederholt sich täglich, bis die Vorgabe entfernt wird.`,
       revealsShed: "Reveals verworfen — der Server lehnte die vollständige Übermittlung ab und nahm einen Wiederholungsversuch ohne Reveals an",
       logHeading: "Freigabeprotokoll",
-      logHelp: "Jeder Austauschversuch mit der wörtlichen Payload, die der Lauf zusammengestellt hat — byte-genaue Historie dessen, was diese Instanz verlassen hat. Eine mit revealsShed markierte Zeile hat alles aus ihrer Payload gesendet außer den Reveals. 90 Tage aufbewahrt.",
+      logHelp: "Jeder Austauschversuch mit der wörtlichen Payload, die der Lauf zusammengestellt hat — byte-genaue Historie dessen, was diese Instanz verlassen hat. Eine mit revealsShed markierte Zeile hat alles aus ihrer Payload gesendet außer den Reveals. Eine Zeile mit tier ai ist ein KI-Aufruf und nennt die Funktion, das angefragte Modell und die Felder, die die Instanz verlassen haben, nie deren Inhalt; nennt sie Felder, aber kein Modell, wurde sie geschrieben, bevor das Modell erfasst wurde. 90 Tage aufbewahrt.",
       downloadLog: "Herunterladen (NDJSON)",
       loadFailed: "Datenfreigabe-Einstellungen konnten nicht geladen werden.",
       saveFailed: "Speichern fehlgeschlagen. Berechtigungen prüfen und erneut versuchen."
@@ -2048,7 +2048,7 @@ export const de: Translations = {
     },
     title: "KI",
     description:
-      "Ein Testfeld: ein Prompt an einen Modell-Endpunkt Ihrer Wahl, hinter dem KI-Flag und der Einwilligung zur KI-Inferenz. Speichern legt die Einstellungen einer Karte auf diesem Server ab, für die Prompt-Leiste unter Änderungen; ein API-Schlüssel wird verschlüsselt gespeichert und nie wieder angezeigt. Jedes Senden schreibt eine Zeile ins Freigabeprotokoll mit dem Ziel und dem einen Feld, das den Pod verlassen hat: dem Prompt. Der Aufruf geht von diesem Server aus, nie von Ihrem Browser.",
+      "Ein Testfeld: ein Prompt an einen Modell-Endpunkt Ihrer Wahl, hinter dem KI-Flag und der Einwilligung zur KI-Inferenz. Speichern legt die Einstellungen einer Karte auf diesem Server ab, für die Prompt-Leiste unter Änderungen; ein API-Schlüssel wird verschlüsselt gespeichert und nie wieder angezeigt. Jedes Senden schreibt eine Zeile ins Freigabeprotokoll mit dem Ziel, dem angefragten Modell und dem einen Feld, das den Pod verlassen hat: dem Prompt. Der Aufruf geht von diesem Server aus, nie von Ihrem Browser.",
     on: "An",
     off: "Aus",
     flagLabel: "KI-Funktionen-Flag",

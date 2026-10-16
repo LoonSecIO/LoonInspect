@@ -318,7 +318,7 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
     # The gate, before anything is dialled. Refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence rather than a generic error.
     try:
-        await require_ai(db, feature=AI_TEST_BOX_FEATURE, destination=destination, fields=DISCLOSED_FIELDS)
+        await require_ai(db, feature=AI_TEST_BOX_FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=payload.model)
     except (AIFeaturesDisabled, AIConsentMissing) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

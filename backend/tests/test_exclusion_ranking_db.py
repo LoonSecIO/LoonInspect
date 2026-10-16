@@ -65,6 +65,7 @@ async def test_rank_discloses_before_sending_and_never_saves_exclusions(client, 
                 .one()
             )
             assert "app_names" in disclosure.payload["fields"]
+            assert disclosure.payload["model"] == "local"  # the saved card's, as sent (#739)
             assert "Acme" not in json.dumps(disclosure.payload)
         body = json.loads(request.content)
         groups = json.loads(body["messages"][1]["content"])["candidates"]

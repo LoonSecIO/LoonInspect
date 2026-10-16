@@ -369,7 +369,7 @@ because the attempt is on record either way.
 | Apple FM via the shim (since retired for `fm serve`) | `answered` in 1081 ms |
 | a model that does not exist | `outcome: error`, `HTTP 404: no such route or model at this URL — model 'no-such-model' not found` |
 | `max_tokens: 64` without `reasoning_effort` | `budget_exhausted_thinking`, reasoning attached, `finish_reason: length` |
-| the share log | one row per send: tier `ai`, endpoint origin, `{"feature": "ai_test_box", "fields": ["prompt_text"]}` |
+| the share log | one row per send: tier `ai`, endpoint origin, `{"feature": "ai_test_box", "fields": ["prompt_text"], "model": "qwen3.5:2b-mlx"}` (`model` since #739) |
 
 **Two findings that changed the adapter.** Ollama's OpenAI endpoint honours the standard
 `reasoning_effort` parameter (`"none"` gives a real answer in 57 tokens) and ignores

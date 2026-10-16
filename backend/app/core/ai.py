@@ -13,10 +13,10 @@ default OFF:
 The flag without consent still permits on-device work; consent without the flag
 permits nothing. Every permitted off-pod call writes one row to the share log —
 the same log the community exchange writes — carrying the feature name, the
-destination, and the field-level disclosure of what left. Field names only, never
-payload contents: the log answers "what kind of thing left, and where to", and the
-row is committed before the first byte moves, so a crash mid-call can lose the
-answer but never the question.
+destination, the model asked for, and the field-level disclosure of what left. Field
+names only, never payload contents: the log answers "what kind of thing left, and where
+to", and the row is committed before the first byte moves, so a crash mid-call can lose
+the answer but never the question.
 
 Standing doctrine for every implementer who calls this gate (founder-ruled;
 ``docs/v-never.md`` restated — these four bind the product, not just this module,
@@ -44,6 +44,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.adapters import MAX_MODEL_ID_CHARS
 from app.core.feature_flags import AI_FEATURES_FLAG
 from app.core.sharing import get_or_create_settings
 from app.models.schema import FeatureFlag, ShareLog
@@ -84,6 +85,7 @@ async def require_ai(
     feature: str,
     destination: str | None = None,
     fields: Sequence[str] = (),
+    model: str | None = None,
     carries_no_fleet_data: bool = False,
 ) -> None:
     """The one call every AI feature makes before doing anything.
@@ -93,8 +95,15 @@ async def require_ai(
     an off-pod inference call: the flag AND the consent must both be on, ``fields``
     must name every field that will leave (an off-pod call disclosing nothing is a
     programming error, not a consent question), and one share-log row is committed
-    — feature, destination, field names — before this returns. Make the network
+    — feature, destination, field names, model — before this returns. Make the network
     call after, never before.
+
+    ``model`` is the model the call puts on the wire (#739). A destination is an origin,
+    and one origin can answer for two places: `fm serve` serves ``system`` on the Mac and
+    ``pcc`` on Apple's servers. It is what LoonInspect asked for, never the name a reply
+    gives back (the endpoint is hostile on the way back), bounded like every other model
+    string. Naming fields without it is the same programming error as naming none, and
+    is refused before anything is logged or sent.
 
     ``carries_no_fleet_data=True`` declares a control-plane call — a model listing
     (#322), a reachability probe — that leaves the pod carrying nothing of the fleet:
@@ -102,7 +111,8 @@ async def require_ai(
     row are all still required, and the row records ``fields: []``, which is the
     honest disclosure. What the declaration removes is only the programming-error
     guard below, and only by name: a caller that names fields *and* declares it
-    carries none is lying to one of them, and is refused.
+    carries none is lying to one of them, and is refused. A listing asks no model, so
+    its row records none.
     """
     if not await ai_features_enabled(db):
         raise AIFeaturesDisabled(f"AI features are off; {feature} may not run")
@@ -115,11 +125,19 @@ async def require_ai(
             raise ValueError(f"{feature} declares it carries no fleet data but names fields {sorted(set(fields))}")
     elif not fields:
         raise ValueError(f"off-pod inference for {feature} must disclose the fields it sends")
+    elif not model:
+        raise ValueError(f"off-pod inference for {feature} must name the model it asks for beside the fields it sends")
 
     settings_row = await get_or_create_settings(db)
     if not settings_row.ai_inference:
         raise AIConsentMissing(f"AI-inference consent is off; {feature} may not send bytes to {destination}")
 
+    # Field names, destination and model only, never payload contents: the log's job is
+    # disclosure, and contents would make it a second copy of the very data whose leaving
+    # it records.
+    payload: dict[str, object] = {"feature": feature, "fields": sorted(set(fields))}
+    if model:
+        payload["model"] = model[:MAX_MODEL_ID_CHARS]
     now = datetime.now(UTC)
     db.add(
         ShareLog(
@@ -127,10 +145,7 @@ async def require_ai(
             tier=AI_SHARE_TIER,
             endpoint=destination,
             outcome="sent",
-            # Field names and destination only, never payload contents: the log's
-            # job is disclosure, and contents would make it a second copy of the
-            # very data whose leaving it records.
-            payload={"feature": feature, "fields": sorted(set(fields))},
+            payload=payload,
         )
     )
     # The same 90-day retention the exchange enforces, applied here too so a tenant
