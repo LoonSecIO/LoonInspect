@@ -28,6 +28,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -91,13 +92,62 @@ class JamfPatchCatalogUnconfigured(RuntimeError):
     """
 
 
+# What an operator reads when the catalog server is out of reach: it did not answer, it
+# answered a status that is not the catalog, or it answered something that is not the
+# catalog. Three sentences with the same three parts as the one above (`docs/diagnosability.md`
+# rule 3): what failed, why — the host, and what it did — and what to check, which is this
+# container's outbound path to that host and nothing of theirs, since no credential of the
+# operator's is involved. Each ends the same way because each leaves the same state: nothing
+# written, the rows already synced answering, the next refresh trying again. Before these the
+# Sync button answered a bare 500 and the hourly job a traceback, and neither named the host.
+_CATALOG_KEPT = (
+    " Nothing was written: the titles already synced still answer, and the next refresh — the hourly one, "
+    "or Sync now — tries again (docs/troubleshooting.md section 6, step 2)."
+)
+JAMF_PATCH_CATALOG_UNREACHABLE = (
+    "The Jamf patch catalog cannot be refreshed: {host} did not answer ({error}). This container dials it "
+    "directly, so check the container's outbound access to that host — DNS, a proxy or egress firewall in "
+    "the way, or TLS interception." + _CATALOG_KEPT
+)
+JAMF_PATCH_CATALOG_REFUSED = (
+    "The Jamf patch catalog cannot be refreshed: {host} answered {status} instead of the catalog. Check what "
+    "{url} returns from this container: a proxy answering in Jamf's place, or an outage at Jamf, looks like "
+    "this." + _CATALOG_KEPT
+)
+JAMF_PATCH_CATALOG_NOT_A_CATALOG = (
+    "The Jamf patch catalog cannot be refreshed: {host} answered, but not with the catalog. Something between "
+    "this container and that host — a proxy or a captive portal — is answering in its place; check what {url} "
+    "returns from this container." + _CATALOG_KEPT
+)
+# How much of the underlying error a sentence carries: its type, which the step-through names, and the
+# first line of what it said — for httpx that is the OS's own words (`[Errno 111] Connection refused`).
+_ERROR_MAX_CHARS = 200
+
+
+class JamfPatchCatalogUnreachable(RuntimeError):
+    """The catalog server could not be read: out of reach, refusing, or not answering with the catalog.
+
+    Raised by `JamfApiCatalogSource.summaries()` — the one read the whole sync depends on —
+    with the operator's sentence as its text, so the Sync button answers it as a refusal and
+    the hourly job as one line. A `RuntimeError` like its sibling, for the same reason.
+    """
+
+
+def _named(error: BaseException) -> str:
+    """`ConnectError: [Errno 111] Connection refused`: the type, and the words behind it when there are any."""
+    text = str(error).strip()
+    name = type(error).__name__
+    return f"{name}: {text.splitlines()[0]}"[:_ERROR_MAX_CHARS] if text else name
+
+
 class CatalogSource(Protocol):
     """Where the patch catalog comes from. Two methods, because two reads is all the sync
     does — and all a feed-shaped source would have to answer."""
 
     async def summaries(self) -> list[dict]:
         """Every title the source knows, each with at least `id`, `lastModified` and
-        `currentVersion` — what `_needs_refresh` decides on, and nothing heavier."""
+        `currentVersion` — what `_needs_refresh` decides on, and nothing heavier. A source
+        that cannot be read raises `JamfPatchCatalogUnreachable` with the operator's sentence."""
         ...
 
     async def detail(self, title_id: str) -> dict:
@@ -127,11 +177,33 @@ class JamfApiCatalogSource:
         if not address.startswith(("https://", "http://")):
             raise JamfPatchCatalogUnconfigured(JAMF_PATCH_BASE_URL_UNUSABLE.format(value=configured))
         self._base_url = address
+        # The word the sentences use for the server: its host, which is what an operator checks
+        # DNS and a proxy's allow-list for, not the path.
+        self._host = urlsplit(address).hostname or address
 
     async def summaries(self) -> list[dict]:
-        response = await self._client.get(f"{self._base_url}/software")
-        response.raise_for_status()
-        return response.json()
+        """The one read the sync cannot do without, so the one that answers for the server
+        being out of reach. Every way it fails becomes `JamfPatchCatalogUnreachable` with the
+        sentence for that way; the definitions' reads below stay bare, because `_fetch_details`
+        skips a failed title rather than failing the sync."""
+        url = f"{self._base_url}/software"
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+            summaries = response.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_REFUSED.format(host=self._host, status=status, url=url)) from exc
+        except httpx.RequestError as exc:
+            # ConnectError, ConnectTimeout, ReadTimeout, ProxyError, a TLS failure — every way a
+            # request ends without an answer.
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_UNREACHABLE.format(host=self._host, error=_named(exc))) from exc
+        except ValueError as exc:
+            # A 2xx whose body is not JSON: a captive portal's page, a proxy's block page.
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=url)) from exc
+        if not isinstance(summaries, list):
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=url))
+        return summaries
 
     async def detail(self, title_id: str) -> dict:
         response = await self._client.get(f"{self._base_url}/patch/{title_id}")
@@ -296,7 +368,11 @@ async def sync_catalog(db: AsyncSession, source: CatalogSource | None = None) ->
     `source` defaults to Jamf's API, which is what both callers — the hourly job and the
     Sync button — use. It is a parameter so a test can serve the catalog without a
     network, and so a second source can be passed one day without this function
-    changing."""
+    changing.
+
+    A source that cannot be read raises `JamfPatchCatalogUnreachable` out of the first
+    read, before any row is touched; the callers answer it in their own surface — the
+    button as a refusal, the job as one log line — with the sentence the source wrote."""
 
     async with AsyncExitStack() as stack:
         if source is None:
