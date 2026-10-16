@@ -1,7 +1,8 @@
 # The v0 Splunk wire vocabulary
 
 Status: **frozen** · Ruled in [#188](https://github.com/LoonSecIO/LoonInspect/issues/188),
-2026-08-31 and 2026-09-01 · Amended, additively, in
+2026-08-31 and 2026-09-01 · Timestamp semantics clarified prospectively on
+2026-10-07 (see **Timestamp clarification** below) · Amended, additively, in
 [#229](https://github.com/LoonSecIO/LoonInspect/issues/229),
 [#220](https://github.com/LoonSecIO/LoonInspect/issues/220) and
 [#113](https://github.com/LoonSecIO/LoonInspect/issues/113), 2026-09-02,
@@ -39,6 +40,15 @@ their lifecycle are [`docs/vulnerabilities.md`](vulnerabilities.md) (#113); what
 operator does with all of it is [`docs/splunk-setup.md`](splunk-setup.md).
 
 ---
+
+## Timestamp clarification — 2026-10-07
+
+Prospective catch-up policy: one scheduled sweep serves the most recent due occurrence
+at claim time, instead of the oldest missed occurrence. Its event timestamps use that
+window; no historical records are rewritten. `deviceMeta.shortDate` remains the UTC day
+of the run window on every trigger. A delayed webhook retains its device `reportDate`
+for event time, which can precede that day. No fields, sourcetypes or payload shapes are
+added or renamed. See [`runs.md`](runs.md) §3 for timezone and DST behavior.
 
 ## 1. The sourcetype tree
 
