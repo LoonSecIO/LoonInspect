@@ -133,8 +133,10 @@ DEFAULTS: dict[Provider, ProviderDefaults] = {
     ),
 }
 
-# What `fm serve` lists: the on-device model and Private Cloud Compute.
-APPLE_FM_MODELS: tuple[str, ...] = ("system", "pcc")
+# What the Apple card offers and accepts: the on-device model only (Kyle, 2026-10-04, #738).
+# `fm serve` also lists `pcc`, Private Cloud Compute, which sends the prompt to Apple's
+# servers under the same origin, so the share log would name the Mac for it.
+APPLE_FM_MODELS: tuple[str, ...] = ("system",)
 
 # Alternatives the model field's help text may list; the default above is the one
 # the environment names as current and most capable.
@@ -144,6 +146,11 @@ ANTHROPIC_MODELS: tuple[str, ...] = (
     "claude-sonnet-5",
     "claude-haiku-4-5-20251001",
 )
+
+
+def apple_model_refused(provider: Provider, model: str) -> bool:
+    """Whether the Apple card refuses ``model``: anything but ``APPLE_FM_MODELS``, as typed."""
+    return provider is Provider.apple_fm and model not in APPLE_FM_MODELS
 
 
 def hostname_for(reach: HostReach) -> str:

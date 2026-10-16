@@ -5,7 +5,7 @@ around it: the row it answers with is the row the run wrote, byte for byte what 
 collector received; a failure is still an answer and says why in words; the three
 refusals write nothing and dial nothing; a read-only role cannot send; the lock keeps the
 button and the tick from overlapping for one tenant, without either waiting on the other;
-and the download says which kind of send each row was.
+and the download says which kind of send each row was, as the NDJSON its document names.
 
 The collector is stood in for by an `httpx.MockTransport` on
 `app.api.system.transport_override`, and nothing in this file reaches a real network.
@@ -286,3 +286,15 @@ async def test_the_download_says_which_kind_of_send_each_row_was(client, db, cle
     assert response.status_code == 200, response.text
     lines = [json.loads(line) for line in response.text.splitlines()]
     assert [line["trigger"] for line in lines if line["tier"] != "ai"] == ["scheduled", "manual"]
+
+
+async def test_the_download_is_served_as_the_media_type_its_document_names(client) -> None:
+    """The share log's 200 in /openapi.json names the media type the download is served with, NDJSON, which a
+    browser saves as share-log.ndjson; the document used to say text/plain."""
+    from app.main import app
+
+    response = await client.get("/api/system/share-log")
+    assert response.status_code == 200, response.text
+    published = app.openapi()["paths"]["/api/system/share-log"]["get"]["responses"]["200"]["content"]
+    assert list(published) == [response.headers["content-type"]] == ["application/x-ndjson"]
+    assert response.headers["content-disposition"] == 'attachment; filename="share-log.ndjson"'

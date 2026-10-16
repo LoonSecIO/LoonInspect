@@ -6,6 +6,7 @@ import { PatchingPolicyStatement } from "@/features/jamfPatch/PatchingPolicyStat
 import { filterTitles } from "@/features/jamfPatch/titleFilter";
 import type { JamfPatchTitle } from "@/features/jamfPatch/types";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/config/api";
 import { useLocale } from "@/i18n/LocaleContext";
 
 type SearchMode = "exact" | "regex" | "fuzzy";
@@ -166,7 +167,11 @@ export function JamfPatchPage() {
 
     syncJamfPatchTitles()
       .then(() => refresh())
-      .catch(() => setSyncError(t.jamfPatch.syncError))
+      // The server's sentence when it sent one — the catalog host it could not read, and
+      // what to check — else the page's own line, for a press that got no reason to show.
+      .catch((caught: unknown) =>
+        setSyncError(caught instanceof ApiError && caught.detail ? caught.detail : t.jamfPatch.syncError)
+      )
       .finally(() => setSyncing(false));
   }
 

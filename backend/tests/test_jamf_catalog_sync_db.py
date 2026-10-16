@@ -30,6 +30,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from tests.test_patching_policy_db import accounts, admin  # noqa: F401
+
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
     pytest.mark.asyncio(loop_scope="session"),
@@ -400,3 +402,112 @@ class TestAnUnusableAddress:
         after = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
         assert after == before
         assert len(after) == len(records)
+
+
+class TestACatalogOutOfReach:
+    """What the two callers do when the server cannot be read — the hourly job on its one surface,
+    the Sync button on its two — and the state both leave (`docs/troubleshooting.md` section 6,
+    step 2). Found by the route sweep with every outbound connection refused (#751): the button
+    answered Starlette's bare 500, which named neither the host nor what to check."""
+
+    HOST = "patch.example.test"
+
+    @staticmethod
+    def _unreachable(monkeypatch) -> None:
+        """The default source, over a transport that refuses every connection the way the route
+        sweep's does, pointed at a host that is plainly not Jamf's so the sentence can be checked
+        for the one it was given."""
+        from contextlib import asynccontextmanager
+
+        from app.core.config import settings
+        from app.mdm.patch import jamf_catalog
+
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
+
+        def refused(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+
+        @asynccontextmanager
+        async def source():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(refused)) as client:
+                yield jamf_catalog.JamfApiCatalogSource(client)
+
+        monkeypatch.setattr(jamf_catalog, "jamf_api_source", source)
+
+    @staticmethod
+    def _collect(name: str, level: int):
+        """A handler on one logger, for the reason `TestAnUnusableAddress` gives: `configure_logging`
+        has replaced the root handlers by the time `app.main` is imported."""
+        import logging
+
+        said: list[logging.LogRecord] = []
+
+        class _Collect(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                said.append(record)
+
+        collector = _Collect(level=level)
+        logging.getLogger(name).addHandler(collector)
+        return said, lambda: logging.getLogger(name).removeHandler(collector)
+
+    async def test_the_job_logs_the_sentence_once_with_no_traceback(self, db, monkeypatch) -> None:
+        """One ERROR line that names the host and what to check, no stack, and the job returns —
+        where before it let APScheduler print a traceback ending in `ConnectError`."""
+        import logging
+
+        from app.main import hourly_jamf_patch_sync
+
+        self._unreachable(monkeypatch)
+        said, done = self._collect("app.main", logging.ERROR)
+        try:
+            await hourly_jamf_patch_sync()
+        finally:
+            done()
+
+        named = [record for record in said if self.HOST in record.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.ERROR
+        assert named[0].exc_info is None
+        message = named[0].getMessage()
+        assert f"{self.HOST} did not answer (ConnectError: [Errno -2] Name or service not known)" in message
+        assert "outbound access" in message
+        assert "docs/troubleshooting.md section 6, step 2" in message
+
+    async def test_the_button_answers_a_refusal_with_the_sentence(self, db, server, records, admin, monkeypatch) -> None:  # noqa: F811
+        """A 409 whose `detail` is the sentence — the shape every designed refusal in this API has, and
+        the one the page shows under the button — the same sentence once in the container log, and no
+        row touched: the titles the container already had still answer."""
+        import logging
+
+        await server.sync(db)
+        before = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
+
+        self._unreachable(monkeypatch)
+        said, done = self._collect("app.api.jamf_patch", logging.WARNING)
+        try:
+            response = await admin.post("/api/jamf-patch/sync")
+        finally:
+            done()
+
+        assert response.status_code == 409, response.text
+        detail = response.json()["detail"]
+        assert detail.startswith(f"The Jamf patch catalog cannot be refreshed: {self.HOST} did not answer (ConnectError: ")
+        assert "docs/troubleshooting.md section 6, step 2" in detail
+        assert [record.getMessage() for record in said] == [detail]
+        assert said[0].exc_info is None
+
+        after = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
+        assert after == before
+        assert len(after) == len(records)
+
+    async def test_the_button_answers_an_unusable_address_the_same_way(self, db, admin, monkeypatch) -> None:  # noqa: F811
+        """The sibling refusal: the job already said this in one line (`TestAnUnusableAddress`); the
+        button used to answer it with a 500."""
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "jamf-patch.jamfcloud.com/v1")
+
+        response = await admin.post("/api/jamf-patch/sync")
+
+        assert response.status_code == 409, response.text
+        assert "JAMF_PATCH_BASE_URL is set to 'jamf-patch.jamfcloud.com/v1'" in response.json()["detail"]
