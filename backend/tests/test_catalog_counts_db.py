@@ -1,6 +1,7 @@
 """The catalog list with its device counts read once a request (#726), against the same list with
 the counts joined as the subquery every statement walked before: equal, response for response,
-across the asks the pages make. Gated on RUN_DB_TESTS.
+across the asks the pages make. And that once-a-request read, grouped bytewise, against the
+column's own collation and a locale's: equal, read for read. Gated on RUN_DB_TESTS.
 
 The fleet lives in a tenant of this suite's own. The comparison is byte for byte and in order,
 and order is promised only where an order's keys differ: two rows that tie on every key may come
@@ -17,7 +18,7 @@ from itertools import product
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 from app.core.content_keys import app_full_key
 from app.core.tenancy import reset_tenant_id, set_tenant_id
@@ -224,3 +225,103 @@ async def test_the_list_reads_the_device_counts_once_and_answers_as_it_did(count
         assert once == before, params
         assert (len(reads), len(walks)) == (1, 2 if params.get("app_hash") else 3), params
         assert ("installed_apps.app_hash = " in reads[0]) == bool(params.get("app_hash")), params
+
+
+# Version hashes no writer here makes, written straight to the table. The column's one writer is
+# `apply_hashes`, and `compute_version_hash` is an md5 hexdigest, 32 lowercase hex characters, so
+# no case or accent ever reaches it. These are where a locale's order and bytewise order part:
+# case, an accent composed and decomposed, a sharp s beside "ss", and the punctuation and space
+# a locale weighs below letters. Each sits on a different number of Macs than its look-alikes,
+# so a locale that merged two would change a count, not only the number of groups.
+ODD = ("LoonVD Fixture Odd Hashes.app", "io.loonsec.fixture.oddhashes")
+ODD_HASHES = (
+    "ABCDEF",
+    "Abcdef",
+    "abcdef",
+    "r\N{LATIN SMALL LETTER E WITH ACUTE}sum\N{LATIN SMALL LETTER E WITH ACUTE}",
+    "re\N{COMBINING ACUTE ACCENT}sume\N{COMBINING ACUTE ACCENT}",
+    "stra\N{LATIN SMALL LETTER SHARP S}e",
+    "strasse",
+    "a-b",
+    "a b",
+    "ab",
+)
+
+
+async def _odd_installs(db) -> dict[str, int]:
+    """ODD_HASHES on the fleet's Macs, the n-th on the first n % 6 + 1 of them and "abcdef" twice
+    on the first; returns hash -> the Macs carrying it, which is what a count read must answer."""
+    from app.core.hashing import compute_app_hash
+
+    macs = (await db.execute(select(Device.id).order_by(Device.id))).scalars().all()
+    assert len(macs) == len(MACS)
+    carried = {odd: macs[: index % len(macs) + 1] for index, odd in enumerate(ODD_HASHES)}
+    for odd, devices in [*carried.items(), ("abcdef", macs[:1])]:
+        for device_id in devices:
+            db.add(
+                InstalledApp(
+                    device_id=device_id,
+                    name=ODD[0],
+                    bundle_id=ODD[1],
+                    version="1.0",
+                    app_hash=compute_app_hash(*ODD),
+                    version_hash=odd,
+                    key_title=f"v1:{odd}",
+                    key_full=f"v1:{odd}",
+                )
+            )
+    await db.commit()
+    return {odd: len(devices) for odd, devices in carried.items()}
+
+
+async def _read(db, counts) -> dict[str, int]:
+    """One count read's rows as version_hash -> Macs, refusing a hash that came back twice."""
+    rows = (await db.execute(select(counts.c.version_hash, counts.c.devices))).all()
+    read = {row.version_hash: row.devices for row in rows}
+    assert len(read) == len(rows), "one hash in two groups"
+    return read
+
+
+async def test_the_bytewise_read_counts_what_the_column_collation_counts(counted) -> None:
+    """The once-a-request read groups under `COLLATE "C"` in its SELECT and its GROUP BY, and
+    answers what the same read under the column's own collation answers: for the whole tenant,
+    for one application's record (#299), for the odd hashes' app, and for an app no Mac has."""
+    from app.api import catalog
+    from app.core.hashing import compute_app_hash
+
+    db = counted
+    odd = await _odd_installs(db)
+    for scope in (None, compute_app_hash(*WIRESHARK), compute_app_hash(*ODD), "0" * 32):
+        with statements() as sent:
+            once = await _read(db, await catalog._device_counts_once(db, scope))
+        [read] = [sql for sql in sent if "installed_apps" in sql]
+        assert 'SELECT installed_apps.version_hash COLLATE "C" AS version_hash' in read, read
+        assert 'GROUP BY installed_apps.version_hash COLLATE "C"' in read, read
+        assert ("installed_apps.app_hash = " in read) == (scope is not None), read
+        assert once == await _read(db, catalog._device_counts(scope)), scope
+        assert bool(once) == (scope != "0" * 32), scope
+        if scope in (None, compute_app_hash(*ODD)):
+            assert {key: once.get(key) for key in odd} == odd, scope
+
+
+async def test_the_bytewise_read_counts_what_a_locale_that_orders_otherwise_counts(counted) -> None:
+    """The same against ICU's root locale, which orders these hashes otherwise even where the
+    server's own default orders bytewise, as the musl-based image CI runs does."""
+    from app.api import catalog
+    from app.core.hashing import compute_app_hash
+
+    db = counted
+    if not (await db.execute(text("SELECT 1 FROM pg_collation WHERE collname = 'und-x-icu'"))).first():
+        pytest.skip("this PostgreSQL was built without ICU")
+    odd = await _odd_installs(db)
+    ordered = 'SELECT odd FROM unnest(CAST(:odd AS text[])) AS odd ORDER BY odd COLLATE "{}"'
+    by_icu, by_bytes = [
+        (await db.execute(text(ordered.format(collation)), {"odd": list(ODD_HASHES)})).scalars().all()
+        for collation in ("und-x-icu", "C")
+    ]
+    assert by_icu != by_bytes, "these hashes must be ones the locale orders otherwise"
+    for scope in (None, compute_app_hash(*WIRESHARK), compute_app_hash(*ODD)):
+        once = await _read(db, await catalog._device_counts_once(db, scope))
+        assert once == await _read(db, catalog._device_counts(scope, collation="und-x-icu")), scope
+        if scope == compute_app_hash(*ODD):
+            assert once == odd

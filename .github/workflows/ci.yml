@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -104,7 +104,7 @@ jobs:
         with:
           fetch-depth: 0  # the migration contract step reads the last release's tag and the history since
 
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           # Moves together with the `ghcr.io/astral-sh/uv:0.9.30` COPY in the Dockerfile —
           # Dependabot manages neither pin, so bump both by hand (#20).
@@ -157,11 +157,14 @@ jobs:
       # RUN_DB_TESTS opts the tenancy sweep in; without it those tests skip, which is
       # what keeps the suite runnable on a laptop with no database. ENCRYPTION_KEY is
       # a throwaway generated per run — the sweep writes credential columns through
-      # EncryptedString, and nothing here is persisted beyond the job.
+      # EncryptedString, and nothing here is persisted beyond the job. ADMIN_DATABASE_URL is
+      # the superuser, for the migration round trip alone: it creates and drops databases of
+      # its own with it, and migrates them as the application role.
       - name: Test
         env:
           RUN_DB_TESTS: '1'
           DATABASE_URL: postgresql+asyncpg://looninspect_app:looninspect_app@localhost:5432/looninspect_test
+          ADMIN_DATABASE_URL: postgresql+asyncpg://looninspect:looninspect@localhost:5432/looninspect
         run: |
           export ENCRYPTION_KEY="$(uv run --frozen python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           uv run --frozen pytest -q

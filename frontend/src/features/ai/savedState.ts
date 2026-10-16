@@ -117,6 +117,13 @@ export function takesReasoningEffort(provider: Provider): boolean {
   return provider !== "apple_fm";
 }
 
+/** Whether the Apple card refuses this model, as this server does on Send, Save and every dial
+ *  of a saved card (#738): anything but `system`, Apple's on-device model, as typed. `fm serve`
+ *  also serves `pcc`, Private Cloud Compute, which runs on Apple's servers. */
+export function appleModelRefused(provider: Provider, model: string): boolean {
+  return provider === "apple_fm" && model.trim() !== "" && model !== "system";
+}
+
 /** The Reasoning effort a card opens with: what was saved for it, else the card's default;
  *  and on the Apple card nothing, whatever an older save carried. */
 export function cardEffort(provider: Provider, saved: SavedConfig | undefined, cardDefault: string | null): string {

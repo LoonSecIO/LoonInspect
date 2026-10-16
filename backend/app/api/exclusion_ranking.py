@@ -111,7 +111,7 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
-        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS)
+        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=config.model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     started = time.monotonic()

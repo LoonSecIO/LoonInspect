@@ -172,6 +172,8 @@ async def test_consent_off_refuses_the_off_pod_call(client, db, clean, endpoint)
 
 async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(client, db, clean, endpoint):
     await _switches(db, flag=True, consent=True)
+    # The reply names another model; the row keeps the one asked for (#739).
+    endpoint.body = REPLY | {"model": "pcc"}
     response = await client.post("/api/system/ai/test", json=_body())
     assert response.status_code == 200, response.text
     body = response.json()
@@ -181,6 +183,7 @@ async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(clien
     assert body["destination"] == "http://host.docker.internal:11434"
     assert body["completionTokens"] == 57
     assert body["error"] is None
+    assert body["model"] == "pcc"
 
     # The wire carried exactly the documented shape, to the documented path.
     assert len(endpoint.requests) == 1
@@ -190,12 +193,12 @@ async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(clien
     # Dialled through the Docker Desktop reach, so the Mac's loopback name is presented.
     assert request.headers["host"] == "127.0.0.1:11434"
 
-    # One disclosure row, naming the destination and the one field that left, and
-    # committed before the endpoint saw the first byte.
+    # One disclosure row, naming the destination, the model asked for and the one field
+    # that left, and committed before the endpoint saw the first byte.
     rows = await _ai_rows(db)
     assert len(rows) == 1
     assert rows[0].endpoint == "http://host.docker.internal:11434"
-    assert rows[0].payload == {"feature": "ai_test_box", "fields": ["prompt_text"]}
+    assert rows[0].payload == {"feature": "ai_test_box", "fields": ["prompt_text"], "model": "qwen3.5:2b-mlx"}
     assert rows[0].occurred_at <= endpoint.called_at
 
 
@@ -277,6 +280,34 @@ async def test_apple_takes_no_reasoning_effort_and_is_refused_before_the_gate(cl
     assert answered.status_code == 200, answered.text
     assert str(endpoint.requests[0].url) == "http://host.docker.internal:1976/v1/chat/completions"
     assert "reasoning_effort" not in json.loads(endpoint.requests[0].content)
+
+
+SYSTEM_ONLY = (
+    "The Apple card uses only Apple's on-device model, system. pcc is Private Cloud Compute, which runs on Apple's "
+    "servers, not on this Mac. An admin saves the Apple Foundation Models via Docker Desktop card again in "
+    "Settings › AI with the model system."
+)
+
+
+async def test_apple_takes_only_its_on_device_model_and_lists_only_that(client, db, clean, endpoint):
+    """`fm serve` also serves `pcc`, Private Cloud Compute, on Apple's servers, behind the one
+    origin the share log records (#738). A test naming it, or any model but `system`, is refused
+    with the way out before anything is dialled or disclosed; Load models keeps only `system`."""
+    await _switches(db, flag=True, consent=True)
+    apple = {"provider": "apple_fm", "baseUrl": "http://host.docker.internal:1976/v1", "reasoningEffort": None}
+    for model in ("pcc", "qwen3.5:2b-mlx"):
+        refused = await client.post("/api/system/ai/test", json=_body(**apple, model=model))
+        assert refused.status_code == 422, model
+        assert refused.json()["detail"] == SYSTEM_ONLY
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
+
+    endpoint.body = {"object": "list", "data": [{"id": "system"}, {"id": "pcc"}]}
+    listed = await client.post("/api/system/ai/models", json={"provider": "apple_fm", "baseUrl": apple["baseUrl"]})
+    assert listed.status_code == 200, listed.text
+    assert [m["id"] for m in listed.json()["models"]] == ["system"]
+    entries = (await client.get("/api/system/ai/providers")).json()["entries"]
+    assert next(e["models"] for e in entries if e["provider"] == "apple_fm") == ["system"]
 
 
 async def test_a_reserved_reach_is_refused_by_name_before_the_gate(client, db, clean, endpoint):
