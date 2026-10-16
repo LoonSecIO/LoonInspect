@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
@@ -18,7 +19,7 @@ from app.core.vuln_answer import counted, served
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import today
 from app.core.vuln_versions import title_version_vulns
-from app.mdm.patch.jamf_catalog import sync_catalog
+from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable, sync_catalog
 from app.mdm.patch.matching import STATE_BEHIND, CatalogTitle, classify
 from app.mdm.patch.policy import Rules, judge
 from app.models.schema import AppCatalogEntry, AppCatalogTitleMatch, InstalledApp, JamfPatchTitle
@@ -32,6 +33,8 @@ from app.schemas.jamf_patch import (
     TitlePolicyOut,
 )
 from app.schemas.payload import VULN_ASSESSMENT_COVERED, VulnEnrichment
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/jamf-patch", tags=["jamf-patch"])
 
@@ -261,8 +264,26 @@ async def sync_titles(db: AsyncSession = Depends(get_db)) -> JamfPatchSyncResult
 
     Warm — which is every press after the first — it is one summary read and a handful of
     definitions, and returns in about as long as one HTTP round trip.
+
+    **A catalog this container cannot read is a refusal, not a crash.** The server this
+    dials is public and out of our hands, so a DNS failure, blocked egress, a proxy answering
+    in Jamf's place or an outage there is a state the operator can act on, and it answers
+    the way every designed refusal in this API does: a 409 whose `detail` is the sentence
+    the source wrote — the host, what it did, what to check (`docs/diagnosability.md` rule
+    3). Until it did, the press answered Starlette's bare 500, which a proxy and the route
+    sweep both read as the app broken, and the page said *Sync failed. Try again.* with the
+    reason in a traceback the operator could not see. The same sentence goes to the
+    container log, because a 4xx's own log line carries only its status
+    (`app.core.middleware`) and the hourly job writes its copy of the sentence there
+    (`app.main.hourly_jamf_patch_sync`), so the two surfaces read alike. An address that
+    is not an address (`JamfPatchCatalogUnconfigured`) answers the same way, for the same
+    reason: the job already said it in one line; the button now does too.
     """
-    synced = await sync_catalog(db)
+    try:
+        synced = await sync_catalog(db)
+    except (JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable) as exc:
+        logger.warning(str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     # The catalog moved: rebuild the lookup index and re-judge this tenant's rows against it.
     await rebuild_index(db)
     await refresh_tenant(db)

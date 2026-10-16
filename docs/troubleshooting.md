@@ -1016,11 +1016,17 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    reportable state **J**. The first press on a freshly started container is the slow one
    — the whole catalog is fetched title by title and takes minutes, not seconds, and
    nothing on the page cancels it. Let it finish.
-2. **The button says "Sync failed. Try again."** The page does not carry the reason; the
-   container log does. Three different things in that log can carry it — the sentence the
-   refresh writes about itself, the hourly job's name (`hourly_jamf_patch_sync`) and the
-   button's own path (`/api/jamf-patch/sync`) — and they spell the catalog three ways, so
-   match all three rather than the sentence alone:
+2. **A line appears under the button: a sentence beginning *The Jamf patch catalog cannot
+   be refreshed*, or the bare *Sync failed. Try again.*** These are two states. The sentence
+   means the press reached this container and the container could not read the catalog;
+   it is the whole reason, and the same line is in the container log, where the hourly
+   refresh writes its own copy — one line, no traceback — when it is the one that fails.
+   The bare line means the page was given no reason: the press never reached this
+   container, or what came back was not this container's answer. The container log tells
+   the two apart. Three different things in that log can carry the reason — the sentence
+   itself, the hourly job's name (`hourly_jamf_patch_sync`) and the button's own path
+   (`/api/jamf-patch/sync`) — and they spell the catalog three ways, so match all three
+   rather than the sentence alone:
 
    ```bash
    docker compose logs app --since 1h | grep -iE 'jamf[ _-]patch'
@@ -1030,7 +1036,7 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    one, inside it, so a matching line carries its own reason rather than pointing at
    something above it. Most of what comes back is `"message": "request"` for
    `/api/jamf-patch/titles` — the page reading the table. These are the lines that answer
-   this step:
+   this step. The first four are the sentence, the same under the button and in the log:
    - `The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to …` → this
      container was started with that variable holding something that is not an address.
      On the shipped stack it comes from the `.env` beside `docker-compose.yml`; anywhere
@@ -1038,16 +1044,41 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
-   - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"` (the press you
-     just made), or `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`
-     (the hourly tick), either of them ending in a traceback whose last line names a
-     connection problem — `ConnectError`, `ConnectTimeout`, `ReadTimeout`, `ProxyError`,
-     a certificate failure → this container could not reach the patch server. Check
-     outbound access from the container itself:
-     `docker compose exec app curl -sSI https://jamf-patch.jamfcloud.com/v1/software`. A
-     proxy, an egress firewall or TLS interception is the usual cause; the hourly tick
-     keeps trying and the existing rows keep answering. That this failure reaches you as a
-     traceback rather than a sentence is a gap on our side, not a second fault on yours.
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com did not answer
+     (ConnectError: …)` — or `ConnectTimeout`, `ReadTimeout`, `ProxyError` in the brackets
+     → this container could not reach the patch server: the name did not resolve, or a
+     proxy, an egress firewall or TLS interception stood in the way, and the words in the
+     brackets are the operating system's own and say which. Ask the container itself. The
+     shipped image carries no `curl`, so ask with Python, which honours the same
+     `HTTPS_PROXY` the app does:
+
+     ```bash
+     docker compose exec app python -c "import urllib.request as u; r = u.urlopen('https://jamf-patch.jamfcloud.com/v1/software', timeout=15); print(r.status, r.read(60))"
+     ```
+
+     `200 b'[{"…` is the catalog, and the next press will work; anything else is the
+     network's answer, in the same words the sentence used — fix that, not the app. The
+     sentence says what it leaves behind, and it is true: nothing was written, the titles
+     already synced keep answering, and the hourly refresh keeps trying. (The hourly
+     refresh prints the sentence rather than a traceback for the same reason the button
+     does; a container started before this change prints `Job "hourly_jamf_patch_sync
+     (trigger: cron…)" raised an exception` and a traceback ending in one of those names
+     instead, and the probe above is the same.)
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com answered 503
+     instead of the catalog` (any status) → the host was reached and something there
+     refused. Two causes, told apart by where the address opens: an outage at Jamf
+     refuses your own browser too, and clears on its own — wait, then press again; a
+     status the probe above gets from the container while the same address opens from
+     your browser is a proxy answering in Jamf's place, and its allow-list needs the host.
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com answered, but
+     not with the catalog` → something between this container and the host — a proxy or
+     a captive portal — put a page where the catalog should be. The probe prints the first
+     bytes of what it got; `<html` or `<!DOCTYPE` names the proxy, and the fix is on it.
+   - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"`, or
+     `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`, ending in a
+     traceback that is not one of the connection names above → a failure of a kind the
+     sentences do not cover. That it reaches you as a traceback rather than a sentence is a
+     gap on our side, not a second fault on yours: reportable state **J**, with that line.
    - `"message": "request"` with `"path": "/api/jamf-patch/sync"`, `"status_code": 200`
      and a `duration_ms` in the minutes → the refresh **finished here**; whatever gave up
      was between the button and this container. The button sends no timeout of its own and
@@ -1145,7 +1176,9 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, a press of **Sync now** writes nothing to the
-container log while `/api/health` answers, or — the one where the sync did happen — a
+container log while `/api/health` answers, a press answers *Sync failed. Try again.* and
+leaves a `request failed` traceback that no sentence in step 2 covers, or — the one where
+the sync did happen — a
 title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
 Applications** lists its bundle identifier (step 6). Report what the *Synced* column
 shows, the bundle identifier and the title's name if that was the symptom, the output of
