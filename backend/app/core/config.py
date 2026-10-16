@@ -6,7 +6,7 @@ from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import ValidationInfo, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # Too low steals the lock from a healthy run; too high is how long a connection stays
     # unsyncable after a hard kill.
     run_stale_after_seconds: int = 300
+
+    # Disabled until the operator has a recovery path for a refused delivery. Jamf's
+    # sender retry behavior is not assumed; scheduled sweeps may be that recovery.
+    webhook_timeout_seconds: float = Field(default=0, ge=0, le=300)
 
     # Follows audit (30) rather than the outbox (7): the run log is what someone opens to
     # answer "did this run last month", and it is one row per run plus engine lines, not

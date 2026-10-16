@@ -266,3 +266,33 @@ async def test_the_route_is_gated_and_answers_with_a_run(admin, viewer, db, conn
     assert run is not None and run.lock_class == LOCK_RE_EMIT and run.comparison == COMPARISON_RE_EMIT
     await db.refresh(run)
     assert run.status != STATUS_RUNNING and run.error is None
+
+
+async def test_reclaimed_reemit_cannot_commit_its_pending_batch(db, connection, jamf, monkeypatch):
+    from app.core import runs
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.mdm import reemit
+    from app.mdm.service import sweep_jamf_connection
+    from app.models.schema import EventOutbox, Run
+
+    await sweep_jamf_connection(db, connection, trigger=TRIGGER_SWEEP)
+    acquired = await runs.acquire(db, connection, trigger="manual", lock_class=runs.LOCK_RE_EMIT)
+    run_id = acquired.run.id
+    original = reemit.enqueue_event
+
+    async def reclaimed_after_enqueue(*args, **kwargs):
+        await original(*args, **kwargs)
+        async with session_for_tenant(OPERATIONAL_TENANT_ID) as other:
+            await other.execute(update(Run).where(Run.id == run_id).values(status="failed", error="reclaimed"))
+            await other.commit()
+
+    monkeypatch.setattr(reemit, "enqueue_event", reclaimed_after_enqueue)
+    async with runs.entered(acquired.run):
+        with pytest.raises(runs.RunReclaimed):
+            await reemit.re_emit_connection(db, connection, run=acquired.run)
+        await db.rollback()
+    assert (
+        await db.scalar(select(func.count()).select_from(EventOutbox).where(EventOutbox.payload["jobID"].astext == str(run_id)))
+        == 0
+    )

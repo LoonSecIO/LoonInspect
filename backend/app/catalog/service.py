@@ -54,6 +54,7 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, case, delete, null, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import set_committed_value
@@ -485,41 +486,42 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
         return 0
     now = now or datetime.now(UTC)
     hashes = {row.version_hash for row in rows if row.version_hash}
-    # The device's platform scopes the rows (#236): a universal app is one hash and two
-    # catalog rows, judged differently, and this device's apps belong to its own.
+    # A tenant-wide build can first arrive from several Macs together. Insert and
+    # lock in hash order so every writer takes shared catalog rows in the same order.
+    by_hash = {row.version_hash: row for row in rows if row.version_hash}
+    candidates = [
+        {
+            "name": row.name,
+            "bundle_id": row.bundle_id,
+            "version": row.version,
+            "short_version": row.short_version,
+            "app_hash": row.app_hash,
+            "version_hash": row.version_hash,
+            "platform": device.platform,
+            "key_title": row.key_title,
+            "key_full": row.key_full,
+            "first_seen_at": now,
+            "last_seen_at": now,
+        }
+        for _, row in sorted(by_hash.items())
+    ]
+    if candidates:
+        await db.execute(
+            pg_insert(AppCatalogEntry).values(candidates).on_conflict_do_nothing(constraint="uq_app_catalog_platform_version")
+        )
     existing = {
         entry.version_hash: entry
         for entry in (
             await db.execute(
-                select(AppCatalogEntry).where(
-                    AppCatalogEntry.platform == device.platform, AppCatalogEntry.version_hash.in_(hashes)
-                )
+                select(AppCatalogEntry)
+                .where(AppCatalogEntry.platform == device.platform, AppCatalogEntry.version_hash.in_(hashes))
+                .order_by(AppCatalogEntry.version_hash)
+                .with_for_update()
             )
-        )
-        .scalars()
-        .all()
+        ).scalars()
     }
-    for row in rows:
-        if not row.version_hash:
-            continue
-        entry = existing.get(row.version_hash)
-        if entry is None:
-            entry = AppCatalogEntry(
-                name=row.name,
-                bundle_id=row.bundle_id,
-                version=row.version,
-                short_version=row.short_version,
-                app_hash=row.app_hash,
-                version_hash=row.version_hash,
-                platform=device.platform,
-                key_title=row.key_title,
-                key_full=row.key_full,
-                first_seen_at=now,
-                last_seen_at=now,
-            )
-            db.add(entry)
-            existing[row.version_hash] = entry
-        elif entry.last_seen_at is None or now - entry.last_seen_at >= LAST_SEEN_GRANULARITY:
+    for entry in existing.values():
+        if entry.last_seen_at is None or now - entry.last_seen_at >= LAST_SEEN_GRANULARITY:
             entry.last_seen_at = now
     await db.flush()
 

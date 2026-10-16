@@ -98,8 +98,10 @@ Management*.)
   written the reading. Measured 2026-09-12 against a Jamf Cloud instance, with webhooks naming
   real Macs, that took about one second from arrival to answer (0.98 and 1.01 seconds), reads
   and writes together. Jamf's own API example sets a 2-second read timeout, which leaves
-  little room on a busy instance or a Mac with a large inventory; 5 seconds does. The
-  connection timeout covers only opening the connection, and Jamf's example 5 seconds is fine.
+  little room on a busy instance or a Mac with a large inventory. Five seconds is a
+  starting configuration, not a response-time guarantee: retries and outages can take
+  longer. See §9 before setting a shorter processing budget. The connection timeout
+  covers only opening the connection.
 
 ## 4. The second webhook: `ComputerAdded`
 
@@ -190,5 +192,39 @@ same measurement. The token never leaves the running container's memory: it is n
 not logged, and gone when the container stops. Changing the connection's address,
 credentials, User-Agent override or this setting discards what was kept at once.
 
-Every mode stays inside the 5-second read timeout §3 asks for; Sign-in reuse is how far
-inside.
+Those samples fit within five seconds; they do not bound an outage, retry ladder or
+database wait. Configure Jamf's read timeout for the recovery policy you have verified.
+
+LoonInspect acknowledges synchronous ingestion after the inventory transaction commits.
+`WEBHOOK_TIMEOUT_SECONDS=0` (default) disables the processing budget. Webhook retries
+still have a finite four-second window: a longer Retry-After ends the read immediately
+with Jamf's response status. An operator can opt into a pre-commit budget, for example
+`4`, after verifying sender redelivery or accepting recovery by Run now / scheduled
+sweeps. It includes acquisition, sign-in locking, HTTP waits, backoff and persistence.
+A timeout before commit answers `502`, with the run error distinguishing whether any
+inventory was read. Once inventory is saved, slow closing bookkeeping still answers
+`200` and the run closes succeeded with its real counts.
+
+Recovery reads, terminal run release (UPDATE and commit), and closing events/logs each
+have separate one-second limits. Database cancellation and response transport mean this
+is not a hard end-to-end guarantee. `Run close bookkeeping timed out` means the durable
+verdict stands but a closing event or log may be absent. `The webhook could not close its
+run` means to check database connectivity; a row still running can be reclaimed. No
+durable webhook receipt queue exists, and Jamf redelivery has not been established by
+these tests. A retry remains safe under the ledger's repeat/stale guards.
+
+The authenticated body must arrive within five seconds, even when the processing budget
+is off; a slow body gets `408` (check the sender and proxy connection). At most eight
+reactive events with a valid computer id are admitted per server worker after authentication
+and filtering;
+excess work answers `503` with `Retry-After: 1`. Each worker has its own allowance and
+pool. Network reads hold no ingest transaction. Writes for one computer serialize, with
+a five-second lock-wait limit and an explicit `503` if busy. A credential or endpoint rejection (4xx), or an invalid token body,
+shares a sanitized error for five seconds with callers using the same sign-in cache.
+Cancellation, transport failures and 5xx replies leave the next caller free to try. Changed credentials reset that cache. Webhooks honor the full numeric or HTTP-date
+`Retry-After` only when its delay fits the remaining retry window. Otherwise the read
+fails immediately, with the upstream status recorded. A configured budget supplies that
+window; without one it is four seconds. Sweeps retain their 30-second cap.
+
+A delivery refused by a busy device/shared write closes its run without a `run.failed`
+alarm. Its `503` invites a retry; the delivery already holding the write carries the inventory.
