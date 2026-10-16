@@ -32,6 +32,7 @@ from app.mdm.patch.jamf_catalog import (
     JAMF_PATCH_BASE_URL_UNUSABLE,
     JamfApiCatalogSource,
     JamfPatchCatalogUnconfigured,
+    JamfPatchCatalogUnreachable,
     _app_name,
     _convert_requirements,
     _extension_attributes,
@@ -431,15 +432,113 @@ class TestJamfApiCatalogSource:
     async def test_an_unlistable_catalog_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The summaries read has no `return_exceptions` behind it, deliberately: a
         catalog that cannot be listed fails the sync rather than reading as a catalog
-        with nothing in it."""
+        with nothing in it — and fails it with the operator's sentence, not the status
+        (`TestACatalogOutOfReach` has the sentences)."""
         monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(503)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            with pytest.raises(httpx.HTTPStatusError):
+            with pytest.raises(JamfPatchCatalogUnreachable) as raised:
                 await JamfApiCatalogSource(client).summaries()
+
+        assert "patch.example.test answered 503 instead of the catalog" in str(raised.value)
+
+
+class TestACatalogOutOfReach:
+    """A server this container cannot read was a bare 500 from the Sync button and a traceback
+    from the hourly job, and neither named the host (`docs/diagnosability.md` rule 3). Each way
+    the first read can fail is one sentence now — what failed, the host and what it did, what
+    to check — and every sentence ends on the state it leaves: nothing written, the next
+    refresh trying again, and where the step-through is."""
+
+    HOST, URL = "patch.example.test", "https://patch.example.test/v1/software"
+
+    @pytest.fixture(autouse=True)
+    def _pointed_at_the_example_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
+
+    @staticmethod
+    async def _summaries(handler) -> JamfPatchCatalogUnreachable:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(JamfPatchCatalogUnreachable) as raised:
+                await JamfApiCatalogSource(client).summaries()
+        return raised.value
+
+    def _ends_on_the_state_it_leaves(self, message: str) -> None:
+        assert message.startswith(f"The Jamf patch catalog cannot be refreshed: {self.HOST} ")  # what failed, and where
+        assert "Nothing was written" in message  # the rows the container has still answer
+        assert "the hourly one, or Sync now" in message  # the next refresh, from either caller
+        assert message.endswith("(docs/troubleshooting.md section 6, step 2).")  # the step-through
+
+    async def test_no_answer_names_the_host_the_error_and_the_outbound_path(self) -> None:
+        def refused(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+
+        error = await self._summaries(refused)
+
+        message = str(error)
+        assert f"{self.HOST} did not answer (ConnectError: [Errno -2] Name or service not known)" in message
+        for check in ("outbound access", "DNS", "proxy", "egress firewall", "TLS interception"):
+            assert check in message
+        self._ends_on_the_state_it_leaves(message)
+        # The httpx error is kept behind the sentence, for anyone who turns the traceback on.
+        assert isinstance(error.__cause__, httpx.ConnectError)
+
+    async def test_an_error_with_no_words_is_named_by_its_type_alone(self) -> None:
+        """A timeout often has nothing to say; `(ConnectTimeout: )` would read as a sentence cut off."""
+
+        def timed_out(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectTimeout("", request=request)
+
+        assert f"{self.HOST} did not answer (ConnectTimeout)." in str(await self._summaries(timed_out))
+
+    async def test_an_errors_words_are_cut_to_their_first_line_and_a_bound(self) -> None:
+        """What goes under a button is one line of the OS's words, not a page of them."""
+
+        def verbose(request: httpx.Request) -> httpx.Response:
+            raise httpx.ProxyError("line one " + "x" * 400 + "\nline two", request=request)
+
+        message = str(await self._summaries(verbose))
+        assert "ProxyError: line one " in message
+        assert "line two" not in message
+        assert "x" * 200 not in message
+
+    @pytest.mark.parametrize("status", [403, 429, 503])
+    async def test_a_status_that_is_not_the_catalog_names_the_status_and_the_url(self, status: int) -> None:
+        error = await self._summaries(lambda request: httpx.Response(status))
+
+        message = str(error)
+        assert f"{self.HOST} answered {status} instead of the catalog" in message
+        assert f"Check what {self.URL} returns from this container" in message  # the one thing to look at
+        assert "proxy answering in Jamf's place, or an outage at Jamf" in message  # the two usual causes
+        self._ends_on_the_state_it_leaves(message)
+        assert isinstance(error.__cause__, httpx.HTTPStatusError)
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            pytest.param(httpx.Response(200, text="<!DOCTYPE html><title>Sign in to the network</title>"), id="a captive portal"),
+            pytest.param(httpx.Response(200, json={"error": "blocked by policy"}), id="a proxy's block page, as JSON"),
+            pytest.param(httpx.Response(204), id="nothing at all"),
+        ],
+    )
+    async def test_a_body_that_is_not_the_catalog_names_what_is_answering_in_its_place(self, answer: httpx.Response) -> None:
+        message = str(await self._summaries(lambda request: answer))
+
+        assert f"{self.HOST} answered, but not with the catalog" in message
+        assert "a proxy or a captive portal" in message
+        assert f"check what {self.URL} returns from this container" in message
+        self._ends_on_the_state_it_leaves(message)
+
+    async def test_a_definitions_read_stays_bare(self) -> None:
+        """Only the first read answers for the server: a title whose definition fails is skipped by
+        `_fetch_details` under `return_exceptions=True`, never allowed to fail the sync, so wrapping
+        it would be a sentence nobody reads."""
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(404))) as client:
+            with pytest.raises(httpx.HTTPStatusError):
+                await JamfApiCatalogSource(client).detail("575")
 
 
 def _fan_out_comment() -> str:

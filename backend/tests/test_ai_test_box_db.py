@@ -172,6 +172,8 @@ async def test_consent_off_refuses_the_off_pod_call(client, db, clean, endpoint)
 
 async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(client, db, clean, endpoint):
     await _switches(db, flag=True, consent=True)
+    # The reply names another model; the row keeps the one asked for (#739).
+    endpoint.body = REPLY | {"model": "pcc"}
     response = await client.post("/api/system/ai/test", json=_body())
     assert response.status_code == 200, response.text
     body = response.json()
@@ -181,6 +183,7 @@ async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(clien
     assert body["destination"] == "http://host.docker.internal:11434"
     assert body["completionTokens"] == 57
     assert body["error"] is None
+    assert body["model"] == "pcc"
 
     # The wire carried exactly the documented shape, to the documented path.
     assert len(endpoint.requests) == 1
@@ -190,12 +193,12 @@ async def test_a_permitted_send_writes_the_row_first_and_returns_the_reply(clien
     # Dialled through the Docker Desktop reach, so the Mac's loopback name is presented.
     assert request.headers["host"] == "127.0.0.1:11434"
 
-    # One disclosure row, naming the destination and the one field that left, and
-    # committed before the endpoint saw the first byte.
+    # One disclosure row, naming the destination, the model asked for and the one field
+    # that left, and committed before the endpoint saw the first byte.
     rows = await _ai_rows(db)
     assert len(rows) == 1
     assert rows[0].endpoint == "http://host.docker.internal:11434"
-    assert rows[0].payload == {"feature": "ai_test_box", "fields": ["prompt_text"]}
+    assert rows[0].payload == {"feature": "ai_test_box", "fields": ["prompt_text"], "model": "qwen3.5:2b-mlx"}
     assert rows[0].occurred_at <= endpoint.called_at
 
 

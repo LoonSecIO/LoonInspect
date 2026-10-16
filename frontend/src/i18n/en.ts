@@ -184,7 +184,7 @@ export const en = {
         `${when} — skipped. COMMUNITY_SHARING=false is set, so the daily exchange ran and sent nothing. This repeats every day until the override is removed.`,
       revealsShed: "reveals shed — the server refused the full submission and took a reveal-less retry",
       logHeading: "Share log",
-      logHelp: "Every exchange attempt, with the verbatim payload the run assembled — byte-accurate history of what left this instance. A row marked revealsShed sent everything in its payload except the reveals. Retained for 90 days.",
+      logHelp: "Every exchange attempt, with the verbatim payload the run assembled — byte-accurate history of what left this instance. A row marked revealsShed sent everything in its payload except the reveals. A row with tier ai is an AI call, naming the feature, the model asked for and the fields that left, never their contents; one naming fields but no model was written before the model was recorded. Retained for 90 days.",
       downloadLog: "Download (NDJSON)",
       loadFailed: "Could not load data-sharing settings.",
       saveFailed: "Could not save. Check your permissions and try again."
@@ -2261,7 +2261,7 @@ export const en = {
     // "Nothing is stored." stopped being true when Save arrived: a saved card lives on
     // this server for the Changes Prompt bar, its key encrypted like a Jamf credential.
     description:
-      "A test box: one prompt to a model endpoint you name, behind the AI flag and the AI-inference consent. Save keeps a card's settings on this server for the Changes Prompt bar; an API key is stored encrypted and never shown again. Every send writes a share-log row naming the destination and the one field that left, the prompt. The call is made by this server, never by your browser.",
+      "A test box: one prompt to a model endpoint you name, behind the AI flag and the AI-inference consent. Save keeps a card's settings on this server for the Changes Prompt bar; an API key is stored encrypted and never shown again. Every send writes a share-log row naming the destination, the model asked for and the one field that left, the prompt. The call is made by this server, never by your browser.",
     on: "On",
     off: "Off",
     flagLabel: "AI features flag",

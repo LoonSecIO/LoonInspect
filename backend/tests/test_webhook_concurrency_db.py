@@ -110,12 +110,30 @@ async def test_first_creation_is_serialized_and_an_older_read_cannot_win(db, con
     assert (devices, spans) == (1, 1)
 
 
+# The budget the pre-commit phases stall under. It races the work before the stall point —
+# tenant tier, scope, acquire, the aperture reads, the fetch — and that work takes under 20 ms
+# for `read` and under 60 ms for `write` even with the runner pinned to half a CPU beside two
+# full suites (measured 2026-10-14), so half a second is margin, not patience.
+_PRE_COMMIT_BUDGET_SECONDS = 0.5
+
+
 @pytest.mark.parametrize("phase", ["read", "write", "after_commit"])
 async def test_optional_deadline_closes_the_run_and_releases_capacity(db, connection, jamf, monkeypatch, phase):
+    """A stall at any phase cannot hold the run or the webhook slot.
+
+    `read` and `write` stall under the configured budget, which refuses the delivery (502)
+    and fails the run. `after_commit` stalls in the optional post-commit log, which the
+    service bounds on its own: the run is released before that step begins, and the step
+    carries a one-second deadline of its own, so the delivery succeeds and its inventory
+    stays. That phase runs under the default budget (none) on purpose — a budget short
+    enough to test the pre-commit phases also races the ingest and the commit on a loaded
+    runner (GitHub's runners lost that race on 2026-10-12), and a budget that expires
+    before the commit is the `write` case, not this one."""
     from app.api import webhooks
 
-    monkeypatch.setattr(settings, "webhook_timeout_seconds", 0.2)
+    monkeypatch.setattr(settings, "webhook_timeout_seconds", 0 if phase == "after_commit" else _PRE_COMMIT_BUDGET_SECONDS)
     arrived = asyncio.Event()
+    status_while_stalled: list[str | None] = []
 
     async def handler(request):
         if phase == "read" and "computers-inventory-detail" in request.url.path:
@@ -133,7 +151,12 @@ async def test_optional_deadline_closes_the_run_and_releases_capacity(db, connec
         monkeypatch.setattr(service, "process_sync", stalled_write)
     elif phase == "after_commit":
 
-        async def stalled_after_commit(*args, **kwargs):
+        async def stalled_after_commit(_db, run, _collapsed):
+            # Read through a session of its own: the run must already be closed while this
+            # optional step stalls, otherwise the step could hold it.
+            async with session_for_tenant(OPERATIONAL_TENANT_ID) as observer:
+                released = await observer.get(Run, run.id)
+                status_while_stalled.append(released.status if released is not None else None)
             arrived.set()
             await asyncio.Event().wait()
 
@@ -143,6 +166,7 @@ async def test_optional_deadline_closes_the_run_and_releases_capacity(db, connec
     assert response.status_code == (200 if phase == "after_commit" else 502)
     (run,) = await _runs(db, connection.id)
     if phase == "after_commit":
+        assert status_while_stalled == ["succeeded"]
         assert run.status == "succeeded" and run.error is None and run.devices_processed == 1
     else:
         assert "time limit" in response.json()["detail"]
