@@ -47,7 +47,8 @@ Every PR must pass the same gates `main` enforces:
   regenerate it from `backend/` with `UPDATE_SNAPSHOTS=1 uv run --frozen pytest tests/test_openapi_snapshot.py`
   and read its diff, which is the change a client of the API will see.
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
-  environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
+  environment, over the pure modules; a test of effects opts into jsdom on its first line, as
+  `useRunLog.test.tsx` does), `npm run build` (Node 22, `npm ci`).
   `react-hooks/set-state-in-effect` is an error, and it follows a call in an effect body
   into a function declared in the component body: every `setState` that call can reach is
   reported at the call site, including ones that run after an `await`, so making the

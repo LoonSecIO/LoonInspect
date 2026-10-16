@@ -78,13 +78,14 @@ from app.core.database import init_db, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
-from app.core.runs import purge_runs
+from app.core.runs import AcquisitionBusy, purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
 from app.core.submissions import forget_closed
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
+from app.mdm.concurrency import IngestBusy
 from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, sync_catalog
@@ -604,6 +605,12 @@ app = FastAPI(
 # request. 503, not 500: the service is up and every other request works; what is
 # unavailable is the stored credential, until the key is restored.
 _unreadable_reported = False
+
+
+@app.exception_handler(AcquisitionBusy)
+@app.exception_handler(IngestBusy)
+async def _ingest_busy(request: Request, exc: RuntimeError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)}, headers={"Retry-After": "1"})
 
 
 @app.exception_handler(StoredValueUnreadable)
