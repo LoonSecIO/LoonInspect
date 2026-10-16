@@ -15734,7 +15734,7 @@
         "responses": {
           "200": {
             "content": {
-              "text/plain": {
+              "application/x-ndjson": {
                 "schema": {
                   "type": "string"
                 }
