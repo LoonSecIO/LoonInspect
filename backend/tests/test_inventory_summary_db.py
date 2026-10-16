@@ -473,6 +473,31 @@ async def test_endpoint_refusal_and_unexpected_failures_are_diagnosable_without_
     assert any(getattr(record, "error_type", None) == "RuntimeError" and record.stack for record in caplog.records)
 
 
+async def test_an_apple_card_saved_naming_another_model_is_never_dialled(summary_db, caplog):
+    """A row an older build saved naming `pcc`, Private Cloud Compute, on Apple's servers (#738):
+    the job fails with its own reason, whose next check is the Save's sentence, before the gate."""
+    from sqlalchemy import update
+
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+    from app.models.schema import AIProviderConfig, ShareLog
+    from app.models.schema import InventorySummaryJob as Job
+    from app.summaries.service import collect, work_one
+
+    db, tenant = summary_db
+    await db.execute(update(AIProviderConfig).values(model="pcc"))
+    await db.commit()
+    await emit(db, snapshot())
+    await collect(db)
+    source = await emit(db, snapshot(version="2"))
+    await collect(db)
+    await work_one(tenant, transport=httpx.MockTransport(lambda r: pytest.fail("pcc was dialled")))
+    await db.rollback()
+    job = (await db.execute(select(Job.status, Job.reason).where(Job.source_id == source))).one()
+    assert tuple(job) == ("failed", "apple_model_refused")
+    assert await db.scalar(select(ShareLog.id).where(ShareLog.tier == "ai")) is None
+    assert APPLE_FM_SYSTEM_ONLY in caplog.text
+
+
 async def test_lower_source_id_committed_later_is_not_skipped(summary_db):
     from app.core.database import session_for_tenant
     from app.models.schema import EventOutbox, InventorySummaryState

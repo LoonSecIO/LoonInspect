@@ -271,8 +271,9 @@ async def _switches(db, *, flag: bool, consent: bool) -> None:
     await update_data_sharing(DataSharingUpdate(ai_inference=consent), db)
 
 
-async def _saved(db, provider: str = "apple_fm") -> None:
-    """A card's Save, written the way the route writes it."""
+async def _saved(db, provider: str = "apple_fm", model: str | None = None) -> None:
+    """A card's Save, written the way the route writes it; with `model`, as an older build may
+    have left it (#738)."""
     from app.ai.providers import Provider
     from app.core.ai_configs import save_config
 
@@ -281,6 +282,8 @@ async def _saved(db, provider: str = "apple_fm") -> None:
     else:
         values = {"base_url": "http://host.docker.internal:11434/v1", "model": "qwen3.5:2b-mlx", "reasoning_effort": "none",
                   "api_key": None}  # fmt: skip
+    if model is not None:
+        values["model"] = model
     await save_config(db, Provider(provider), host_reach=None, clear_key=False, updated_by=ADMIN[0], **values)
 
 
@@ -795,6 +798,32 @@ async def test_an_apple_card_saved_with_a_reasoning_effort_never_sends_it(client
     assert response.status_code == 200, response.text
     assert response.json()["outcome"] == "applied"
     assert "reasoning_effort" not in json.loads(endpoint.requests[0].content)
+
+
+@pytest.mark.parametrize("path", ["/api/changes/prompt", "/api/vulnerabilities/prompt"])
+async def test_an_apple_card_saved_naming_another_model_is_refused_before_the_gate(
+    client, db, clean, seeded, endpoint, monkeypatch, path
+):
+    """`pcc` is Private Cloud Compute, on Apple's servers, behind the origin the share log names
+    (#738). A row an older build saved naming it is refused with the Save's own sentence, never
+    sent as `system`: nothing leaves, and nothing is logged as sent. The Vulnerabilities lever
+    chooses its card through the same door, and is given a corpus so that is what it reaches."""
+    from types import SimpleNamespace
+
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+
+    async def answering(_db):
+        return SimpleNamespace(as_of=datetime.now(UTC))
+
+    monkeypatch.setattr("app.api.vulnerabilities_prompt.earned_corpus", answering)
+    monkeypatch.setattr("app.api.vulnerabilities_prompt.transport_override", httpx.MockTransport(endpoint))
+    await _switches(db, flag=True, consent=True)
+    await _saved(db, model="pcc")
+    refused = await client.post(path, json={"question": QUESTION})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["detail"] == APPLE_FM_SYSTEM_ONLY
+    assert endpoint.requests == []
+    assert await _ai_rows(db) == []
 
 
 # --- a repair that widens the answer: proposed, not applied (ruled 1C, #436) -----------------------

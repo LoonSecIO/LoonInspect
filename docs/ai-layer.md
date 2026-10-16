@@ -185,6 +185,18 @@ rendered as text. A serial in Search that the question never named is dropped (r
       named one ("yesterday") is read as its start and guard rule 5 keeps the model's caveat over
       it; an open phrase ("in the last 24 hours") expresses the question, and the caveat goes.
 
+14. **The Apple card uses only Apple's on-device model** (2026-10-04, #738). `fm serve` serves
+    `system`, the Mac's own model, and `pcc`, Private Cloud Compute, which sends the prompt to
+    Apple's servers behind the same origin. The share log records only that origin, so a `pcc`
+    prompt read as sent to the Mac, and exclusion ranking's local-only gate (#409) passed it.
+    LoonInspect cannot stop the Mac offering `pcc`; it stops asking for it, in ruling 8's shape.
+    The card offers and accepts only `system` (`APPLE_FM_MODELS`; **Load models** keeps only
+    it). Send and Save refuse any other model with *The Apple card uses only Apple's on-device
+    model, system …*. A card saved naming one by an older build is refused with the same
+    sentence wherever it is dialled, before the share-log row: Kyle ruled it is never quietly
+    sent as `system`. An inventory summary records `apple_model_refused`. Not covered: the
+    OpenAI-compatible card pointed at `fm serve` by hand; #739 records the model in the row.
+
 **What it does.** The bar appears when the `ai_features` flag is on, AI-inference consent is on,
 and at least one provider is saved. `GET /api/changes/prompt` says which is missing, and Settings ›
 AI shows it as *Changes Prompt bar: …*. `POST /api/changes/prompt` (DEVICE_READ, so viewers can use

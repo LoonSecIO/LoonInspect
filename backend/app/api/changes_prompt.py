@@ -56,8 +56,8 @@ from app.ai.changes_prompt import (
     interpret,
     sanitize_question,
 )
-from app.ai.providers import HostReach, Provider
-from app.api.ai import CARD_LABELS, judged_endpoint
+from app.ai.providers import HostReach, Provider, apple_model_refused
+from app.api.ai import APPLE_FM_SYSTEM_ONLY, CARD_LABELS, judged_endpoint
 from app.api.changes import CHANGE_KINDS, change_conditions
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, list_configs
@@ -186,6 +186,10 @@ async def chosen_config(db: AsyncSession, requested: Provider | None) -> AIProvi
         raise HTTPException(status_code=503, detail=key_unreadable(provider)) from exc
     if config is None:
         raise HTTPException(status_code=409, detail=not_saved(provider))
+    # An Apple card an older build saved naming `pcc`: refused for every feature that dials
+    # through here, before its gate writes a share-log row, and never sent as `system` (#738).
+    if apple_model_refused(provider, config.model):
+        raise HTTPException(status_code=409, detail=APPLE_FM_SYSTEM_ONLY)
     return config
 
 

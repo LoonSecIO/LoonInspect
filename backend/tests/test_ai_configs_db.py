@@ -366,6 +366,22 @@ async def test_apple_takes_no_reasoning_effort_and_the_saved_card_is_left_as_it_
     assert ollama.json()["reasoningEffort"] == "none"
 
 
+async def test_apple_takes_only_its_on_device_model_and_the_saved_card_is_left_as_it_was(client, db, clean, audit_records):
+    """`pcc` is Private Cloud Compute, on Apple's servers (#738): a Save naming it, or any
+    model but `system`, is refused with the way out, and the card already saved stands."""
+    from app.api.ai import APPLE_FM_SYSTEM_ONLY
+
+    await _flag_on(db)
+    assert (await client.put("/api/system/ai/configs/apple_fm", json=APPLE_FM)).status_code == 200
+    for model in ("pcc", "qwen3.5:2b-mlx"):
+        refused = await client.put("/api/system/ai/configs/apple_fm", json={**APPLE_FM, "model": model})
+        assert refused.status_code == 422, model
+        assert refused.json()["detail"] == APPLE_FM_SYSTEM_ONLY
+    listing = (await client.get("/api/system/ai/configs")).json()["configs"]
+    assert [(c["provider"], c["model"]) for c in listing] == [("apple_fm", "system")]
+    assert [r["metadata"]["model"] for r in audit_records if r["action"] == "ai.config.saved"] == ["system"]
+
+
 async def test_the_url_is_stored_as_judged(client, db, clean):
     await _flag_on(db)
     saved = await client.put(
