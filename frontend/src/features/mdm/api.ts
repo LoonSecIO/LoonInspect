@@ -92,8 +92,8 @@ export function listRunSummaries(connectionId?: number): Promise<RunSummary[]> {
 
 /** Engine lines for one run, incrementally. `after` is the last line id already held,
  *  so a poll transfers only what appeared since rather than the whole log each tick. */
-export function getRunLog(jobId: string, after = 0): Promise<RunLogResponse> {
-  return apiRequest<RunLogResponse>(`/runs/${jobId}/log?after=${after}`);
+export function getRunLog(jobId: string, after = 0, signal?: AbortSignal): Promise<RunLogResponse> {
+  return apiRequest<RunLogResponse>(`/runs/${jobId}/log?after=${after}`, { signal });
 }
 
 // --- Collections (#27) ---------------------------------------------------------------

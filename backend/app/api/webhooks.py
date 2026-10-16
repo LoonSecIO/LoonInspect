@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
@@ -10,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import generate_token, tokens_equal
+from app.mdm.concurrency import IngestBusy
 from app.mdm.credentials import CredentialUnusable
+from app.mdm.jamf.client import REACTIVE_WEBHOOK_EVENTS, parse_webhook_event
 from app.mdm.service import ingest_webhook
 from app.models.schema import MdmConnection
 
@@ -24,6 +29,30 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 # app.core.security: without it, the compare is skipped entirely in one branch and
 # response timing becomes a connection-enumeration oracle.
 _DUMMY_SECRET = generate_token()
+
+# Per worker (and therefore per SQLAlchemy pool). Fast fail rather than retain a
+# request's database connection while waiting for capacity. Each worker's ordinary
+# pool has 15 slots; eight admitted deliveries leave room for interactive requests.
+_ACTIVE_WEBHOOKS = 0
+_MAX_ACTIVE_WEBHOOKS = 8
+_BODY_READ_TIMEOUT_SECONDS = 5.0
+
+
+@asynccontextmanager
+async def webhook_capacity() -> AsyncIterator[None]:
+    global _ACTIVE_WEBHOOKS
+    if _ACTIVE_WEBHOOKS >= _MAX_ACTIVE_WEBHOOKS:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook capacity is busy. Retry shortly and check the connection's active runs.",
+            headers={"Retry-After": "1"},
+        )
+    _ACTIVE_WEBHOOKS += 1
+    try:
+        yield
+    finally:
+        _ACTIVE_WEBHOOKS -= 1
+
 
 # Why a webhook was refused, in the operator's words. Every one of these answers the
 # caller with the same 401 (docs/auth-design.md §4.7) — the difference would enumerate
@@ -187,7 +216,9 @@ async def jamf_webhook(
     as any other; an authenticated one that is not JSON (a Jamf webhook left on XML)
     gets a 422 that says so.
     """
-    connection = await db.get(MdmConnection, connection_id)
+    # PostgreSQL cannot bind an integer outside int4 to this primary key. Such an id
+    # cannot name a connection, and follows the same refusal as an unknown one.
+    connection = await db.get(MdmConnection, connection_id) if -(2**31) <= connection_id < 2**31 else None
 
     usable = connection is not None and connection.is_active and connection.capability_webhooks
     expected = connection.webhook_secret_encrypted if usable else None
@@ -214,9 +245,17 @@ async def jamf_webhook(
             headers={"WWW-Authenticate": 'Basic realm="jamf-webhook"'},
         )
 
+    # Authentication is complete; release its read transaction before receiving bytes.
+    await db.commit()
     try:
-        payload = await request.json()
-    except ValueError:
+        async with asyncio.timeout(_BODY_READ_TIMEOUT_SECONDS):
+            payload = await request.json()
+    except TimeoutError:
+        logger.warning(
+            "jamf webhook body timed out; check the sender and proxy connection", extra={"connection_id": connection_id}
+        )
+        raise HTTPException(status_code=408, detail="Webhook body timed out. Check the sender and proxy connection.") from None
+    except (ValueError, RecursionError):
         payload = None
     if not isinstance(payload, dict):
         logger.warning(
@@ -232,7 +271,19 @@ async def jamf_webhook(
     # webhooks carry no application list, so normalizing the payload directly would
     # diff an empty inventory against the stored one and report everything removed.
     try:
-        result = await ingest_webhook(db, connection, payload)
+        event = parse_webhook_event(payload)
+        if event.event_name not in REACTIVE_WEBHOOK_EVENTS or event.jamf_id is None:
+            result = await ingest_webhook(db, connection, payload)
+        else:
+            async with webhook_capacity():
+                result = await ingest_webhook(db, connection, payload)
+    except TimeoutError:
+        raise HTTPException(
+            status_code=502,
+            detail="Webhook processing exceeded its configured time limit. Check this connection's runs before retrying.",
+        ) from None
+    except IngestBusy as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={"Retry-After": "1"}) from None
     except CredentialUnusable as exc:
         # The stored credential is not a credential (#393, #477). The sentence is the
         # whole diagnosis, so it is answered rather than raised: an uncaught one would

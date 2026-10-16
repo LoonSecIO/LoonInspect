@@ -41,9 +41,14 @@ Every PR must pass the same gates `main` enforces:
   superuser or the row-level-security tests prove nothing. The suite is re-runnable
   against one database: a second full run over the rows the first left behind reports
   the same counts, so a failure that appears only on the second run is a defect in the
-  suite rather than a reason to recreate the database (#514).
+  suite rather than a reason to recreate the database (#514). The OpenAPI document is pinned
+  whole in `backend/tests/snapshots/openapi.json`, so a change to a route or a model, their
+  docstrings included, fails `tests/test_openapi_snapshot.py` until the snapshot moves with it:
+  regenerate it from `backend/` with `UPDATE_SNAPSHOTS=1 uv run --frozen pytest tests/test_openapi_snapshot.py`
+  and read its diff, which is the change a client of the API will see.
 - **Frontend** — `npx tsc -b --noEmit`, `npx eslint .`, `npm test` (vitest, node
-  environment, over the pure modules), `npm run build` (Node 22, `npm ci`).
+  environment, over the pure modules; a test of effects opts into jsdom on its first line, as
+  `useRunLog.test.tsx` does), `npm run build` (Node 22, `npm ci`).
   `react-hooks/set-state-in-effect` is an error, and it follows a call in an effect body
   into a function declared in the component body: every `setState` that call can reach is
   reported at the call site, including ones that run after an `await`, so making the
