@@ -212,6 +212,7 @@ sweeps nothing ([README §3](../README.md)).
      was rotated in Jamf. Settings › Connections › Edit, re-enter the secret, Sync now.
    - `failed`, and the error mentions **403** → the API Role lacks **Read Computers**.
      Step 3.
+   - `failed`, and the error begins **reclaimed: no heartbeat** → step 7.
    - `failed` with another error → reportable state **A**.
    - `succeeded` with `deviceCount: 0` → step 3.
 3. **The API Role.** In Jamf Pro: Settings → System → API roles and clients → the role
@@ -237,6 +238,47 @@ sweeps nothing ([README §3](../README.md)).
    If a manually triggered connection sync or re-emit fails, its run closes as `failed`
    with the original error and releases the lock immediately. Read that error, correct
    the cause, and retry; there is no heartbeat-staleness wait for a handled failure.
+7. **The panel reports `reclaimed: no heartbeat within 300s — progress was not observed`.**
+   Another acquisition released a stale run. Work through these checks in order; replace
+   `<jobId>` with that run's id and `<container>` with the server container name.
+
+   1. Read the run's lines and locate its opening line:
+      ```sh
+      curl -s -H "Authorization: Bearer $LOON_API_TOKEN" "$LOON_URL/api/runs/<jobId>/log"
+      docker logs <container> 2>&1 | rg '<jobId>' | rg 'run started|heartbeat refused'
+      ```
+      `heartbeat refused` means the old worker was still alive when reclaim occurred;
+      its work was stopped to preserve the replacement run's ownership.
+   2. Compare the container start timestamp with the run's `run started` timestamp:
+      ```sh
+      docker inspect --format '{{.State.StartedAt}}' <container>
+      ```
+      A later container start explains a worker that disappeared during a restart. An
+      earlier start means to investigate a stalled live worker; continue below.
+   3. Check progress and database connectivity:
+      ```sh
+      docker logs <container> 2>&1 | rg '<jobId>' | rg 'Run progress stopped|The run heartbeat could not be saved'
+      ```
+      `Run progress stopped; heartbeat keeper stopped` means no worker progress for the
+      stale window. Inspect the last run line and Jamf connectivity. `The run heartbeat
+      could not be saved` means the independent heartbeat write failed; check database
+      availability and lock waits. The keeper stops inventing progress for a stuck worker.
+   4. Check whether late work was refused:
+      ```sh
+      docker logs <container> 2>&1 | rg '<jobId>' | rg 'was reclaimed before its observations could be saved'
+      curl -s -H "Authorization: Bearer $LOON_API_TOKEN" "$LOON_URL/api/runs/<jobId>/log" | rg 'finish refused: this run was reclaimed; a late result was discarded'
+      ```
+      `was reclaimed before its observations could be saved` means the inventory write
+      was rolled back. `finish refused: this run was reclaimed; a late result was discarded`
+      means the final close was refused; the reclaim verdict remains authoritative.
+   5. Correct the identified connectivity or worker problem, then Run now. If a scheduled
+      collection reports contention, inspect its collection and connection ids:
+      ```sh
+      docker logs <container> 2>&1 | rg 'The scheduled collection will retry on the next tick' | rg 'collection_id|connection_id'
+      ```
+      The tick restores only its own claim and retries next minute. Check active runs if
+      it repeats. Raising the stale timeout is a temporary workaround; repeated reclaim
+      with a live worker is reportable state **A**.
 
 **A.** A device sweep failed with an error that is not 401 or 403. Report the run's
 `jobID`, its `error`, and the panel's lines.
@@ -260,7 +302,8 @@ One symptom, three unrelated causes, and only one of them is a problem.
      ([`ingest-scheduling.md`](ingest-scheduling.md)): a check-in is not an inventory. If
      the events you send are `ComputerAdded` / `ComputerInventoryCompleted` and runs still
      report zero → reportable state **C**.
-   - **`device_sweep`** → step 2.
+   - **`device_sweep`** → step 2. One whose `status` is `failed` and whose error begins
+     *reclaimed* → §1 step 7.
 2. **The selector** → §1 step 4.
 3. **The privileges** → §1 step 3.
 4. Still zero → §1 reportable state **B**.
@@ -973,11 +1016,17 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    reportable state **J**. The first press on a freshly started container is the slow one
    — the whole catalog is fetched title by title and takes minutes, not seconds, and
    nothing on the page cancels it. Let it finish.
-2. **The button says "Sync failed. Try again."** The page does not carry the reason; the
-   container log does. Three different things in that log can carry it — the sentence the
-   refresh writes about itself, the hourly job's name (`hourly_jamf_patch_sync`) and the
-   button's own path (`/api/jamf-patch/sync`) — and they spell the catalog three ways, so
-   match all three rather than the sentence alone:
+2. **A line appears under the button: a sentence beginning *The Jamf patch catalog cannot
+   be refreshed*, or the bare *Sync failed. Try again.*** These are two states. The sentence
+   means the press reached this container and the container could not read the catalog;
+   it is the whole reason, and the same line is in the container log, where the hourly
+   refresh writes its own copy — one line, no traceback — when it is the one that fails.
+   The bare line means the page was given no reason: the press never reached this
+   container, or what came back was not this container's answer. The container log tells
+   the two apart. Three different things in that log can carry the reason — the sentence
+   itself, the hourly job's name (`hourly_jamf_patch_sync`) and the button's own path
+   (`/api/jamf-patch/sync`) — and they spell the catalog three ways, so match all three
+   rather than the sentence alone:
 
    ```bash
    docker compose logs app --since 1h | grep -iE 'jamf[ _-]patch'
@@ -987,7 +1036,7 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
    one, inside it, so a matching line carries its own reason rather than pointing at
    something above it. Most of what comes back is `"message": "request"` for
    `/api/jamf-patch/titles` — the page reading the table. These are the lines that answer
-   this step:
+   this step. The first four are the sentence, the same under the button and in the log:
    - `The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to …` → this
      container was started with that variable holding something that is not an address.
      On the shipped stack it comes from the `.env` beside `docker-compose.yml`; anywhere
@@ -995,16 +1044,41 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
-   - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"` (the press you
-     just made), or `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`
-     (the hourly tick), either of them ending in a traceback whose last line names a
-     connection problem — `ConnectError`, `ConnectTimeout`, `ReadTimeout`, `ProxyError`,
-     a certificate failure → this container could not reach the patch server. Check
-     outbound access from the container itself:
-     `docker compose exec app curl -sSI https://jamf-patch.jamfcloud.com/v1/software`. A
-     proxy, an egress firewall or TLS interception is the usual cause; the hourly tick
-     keeps trying and the existing rows keep answering. That this failure reaches you as a
-     traceback rather than a sentence is a gap on our side, not a second fault on yours.
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com did not answer
+     (ConnectError: …)` — or `ConnectTimeout`, `ReadTimeout`, `ProxyError` in the brackets
+     → this container could not reach the patch server: the name did not resolve, or a
+     proxy, an egress firewall or TLS interception stood in the way, and the words in the
+     brackets are the operating system's own and say which. Ask the container itself. The
+     shipped image carries no `curl`, so ask with Python, which honours the same
+     `HTTPS_PROXY` the app does:
+
+     ```bash
+     docker compose exec app python -c "import urllib.request as u; r = u.urlopen('https://jamf-patch.jamfcloud.com/v1/software', timeout=15); print(r.status, r.read(60))"
+     ```
+
+     `200 b'[{"…` is the catalog, and the next press will work; anything else is the
+     network's answer, in the same words the sentence used — fix that, not the app. The
+     sentence says what it leaves behind, and it is true: nothing was written, the titles
+     already synced keep answering, and the hourly refresh keeps trying. (The hourly
+     refresh prints the sentence rather than a traceback for the same reason the button
+     does; a container started before this change prints `Job "hourly_jamf_patch_sync
+     (trigger: cron…)" raised an exception` and a traceback ending in one of those names
+     instead, and the probe above is the same.)
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com answered 503
+     instead of the catalog` (any status) → the host was reached and something there
+     refused. Two causes, told apart by where the address opens: an outage at Jamf
+     refuses your own browser too, and clears on its own — wait, then press again; a
+     status the probe above gets from the container while the same address opens from
+     your browser is a proxy answering in Jamf's place, and its allow-list needs the host.
+   - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com answered, but
+     not with the catalog` → something between this container and the host — a proxy or
+     a captive portal — put a page where the catalog should be. The probe prints the first
+     bytes of what it got; `<html` or `<!DOCTYPE` names the proxy, and the fix is on it.
+   - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"`, or
+     `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`, ending in a
+     traceback that is not one of the connection names above → a failure of a kind the
+     sentences do not cover. That it reaches you as a traceback rather than a sentence is a
+     gap on our side, not a second fault on yours: reportable state **J**, with that line.
    - `"message": "request"` with `"path": "/api/jamf-patch/sync"`, `"status_code": 200`
      and a `duration_ms` in the minutes → the refresh **finished here**; whatever gave up
      was between the button and this container. The button sends no timeout of its own and
@@ -1102,7 +1176,9 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
 **J.** A refresh that reports no error leaves the table saying *No Jamf Patch titles
 synced yet.*, a title Jamf publishes stays missing from the list with *Only titles with
 devices* unticked for more than a day, a press of **Sync now** writes nothing to the
-container log while `/api/health` answers, or — the one where the sync did happen — a
+container log while `/api/health` answers, a press answers *Sync failed. Try again.* and
+leaves a `request failed` traceback that no sentence in step 2 covers, or — the one where
+the sync did happen — a
 title LoonInspect matches against still reads 0 devices after a sweep while **Devices ›
 Applications** lists its bundle identifier (step 6). Report what the *Synced* column
 shows, the bundle identifier and the title's name if that was the symptom, the output of
@@ -1162,25 +1238,32 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
 
    A `reason` that names a state the connection is not in → reportable state **L**.
 3. **`"status_code": 422`**, beside `refused jamf webhook: the body is not a JSON object` →
-   the header was right and the body was not JSON. In Jamf Pro, set the webhook's
+   the header was right and the body was malformed, too deeply nested, or not a JSON object. In Jamf Pro, set the webhook's
    **Content Type** to **JSON**.
 4. **`"status_code": 200`** → the webhook arrived and was accepted.
    - `jamf webhook event does not warrant a fetch; dropped by design`, with an `event` →
      an event LoonInspect does not act on; `ComputerCheckIn` above all (#76). Point the
      webhook at `ComputerInventoryCompleted` or `ComputerAdded`.
    - `jamf webhook carried no computer id; nothing to ingest` → the event named no
-     computer, so there was nothing to read.
+     computer with a valid decimal Jamf ID, so there was nothing to read. No run or inventory is written.
    - neither → it made a webhook run. **Set up** shows *Last webhook run* once the panel is
      opened again, and `GET /api/runs?trigger=webhook&pageSize=5` lists it; that run's
      `jobId` leads to its log (§0).
 5. **`"status_code": 502`**, beside `jamf webhook accepted, but reading that computer from
    Jamf Pro failed` → the webhook was right; the read that follows it was not. The
-   traceback's last line names the status and the address:
+   run's error names the operation and the next check:
    - anything on `/api/oauth/token` → the connection's credentials or base URL; **Test
      connection** on the connection checks both;
    - `403` → the connection's API Role, which needs `Read Computers` ([README §3](../README.md));
    - `404` on the computer's own inventory → a computer deleted since the event;
-   - a timeout or connection error → Jamf Pro unreachable from this container.
+   - a timeout or connection error → Jamf Pro unreachable from this container;
+   - an invalid token or computer response → check the base URL and any intervening
+     proxy, then **Test connection**. Invalid optional version/settings reads record
+     an absent aperture value; token failures propagate rather than being retried for
+     each optional resource;
+   - `configured time limit` → the optional webhook budget expired. Check this run
+     before retrying: a commit can complete just before the timeout. Recover with Run
+     now or the scheduled sweep if sender redelivery has not been verified.
 
    The webhook run is recorded as failed with the same error, so
    `GET /api/runs?trigger=webhook&pageSize=5` shows it too.
@@ -1188,13 +1271,41 @@ docker compose logs app --since 30m | grep -E 'webhooks/jamf|jamf webhook'
    A `could not renew the Jamf Pro sign-in` line (only under **Sign-in reuse: Perpetual
    cache**, on the connection's form) says the same thing before any webhook meets it:
    Jamf Pro refused the sign-in, or could not be reached. Nothing waits on the renewal —
-   it backs off, doubling up to ten minutes, and each read signs in as it needs to — so
+   it backs off, doubling up to ten minutes. Reads share a five-second cooldown only for credential/endpoint rejections or invalid token bodies;
+   cancelled requests, transport errors and 5xx replies do not delay the next caller. For persistent refusals,
    the fix is the same as for anything on `/api/oauth/token` above: **Test connection**.
 6. **`"status_code": 503`**, beside `jamf webhook refused: the stored credential is not a
    credential` → the callback was right, and this connection cannot ask Jamf Pro anything:
    what is stored against it is not a credential, so nothing was sent. The log line carries
    the whole sentence and names the connection; §12 is the walk-through, and the webhook's
    own failed run says the same thing.
+
+   `Run close bookkeeping timed out` means the terminal verdict committed, but a closing
+   event or log may be absent. Check database connectivity and the run’s recorded counts.
+   `The webhook could not close its run` means release failed; check database connectivity,
+   then the next acquisition can reclaim a stale running row. `Inventory was saved; the
+   run’s close was interrupted` means the inventory succeeded; check the run’s log.
+
+   `invalid computer inventory` with `unexpected shape` names the malformed section;
+   `invalid token response from /api/oauth/token` names a malformed sign-in reply. Check
+   the connection base URL and run **Test connection**. `rejected computer id` logs only
+   presence, type and length: check the sender’s id format. `invalid smart-group id`
+   means that group was skipped; inspect the smart-group list in Jamf Pro.
+
+   `408` with `Webhook body timed out` means the authenticated body did not arrive within
+   five seconds. Check the sender and proxy connection; this request opened no run.
+
+   `Another inventory write overlapped this delivery` is a retryable shared-row conflict.
+   Retry shortly; if it recurs, check the connection’s active runs and database logs for
+   competing writers. No partial device write is retained.
+
+   A different `503` can mean `Webhook capacity is busy`, a computer write lock could
+   not be obtained, or run acquisition stayed busy through its retry. These carry
+   `Retry-After: 1`. Admission allows eight reactive events per worker, counted after
+   authentication and event filtering; a computer write waits at most five seconds for its
+   lock. Check active runs and Jamf response times, then retry. No inventory success is acknowledged for refused work.
+   A tick that exhausts run acquisition restores its own claim for retry on the next
+   tick. For timeout configuration and delivery recovery, see [`jamf-webhooks.md`](jamf-webhooks.md) §9.
 
 **L.** Callbacks that Jamf Pro sends never produce a request line while the address, the
 network and the webhook's event are right; or a refusal's `reason` names a state the

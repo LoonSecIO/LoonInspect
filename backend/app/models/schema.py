@@ -189,7 +189,7 @@ class Device(Base):
     # client that read the device (`JamfClient` declares `macos`), defaulted here only so
     # a row constructed without one, in a test, is the Mac it always was. Migration
     # b3c9e7d1a5f2.
-    platform: Mapped[str] = mapped_column(String(16), default="macos", server_default="macos", index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="macos", server_default="macos")
     serial_number: Mapped[str] = mapped_column(String(64))
     hostname: Mapped[str] = mapped_column(String(255))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -504,6 +504,12 @@ class AppCatalogEntry(Base):
         UniqueConstraint("tenant_id", "platform", "version_hash", name="uq_app_catalog_platform_version"),
         Index("ix_app_catalog_app", "tenant_id", "app_hash"),
         Index("ix_app_catalog_last_seen", "tenant_id", "last_seen_at"),
+        # `GET /api/catalog?vuln=` (#529): keyed on the gate `vuln_answer.served` applies and
+        # deliberately not on the counts, for the reason migration a7c21e9f4b83 gives.
+        Index("ix_app_catalog_vuln_served", "tenant_id", "vuln_signature", postgresql_where=text("vuln_assessment = 'covered'")),
+        # `GET /api/vulnerabilities/{vulnID}` asks `vuln_ids @> '["CVE-…"]'` (#533). Containment is
+        # all this index serves, hence `jsonb_path_ops`. Migration b8d4f1a6c2e7.
+        Index("ix_app_catalog_vuln_ids", "vuln_ids", postgresql_using="gin", postgresql_ops={"vuln_ids": "jsonb_path_ops"}),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -669,6 +675,7 @@ class VulnLibraryEpoch(Base):
     """
 
     __tablename__ = "vuln_library_epoch"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_vuln_library_epoch_single_row"),)
 
     # One row, enforced by the database rather than by convention (a `id = 1` check): two
     # epochs loaded at once is the state where "which one answered?" has no answer.
@@ -1533,6 +1540,14 @@ class ObservationSpan(Base):
         # collectors, or a logic-board repair is found by serial and by UDID.
         Index("ix_observation_spans_serial", "tenant_id", "serial_number", postgresql_where=text("serial_number IS NOT NULL")),
         Index("ix_observation_spans_udid", "tenant_id", "udid", postgresql_where=text("udid IS NOT NULL")),
+        # `jsonb_path_ops`: containment (`section_digests @> '{"applications": "v0:…"}'`) is the
+        # one operator it serves. Migration 4a8c1f2e7b93.
+        Index(
+            "ix_observation_spans_section_digests",
+            "section_digests",
+            postgresql_using="gin",
+            postgresql_ops={"section_digests": "jsonb_path_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -1570,7 +1585,12 @@ class ObservationSection(Base):
     what was hashed, so the digest can be re-verified from the row alone."""
 
     __tablename__ = "observation_sections"
-    __table_args__ = (UniqueConstraint("tenant_id", "digest", name="uq_observation_section_digest"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "digest", name="uq_observation_section_digest"),
+        # The default operator class, not `jsonb_path_ops`: Discover asks `entry_digests ? 'v0:…'`,
+        # which `jsonb_path_ops` cannot serve. Migration 4a8c1f2e7b93.
+        Index("ix_observation_sections_entry_digests", "entry_digests", postgresql_using="gin"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)

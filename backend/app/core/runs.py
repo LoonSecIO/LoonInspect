@@ -30,18 +30,21 @@ every ingest signature to reach one dict is how the three ingest paths drift apa
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import or_, select, update
+from sqlalchemy import event, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.context import get_request_id
@@ -157,7 +160,7 @@ class RunReclaimed(Exception):
 _HEARTBEAT_INTERVAL_SECONDS = 15
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunContext:
     """The active run, as the ingest path sees it.
 
@@ -174,6 +177,7 @@ class RunContext:
     comparison: str
     lock_class: str
     window_start: datetime
+    last_progress: float = field(default_factory=lambda: time.monotonic())
 
 
 _run: ContextVar[RunContext | None] = ContextVar("run", default=None)
@@ -205,10 +209,8 @@ def event_time(device_time: datetime | None = None) -> datetime:
       around to processing that device. A sweep that starts four minutes late and takes
       forty must not smear its events across forty-four minutes of the index.
     - **A webhook carries device time.** Jamf's `reportDate` for the record that
-      triggered it, when the caller has one. This is what makes the contract's
-      "verify webhooks always land after the run stamp" a checkable statement rather
-      than a hope: the sweep's events sit at the window, the webhook's sit at the
-      device's own clock, and the ordering falls out.
+      triggered it, when the caller has one. A delayed webhook can predate the
+      latest sweep window; there is no universal ordering between the two.
     - **A manual run stamps now.** Someone is watching it happen; there is no window to
       belong to, and back-dating an interactive action is a lie about when it occurred.
 
@@ -303,7 +305,7 @@ def run_meta() -> dict[str, object]:
         "jobID": str(run.id),
         "trigger": run.trigger,
         "connectionID": run.connection_id,
-        "shortDate": run.window_start.strftime("%Y-%m-%d"),
+        "shortDate": run.window_start.astimezone(UTC).strftime("%Y-%m-%d"),
     }
 
 
@@ -558,7 +560,10 @@ async def _reclaim_stale(db: AsyncSession) -> int:
     """
     now = _utcnow()
     cutoff = now - timedelta(seconds=settings.run_stale_after_seconds)
-    error = f"reclaimed: no heartbeat within {settings.run_stale_after_seconds}s — the process running it stopped"
+    error = (
+        f"reclaimed: no heartbeat within {settings.run_stale_after_seconds}s — progress was not observed. "
+        "Check the container log and database connectivity before retrying the run."
+    )
     result = await db.execute(
         update(Run)
         .where(Run.status == STATUS_RUNNING, Run.heartbeat_at < cutoff)
@@ -871,6 +876,80 @@ class Acquisition:
     started: bool
 
 
+class AcquisitionBusy(RuntimeError):
+    """Two run-insertion attempts conflicted without a visible active holder."""
+
+    def __init__(self, connection_id: int, lock_class: str) -> None:
+        self.connection_id = connection_id
+        self.lock_class = lock_class
+        super().__init__(
+            f"A run could not be started for connection {connection_id} because another run changed while it was starting. "
+            "Retry shortly; if this continues, check the connection's active runs."
+        )
+
+
+def fence_write(db: AsyncSession) -> None:
+    """Require this run to still own its observations when their transaction commits."""
+    context = get_run()
+    if context is not None:
+        db.info["run_write"] = context.id
+
+
+@event.listens_for(Session, "before_commit")
+def _fence_run_commit(session: Session) -> None:
+    run_id = session.info.get("run_write")
+    if run_id is None or session.in_nested_transaction():
+        return
+    # The share lock lasts through the commit: a reclaim either already happened
+    # (refuse this transaction) or waits until its last observation has committed.
+    with session.no_autoflush:
+        held = session.scalar(select(Run.id).where(Run.id == run_id, Run.status == STATUS_RUNNING).with_for_update(read=True))
+    if held is None:
+        raise RunReclaimed(f"run {run_id} was reclaimed before its observations could be saved")
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _clear_run_fence(session: Session, transaction) -> None:
+    if transaction.parent is None:
+        session.info.pop("run_write", None)
+
+
+async def _keep_alive(tenant_id: uuid.UUID, context: RunContext) -> None:
+    """Keep a live run warm during network waits, through its own scoped session."""
+    from app.core.database import session_for_tenant
+
+    run_id = context.id
+    while True:
+        await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
+        if time.monotonic() - context.last_progress >= settings.run_stale_after_seconds:
+            logger.warning(
+                "Run progress stopped; heartbeat keeper stopped. Check the last run log line and Jamf connectivity; "
+                "the next acquisition can reclaim this run after its heartbeat expires.",
+                extra={"run_id": str(run_id), "connection_id": context.connection_id},
+            )
+            return
+        now = _utcnow()
+        try:
+            async with asyncio.timeout(5), session_for_tenant(tenant_id) as db:
+                await db.execute(
+                    update(Run)
+                    .where(
+                        Run.id == run_id,
+                        Run.status == STATUS_RUNNING,
+                        Run.heartbeat_at <= now - timedelta(seconds=_HEARTBEAT_INTERVAL_SECONDS),
+                    )
+                    .values(heartbeat_at=now)
+                )
+                await db.commit()
+        except Exception:
+            logger.warning(
+                "The run heartbeat could not be saved. Check database connectivity; "
+                "if the run is reclaimed, its next observation commit will be refused.",
+                extra={"run_id": str(run_id)},
+                exc_info=True,
+            )
+
+
 async def acquire(
     db: AsyncSession,
     connection: MdmConnection,
@@ -880,13 +959,13 @@ async def acquire(
     collection_id: int | None = None,
     due_at: datetime | None = None,
     actor_label: str | None = None,
+    on_acquired: Callable[[Run], None] | None = None,
 ) -> Acquisition:
     """Take the run lock for this connection and class, or report who holds it.
 
     `due_at` is the scheduled occurrence this run serves, and becomes the window the
-    run's events are back-dated to. The tick passes the `next_due_at` it claimed — the
-    time the run was *due* — so a sweep delayed by a busy tick still stamps its events
-    at the hour the customer configured.
+    run's events are back-dated to. The tick passes the most recent due occurrence
+    at claim time, coalescing older missed occurrences into one catch-up run.
 
     The id is minted here, not left to the column's own default (`app.models.schema.
     Run.id`) — this is the one place a `Run` is ever constructed, and minting explicitly
@@ -895,59 +974,62 @@ async def acquire(
     the wire now, and a fan-out sourcetype's `eventstats max(jobID) by serialNumber`
     needs an id that sorts by creation time to mean anything.
     """
+    # A losing caller owns its transaction and must finish it promptly: a raced
+    # stale reclaim may retain a row lock even when its UPDATE matched no rows.
     await _reclaim_stale(db)
 
-    now = _utcnow()
-    run = Run(
-        id=uuid7(),
-        mdm_connection_id=connection.id,
-        collection_id=collection_id,
-        trigger=trigger,
-        comparison=await _comparison_for(db, connection.id, lock_class),
-        lock_class=lock_class,
-        status=STATUS_RUNNING,
-        window_start=due_at or now,
-        heartbeat_at=now,
-        started_at=now,
-        actor_label=actor_label,
-    )
-
-    try:
-        # Nested so the integrity error rolls back the failed INSERT alone. Without the
-        # savepoint the whole transaction is poisoned and the caller cannot go on to
-        # read the row that beat it.
-        async with db.begin_nested():
-            db.add(run)
-            await db.flush()
-    except IntegrityError:
-        holder = await active_run(db, connection.id, lock_class)
-        if holder is None:
-            # The holder finished between the conflict and this read. Nothing is running
-            # now, so the caller is free to try again; one retry, not a loop.
-            return await acquire(
-                db,
-                connection,
-                trigger=trigger,
-                lock_class=lock_class,
-                collection_id=collection_id,
-                due_at=due_at,
-                actor_label=actor_label,
-            )
-        logger.info(
-            "run already in flight for this connection",
-            extra={
-                "connection_id": connection.id,
-                "lock_class": lock_class,
-                "holder_job_id": str(holder.id),
-                "holder_trigger": holder.trigger,
-                "trigger": trigger,
-            },
+    for attempt in range(2):
+        now = _utcnow()
+        run = Run(
+            id=uuid7(),
+            mdm_connection_id=connection.id,
+            collection_id=collection_id,
+            trigger=trigger,
+            comparison=await _comparison_for(db, connection.id, lock_class),
+            lock_class=lock_class,
+            status=STATUS_RUNNING,
+            window_start=due_at or now,
+            heartbeat_at=now,
+            started_at=now,
+            actor_label=actor_label,
         )
-        return Acquisition(run=holder, started=False)
 
-    await db.commit()
-    await log(db, run, "info", "run started", trigger=trigger, comparison=run.comparison, lockClass=lock_class)
-    return Acquisition(run=run, started=True)
+        try:
+            # Nested so the integrity error rolls back the failed INSERT alone. Without the
+            # savepoint the whole transaction is poisoned and the caller cannot go on to
+            # read the row that beat it.
+            async with db.begin_nested():
+                db.add(run)
+                await db.flush()
+        except IntegrityError as exc:
+            cause = getattr(exc.orig, "__cause__", None)
+            if getattr(cause, "constraint_name", None) != "uq_run_active_lock":
+                raise
+            holder = await active_run(db, connection.id, lock_class)
+            if holder is None:
+                if attempt == 1:
+                    raise AcquisitionBusy(connection.id, lock_class) from None
+                continue
+            logger.info(
+                "run already in flight for this connection",
+                extra={
+                    "connection_id": connection.id,
+                    "lock_class": lock_class,
+                    "holder_job_id": str(holder.id),
+                    "holder_trigger": holder.trigger,
+                    "trigger": trigger,
+                },
+            )
+            return Acquisition(run=holder, started=False)
+
+        # Publish the candidate identity before awaiting commit: cancellation can land
+        # after PostgreSQL commits but before this await returns. The caller can then
+        # reload just this row after rollback, without ever closing a joined holder.
+        if on_acquired is not None:
+            on_acquired(run)
+        await db.commit()
+        await log(db, run, "info", "run started", trigger=trigger, comparison=run.comparison, lockClass=lock_class)
+        return Acquisition(run=run, started=True)
 
 
 @contextlib.asynccontextmanager
@@ -967,11 +1049,25 @@ async def entered(run: Run) -> AsyncIterator[RunContext]:
         lock_class=run.lock_class,
         window_start=run.window_start,
     )
+    previous = get_run()
+    if previous is not None and previous.id == context.id:
+        context = previous  # nested callers must update the keeper's same progress clock
     token = set_run(context)
+    keeper = None
+    if run.tenant_id is not None and (previous is None or previous.id != run.id):
+        keeper = asyncio.create_task(_keep_alive(run.tenant_id, context))
     try:
         yield context
     finally:
-        reset_run(token)
+        try:
+            if keeper is not None:
+                keeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await keeper
+                if asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError
+        finally:
+            reset_run(token)
 
 
 async def log(db: AsyncSession, run: Run, level: str, message: str, **fields: object) -> None:
@@ -995,6 +1091,12 @@ async def log(db: AsyncSession, run: Run, level: str, message: str, **fields: ob
     await db.commit()
 
 
+def note_progress() -> None:
+    """Progress belongs to the worker; the independent keeper must not invent it."""
+    if context := get_run():
+        context.last_progress = time.monotonic()
+
+
 async def beat(db: AsyncSession, run: Run) -> None:
     """Keep the run alive. Throttled — safe to call per device.
 
@@ -1005,6 +1107,7 @@ async def beat(db: AsyncSession, run: Run) -> None:
     the raise is what stops the ingest loop before it commits more work under a jobID
     whose verdict is already written.
     """
+    note_progress()
     now = _utcnow()
     if run.heartbeat_at and (now - run.heartbeat_at).total_seconds() < _HEARTBEAT_INTERVAL_SECONDS:
         return
@@ -1071,6 +1174,9 @@ async def finish(
     observations: dict | None = None,
     error: str | None = None,
     standing: bool = False,
+    alarm: bool = True,
+    release_timeout: float | None = None,
+    bookkeeping_timeout: float | None = None,
 ) -> bool:
     """Close the run, releasing the lock. True when this call is what closed it.
 
@@ -1116,133 +1222,153 @@ async def finish(
     acquire — for every connection — failed on the same INSERT. The pairing was worth
     less than the mutex.
     """
+    run_id = run.id
     now = _utcnow()
     status = STATUS_SUCCEEDED if ok else STATUS_FAILED
-    closed = await db.execute(
-        update(Run)
-        .where(Run.id == run.id, Run.status == STATUS_RUNNING)
-        .values(
-            status=status,
-            finished_at=now,
-            window_end=now,
-            heartbeat_at=now,
-            device_count=device_count,
-            group_count=group_count,
-            devices_processed=devices_processed,
-            devices_failed=devices_failed,
-            observations=observations or None,
-            error=error,
-        )
-        .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start)
-    )
-    row = closed.first()
-    # The release, committed alone and first. Everything else this close records — the
-    # two wire events, the log line, the posture snapshot — happens after this line and
-    # cannot take the lock back down with it.
-    await db.commit()
-    if row is None:
-        logger.warning(
-            "finish refused: run is not running (reclaimed); its recorded verdict stands",
-            extra={
-                "run_id": str(run.id),
-                "attempted_status": STATUS_SUCCEEDED if ok else STATUS_FAILED,
-            },
-        )
-        # Into the run's own log as well: the evidence trail should show the late
-        # finisher came back and was turned away, not just that the run went quiet.
-        await log(
-            db,
-            run,
-            "warning",
-            "finish refused: this run was reclaimed; a late result was discarded",
-            attemptedStatus=STATUS_SUCCEEDED if ok else STATUS_FAILED,
-            deviceCount=device_count,
-        )
-        return False
-    if row.lock_class in RUN_COMPLETED_LOCK_CLASSES:
-
-        async def emit_completed() -> None:
-            await _enqueue_run_completed(
-                db,
-                run_id=row.id,
-                connection_id=row.mdm_connection_id,
-                trigger=row.trigger,
-                lock_class=row.lock_class,
-                comparison=row.comparison,
-                closed_at=now,
+    async with asyncio.timeout(release_timeout):
+        if db.info.get("run_write") is not None:
+            # Validate pending fenced writes before our own terminal status change.
+            # The share lock still protects them through this release's commit.
+            await db.run_sync(_fence_run_commit)
+            db.info.pop("run_write", None)
+        closed = await db.execute(
+            update(Run)
+            .where(Run.id == run.id, Run.status == STATUS_RUNNING)
+            .values(
                 status=status,
+                finished_at=now,
+                window_end=now,
+                heartbeat_at=now,
                 device_count=device_count,
+                group_count=group_count,
                 devices_processed=devices_processed,
                 devices_failed=devices_failed,
+                observations=observations or None,
+                error=error,
             )
+            .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start)
+        )
+        row = closed.first()
+        # The release, committed alone and first. Everything else this close records — the
+        # two wire events, the log line, the posture snapshot — happens after this line and
+        # cannot take the lock back down with it.
+        await db.commit()
 
-        await _emit_after_release(db, row.id, RUN_COMPLETED_EVENT, emit_completed)
-    rationed = (
-        not ok
-        and standing
-        and await _already_alarmed_today(db, connection_id=row.mdm_connection_id, run_id=row.id, error=error, now=now)
-    )
-    if rationed:
+    async def record_close() -> bool:
+        if row is None:
+            logger.warning(
+                "finish refused: run is not running (reclaimed); its recorded verdict stands",
+                extra={
+                    "run_id": str(run.id),
+                    "attempted_status": STATUS_SUCCEEDED if ok else STATUS_FAILED,
+                },
+            )
+            # Into the run's own log as well: the evidence trail should show the late
+            # finisher came back and was turned away, not just that the run went quiet.
+            await log(
+                db,
+                run,
+                "warning",
+                "finish refused: this run was reclaimed; a late result was discarded",
+                attemptedStatus=STATUS_SUCCEEDED if ok else STATUS_FAILED,
+                deviceCount=device_count,
+            )
+            return False
+        if row.lock_class in RUN_COMPLETED_LOCK_CLASSES:
+
+            async def emit_completed() -> None:
+                await _enqueue_run_completed(
+                    db,
+                    run_id=row.id,
+                    connection_id=row.mdm_connection_id,
+                    trigger=row.trigger,
+                    lock_class=row.lock_class,
+                    comparison=row.comparison,
+                    closed_at=now,
+                    status=status,
+                    device_count=device_count,
+                    devices_processed=devices_processed,
+                    devices_failed=devices_failed,
+                )
+
+            await _emit_after_release(db, row.id, RUN_COMPLETED_EVENT, emit_completed)
+        rationed = (
+            not ok
+            and standing
+            and await _already_alarmed_today(db, connection_id=row.mdm_connection_id, run_id=row.id, error=error, now=now)
+        )
+        if rationed:
+            await log(
+                db,
+                run,
+                "info",
+                "run.failed not emitted: this connection already reported this failure today",
+                error=error,
+            )
+        elif not ok and alarm:
+
+            async def emit_failed() -> None:
+                await _enqueue_run_failed(
+                    db,
+                    run_id=row.id,
+                    connection_id=row.mdm_connection_id,
+                    trigger=row.trigger,
+                    window_start=row.window_start,
+                    window_end=now,
+                    error=error,
+                )
+
+            # Its own attempt, not one transaction shared with run.completed above. A failed
+            # device sweep or webhook run emits both, and the alarm is the one an operator
+            # is paged by: losing it because the heartbeat beside it could not be written
+            # would be the worst possible pairing to keep.
+            await _emit_after_release(db, row.id, RUN_FAILED_EVENT, emit_failed)
         await log(
             db,
             run,
-            "info",
-            "run.failed not emitted: this connection already reported this failure today",
+            "info" if ok else "error",
+            "run finished" if ok else "run failed",
+            deviceCount=device_count,
+            groupCount=group_count,
+            seconds=round((now - run.started_at).total_seconds(), 1),
             error=error,
+            # Only when something failed: the common all-clear line stays as short as it
+            # has always been, and a non-zero count is the anomaly worth a field.
+            **({"devicesFailed": devices_failed} if devices_failed else {}),
         )
-    elif not ok:
+        if row.lock_class == LOCK_DEVICE_SWEEP:
+            # Deliberately narrower than RUN_COMPLETED_LOCK_CLASSES above: a posture snapshot
+            # is a fleet-wide capture, and a webhook run touched exactly one device, so #224
+            # widening run.completed did not widen this.
+            #
+            # The posture snapshot (#102, docs/posture-snapshot.md): the last act of every
+            # closed full sweep, success AND failure — a failed night's database state is
+            # real, and the failed run id on the rows is what makes staleness visible. Only
+            # after the terminal status is committed, so a capture reads the run it stamps;
+            # never for a refused finish, whose reclaim already recorded (or will record)
+            # its own close. A capture failure is logged and swallowed — a night can lose
+            # its snapshot, it must never lose its sweep.
+            from app.core.posture import record_full_sweep_snapshot  # local: posture reads this module's vocabulary
 
-        async def emit_failed() -> None:
-            await _enqueue_run_failed(
-                db,
-                run_id=row.id,
-                connection_id=row.mdm_connection_id,
-                trigger=row.trigger,
-                window_start=row.window_start,
-                window_end=now,
-                error=error,
-            )
+            try:
+                written = await record_full_sweep_snapshot(db, run_id=row.id)
+                await log(db, run, "info", "posture snapshot captured", keys=written)
+            except Exception:
+                with contextlib.suppress(Exception):
+                    await db.rollback()
+                logger.exception("posture snapshot failed; the run's verdict stands", extra={"run_id": str(row.id)})
+        return True
 
-        # Its own attempt, not one transaction shared with run.completed above. A failed
-        # device sweep or webhook run emits both, and the alarm is the one an operator
-        # is paged by: losing it because the heartbeat beside it could not be written
-        # would be the worst possible pairing to keep.
-        await _emit_after_release(db, row.id, RUN_FAILED_EVENT, emit_failed)
-    await log(
-        db,
-        run,
-        "info" if ok else "error",
-        "run finished" if ok else "run failed",
-        deviceCount=device_count,
-        groupCount=group_count,
-        seconds=round((now - run.started_at).total_seconds(), 1),
-        error=error,
-        # Only when something failed: the common all-clear line stays as short as it
-        # has always been, and a non-zero count is the anomaly worth a field.
-        **({"devicesFailed": devices_failed} if devices_failed else {}),
-    )
-    if row.lock_class == LOCK_DEVICE_SWEEP:
-        # Deliberately narrower than RUN_COMPLETED_LOCK_CLASSES above: a posture snapshot
-        # is a fleet-wide capture, and a webhook run touched exactly one device, so #224
-        # widening run.completed did not widen this.
-        #
-        # The posture snapshot (#102, docs/posture-snapshot.md): the last act of every
-        # closed full sweep, success AND failure — a failed night's database state is
-        # real, and the failed run id on the rows is what makes staleness visible. Only
-        # after the terminal status is committed, so a capture reads the run it stamps;
-        # never for a refused finish, whose reclaim already recorded (or will record)
-        # its own close. A capture failure is logged and swallowed — a night can lose
-        # its snapshot, it must never lose its sweep.
-        from app.core.posture import record_full_sweep_snapshot  # local: posture reads this module's vocabulary
-
-        try:
-            written = await record_full_sweep_snapshot(db, run_id=row.id)
-            await log(db, run, "info", "posture snapshot captured", keys=written)
-        except Exception:
-            with contextlib.suppress(Exception):
-                await db.rollback()
-            logger.exception("posture snapshot failed; the run's verdict stands", extra={"run_id": str(row.id)})
-    return True
+    try:
+        async with asyncio.timeout(bookkeeping_timeout):
+            return await record_close()
+    except TimeoutError:
+        await db.rollback()
+        logger.warning(
+            "Run close bookkeeping timed out; the recorded verdict stands. Check database connectivity and this run's log.",
+            extra={"run_id": str(run_id)},
+        )
+        return row is not None
 
 
 async def purge_runs(db: AsyncSession, retention_days: int) -> int:
