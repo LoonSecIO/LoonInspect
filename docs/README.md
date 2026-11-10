@@ -50,6 +50,7 @@ ends with a reading order through the rest.
 | Document | Status | What it is for |
 | --- | --- | --- |
 | [`jamf-webhooks.md`](jamf-webhooks.md) | built, 2026-09-12 (#406) | Pointing Jamf Pro's webhooks at this instance, and what each event costs. |
+| [`macos-app.md`](macos-app.md) | built, 1.0.0 (2026-11-10) | LoonInspect as a signed macOS app with Postgres embedded: how it runs, where its data lives, how a release is notarized, what 1.0.0 leaves out. |
 | [`operations.md`](operations.md) | runbook, revised 2026-09-16 | Backup, restore, upgrade, rollback — every command run before it was written down. |
 | [`splunk-setup.md`](splunk-setup.md) | runbook, revised 2026-09-16 | Sending events to Splunk: HEC, tokens, sourcetypes, what a dead letter means. |
 | [`troubleshooting.md`](troubleshooting.md) | ruled, 2026-09-10 (#290) | The step-throughs, written with only what a fresh operator has. |

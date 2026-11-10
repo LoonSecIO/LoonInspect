@@ -367,6 +367,40 @@ history storage. A new selected release records provenance even when its answers
 change. Size evidence separately from retained corpus bytes, including indexes and backups;
 do not infer fleet data expiry from payment expiry or corpus retention.
 
+## 10. The macOS app runs only while it is open, and ships no `pg_dump`
+
+**The limit.** `LoonInspect.app` ([docs/macos-app.md](docs/macos-app.md)) is the container's
+backend, frontend and PostgreSQL as child processes of a window. Quit it and the scheduler,
+the nightly sweep, webhook ingestion and SIEM delivery stop with it; close the lid and they
+pause until the Mac wakes (the shell asks macOS not to nap it, and sleep still wins). Nothing
+catches up a missed sweep except the next scheduled one. The container has none of this,
+because nothing closes it.
+
+**Backups.** The bundle carries `initdb`, `pg_ctl` and `postgres`, and no `pg_dump`, `psql`
+or `pg_isready` (the upstream build ships none), so [docs/operations.md](docs/operations.md)
+§2 cannot be run against it. The backup that exists is a copy of
+`~/Library/Application Support/LoonInspect/pgdata` taken **while the app is quit**, together
+with the `ENCRYPTION_KEY` item from the login keychain, without which the credentials in that
+copy are unreadable (§5 applies to the app exactly as to the container). `pgdata` is marked
+excluded from Time Machine by the app itself, because a Time Machine copy of a running cluster
+is not a consistent database; the rest of the support directory (the logs, the audit log under
+`data/`) is backed up as usual.
+
+**Logs.** `shell.log`, `backend.log`, `postgres.log` and `initdb.log` are rotated once, at
+launch, when one passes 20 MB (`<name>.1` replaces the one before). A session that runs for
+weeks without a relaunch grows them without bound, as the container grows its stdout without
+Docker's log driver.
+
+**Where it bites.** One operator, one Mac, a Jamf Pro instance looked at from a laptop. It is
+not a server: a fleet whose events must reach a SIEM every night runs the container.
+
+**Workaround.** Leave it open on a Mac that does not sleep, or run the container. Quit before
+a backup and copy `pgdata` by hand.
+
+**What retires it.** A login-item or LaunchAgent mode (`SMAppService`), which reopens what
+**Quit** means; `pg_dump` in the bundle, from EnterpriseDB's client binaries, with a Back Up
+command in the app menu; log rotation while running. None is built.
+
 ## Checked, and not an issue
 
 Recorded because "we looked" is worth more on an inspection day than silence, and
