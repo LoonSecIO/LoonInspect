@@ -10,6 +10,13 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 const MIN_PASSWORD_LENGTH = 12;
 
+/** The claim token the macOS app spike's shell defines in its own window before the page runs
+ *  (docs/spike-macos-app.md), or null: always in a browser, the container's included. */
+function hostClaimToken(): string | null {
+  const token = (globalThis as typeof globalThis & { looninspectSetupClaimToken?: unknown }).looninspectSetupClaimToken;
+  return typeof token === "string" && token !== "" ? token : null;
+}
+
 export function SetupPage() {
   const { t } = useLocale();
   const navigate = useNavigate();
@@ -18,7 +25,9 @@ export function SetupPage() {
   const bootstrap = useAuthStore((state) => state.bootstrap);
   const completeSetup = useAuthStore((state) => state.completeSetup);
 
-  const [claimToken, setClaimToken] = useState("");
+  // A token the host handed over is sent as if typed, and the field is not drawn.
+  const [hostToken] = useState(hostClaimToken);
+  const [claimToken, setClaimToken] = useState(hostToken ?? "");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -83,24 +92,26 @@ export function SetupPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-6">
-          <div className="space-y-2">
-            <label htmlFor="claimToken" className="text-sm font-medium">
-              {t.auth.claimToken}
-            </label>
-            <Input
-              id="claimToken"
-              required
-              autoFocus
-              autoComplete="off"
-              spellCheck={false}
-              value={claimToken}
-              onChange={(event) => setClaimToken(event.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">{t.auth.claimTokenHelp}</p>
-            <pre className="overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 text-xs">
-              docker compose logs app | grep &quot;claim token&quot;
-            </pre>
-          </div>
+          {hostToken === null && (
+            <div className="space-y-2">
+              <label htmlFor="claimToken" className="text-sm font-medium">
+                {t.auth.claimToken}
+              </label>
+              <Input
+                id="claimToken"
+                required
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                value={claimToken}
+                onChange={(event) => setClaimToken(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t.auth.claimTokenHelp}</p>
+              <pre className="overflow-x-auto rounded-md border bg-muted/40 px-3 py-2 text-xs">
+                docker compose logs app | grep &quot;claim token&quot;
+              </pre>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="displayName" className="text-sm font-medium">
@@ -109,6 +120,7 @@ export function SetupPage() {
             <Input
               id="displayName"
               required
+              autoFocus={hostToken !== null}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />
