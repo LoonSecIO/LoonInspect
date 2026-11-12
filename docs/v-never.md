@@ -105,7 +105,7 @@ in it. Transcribed from
 
 ## What this list is not
 
-* **Not a record of everything unbuilt.** SimpleMDM and Addigy support, MFA, a
+* **Not a record of everything unbuilt.** SimpleMDM and Addigy support, SSO, a
   vulnerability scanner — none of those are here. They are absent, which is a different
   claim, and README.md's "What it does not do" is where absence is stated.
 * **Not a place to park a hard problem.** An entry is a decision with an argument. If
