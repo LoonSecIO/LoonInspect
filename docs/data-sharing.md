@@ -546,7 +546,8 @@ api.loonsec.io consolidation of the update check (#43's seam) · EU-region inges
 
 Priority note: this ships in V0 **only alongside** the cross-tenant sweep (#37) — a
 security product must not launch default-on telemetry and an IDOR hole in the same
-release.
+release. Written when an unasked install defaulted to `reveal`; since #201 an install nobody
+answered for is `off`, the consent rule above.
 
 ## Cloud notes (informative, fluid)
 

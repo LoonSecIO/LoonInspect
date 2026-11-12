@@ -196,7 +196,7 @@ destination types (`app/core/outbox.py`, `app/fanout/*`), the posture tape
 (`app/core/posture.py`), `ingest_computer` and `process_sync`, the census and departures
 (`app/mdm/census.py`).
 
-**Addigy, in about two weeks.** What a sibling vertical adds is the left edge of Figure 1
+**Addigy, once selected (#165).** What a sibling vertical adds is the left edge of Figure 1
 and nothing to the right of `ingest_computer`: a client with its own auth, paging and
 section contract, a canonicalizer into the same observation shape, its own webhook parse,
 one credential entry, and one dispatch in `app.mdm.factory.get_mdm_client` — which is

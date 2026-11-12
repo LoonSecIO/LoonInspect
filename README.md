@@ -64,7 +64,8 @@ reads *Not assessed* for every app. When a page says that and you expected other
 
 No EPSS, no CVSS, and no scanner. Nothing is installed on a Mac, and LoonInspect scores
 nothing of its own: it reports what the published corpus carries for the build Jamf
-reported. No SCIM, no MFA. The vulnerability answer is the summary block described above
+reported. No SCIM and no SSO; MFA is TOTP on local accounts, nothing federated
+(#653). The vulnerability answer is the summary block described above
 and nothing else — no per-finding lifecycle events, no fleet-wide coverage tile, and
 nothing at all against a Jamf Patch title's version row, which carries no build to answer
 at. The corpus is compiled outside this repository and delivered over the data-sharing
