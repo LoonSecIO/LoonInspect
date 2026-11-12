@@ -2940,6 +2940,42 @@ files every sentence below names. **LoonInspect › Show Logs in Finder** opens 
 **LoonInspect › About LoonInspect** shows the version and build number a report needs. This path
 names no lettered state: each step ends in a file to read, and the report is that file.
 
+**Maintainer: build or notarization fails.** In Actions, open **macOS release** and the failed
+step. The same script messages appear in a local terminal.
+
+- *uv 0.9.30 is required* → install the exact native exporter named in `macos/README.md` and
+  put it on `PATH`. Docker is no longer needed to export dependencies.
+- *not on main*, *versions differ*, or *tag does not match* → select main for a manual run;
+  for a release, use a main commit whose `Info.plist` version and backend `RELEASE` match the
+  version tag. Fix versions in a pull request; do not move a published tag.
+- *clean checkout* or *modified tree* → commit all intended inputs, including new files, and
+  rebuild from that commit. Do not use `ALLOW_DIRTY` to publish a release.
+- *Missing MACOS_CERTIFICATE…*, *exactly one Developer ID…*, or *not signed by team…* → check
+  the `macos-release` environment secrets. The P12 must include the private key and a Developer
+  ID Application certificate for `6CWZ5GA79H`; check its export password and expiration. A
+  developer/Apple Development certificate is not a Developer ID distribution certificate.
+- *could not authenticate*, *No Keychain password item*, or a failed **Import signing…** step
+  → check that `APPLE_NOTARY_AUTH` selects `apple-id` or `api-key`, then check the selected
+  credentials: the API key ID and issuer (omit issuer for an individual key), or the Apple ID's
+  app-specific password, and Apple team access. For a local profile, run the credential command
+  in `macos/README.md` again. A CI run waiting before any steps needs its environment access
+  checked: allow main and `v*` tags and satisfy any configured reviewer requirement.
+- *Apple answered Invalid/Rejected* → download the `macos-notarization-…` artifact and read
+  `notarize-app.log` or `notarize-dmg.log`. Locally those files are under `macos/build`. Apple
+  identifies the file and missing signature, runtime option or timestamp; fix and rebuild.
+- *submission … is not accepted*, a timeout, or an upload error → retain `notarize-*.json`.
+  An ID means Apple received the submission; the script prints an `info` command to check it.
+  CI deletes its temporary keychain, so use the ID with your **local** notary profile instead.
+  If Apple still reports `In Progress`, wait and check again. If there is no ID, check the
+  authentication/network error and retry. Rerunning the script uploads a new submission.
+- A **stapler** or **spctl** failure after acceptance → the release assets were not uploaded.
+  Check the named file, verify its signature with `codesign --verify --strict`, and retry after
+  resolving any Apple network error. Do not publish an artifact from a failed verification.
+- **Attach verified assets** says an asset already exists → the workflow refuses replacement.
+  Compare the release's checksum file with this run. Keep a matching release; publish a new
+  version for changed bytes. For another upload error, check the job's `contents: write`
+  permission and the release's existence before retrying the failed publish job.
+
 1. **macOS refuses to open it** — *"LoonInspect" can't be opened because Apple cannot check it for
    malicious software*, or *is damaged and can't be opened*. Ask Gatekeeper what it thinks, in
    Terminal:

@@ -7,10 +7,10 @@
 #
 # Contents/Resources/backend is laid out the way the image lays out /app: app/ with the SPA in
 # app/static and build_info.json, migrations/, alembic.ini, docs/baseline-rules.yml. The backend's
-# locked runtime dependencies are exported from uv.lock by uv in Docker and installed on this
+# locked runtime dependencies are exported from uv.lock by pinned native uv and installed on this
 # host, by the bundled Python, as macOS arm64 wheels checked against the lockfile's hashes.
 # Postgres goes to Contents/Resources/postgres. Needs Xcode's swift, node and npm (the image and
-# CI use node 22), Docker (only for `uv export`), and the network for the pinned downloads and
+# CI use node 22), uv 0.9.30, and the network for the pinned downloads and
 # the signature timestamps.
 #
 #   macos/scripts/build-app.sh                       # then: open macos/build/LoonInspect.app
@@ -25,10 +25,9 @@ build="$macos/build"
 app="$build/LoonInspect.app"
 res="$app/Contents/Resources"
 src="$build/src"
-# The Dockerfile's and CI's uv (0.9.30), pinned by the registry's index digest as well, so a
-# re-pushed tag cannot change what runs. `uv export` output is platform-neutral (markers and
-# every wheel's hash), so the image's OS does not matter here.
-UV_IMAGE=${UV_IMAGE:-ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58}
+# Match the lockfile exporter used by the container build without needing a Docker daemon
+# on hosted macOS runners. The workflow installs this exact version with setup-uv.
+UV_VERSION=0.9.30
 
 step() { printf '\n== %s  [%ss]\n' "$*" "$(($(date +%s) - started))"; }
 die() { echo "build-app: $*" >&2; exit 1; }
@@ -42,9 +41,11 @@ thin_to_arm64() {
 }
 
 [ "$(uname -m)" = arm64 ] || die "this builds for Apple silicon only, and uname -m says $(uname -m)"
-for tool in swift swiftc node npm docker codesign lipo shasum git plutil hdiutil; do
+for tool in swift swiftc node npm uv codesign lipo shasum git plutil hdiutil; do
   command -v "$tool" >/dev/null || die "$tool is not on PATH"
 done
+[ "$(uv --version | awk '{print $2}')" = "$UV_VERSION" ] ||
+  die "uv $UV_VERSION is required to export the locked dependencies; install that version and retry (macos/README.md)."
 
 # The signature. Every Mach-O file in the bundle is signed with the same identity and the
 # hardened runtime, inside out, so library validation holds and notarization has nothing to
@@ -58,11 +59,16 @@ else
   sign=(codesign --force --sign "$identity" --timestamp --options runtime)
   signed_as="$identity"
 fi
+[ -z "${SIGN_KEYCHAIN:-}" ] || sign+=(--keychain "$SIGN_KEYCHAIN")
 version=$(plutil -extract CFBundleShortVersionString raw -o - "$macos/shell/Info.plist")
 build_number=${BUILD_NUMBER:-$(date -u +%Y%m%d.%H%M)}
 commit=$(git -C "$repo" rev-parse HEAD)
 tree=clean
-[ -z "$(git -C "$repo" status --porcelain --untracked-files=no)" ] || tree=modified
+[ -z "$(git -C "$repo" status --porcelain --untracked-files=normal)" ] || tree=modified
+[ "${REQUIRE_DEVELOPER_ID:-0}" != 1 ] || [ "$identity" != - ] ||
+  die "a release requires a Developer ID Application identity; import the signing certificate and retry (macos/README.md)."
+[ "${REQUIRE_CLEAN_TREE:-0}" != 1 ] || [ "$tree" = clean ] ||
+  die "a release requires a clean checkout, including untracked files; commit or remove build inputs and retry."
 echo "build-app: LoonInspect $version ($build_number) from ${commit:0:7} ($tree tree), signing as $signed_as"
 
 step "runtimes: pinned by version and sha256"
@@ -73,6 +79,15 @@ step "runtimes: pinned by version and sha256"
 step "source: what the image copies, from this working tree"
 rm -rf "$app" "$src" "$build/requirements.txt"
 mkdir -p "$src/backend/docs" "$res" "$app/Contents/MacOS"
+shell_source="$macos/shell"
+launcher_source="$macos/launcher"
+if [ "${REQUIRE_CLEAN_TREE:-0}" = 1 ]; then
+  # Release inputs come from Git, so ignored local files cannot enter the signed bundle.
+  git -C "$repo" archive HEAD backend frontend docs/baseline-rules.yml macos | tar -xf - -C "$src"
+  cp "$src/docs/baseline-rules.yml" "$src/backend/docs/"
+  shell_source="$src/macos/shell"
+  launcher_source="$src/macos/launcher"
+else
 # An allowlist rather than the tree, so a local backend/.env never rides along (INSPECT-0175).
 (cd "$repo/backend" && tar -cf - --exclude __pycache__ --exclude '*.pyc' app migrations alembic.ini pyproject.toml uv.lock) |
   tar -xf - -C "$src/backend"
@@ -81,6 +96,8 @@ cp "$repo/docs/baseline-rules.yml" "$src/backend/docs/"
 # .env files excluded as .dockerignore excludes them: Vite would read one into the build.
 (cd "$repo" && tar -cf - --exclude node_modules --exclude dist --exclude '*.tsbuildinfo' --exclude .env --exclude '.env.*' frontend) |
   tar -xf - -C "$src"
+fi
+rm -rf "$src/backend/app/static" "$src/backend/app/build_info.json"
 
 step "frontend: npm ci && npm run build, node $(node --version)"
 [ "$(node -p 'process.versions.node.split(".")[0]')" = 22 ] ||
@@ -91,8 +108,7 @@ step "frontend: npm ci && npm run build, node $(node --version)"
 step "python: CPython $PYTHON_VERSION ($PYTHON_RELEASE), then the locked runtime dependencies"
 tar -xzf "$build/downloads/$PYTHON_ASSET" -C "$res"
 py="$res/python/bin/python3"
-docker run --rm --network none -v "$src/backend:/src:ro" -w /src "$UV_IMAGE" \
-  uv export --frozen --no-dev --no-emit-project --format requirements-txt >"$build/requirements.txt"
+(cd "$src/backend" && uv export --offline --frozen --no-dev --no-emit-project --format requirements-txt) >"$build/requirements.txt"
 # --isolated: no pip.conf or PIP_* variable of this machine's (an index URL, say) applies.
 "$py" -m pip install --isolated --quiet --cache-dir "$build/cache/pip" \
   --disable-pip-version-check --no-warn-script-location --no-compile \
@@ -112,7 +128,7 @@ cp -R "$src/backend/app" "$src/backend/migrations" "$src/backend/alembic.ini" "$
 cp -R "$src/frontend/dist" "$res/backend/app/static"
 # The same stamp the Dockerfile writes, so the page's build readout and the update check read it as they read an image's.
 printf '{"version": "%s+%s"}\n' "$(date -u +%Y.%m.%d)" "${commit:0:7}" >"$res/backend/app/build_info.json"
-cp "$macos/launcher/loon_backend.py" "$res/launcher/"
+cp "$launcher_source/loon_backend.py" "$res/launcher/"
 
 step "bytecode: compiled now, unchecked-hash, so nothing writes into the signed bundle at run time"
 "$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$res/python/lib/python3.12" "$res/backend" "$res/launcher" >/dev/null
@@ -130,11 +146,11 @@ thin_to_arm64 "$res/postgres/bin" "$res/postgres/lib"
 
 step "icon: LoonInspect.icns from the brand mark"
 swiftc -O -o "$build/make-icon" "$macos/scripts/make-icon.swift"
-"$build/make-icon" "$repo/frontend/public/brand/loon-mark-reversed.svg" "$res/LoonInspect.icns" "$build"
+"$build/make-icon" "$src/frontend/public/brand/loon-mark-reversed.svg" "$res/LoonInspect.icns" "$build"
 
 step "shell: swift build -c release"
-swift build -c release --package-path "$macos/shell" --scratch-path "$build/swift"
-bin=$(swift build -c release --package-path "$macos/shell" --scratch-path "$build/swift" --show-bin-path)
+swift build -c release --package-path "$shell_source" --scratch-path "$build/swift"
+bin=$(swift build -c release --package-path "$shell_source" --scratch-path "$build/swift" --show-bin-path)
 [ -x "$bin/LoonInspect" ] || die "swift build produced no $bin/LoonInspect"
 cp "$bin/LoonInspect" "$app/Contents/MacOS/LoonInspect"
 cp "$macos/shell/Info.plist" "$app/Contents/Info.plist"

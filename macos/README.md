@@ -18,8 +18,11 @@ it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md)
 
 ## Build and run
 
-Apple silicon; needs Xcode's `swift`, `node`/`npm`, Docker (for `uv export` only), and the
-network for the pinned downloads and the signature timestamps.
+Apple silicon; needs Xcode's `swift`, Node 22 (`node`/`npm`), native **uv 0.9.30**, and the
+network for pinned downloads and signature timestamps. Install the exact uv version with
+a dedicated environment: `python3 -m venv /tmp/looninspect-build-tools` and
+`/tmp/looninspect-build-tools/bin/pip install uv==0.9.30`, then add its `bin` to `PATH`.
+The exporter runs offline with `--frozen`; wheel installation verifies the lockfile hashes.
 
 ```sh
 macos/scripts/build-app.sh
@@ -43,15 +46,68 @@ development build fails where a release build would.
 3. Notarize, once per release, with a notarytool profile stored once per Mac:
 
    ```sh
-   xcrun notarytool store-credentials LoonInspect --apple-id <Apple ID> --team-id <team id> --password <app-specific password>
+   xcrun notarytool store-credentials LoonInspect --apple-id <Apple ID> --team-id 6CWZ5GA79H
    NOTARY_PROFILE=LoonInspect macos/scripts/notarize.sh
    ```
+
+   The command prompts securely for an Apple app-specific password. For an App Store Connect
+   API key instead, use `--key /absolute/path/AuthKey.p8 --key-id <key id>` and, for a team key
+   only, `--issuer <issuer UUID>`. Do not put passwords or private keys into a commit or chat.
 
    The script submits the app, staples it, rebuilds and signs the disk image from the stapled
    app, submits and staples that, and ends with `spctl` reading `accepted` for both. It refuses a
    bundle built from a modified tree.
 4. Attach `build/LoonInspect-<version>-arm64.dmg` (and the `.zip` beside it, if wanted) to the
    GitHub release. Nothing under `build/` is committed.
+
+## GitHub Actions
+
+[macOS release](../.github/workflows/macos-release.yml) builds on an Apple-silicon `macos-15`
+runner with Xcode 26.3, Node 22 and uv 0.9.30. A manual run from **main** produces downloadable
+workflow artifacts. Publishing a `vMAJOR.MINOR.PATCH` release (including prereleases) builds
+its tagged commit and attaches the verified DMG, ZIP and `SHA256SUMS` to that release. The tag
+must be on main and match both the app version and backend `RELEASE` (excluding a prerelease
+suffix). Existing release assets are never overwritten. Keep the existing admin-only `v*`
+tag ruleset. Old tags without this workflow do not start it retroactively.
+
+Create the **macos-release** GitHub environment. Restrict its deployment branches/tags to
+branch `main` and tags `v*`, and store these environment secrets:
+
+| Secret | Value |
+| --- | --- |
+| `MACOS_CERTIFICATE_BASE64` | Base64 of a password-protected `.p12` containing the Developer ID Application certificate **and its private key**, team `6CWZ5GA79H`. |
+| `MACOS_CERTIFICATE_PASSWORD` | The P12 export password. |
+| `APPLE_API_KEY` | Contents of an App Store Connect API private `.p8` key. |
+| `APPLE_API_KEY_ID` | That API key's ID. |
+| `APPLE_API_ISSUER_ID` | Issuer UUID for a **team** API key; omit for an individual API key. |
+
+The default authentication method is **Apple ID**: set `APPLE_ID` and
+`APPLE_APP_SPECIFIC_PASSWORD`, and set environment variable `APPLE_NOTARY_AUTH=apple-id`.
+For the API-key alternative, set the three API-key secrets above and
+`APPLE_NOTARY_AUTH=api-key`. The selected method is explicit, so an inherited secret cannot
+silently select another account. The signing
+certificate and the notary credentials are separate: a signing certificate alone cannot
+submit to Apple. Use GitHub's secret form or `gh secret set --repo LoonSecIO/LoonInspect
+--env macos-release NAME` with stdin; never commit these values.
+
+The job imports the certificate and validated notary credentials into a temporary keychain,
+selects the one signing identity for the expected team, and requires a clean checkout and a
+Developer ID build. `SIGN_KEYCHAIN` and `NOTARY_KEYCHAIN` select that keychain without changing
+the runner's default keychain. It removes the keychain and credential files on success or
+failure. Pull requests run isolated script tests and a complete ad-hoc build without these secrets;
+that unsigned-for-distribution build is never uploaded.
+
+Only after both artifacts pass notarization, stapling and Gatekeeper assessment are they
+uploaded. A separate job with `contents: write` attaches assets to a published release; the
+signing job has `contents: read`. Apple submission responses and rejection logs are saved as a
+separate diagnostic artifact even on failure. Artifacts expire after 14 days; release assets
+remain with the release. See troubleshooting §25, **Maintainer: build or notarization fails**.
+
+The local script saves a submission ID before its bounded wait (`NOTARY_TIMEOUT`, default
+`1h` per submission). A timeout does not cancel Apple's work. Check that submission before
+starting another run; rerunning the script submits again. `ALLOW_DIRTY=1` is a local test
+escape hatch, never set by the workflow. Run the isolated script tests with
+`python3 macos/tests/test_notarize.py`; they require macOS `plutil` but no credentials/network.
 
 ## Where it keeps things, and how to start over
 

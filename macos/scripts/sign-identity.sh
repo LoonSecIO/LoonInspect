@@ -7,7 +7,9 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   printf '%s\n' "$SIGN_IDENTITY"
   exit 0
 fi
-found=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | sort -u)
+query=(security find-identity -v -p codesigning)
+[ -z "${SIGN_KEYCHAIN:-}" ] || query+=("$SIGN_KEYCHAIN")
+found=$("${query[@]}" 2>/dev/null | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | sort -u)
 case $(printf '%s\n' "$found" | grep -c . || true) in
   0) echo - ;;
   1) printf '%s\n' "$found" ;;
