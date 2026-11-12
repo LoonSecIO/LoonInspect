@@ -81,8 +81,11 @@ branch `main` and tags `v*`, and store these environment secrets:
 | `APPLE_API_KEY_ID` | That API key's ID. |
 | `APPLE_API_ISSUER_ID` | Issuer UUID for a **team** API key; omit for an individual API key. |
 
-Alternatively, omit the three API-key secrets and set `APPLE_ID` and
-`APPLE_APP_SPECIFIC_PASSWORD`. The API-key path takes precedence if configured. The signing
+The default authentication method is **Apple ID**: set `APPLE_ID` and
+`APPLE_APP_SPECIFIC_PASSWORD`, and set environment variable `APPLE_NOTARY_AUTH=apple-id`.
+For the API-key alternative, set the three API-key secrets above and
+`APPLE_NOTARY_AUTH=api-key`. The selected method is explicit, so an inherited secret cannot
+silently select another account. The signing
 certificate and the notary credentials are separate: a signing certificate alone cannot
 submit to Apple. Use GitHub's secret form or `gh secret set --repo LoonSecIO/LoonInspect
 --env macos-release NAME` with stdin; never commit these values.

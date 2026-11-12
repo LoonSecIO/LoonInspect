@@ -2955,7 +2955,8 @@ step. The same script messages appear in a local terminal.
   ID Application certificate for `6CWZ5GA79H`; check its export password and expiration. A
   developer/Apple Development certificate is not a Developer ID distribution certificate.
 - *could not authenticate*, *No Keychain password item*, or a failed **Import signing…** step
-  → check the API key ID and issuer (omit issuer for an individual key), or the Apple ID's
+  → check that `APPLE_NOTARY_AUTH` selects `apple-id` or `api-key`, then check the selected
+  credentials: the API key ID and issuer (omit issuer for an individual key), or the Apple ID's
   app-specific password, and Apple team access. For a local profile, run the credential command
   in `macos/README.md` again. A CI run waiting before any steps needs its environment access
   checked: allow main and `v*` tags and satisfy any configured reviewer requirement.
