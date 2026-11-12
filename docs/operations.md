@@ -176,12 +176,44 @@ one, so the two cannot drift apart again.
 
 Store the key where you store other break-glass secrets. **Not in git** — `.gitignore`
 excludes `.env` for this reason, and a key committed once is a key in every clone's
-history for ever. There is no key rotation yet — the envelope names the key that wrote a
-row, which is what makes a rekey possible later, but this build has one key and no way to
-change it (`app/core/crypto.py` says both in as many words) — so the key you generate at
-install is the key that database needs for its whole life.
+history for ever. The key can be rotated (#144), and the rotation is a rewrite rather than a
+re-entry:
+
+### Rotating ENCRYPTION_KEY
+
+1. Generate a new key (the one-liner in the README's Quick Start) and keep both keys where
+   the first one lives.
+2. In `.env`, put the new key in `ENCRYPTION_KEY` and the old one in
+   `ENCRYPTION_KEY_PREVIOUS`; `docker compose up -d`. From here every stored value opens
+   under either key, and the `starting` line reads `encryption_key_rotation: true`.
+3. Startup rewrites every stored value still under the old key and logs one line:
+   `docker compose logs app | grep "ENCRYPTION_KEY rotation"`. *complete* → step 4.
+   *incomplete* → some values open under neither key, so they were written under a third one
+   (a restore from another instance, usually); the line names the table and column, and the
+   one-liner above tells keys apart. *did not run* → the database was not reachable at start;
+   it runs again at the next start, and until then every value opens under either key.
+4. Remove `ENCRYPTION_KEY_PREVIOUS` from `.env`, `docker compose up -d`, and retire the old
+   key. Startup refuses a rotation set up wrong rather than discovering it at the first read:
+   a previous key that is not a Fernet key, or one equal to the current key
+   ([troubleshooting.md §4](troubleshooting.md)).
+
+What a rotation changes beside the stored values: a sign-in that is between its password and
+its six-digit code at the restart starts again (the challenge is signed under the key), and
+the person tokens stamped on change rows from then on differ from the ones before (#541; a
+Changes link made before the rotation keeps filtering the rows from before it). What it does
+not change: the key id in every row stays `k1`, so an older image reads a rewritten row like
+any other — finish step 3 before rolling an image back (§5), since a row still under the old
+key is unreadable to an image that knows one key. On a pod, the same two variables in its
+task definition.
 
 ---
+
+### What the database holds
+
+Settings › Support › **Storage** (#786) shows, for this database and every tenant in it,
+each table's size and row estimate as Postgres holds them, and the clock each one is on:
+*for ever* for the record, the setting in force for the machinery. It is the sizing input for
+the volume and the dump; `GET /api/system/storage` is the same answer for a script.
 
 ## 2. Backup
 
@@ -735,7 +767,8 @@ API, and the work a person starts still runs in the process that served the requ
 Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
 **Send now** on Settings › Data sharing. What it stops is everything on a clock — the
 eight jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
-the purges (sessions hourly, the outbox and the run log nightly), the hourly Jamf Patch
+the purges (sessions hourly; the outbox, the run log and, with `CHANGE_LOG_RETENTION_DAYS`
+set, the change log nightly), the hourly Jamf Patch
 catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So what a
 web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
 the process that still has the scheduler, not by it; with no such process running, the

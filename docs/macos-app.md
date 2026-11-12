@@ -2,7 +2,7 @@
 
 Status: **built, 1.0.0**, 2026-11-10 · Apple silicon, macOS 13 or later · the files are under
 [`macos/`](../macos/README.md) · when it will not open or start,
-[`troubleshooting.md`](troubleshooting.md) §24 · its limits, [KNOWN_ISSUES.md](../KNOWN_ISSUES.md)
+[`troubleshooting.md`](troubleshooting.md) §25 · its limits, [KNOWN_ISSUES.md](../KNOWN_ISSUES.md)
 §10 · built and checked on one Mac (macOS 27.3, Xcode 27.2, Swift 6.4), on the commit this
 document names under [Validation](#validation-100).
 
@@ -169,7 +169,7 @@ NOTARY_PROFILE=LoonInspect macos/scripts/notarize.sh
 a zip, staples the ticket to it, rebuilds and signs the disk image from the stapled app, submits
 and staples that, and ends with `spctl` reading `accepted` for both. Until it has run, Gatekeeper
 answers `rejected (Unnotarized Developer ID)` for the app on any Mac that did not build it, and
-`troubleshooting.md` §24 step 1 reads that back to the operator.
+`troubleshooting.md` §25 step 1 reads that back to the operator.
 
 **A release.** Build from the release commit, notarize, attach
 `macos/build/LoonInspect-<version>-arm64.dmg` to the GitHub release. The disk image holds the
@@ -180,7 +180,7 @@ tells an operator to pull an image. A newer version is a newer disk image dragge
 app; the data directory and the keychain items survive the swap, and the next launch runs the new
 migrations as the container does. Stepping back obeys the same rule as the image: a build refuses
 a database written by a later `RELEASE` than its own (`operations.md` §5), and
-`troubleshooting.md` §24 step 5 says so. A Postgres major (17 to 18) would need `pg_upgrade` or a
+`troubleshooting.md` §25 step 5 says so. A Postgres major (17 to 18) would need `pg_upgrade` or a
 dump and restore, the same question the container's database volume has.
 
 ## Backup
@@ -265,7 +265,7 @@ they covered is the spike's, re-read and unchanged except as this document says.
   `CFBundleIconFile` `LoonInspect`. The manifest records the commit, `tree: modified`, and
   `backend_release: v1.0.0`.
 - `spctl --assess --type execute`: *rejected, source=Unnotarized Developer ID*, the verdict this
-  document and troubleshooting §24 say to expect before `notarize.sh` has run.
+  document and troubleshooting §25 say to expect before `notarize.sh` has run.
 - `package-dmg.sh`: a 75 MB image that `hdiutil verify` accepts, signed with the same identity
   and timestamp; mounted, it holds `LoonInspect.app` (verifies, `1.0.0`) and the `Applications`
   link. `spctl --assess --type open`: *rejected, Unnotarized Developer ID*, likewise.

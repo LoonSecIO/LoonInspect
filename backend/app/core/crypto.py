@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
 from app.core.config import settings
 
-# One key, from ENCRYPTION_KEY, and now the envelope says which one: every value written
-# here is `k1:` and then the Fernet token. The prefix is not rotation; it is what keeps
-# rotation possible. A rekey (#144) can read which key wrote a row out of the row itself,
-# instead of a side table, a flag column, or a stop-the-world re-encrypt of values only
-# the right key can open. `k1` is the only key id this build knows, and
-# `get_encryption_key()` is still the only place the key comes from. Values written before
-# the prefix existed are `k1` values and are read as such — no migration, no backfill; a
-# row restamps itself the next time something writes it, and never has to.
+# One key, from ENCRYPTION_KEY, and the envelope says which one: every value written here is
+# `k1:` and then the Fernet token. A rotation (#144) is a second key for a while, not a second
+# key id: ENCRYPTION_KEY_PREVIOUS holds the key the database was written under, every value
+# opens under either, and startup rewrites the ones still under the old key (app.core.rekey)
+# until none remain and the operator unsets it. The id stays `k1` through all of that on
+# purpose — an older image, which knows one key and one id, reads a rewritten row like any
+# other, so the one-step-back rollback holds once the rewrite has finished. The id is still
+# what keeps a *format* change possible later, and a value written before the prefix existed
+# is a `k1` value and is read as such — no migration, no backfill; a row restamps itself the
+# next time something writes it, and never has to.
 KEY_ID = "k1"
 
 # What failed, why, and what to check, in the operator's vocabulary (#374,
@@ -33,6 +37,21 @@ STORED_VALUE_UNKNOWN_KEY_ID = (
     "Stored credentials cannot be read: this value carries key id {key_id}, which this build does "
     "not know. The running image is older than the database that wrote the value. Roll forward to "
     "the newer image, or restore the dump taken before the upgrade (docs/operations.md §5)."
+)
+
+_GENERATE = 'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+
+# The two ways a rotation can be set up wrong, refused at start rather than discovered at the
+# first read (docs/troubleshooting.md §4 quotes both).
+PREVIOUS_KEY_MALFORMED = (
+    "ENCRYPTION_KEY_PREVIOUS is set but is not a valid Fernet key. It is the key this database was "
+    "written under before the rotation (docs/operations.md §1): copy it exactly from where it was "
+    "stored, or unset it if no rotation is under way."
+)
+PREVIOUS_KEY_IS_CURRENT = (
+    "ENCRYPTION_KEY_PREVIOUS is the same key as ENCRYPTION_KEY, so there is nothing to rotate to. A "
+    "rotation needs a new key in ENCRYPTION_KEY and the key the database was written under in "
+    "ENCRYPTION_KEY_PREVIOUS (docs/operations.md §1). Generate the new one with:\n  " + _GENERATE
 )
 
 
@@ -72,21 +91,62 @@ class StoredValueUnknownKeyId(StoredValueUnreadable):
 
 def get_encryption_key() -> bytes:
     if not settings.encryption_key:
-        raise RuntimeError(
-            "ENCRYPTION_KEY is not set. Generate one with:\n"
-            '  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
-        )
+        raise RuntimeError(f"ENCRYPTION_KEY is not set. Generate one with:\n  {_GENERATE}")
     return settings.encryption_key.encode()
+
+
+def get_previous_encryption_key() -> bytes | None:
+    """The key a rotation is moving away from, or None outside one. Compose passes an unset
+    optional setting as the empty string, and empty means unset here."""
+    if not settings.encryption_key_previous:
+        return None
+    return settings.encryption_key_previous.encode()
 
 
 def validate_encryption_key() -> None:
     try:
         Fernet(get_encryption_key())
     except (ValueError, RuntimeError) as exc:
-        raise RuntimeError(
-            "ENCRYPTION_KEY is missing or not a valid Fernet key. Generate one with:\n"
-            '  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
-        ) from exc
+        raise RuntimeError(f"ENCRYPTION_KEY is missing or not a valid Fernet key. Generate one with:\n  {_GENERATE}") from exc
+    previous = get_previous_encryption_key()
+    if previous is None:
+        return
+    try:
+        Fernet(previous)
+    except ValueError as exc:
+        raise RuntimeError(PREVIOUS_KEY_MALFORMED) from exc
+    if previous == get_encryption_key():
+        raise RuntimeError(PREVIOUS_KEY_IS_CURRENT)
+
+
+def encrypt_value(plaintext: str) -> str:
+    """The column value for a secret: the key id, a colon, and the token under the current key."""
+    return f"{KEY_ID}:{Fernet(get_encryption_key()).encrypt(plaintext.encode()).decode()}"
+
+
+def open_stored(value: str) -> tuple[str, Literal["current", "previous"]]:
+    """A column value back to its secret, and which key opened it.
+
+    A Fernet token is urlsafe base64 — `A-Z a-z 0-9 - _ =`, no colon — so a value written
+    before the prefix existed can never be read as a prefixed one, and a prefixed one can
+    never be mistaken for a token. Split on the first colon. During a rotation the previous
+    key is tried after the current one; the second item is what `app.core.rekey` reads to know
+    which rows still need rewriting."""
+    key_id, _, token = value.partition(":")
+    if not token:
+        key_id, token = KEY_ID, value
+    if key_id != KEY_ID:
+        raise StoredValueUnknownKeyId(key_id)
+    try:
+        return Fernet(get_encryption_key()).decrypt(token.encode()).decode(), "current"
+    except InvalidToken as exc:
+        previous = get_previous_encryption_key()
+        if previous is None:
+            raise StoredValueUnreadable() from exc
+    try:
+        return Fernet(previous).decrypt(token.encode()).decode(), "previous"
+    except InvalidToken as exc:
+        raise StoredValueUnreadable() from exc
 
 
 class EncryptedString(TypeDecorator):
@@ -110,20 +170,9 @@ class EncryptedString(TypeDecorator):
     def process_bind_param(self, value: str | None, dialect) -> str | None:
         if value is None:
             return None
-        return f"{KEY_ID}:{Fernet(get_encryption_key()).encrypt(value.encode()).decode()}"
+        return encrypt_value(value)
 
     def process_result_value(self, value: str | None, dialect) -> str | None:
         if value is None:
             return None
-        # A Fernet token is urlsafe base64 — `A-Z a-z 0-9 - _ =`, no colon — so a value
-        # written before the prefix existed can never be read as a prefixed one, and a
-        # prefixed one can never be mistaken for a token. Split on the first colon.
-        key_id, _, token = value.partition(":")
-        if not token:
-            key_id, token = KEY_ID, value
-        if key_id != KEY_ID:
-            raise StoredValueUnknownKeyId(key_id)
-        try:
-            return Fernet(get_encryption_key()).decrypt(token.encode()).decode()
-        except InvalidToken as exc:
-            raise StoredValueUnreadable() from exc
+        return open_stored(value)[0]

@@ -3,7 +3,7 @@
 `LoonInspect.app` runs the same backend, frontend and PostgreSQL 17 the container runs, as child
 processes of a small Swift shell, on one Apple-silicon Mac. What it is, where its data lives, how
 a release is cut and what 1.0.0 leaves out are in [docs/macos-app.md](../docs/macos-app.md); when
-it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md) §24.
+it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md) §25.
 
 | Path | What it is |
 | --- | --- |

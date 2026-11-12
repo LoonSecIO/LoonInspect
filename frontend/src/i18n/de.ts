@@ -553,6 +553,42 @@ export const de: Translations = {
         "Ab v2.0.0 ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.x, führt zuerst das Downgrade aus dem neueren Image aus.",
       rollbackLink: "Rollback, Schritt für Schritt",
       selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben."
+    },
+    storage: {
+      heading: "Speicher",
+      help: "Was die Datenbank enthält, Tabelle für Tabelle: wie viel Platz jede belegt, ungefähr wie viele Zeilen, und auf welcher Uhr sie läuft. Der Bestand — Geräte, Apps, das Beobachtungsregister, das Änderungsprotokoll — bleibt für immer, sofern keine Einstellung etwas anderes sagt; die Maschinerie darum herum wird nach einer Uhr bereinigt.",
+      loading: "Tabellengrößen werden gelesen…",
+      errorLoading: "Die Tabellengrößen dieser Instanz konnten nicht gelesen werden.",
+      database: (size: string, when: string) => `Diese Datenbank: ${size}, Stand ${when}.`,
+      colTable: "Tabelle",
+      colRows: "Zeilen (Schätzung)",
+      colSize: "Auf Platte",
+      colKept: "Aufbewahrt",
+      recordHeading: "Der Bestand",
+      recordHelp: "bleibt für immer, sofern Sie nichts anderes festlegen",
+      machineryHeading: "Die Maschinerie",
+      machineryHelp: "nach einer Uhr bereinigt",
+      forever: "Für immer",
+      days: (n: number) => `${n} Tage`,
+      bySetting: (setting: string) => `gesetzt durch ${setting}`,
+      boundBy: (setting: string) => `bis ${setting} gesetzt wird`,
+      absent: "Nicht in dieser Datenbank",
+      qualifiers: {
+        observation_spans: "Der Beleg, aus dem jede Änderung abgeleitet wird; absichtlich ohne Uhr (KNOWN_ISSUES §2).",
+        observation_sections: "Teil des Registers; absichtlich ohne Uhr (KNOWN_ISSUES §2).",
+        observation_entries: "Teil des Registers; absichtlich ohne Uhr (KNOWN_ISSUES §2).",
+        observation_apertures: "Teil des Registers; absichtlich ohne Uhr (KNOWN_ISSUES §2).",
+        device_changes: "Etwa 500 Byte je Zeile; KNOWN_ISSUES §1 rechnet ein Jahr für Ihre Flottengröße vor.",
+        event_outbox: "30 Tage für ein Ereignis, dessen Zustellung im Dead Letter endete.",
+        outbox_deliveries: "Eine Zeile je Ereignis und Ziel; geht mit ihrem Ereignis.",
+        alerts: "Nur geschlossene Alarme; ein offener wird nie bereinigt.",
+        share_log: "Beim Schreiben bereinigt.",
+        inventory_summary_jobs: "Abgeschlossene Aufträge und zwischengespeicherter Text.",
+        inventory_summary_metrics: "25 Stunden Zähler.",
+        submission_cases: "URL, Text und Kontakt werden 90 Tage nach Abschluss eines Falls gelöscht; die Zeile bleibt.",
+        sessions: "Einen Tag nach Ablauf oder Widerruf, stündlich."
+      } as Record<string, string>,
+      note: "Größen sind die von Postgres — Heap, Indizes und TOAST zusammen — für diese Datenbank und jeden Mandanten darin; Zeilen sind die Schätzung des Planers seit dem letzten VACUUM oder ANALYZE. Eine Bereinigung gibt Seiten zur Wiederverwendung frei, nicht Platz an die Platte zurück (KNOWN_ISSUES §1). Das Audit-Log ist eine Datei auf dem Daten-Volume, keine Tabelle, und wird hier nicht gezählt."
     }
   },
   apiTokens: {

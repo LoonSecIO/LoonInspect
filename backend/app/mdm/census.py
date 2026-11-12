@@ -1,8 +1,8 @@
 """The census half of a sweep, shared by every provider (#566).
 
 The three passes here reason over observations and runs, never over one vendor's API: the
-Jamf sweep in `app.mdm.service` calls them today, and the Addigy sibling — about two weeks
-out — calls the same three unchanged rather than importing them from a module named for
+Jamf sweep in `app.mdm.service` calls them today, and the Addigy sibling (#165, `future`)
+calls the same three unchanged rather than importing them from a module named for
 Jamf's primitives. Nothing here opens an HTTP client or reads a payload; by the time a
 sweep arrives, all it carries is the ids it observed.
 

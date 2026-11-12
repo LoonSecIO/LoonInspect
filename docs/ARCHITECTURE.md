@@ -142,7 +142,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `hourly_jamf_patch_sync` | hourly, :00 | Pulls the global Jamf Patch catalog, rebuilds the lookup, then re-judges every tenant's app catalog. |
 | `hourly_session_cleanup` | hourly, :30 | Deletes sessions a day past expiry or revocation. |
 | `outbox_cleanup` | daily, 02:45 | Purges events past retention, held ones included — age is the candidate test, and a delivery still pending or a dead letter inside its own window is what holds an event back. |
-| `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`, and clears the URL, text and contact of submission cases 90 days after they close or once they expire. |
+| `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`, and clears the URL, text and contact of submission cases 90 days after they close or once they expire; with `CHANGE_LOG_RETENTION_DAYS` set, deletes change-log rows older than it, in batches (#785). |
 
 ## 5. What a pull costs Jamf
 
@@ -196,7 +196,7 @@ destination types (`app/core/outbox.py`, `app/fanout/*`), the posture tape
 (`app/core/posture.py`), `ingest_computer` and `process_sync`, the census and departures
 (`app/mdm/census.py`).
 
-**Addigy, in about two weeks.** What a sibling vertical adds is the left edge of Figure 1
+**Addigy, once selected (#165).** What a sibling vertical adds is the left edge of Figure 1
 and nothing to the right of `ingest_computer`: a client with its own auth, paging and
 section contract, a canonicalizer into the same observation shape, its own webhook parse,
 one credential entry, and one dispatch in `app.mdm.factory.get_mdm_client` — which is

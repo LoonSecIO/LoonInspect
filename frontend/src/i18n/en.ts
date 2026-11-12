@@ -597,6 +597,42 @@ export const en = {
         "From v2.0.0 on, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.x, needs the downgrade, run from the newer image first.",
       rollbackLink: "Rollback, step by step",
       selfHostedOnly: "These steps are for an install you run yourself with Docker Compose."
+    },
+    storage: {
+      heading: "Storage",
+      help: "What the database holds, table by table: how much each takes, roughly how many rows, and the clock each one is on. The record — devices, apps, the observation ledger, the change log — is kept for ever unless a setting says otherwise; the machinery around it is pruned on a clock.",
+      loading: "Reading the table sizes…",
+      errorLoading: "Could not read the table sizes from this instance.",
+      database: (size: string, when: string) => `This database: ${size}, as of ${when}.`,
+      colTable: "Table",
+      colRows: "Rows (estimate)",
+      colSize: "On disk",
+      colKept: "Kept",
+      recordHeading: "The record",
+      recordHelp: "kept for ever unless you say otherwise",
+      machineryHeading: "The machinery",
+      machineryHelp: "pruned on a clock",
+      forever: "For ever",
+      days: (n: number) => `${n} days`,
+      bySetting: (setting: string) => `set by ${setting}`,
+      boundBy: (setting: string) => `until ${setting} is set`,
+      absent: "Not in this database",
+      qualifiers: {
+        observation_spans: "The evidence every change is derived from; no clock by design (KNOWN_ISSUES §2).",
+        observation_sections: "Part of the ledger; no clock by design (KNOWN_ISSUES §2).",
+        observation_entries: "Part of the ledger; no clock by design (KNOWN_ISSUES §2).",
+        observation_apertures: "Part of the ledger; no clock by design (KNOWN_ISSUES §2).",
+        device_changes: "About 500 bytes a row; KNOWN_ISSUES §1 prices a year at your fleet size.",
+        event_outbox: "30 days for an event whose delivery dead-lettered.",
+        outbox_deliveries: "One row per event per destination; goes with its event.",
+        alerts: "Closed alerts only; an open one is never purged.",
+        share_log: "Pruned on write.",
+        inventory_summary_jobs: "Finished jobs and cached prose.",
+        inventory_summary_metrics: "25 hours of counters.",
+        submission_cases: "The URL, text and contact are cleared 90 days after a case closes; the row stays.",
+        sessions: "A day after they expire or are revoked, hourly."
+      } as Record<string, string>,
+      note: "Sizes are Postgres's own — heap, indexes and TOAST together — for this database and every tenant in it; rows are the planner's estimate since the last VACUUM or ANALYZE. A purge frees pages for reuse and does not give disk back (KNOWN_ISSUES §1). The audit log is a file on the data volume, not a table, and is not counted here."
     }
   },
   apiTokens: {

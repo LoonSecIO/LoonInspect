@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     encryption_key: str | None = None
+    # The key the database was written under before a rotation (#144), and nothing else. Set
+    # beside a new ENCRYPTION_KEY, every stored value opens under either and startup rewrites
+    # the ones still under this key (app.core.rekey); unset once the log says none remain.
+    # Compose passes it empty when unset, and empty means unset (docs/operations.md §1).
+    encryption_key_previous: str | None = None
 
     # Legacy, single-destination path. Read once at first boot to auto-create an
     # equivalent Destination row if none exist yet (see bootstrap.migrate_legacy_siem_
@@ -101,6 +106,13 @@ class Settings(BaseSettings):
     # answer "did this run last month", and it is one row per run plus engine lines, not
     # a row per event per destination. See app.core.runs.purge_runs.
     run_retention_days: int = 30
+
+    # The change log's clock (#785), and the one clock that is off unless an operator turns it
+    # on: 0 keeps every `device_changes` row for ever, which is what every install has done since
+    # the table existed and what a month-14 investigation needs. A value bounds the table to that
+    # many days by `observed_at`, purged nightly beside the run log (app.changes.retention). The
+    # ledger the change log is derived from has no clock (KNOWN_ISSUES.md §2).
+    change_log_retention_days: int = 0
 
     # How many device failures one sweep may absorb before the whole run is failed:
     # the larger of the absolute floor and this percentage of the devices attempted so
@@ -377,6 +389,13 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("run_retention_days must be between 1 and 3650")
+
+    @field_validator("change_log_retention_days")
+    @classmethod
+    def _validate_change_log_retention(cls, value: int) -> int:
+        if value == 0 or 1 <= value <= 3650:
+            return value
+        raise ValueError("change_log_retention_days must be 0 (keep the change log for ever) or between 1 and 3650")
 
     @field_validator("splunk_hec_max_request_bytes")
     @classmethod

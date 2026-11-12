@@ -33,6 +33,33 @@ export function getVersion(): Promise<VersionResponse> {
   return apiRequest<VersionResponse>("/system/version");
 }
 
+export interface StorageTable {
+  table: string;
+  /** "record" is the fleet's history, kept for ever unless a setting says otherwise;
+   *  "machinery" is what the product prunes on its own. */
+  area: "record" | "machinery";
+  /** pg_total_relation_size: heap, indexes and TOAST, in bytes; this database, every tenant. */
+  bytes: number;
+  /** The planner's estimate since the last VACUUM or ANALYZE — never a COUNT(*). */
+  rowsEstimate: number;
+  /** false when the table is not in this database. */
+  present: boolean;
+  /** null is "for ever"; with a setting, the value in force right now. */
+  retentionDays: number | null;
+  setting: string | null;
+}
+
+export interface StorageResponse {
+  databaseBytes: number;
+  measuredAt: string;
+  tables: StorageTable[];
+}
+
+/** Settings › Support › Storage (#786). SYSTEM_READ, like the update status. */
+export function getStorage(): Promise<StorageResponse> {
+  return apiRequest<StorageResponse>("/system/storage");
+}
+
 export type SharingTier = "off" | "keys" | "reveal";
 
 export interface DataSharingSettings {

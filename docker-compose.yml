@@ -52,6 +52,7 @@ services:
       # this block; backend/tests/test_compose_settings.py holds both lists to config.py.
       DATABASE_URL: postgresql+asyncpg://looninspect_app:${POSTGRES_APP_PASSWORD}@db:5432/looninspect
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
       # Legacy: while no destination exists, a start makes this URL a generic webhook
       # destination; Settings › Destinations holds them all (docs/splunk-setup.md).
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}
@@ -157,6 +158,7 @@ services:
       EVENT_OUTBOX_RETENTION_DAYS: ${EVENT_OUTBOX_RETENTION_DAYS:-7}
       DEAD_LETTER_RETENTION_DAYS: ${DEAD_LETTER_RETENTION_DAYS:-30}
       RUN_RETENTION_DAYS: ${RUN_RETENTION_DAYS:-30}
+      CHANGE_LOG_RETENTION_DAYS: ${CHANGE_LOG_RETENTION_DAYS:-0}
       AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-30}
       # The container log (docs/auth-design.md §6): DEBUG, INFO, WARNING, ERROR or CRITICAL,
       # and auto (JSON here), json or console. docs/troubleshooting.md reads it at INFO.

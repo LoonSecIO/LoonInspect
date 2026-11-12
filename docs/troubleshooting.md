@@ -60,8 +60,10 @@ they were written — §9 ends by saying the paths continue at §10.
   refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
 - **§23** ["Out of policy is missing, a title is not judged, or the rule draft fills
   nothing"](#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)
-- **§24** ["LoonInspect.app will not open, or opens and says it could not
-  start"](#24-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
+- **§24** ["The change log keeps growing with `CHANGE_LOG_RETENTION_DAYS` set, or the Changes
+  page lost history"](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
+- **§25** ["LoonInspect.app will not open, or opens and says it could not
+  start"](#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -555,6 +557,20 @@ the run `jobID`, the token's index settings, and the search you ran.
      tz database name that this image does not load. Both are Central time; its canonical
      name is `America/Chicago`. Set `SYNC_TIMEZONE` in `.env` to the canonical name for
      your zone, then `docker compose up -d`.
+   - *ENCRYPTION_KEY_PREVIOUS is set but is not a valid Fernet key* → a rotation
+     ([`operations.md`](operations.md) §1) named the old key wrongly. Copy it exactly from
+     where it was stored, or unset it if no rotation is under way; `docker compose up -d`.
+   - *ENCRYPTION_KEY_PREVIOUS is the same key as ENCRYPTION_KEY* → the new key was never
+     generated, or was pasted into both. Generate one, put it in `ENCRYPTION_KEY` with the old
+     key in `ENCRYPTION_KEY_PREVIOUS`; `docker compose up -d`.
+   - it started, and `docker compose logs app | grep "ENCRYPTION_KEY rotation"` says
+     *complete* → remove `ENCRYPTION_KEY_PREVIOUS` from `.env` and `docker compose up -d`.
+     *incomplete* → the line names the table and column whose values open under neither key:
+     they were written under a third key (a restore from another instance, usually); put that
+     key in `ENCRYPTION_KEY_PREVIOUS` and restart, or re-enter those secrets
+     ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §5). *did not run* → the database was not
+     reachable at start; every value still opens under either key, and the rewrite runs again
+     at the next start — step 1.
    - *The database role this instance connected as is a superuser* (or *a role with
      BYPASSRLS*) *, so row-level security would not apply to it* → `DATABASE_URL` names the
      master or `postgres` user, and the app refuses before any migration. Prepare the
@@ -1664,9 +1680,10 @@ field that left, `query_text`.
    row matches and the table beneath is empty — the chip also reads this for the moment the page
    is still waiting for its answer. A token is keyed to this deployment's `ENCRYPTION_KEY` and to
    one tenant, so the usual cause is a link made in another deployment or tenant, whose tokens
-   mean nothing here. Change rows are never pruned (README, *What this project prunes*), so a link
-   made here keeps resolving, and after a key rotation it keeps resolving over the rows from
-   before the rotation. Press × on the chip to drop the filter, then find the person from a row.
+   mean nothing here. Change rows are kept for ever unless `CHANGE_LOG_RETENTION_DAYS` bounds
+   them (README, *What this project prunes*), so a link made here keeps resolving over the rows
+   the clock has left, and after a key rotation it keeps resolving over the rows from before the
+   rotation. Press × on the chip to drop the filter, then find the person from a row.
 
    **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
    Product?" works when Jamf's catalog holds that department's name. The model tends to read a
@@ -2887,7 +2904,34 @@ own rule, or drafting one needs **system:write**.
 Nothing a draft returns is saved. A rule exists only after **Confirm**, which the audit log records
 as `patching-policy.updated` with the limits.
 
-## 24. "LoonInspect.app will not open, or opens and says it could not start"
+## 24. "The change log keeps growing with `CHANGE_LOG_RETENTION_DAYS` set, or the Changes page lost history"
+
+The change log has one clock, off by default (#785, [`change-log.md`](change-log.md) §6). Both
+complaints are the same check run in opposite directions.
+
+1. **What the running process read.** `docker compose logs app | grep change_log_retention_days`
+   prints the `starting` line with the value in force. `0` → the clock is off and nothing is
+   deleted, whatever `.env` says now: the app reads it at start, so `docker compose up -d` after
+   editing `.env`. A number you did not set → it is set in `.env` beside `docker-compose.yml`, or
+   in the pod's task definition; that is where a lost history came from.
+2. **Did last night's purge run?** `docker compose logs app | grep "change-log"`:
+   - *purged old change-log rows* with `count` and `retention_days` → it ran. Disk not given back
+     is expected: the purge keeps the table from growing past the window, and the pages it frees
+     are reused by the next day's rows ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §1 has the
+     `VACUUM FULL` that returns them, and its lock).
+   - *change-log purge failed for this tenant* → the line names the next check: the database
+     container's health and free space (§4, [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §3). Nothing
+     was deleted for that tenant that night; the run and alert purges still ran.
+   - neither line, and the value is set → either no row was old enough yet (the first night
+     deletes only what is older than the window), or no process with the scheduler was up at
+     02:50: `docker compose logs app | grep scheduler_enabled` — a web-only process
+     (`SCHEDULER_ENABLED=false`, [`operations.md`](operations.md) §7) purges nothing.
+3. **Rows that are gone are gone.** The clock did what it was set to. The observation ledger still
+   holds the evidence those rows were derived from, but the Changes page does not re-derive, and
+   the artifact search reads only the rows that remain. A dump from before the purge is the way
+   back ([`operations.md`](operations.md) §3); set the value you meant before restoring it.
+
+## 25. "LoonInspect.app will not open, or opens and says it could not start"
 
 The macOS app ([`macos-app.md`](macos-app.md)) is the container's backend, frontend and
 PostgreSQL running as child processes of a small shell, on one Mac. Everything it writes is under

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
+import { StorageBlock } from "@/features/support/StorageBlock";
 import { UpdatesBlock } from "@/features/support/UpdatesBlock";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
 import { UPDATES_ANCHOR } from "@/features/system/updateStatus";
@@ -127,6 +128,10 @@ export function SupportPage() {
       {/* Right after the build, because it is the next question about it: is this the
           latest release, and if not, how to get there with the dump taken first. */}
       {canSeeUpdates && <UpdatesBlock />}
+
+      {/* What the database holds and the clock each table is on (#786): the capacity
+          question KNOWN_ISSUES §1–§3 answer with arithmetic, read from the instance. */}
+      {canSeeUpdates && <StorageBlock />}
 
       {/* The site and its docs: where the how-to pages live, so a question that is
           "how do I set this up" has somewhere to go before it becomes an issue. */}

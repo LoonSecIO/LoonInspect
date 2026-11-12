@@ -68,6 +68,7 @@ from app.api.vulnerabilities_prompt import router as vulnerabilities_prompt_rout
 from app.api.webhooks import router as webhooks_router
 from app.catalog.index import rebuild_index
 from app.catalog.service import refresh_tenant
+from app.changes.retention import purge_changes
 from app.core.audit import configure_audit_logging
 from app.core.auth import authenticate
 from app.core.bootstrap import bootstrap_accounts, bootstrap_tenants, migrate_legacy_siem_webhook
@@ -78,6 +79,7 @@ from app.core.database import init_db, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
+from app.core.rekey import rekey_stored_values
 from app.core.runs import AcquisitionBusy, purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
 from app.core.submissions import forget_closed
@@ -379,9 +381,14 @@ async def run_cleanup() -> None:
     A submission case's URL, text and contact ride the same night on the service's own clock (#623): 90 days
     after the case closed, or once it expired. Theirs is a step of its own, so neither purge's failure keeps the
     other from running.
+
+    The change log rides the same night on its own clock (#785), `change_log_retention_days`, and
+    only once an operator has set it: at the default of 0 every `device_changes` row is kept for
+    ever, as it always was. A step of its own as well, for the same reason.
     """
     for tenant_id in await operational_tenant_ids():
         await _forget_closed_cases(tenant_id)
+        await _purge_change_log(tenant_id)
         async with tenant_job(tenant_id) as db:
             try:
                 purged = await purge_runs(db, settings.run_retention_days)
@@ -404,6 +411,61 @@ async def run_cleanup() -> None:
                 "purged closed alerts",
                 extra={"tenant_id": str(tenant_id), "count": closed_alerts},
             )
+
+
+async def _purge_change_log(tenant_id: uuid.UUID) -> None:
+    """The change log's step of the night (#785): nothing while its clock is off, and a failure
+    that names the next check without keeping the run and alert purges from their own."""
+    days = settings.change_log_retention_days
+    if days <= 0:
+        return
+    try:
+        async with tenant_job(tenant_id) as db:
+            purged = await purge_changes(db, days)
+    except Exception:
+        logger.exception(
+            "change-log purge failed for this tenant; nothing was purged for it tonight and its change log keeps "
+            "growing until a later night succeeds; check the database container is healthy (docker compose ps db) "
+            "and has room to write, then that CHANGE_LOG_RETENTION_DAYS is the value you meant",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return
+    if purged:
+        logger.info(
+            "purged old change-log rows",
+            extra={"tenant_id": str(tenant_id), "count": purged, "retention_days": days},
+        )
+
+
+async def _rekey_for_rotation() -> None:
+    """The rewrite behind an ENCRYPTION_KEY rotation (#144), at every start while
+    ENCRYPTION_KEY_PREVIOUS is set, and the one line that says where the rotation stands:
+    complete, incomplete and naming the columns, or not run. Never fatal — until the previous
+    key is unset every value opens under either, and the rewrite runs again next start."""
+    try:
+        summary = await rekey_stored_values()
+    except Exception:
+        logger.exception(
+            "ENCRYPTION_KEY rotation did not run: the stored values could not be read or rewritten; every value "
+            "still opens under either key, and the rewrite is tried again at the next start; check the database "
+            "container is healthy (docker compose ps db)"
+        )
+        return
+    counts = {"rewritten": summary.rewritten, "already_current": summary.current, "unreadable": summary.unreadable}
+    if summary.complete:
+        logger.info(
+            "ENCRYPTION_KEY rotation complete: every stored value is under ENCRYPTION_KEY and none remains under "
+            "ENCRYPTION_KEY_PREVIOUS; remove ENCRYPTION_KEY_PREVIOUS from the environment and restart",
+            extra=counts,
+        )
+        return
+    logger.error(
+        f"ENCRYPTION_KEY rotation incomplete: {summary.unreadable} stored value(s) in "
+        f"{', '.join(summary.unreadable_in)} open under neither ENCRYPTION_KEY nor ENCRYPTION_KEY_PREVIOUS, so they "
+        "were written under a third key; put that key in ENCRYPTION_KEY_PREVIOUS and restart, or re-enter those "
+        "secrets (KNOWN_ISSUES.md §5)",
+        extra=counts,
+    )
 
 
 async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
@@ -445,7 +507,11 @@ async def lifespan(app: FastAPI):
             "database_dialect": settings.database_url.split("://", 1)[0],
             "log_format": settings.resolved_log_format,
             "scheduler_enabled": settings.scheduler_enabled,
+            # 0 is the default and means the change log is kept for ever (#785).
+            "change_log_retention_days": settings.change_log_retention_days,
             "siem_webhook_configured": bool(settings.siem_webhook_url),
+            # A rotation is under way while ENCRYPTION_KEY_PREVIOUS is set (#144).
+            "encryption_key_rotation": bool(settings.encryption_key_previous),
             # "custom" says an override is in force and never what it says (#187).
             "content_security_policy": content_security_policy_mode(),
         },
@@ -477,6 +543,13 @@ async def lifespan(app: FastAPI):
                     "titles": len(library.titles),
                 },
             )
+
+    # A rotation under way (#144): every stored value opens under ENCRYPTION_KEY or
+    # ENCRYPTION_KEY_PREVIOUS, and this rewrites the ones still under the previous key so the
+    # operator can take it out of the environment. One line says which of the three states
+    # the rotation is in; the step-through is docs/troubleshooting.md §4.
+    if settings.encryption_key_previous:
+        await _rekey_for_rotation()
 
     # First-run setup is a property of the deployment rather than of a tenant — there
     # is one claim token and one first administrator — so it runs against the single
