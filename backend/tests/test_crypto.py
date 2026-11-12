@@ -222,3 +222,66 @@ def test_validate_rejects_a_malformed_key(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_validate_accepts_a_real_key(encryption_key: str) -> None:
     validate_encryption_key()
+
+
+# --- a rotation (#144): two keys for a while, one key id throughout ------------------------
+
+
+def test_a_value_under_the_previous_key_still_opens_during_a_rotation(
+    encryption_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old key goes in ENCRYPTION_KEY_PREVIOUS beside the new one, and a row written under
+    it reads as before — which is what lets the rewrite run on a live instance."""
+    from app.core.crypto import open_stored
+
+    column = EncryptedString()
+    stored = column.process_bind_param(_SECRET, None)  # under the key the fixture installed
+
+    monkeypatch.setattr(settings, "encryption_key_previous", encryption_key)
+    monkeypatch.setattr(settings, "encryption_key", Fernet.generate_key().decode())
+
+    assert column.process_result_value(stored, None) == _SECRET
+    assert open_stored(stored) == (_SECRET, "previous")
+    rewritten = column.process_bind_param(_SECRET, None)
+    assert rewritten.startswith("k1:") and open_stored(rewritten) == (_SECRET, "current")
+
+
+def test_a_value_under_neither_key_is_still_unreadable(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.crypto import StoredValueUnreadable
+
+    stored = EncryptedString().process_bind_param(_SECRET, None)
+    monkeypatch.setattr(settings, "encryption_key_previous", Fernet.generate_key().decode())
+    monkeypatch.setattr(settings, "encryption_key", Fernet.generate_key().decode())
+
+    with pytest.raises(StoredValueUnreadable, match="not the one this database was written under"):
+        EncryptedString().process_result_value(stored, None)
+
+
+def test_validate_refuses_a_malformed_previous_key(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "encryption_key_previous", "not-a-fernet-key")
+    with pytest.raises(RuntimeError, match="ENCRYPTION_KEY_PREVIOUS is set but is not a valid Fernet key"):
+        validate_encryption_key()
+
+
+def test_validate_refuses_a_previous_key_equal_to_the_current_one(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "encryption_key_previous", encryption_key)
+    with pytest.raises(RuntimeError, match="the same key as ENCRYPTION_KEY, so there is nothing to rotate to"):
+        validate_encryption_key()
+
+
+def test_an_empty_previous_key_means_no_rotation(encryption_key: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Compose passes an unset optional setting as the empty string (test_compose_settings.py)."""
+    from app.core.crypto import get_previous_encryption_key
+
+    monkeypatch.setattr(settings, "encryption_key_previous", "")
+    validate_encryption_key()
+    assert get_previous_encryption_key() is None
+
+
+def test_the_rotation_sentences_have_their_step_through() -> None:
+    """Both startup refusals are quoted in troubleshooting §4 (docs/diagnosability.md rule 4)."""
+    from app.core.crypto import PREVIOUS_KEY_IS_CURRENT, PREVIOUS_KEY_MALFORMED
+
+    doc = (Path(__file__).resolve().parents[2] / "docs" / "troubleshooting.md").read_text()
+    assert PREVIOUS_KEY_MALFORMED.split(". ")[0] in doc
+    assert PREVIOUS_KEY_IS_CURRENT.split(", so")[0] in doc

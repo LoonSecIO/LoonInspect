@@ -160,7 +160,7 @@ cd LoonInspect
 cp backend/.env.example .env
 ```
 
-Generate an `ENCRYPTION_KEY` and add it to `.env` (used to encrypt MDM connection secrets at rest — required, the app won't start without it):
+Generate an `ENCRYPTION_KEY` and add it to `.env` (used to encrypt MDM connection secrets at rest — required, the app won't start without it; it can be rotated later, [docs/operations.md §1](docs/operations.md)):
 
 ```bash
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

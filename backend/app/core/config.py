@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     encryption_key: str | None = None
+    # The key the database was written under before a rotation (#144), and nothing else. Set
+    # beside a new ENCRYPTION_KEY, every stored value opens under either and startup rewrites
+    # the ones still under this key (app.core.rekey); unset once the log says none remain.
+    # Compose passes it empty when unset, and empty means unset (docs/operations.md §1).
+    encryption_key_previous: str | None = None
 
     # Legacy, single-destination path. Read once at first boot to auto-create an
     # equivalent Destination row if none exist yet (see bootstrap.migrate_legacy_siem_

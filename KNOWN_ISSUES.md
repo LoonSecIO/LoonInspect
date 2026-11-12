@@ -234,8 +234,10 @@ to lose a LoonInspect instance: back up the database, not the key.
 
 **Workaround.** Back up `.env` with the dump, in your secret store rather than beside
 it, and verify the pair with the one-liner in
-[docs/operations.md §1](docs/operations.md). There is no key rotation yet, so the key
-generated at install is the key that database needs for its whole life.
+[docs/operations.md §1](docs/operations.md). The key can be rotated without re-entering
+anything (#144, [docs/operations.md §1](docs/operations.md)): the old key goes in
+`ENCRYPTION_KEY_PREVIOUS` beside the new one, startup rewrites every stored value, and one
+log line says when the old key can go.
 
 ## 6. The downgrade path is manual, order-dependent, and undocumented in the product
 
