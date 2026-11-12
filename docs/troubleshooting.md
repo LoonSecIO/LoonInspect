@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§22, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§24, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -62,6 +62,8 @@ they were written — §9 ends by saying the paths continue at §10.
   nothing"](#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)
 - **§24** ["The change log keeps growing with `CHANGE_LOG_RETENTION_DAYS` set, or the Changes
   page lost history"](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
+- **§25** ["LoonInspect.app will not open, or opens and says it could not
+  start"](#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -2928,3 +2930,96 @@ complaints are the same check run in opposite directions.
    holds the evidence those rows were derived from, but the Changes page does not re-derive, and
    the artifact search reads only the rows that remain. A dump from before the purge is the way
    back ([`operations.md`](operations.md) §3); set the value you meant before restoring it.
+
+## 25. "LoonInspect.app will not open, or opens and says it could not start"
+
+The macOS app ([`macos-app.md`](macos-app.md)) is the container's backend, frontend and
+PostgreSQL running as child processes of a small shell, on one Mac. Everything it writes is under
+`~/Library/Application Support/LoonInspect`: the database in `pgdata`, and in `logs` the four
+files every sentence below names. **LoonInspect › Show Logs in Finder** opens that folder, and
+**LoonInspect › About LoonInspect** shows the version and build number a report needs. This path
+names no lettered state: each step ends in a file to read, and the report is that file.
+
+1. **macOS refuses to open it** — *"LoonInspect" can't be opened because Apple cannot check it for
+   malicious software*, or *is damaged and can't be opened*. Ask Gatekeeper what it thinks, in
+   Terminal:
+
+   ```
+   spctl --assess --type execute --verbose=2 /Applications/LoonInspect.app
+   ```
+
+   - `accepted` … `source=Notarized Developer ID` → the copy is fine; the message was about the
+     disk image or a download that did not finish. Eject the image, copy the app again, open it.
+   - `rejected` … `source=Unnotarized Developer ID` → a Developer ID build that Apple has not
+     notarized: a build that skipped `macos/scripts/notarize.sh`. Not a release; ask for the
+     release's disk image, whose image and app both carry a stapled ticket.
+   - `rejected` … `source=no usable signature` → an ad-hoc build copied from the Mac that built
+     it. It runs only there. Build it on this Mac, or use the release's disk image.
+   - `rejected` … `source=obsolete resource envelope`, or `codesign --verify --strict --deep
+     /Applications/LoonInspect.app` names a file → the bundle was modified after it was signed
+     (a file edited or added inside it). Copy it from the disk image again.
+
+   Removing the quarantine attribute by hand opens an unnotarized build; it is not the fix for a
+   release, and it is not what a release needs.
+
+2. **The window reads "LoonInspect could not start"**, and a sentence under it. The sentence says
+   what failed and names the log that says why. `logs/shell.log` holds the order of events,
+   one line each, and the sentence is its last `ERROR` line.
+   - *Another LoonInspect is already running from …* → there is one, with or without a window.
+     Activity Monitor › LoonInspect; quit it, then open this one. The lock is held by the running
+     process itself, so nothing stale can hold it after a crash.
+   - *The database in … exists, but ENCRYPTION_KEY is missing from the login keychain (service
+     LoonInspect)* → the data directory survived something the keychain did not: a new Mac from
+     a file copy, a keychain reset, a user account migrated without its login keychain. The three
+     items (`ENCRYPTION_KEY`, `postgres-looninspect_app`, `postgres-looninspect`, service
+     `LoonInspect`) come back from a keychain backup, and from nowhere else; `macos-app.md` ›
+     Backup is why the key is part of one. Without them, the only start is empty: move
+     `~/Library/Application Support/LoonInspect` aside and open the app again, and the
+     connections, the ledger and the users in that directory are gone with it.
+   - *Reading ENCRYPTION_KEY from the login keychain failed (security exited …). Check that the
+     login keychain is unlocked.* → Keychain Access: the login keychain is locked, or is not the
+     default. Unlock it and open the app again.
+   - *First launch could not create the database: initdb exited …* (or *CREATE DATABASE*, or
+     *application role*) → `logs/initdb.log` holds the tool's own output under a `==` line. The
+     two causes seen: no free disk, and a support directory this user cannot write (a restored
+     folder owned by another account). Nothing was kept; fix the cause and open the app, which
+     starts the first launch over.
+   - *Postgres exited while starting (status …). Its log is …/postgres.log; the last lines:* →
+     the lines are the answer. *No space left on device* is KNOWN_ISSUES.md §3 on a laptop;
+     *lock file "postmaster.pid" already exists* with a PID that is alive means a Postgres from
+     an earlier session the shell could not stop; quit it from Activity Monitor and open the app
+     again.
+   - *Postgres did not report ready within 60 s* → a disk so slow or so full that recovery after
+     a crash did not finish. `postgres.log` says *redo in progress*; wait for it to end, then
+     open the app again.
+   - *The backend exited while starting (status …). Its log is …/backend.log; the last lines:* →
+     `backend.log` is the container's JSON log, line for line. The last line whose `level` is
+     `ERROR` names the failure as §4 names it for the container; a migration that failed says
+     which revision, and §4 step 3 applies as written.
+   - *The backend did not answer /api/health with 200 within 180 s* → a first launch runs every
+     migration, and later launches run the new ones; 180 s is many times what either takes
+     (`macos-app.md` › Measurements). `backend.log` says what it was doing. Report it, with the
+     last 50 lines of `backend.log` and all of `shell.log`.
+   - *The database socket would be …, N bytes, and macOS allows 103 for a Unix socket path; the
+     fallback /tmp/io.loonsec.looninspect.<uid> exists and is not a directory owned by this user*
+     → a long home directory path sends the socket under `/tmp`, and something else holds that
+     name. The sentence says what to remove.
+   - *postgres exited unexpectedly* or *backend exited unexpectedly (status …)*, after it was
+     running → the named log's last lines, then quit and open the app again, which starts both.
+3. **The window stays on "Starting LoonInspect…" or is blank.** **View › Reload** (⌘R). If that
+   does not help, **LoonInspect › Open in Browser**: the same page in Safari means the server is
+   up and the window is what failed, which is WebKit's and worth a report with `shell.log` (its
+   *window shows* line says what the page reported). The port is in `run/port` under the support
+   directory, and `curl http://127.0.0.1:$(cat ~/Library/Application\ Support/LoonInspect/run/port)/api/health`
+   answers `{"status":"ok"}` when the server is fine.
+4. **Setup asks for a claim token.** The page was opened in a browser rather than in the app's
+   window. Setup is meant to happen in the window, which holds this session's token; in a
+   browser the token is the *claim token* line of `logs/backend.log`, as it is for the container.
+5. **After replacing the app with a newer one, it will not start, and `backend.log` names a
+   newer database.** The same rule as the image ([`operations.md`](operations.md) §5): a build
+   refuses a database written by a later release than its own. The release's `RELEASE` is
+   `backend_release` in `Contents/Resources/build-manifest.json`. Put the later version back.
+6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
+   directory, the window's data and the three keychain items. It is the end of that instance's
+   data; a copy of `pgdata` taken while the app is quit, with the `ENCRYPTION_KEY` item, is the
+   backup that comes back from it.
