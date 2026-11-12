@@ -184,3 +184,31 @@ class DataSharingUpdate(BaseModel):
     tier: SharingTier | None = None
     exclude_globs: list[str] | None = None
     ai_inference: bool | None = None
+
+
+class StorageTableOut(BaseModel):
+    """One table: what it takes on disk, roughly how many rows, and the clock it is on (#786)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    table: str
+    # "record" is the fleet's history, kept for ever unless a setting says otherwise;
+    # "machinery" is what the product prunes on its own.
+    area: Literal["record", "machinery"]
+    # pg_total_relation_size: heap, indexes and TOAST, in bytes. Physical and instance-wide.
+    bytes: int
+    # The planner's estimate since the last VACUUM or ANALYZE — never a COUNT(*).
+    rows_estimate: int
+    # False when the table is not in this database (an image older than the table).
+    present: bool
+    # None is "for ever". With a setting, the number is the value in force right now.
+    retention_days: int | None
+    setting: str | None
+
+
+class StorageOut(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    database_bytes: int
+    measured_at: datetime
+    tables: list[StorageTableOut]

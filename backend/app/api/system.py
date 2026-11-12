@@ -25,6 +25,7 @@ from app.core.sharing import (
     remember_tier,
     send_exchange_now,
 )
+from app.core.storage import measure_storage
 from app.core.update_check import get_update_status
 from app.core.version import get_app_version
 from app.models.schema import ShareLog
@@ -34,6 +35,7 @@ from app.schemas.system import (
     ExclusionCandidatesOut,
     SendExchangeOut,
     ShareLogEntryOut,
+    StorageOut,
     UpdateStatusOut,
     VersionOut,
 )
@@ -93,6 +95,19 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
         last_exchange_error=last.error if last else None,
         participation=participation.summary(row),
     )
+
+
+@router.get(
+    "/storage",
+    response_model=StorageOut,
+    dependencies=[Depends(require(Permission.SYSTEM_READ))],
+)
+async def storage(db: AsyncSession = Depends(get_db)) -> StorageOut:
+    """What the database holds, table by table, and the clock each one is on (#786): sizes and
+    row estimates as Postgres holds them for this database, every tenant in it, beside the
+    retention setting in force. SYSTEM_READ, like the update status: how big an instance is, is
+    the operator's question. Reads only; nothing here purges or vacuums."""
+    return await measure_storage(db)
 
 
 @router.get(
