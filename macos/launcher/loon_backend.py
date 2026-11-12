@@ -57,7 +57,11 @@ def _watch(parent: int) -> None:
 
 def main() -> int:
     signal.signal(signal.SIGTERM, _on_sigterm)
-    threading.Thread(target=_watch, args=(os.getppid(),), name="shell-watchdog", daemon=True).start()
+    # The shell can die before Python starts; getppid() alone would then watch launchd forever.
+    parent = int(os.environ.get("LOON_SHELL_PID", str(os.getppid())))
+    threading.Thread(
+        target=_watch, args=(parent,), name="shell-watchdog", daemon=True
+    ).start()
     from app.serve import main as serve
 
     return serve()

@@ -16,6 +16,20 @@ it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md)
 | `shell/` | The Swift shell (SwiftPM, no Xcode project): the window, the menu, and the supervisor that starts and stops Postgres and the backend. `Info.plist` holds the app's version. |
 | `launcher/loon_backend.py` | The backend's entry in the bundle: `app.serve` plus a watchdog that stops it, and Postgres, if the shell dies. |
 
+## Install and use
+
+For an already-built release, open the DMG and drag **LoonInspect** to **Applications**.
+The receiving Apple-silicon Mac needs no development tools or separate runtime. The native
+**Help › Using LoonInspect on This Mac** explains the local instance, data location, network
+connections and manual updates. Closing the window leaves the app running; **Quit** stops its
+services and sleep pauses them. The UI is local to this Mac, while Jamf, configured destinations
+and enabled sharing or AI can make outbound connections. Review the setup sharing choice and
+**Settings › Data Sharing** before collecting production inventory.
+
+Copying the installer to another Mac does not copy existing accounts, connections or inventory.
+Those live outside the app. Follow [Backup](../docs/macos-app.md#backup) for an existing
+instance's database and matching Keychain items. Quit before replacing the app with an update.
+
 ## Build and run
 
 Apple silicon; needs Xcode's `swift`, Node 22 (`node`/`npm`), native **uv 0.9.30**, and the
@@ -93,7 +107,8 @@ submit to Apple. Use GitHub's secret form or `gh secret set --repo LoonSecIO/Loo
 The job imports the certificate and validated notary credentials into a temporary keychain,
 selects the one signing identity for the expected team, and requires a clean checkout and a
 Developer ID build. `SIGN_KEYCHAIN` and `NOTARY_KEYCHAIN` select that keychain without changing
-the runner's default keychain. It removes the keychain and credential files on success or
+the runner's default keychain. It temporarily adds it to the user keychain search list for
+code signing, restores the original list, and removes the keychain and credential files on success or
 failure. Pull requests run isolated script tests and a complete ad-hoc build without these secrets;
 that unsigned-for-distribution build is never uploaded.
 
@@ -126,5 +141,7 @@ for a in ENCRYPTION_KEY postgres-looninspect_app postgres-looninspect; do
 
 The database is gone with the first line, and so is everything the instance held: do that only
 to start over. A backup is a copy of `pgdata` taken while the app is quit, plus the
-`ENCRYPTION_KEY` keychain item, without which the stored credentials in that copy are
-unreadable ([docs/macos-app.md](../docs/macos-app.md), "Backup").
+matching `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain
+items. The encryption key is needed to read stored connection credentials; the database
+passwords must match the copied cluster. A different Mac or user account does not acquire
+those secrets by copying the app or database ([Backup](../docs/macos-app.md#backup)).

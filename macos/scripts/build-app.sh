@@ -180,7 +180,8 @@ xattr -cr "$app" 2>/dev/null || true
 count=0
 while IFS= read -r -d '' f; do
   is_mach_o "$f" || continue
-  "${sign[@]}" "$f" 2>/dev/null || die "could not sign $f"
+  # Preserve Apple's diagnostic: keychain access and timestamp failures need different fixes.
+  "${sign[@]}" "$f" || die "could not sign $f; read codesign's error above and check the signing keychain and timestamp service (docs/troubleshooting.md, section 25)"
   count=$((count + 1))
 done < <(find "$res" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) ! -name '*.py' -print0)
 echo "build-app: signed $count Mach-O files under Contents/Resources"

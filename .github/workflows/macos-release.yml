@@ -27,6 +27,7 @@ jobs:
           persist-credentials: false
       - run: for script in macos/scripts/*.sh; do bash -n "$script"; done
       - run: python3 macos/tests/test_notarize.py
+      - run: bash macos/tests/run-shell-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: github.event_name == 'pull_request'
         with:
@@ -116,6 +117,8 @@ jobs:
             echo '::error::Missing MACOS_CERTIFICATE_BASE64 or MACOS_CERTIFICATE_PASSWORD in environment macos-release; see macos/README.md.'; exit 1; }
           credentials="$RUNNER_TEMP/looninspect-signing"
           mkdir -p "$credentials"
+          # codesign's private-key lookup also needs the temporary keychain in the search list.
+          security list-keychains -d user | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$credentials/original-keychains"
           keychain="$credentials/signing.keychain-db"
           password=$(openssl rand -hex 32)
           echo "::add-mask::$password"
@@ -123,6 +126,9 @@ jobs:
           security create-keychain -p "$password" "$keychain"
           security set-keychain-settings -lut 10800 "$keychain"
           security unlock-keychain -p "$password" "$keychain"
+          keychains=()
+          while IFS= read -r entry; do keychains+=("$entry"); done < "$credentials/original-keychains"
+          security list-keychains -d user -s "$keychain" "${keychains[@]}"
           security import "$credentials/signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
           identity=$(security find-identity -v -p codesigning "$keychain" |
@@ -178,7 +184,13 @@ jobs:
       - name: Remove temporary signing credentials
         if: always()
         run: |
-          keychain="$RUNNER_TEMP/looninspect-signing/signing.keychain-db"
+          credentials="$RUNNER_TEMP/looninspect-signing"
+          if [ -s "$credentials/original-keychains" ]; then
+            keychains=()
+            while IFS= read -r entry; do keychains+=("$entry"); done < "$credentials/original-keychains"
+            security list-keychains -d user -s "${keychains[@]}" || true
+          fi
+          keychain="$credentials/signing.keychain-db"
           if [ -f "$keychain" ]; then security delete-keychain "$keychain" || true; fi
           rm -rf "$RUNNER_TEMP/looninspect-signing"
 
