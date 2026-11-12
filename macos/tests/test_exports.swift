@@ -25,6 +25,8 @@ struct ExportTests {
         try require(try String(contentsOf: target, encoding: .utf8) == "previous report", "Original survives pending transfer")
         try replacement.commit()
         try require(try String(contentsOf: target, encoding: .utf8) == "complete report", "Successful transfer replaces approved destination")
+        let replacedPermissions = try fm.attributesOfItem(atPath: target.path)[.posixPermissions] as? NSNumber
+        try require(replacedPermissions?.intValue == 0o600, "Replacement uses the new report's restricted permissions")
         let conflictTarget = root.appendingPathComponent("conflict.csv")
         let conflict = ExportDestination(url: conflictTarget)
         try "new download".write(to: conflict.stagingURL, atomically: true, encoding: .utf8)

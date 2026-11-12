@@ -22,7 +22,7 @@ struct ExportDestination {
         let fm = FileManager.default
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stagingURL.path)
         if replaceExisting && fm.fileExists(atPath: url.path) {
-            _ = try fm.replaceItemAt(url, withItemAt: stagingURL)
+            _ = try fm.replaceItemAt(url, withItemAt: stagingURL, options: .usingNewMetadataOnly)
         } else {
             // If another file appeared after the save panel, preserve it and report the conflict.
             try fm.moveItem(at: stagingURL, to: url)

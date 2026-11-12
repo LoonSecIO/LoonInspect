@@ -124,6 +124,19 @@ starting another run; rerunning the script submits again. `ALLOW_DIRTY=1` is a l
 escape hatch, never set by the workflow. Run the isolated script tests with
 `python3 macos/tests/test_notarize.py`; they require macOS `plutil` but no credentials/network.
 
+## Native regression checks
+
+`bash macos/tests/run-shell-tests.sh` checks saved-port recovery, failed log/input pipes,
+watchdog behavior, and export replacement using temporary files and mocked signals.
+It never starts the real app or reads its Keychain items. These checks also run in macOS CI.
+
+For window recovery, run `python3 macos/tests/window/run.py --source-dir .` from the repository
+on a Mac with a logged-in graphical session. It compiles the actual delegate and views against
+fake services, serves a disposable loopback page, uses nonpersistent WebKit storage, and disables
+frame autosaving. It checks cancellation, reload, failed service cleanup, and late startup
+callbacks without accessing an existing installation's data. This GUI harness is separate from
+the headless checks; running it briefly creates test windows.
+
 ## Where it keeps things, and how to start over
 
 The app keeps its database and logs in `~/Library/Application Support/LoonInspect`, its three
