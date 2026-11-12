@@ -91,7 +91,8 @@ The job imports the certificate and validated notary credentials into a temporar
 selects the one signing identity for the expected team, and requires a clean checkout and a
 Developer ID build. `SIGN_KEYCHAIN` and `NOTARY_KEYCHAIN` select that keychain without changing
 the runner's default keychain. It removes the keychain and credential files on success or
-failure. Pull requests only run isolated script tests and never receive these secrets.
+failure. Pull requests run isolated script tests and a complete ad-hoc build without these secrets;
+that unsigned-for-distribution build is never uploaded.
 
 Only after both artifacts pass notarization, stapling and Gatekeeper assessment are they
 uploaded. A separate job with `contents: write` attaches assets to a published release; the
