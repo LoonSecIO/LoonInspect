@@ -96,10 +96,13 @@ record — what each device looked like each time it was read, and through what 
 configuration — so history can be diffed without phantom changes when the shape evolves.
 The contract is in [docs/jamf-observations.md](docs/jamf-observations.md).
 
-**No fleet data here is deleted.** Devices, installed apps, extension attributes, the
-observation ledger, and the change log (`device_changes`) have no retention setting and
-no purge job — a Mac removed from Jamf keeps its full history. What this project prunes
-is the machinery around that record, never the record: the delivery outbox (7 days, or 30
+**No fleet data here is deleted unless you say so.** Devices, installed apps, extension
+attributes and the observation ledger have no retention setting and no purge job — a Mac
+removed from Jamf keeps its full history. The change log (`device_changes`) is kept for
+ever by default too, and it is the one record with a clock you can set:
+`CHANGE_LOG_RETENTION_DAYS` bounds it to that many days, nightly and in batches, and `0`,
+the default, leaves every row (#785). What this project prunes on its own is the
+machinery around that record, never the record: the delivery outbox (7 days, or 30
 for an event whose delivery dead-lettered), finished runs and the closed alert latches
 that ride the same `run_retention_days` (30 days), the audit log (30 days, by daily file
 rotation), the share log of what left the box for community sharing or AI (90 days,
@@ -319,7 +322,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, lists one app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty-one ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, lists one app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing, a change log that keeps growing with its clock set or a Changes page that lost history — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and

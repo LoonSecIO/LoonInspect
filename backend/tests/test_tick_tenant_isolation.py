@@ -167,3 +167,47 @@ async def test_the_submission_clock_clears_for_the_next_tenant(
     assert _failure(caplog).getMessage().startswith("submission cleanup failed for this tenant")
     [done] = [r for r in caplog.records if r.getMessage() == CLEARED]
     assert (done.tenant_id, done.count) == (str(TENANT_B), 3)
+
+
+async def test_the_change_log_purge_is_a_step_of_its_own(
+    two_tenants: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#785: with its clock set, the change-log purge runs per tenant before the run purge, a
+    failure in it names the next check in the operator's words, and the run and alert purges
+    still run for the tenant it failed in."""
+    changes: list[uuidlib.UUID] = []
+    runs: list[uuidlib.UUID] = []
+    monkeypatch.setattr(main.settings, "change_log_retention_days", 90)
+    monkeypatch.setattr(main, "purge_changes", _dies_for_a(changes, result=4))
+    monkeypatch.setattr(main, "purge_runs", _counts(runs))
+    monkeypatch.setattr(main, "purge_closed_alerts", _counts([]))
+    monkeypatch.setattr(main, "forget_closed", _counts([]))
+
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        await main.run_cleanup()
+
+    assert changes == [TENANT_A, TENANT_B]
+    assert runs == [TENANT_A, TENANT_B]  # A's runs are purged all the same
+    message = _failure(caplog).getMessage()
+    assert message.startswith("change-log purge failed for this tenant")
+    assert "CHANGE_LOG_RETENTION_DAYS" in message  # the next check, in the operator's words
+    [done] = [r for r in caplog.records if r.getMessage() == "purged old change-log rows"]
+    assert (done.tenant_id, done.count, done.retention_days) == (str(TENANT_B), 4, 90)
+
+
+async def test_the_change_log_purge_is_skipped_while_its_clock_is_off(
+    two_tenants: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The default: 0 means the change log is kept for ever, and the night never calls the purge."""
+    changes: list[uuidlib.UUID] = []
+    monkeypatch.setattr(main.settings, "change_log_retention_days", 0)
+    monkeypatch.setattr(main, "purge_changes", _counts(changes, result=99))
+    monkeypatch.setattr(main, "purge_runs", _counts([]))
+    monkeypatch.setattr(main, "purge_closed_alerts", _counts([]))
+    monkeypatch.setattr(main, "forget_closed", _counts([]))
+
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        await main.run_cleanup()
+
+    assert changes == []
+    assert not [r for r in caplog.records if "change-log" in r.getMessage()]
