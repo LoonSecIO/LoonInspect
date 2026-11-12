@@ -79,6 +79,7 @@ from app.core.database import init_db, unscoped_session
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
+from app.core.rekey import rekey_stored_values
 from app.core.runs import AcquisitionBusy, purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
 from app.core.submissions import forget_closed
@@ -436,6 +437,37 @@ async def _purge_change_log(tenant_id: uuid.UUID) -> None:
         )
 
 
+async def _rekey_for_rotation() -> None:
+    """The rewrite behind an ENCRYPTION_KEY rotation (#144), at every start while
+    ENCRYPTION_KEY_PREVIOUS is set, and the one line that says where the rotation stands:
+    complete, incomplete and naming the columns, or not run. Never fatal — until the previous
+    key is unset every value opens under either, and the rewrite runs again next start."""
+    try:
+        summary = await rekey_stored_values()
+    except Exception:
+        logger.exception(
+            "ENCRYPTION_KEY rotation did not run: the stored values could not be read or rewritten; every value "
+            "still opens under either key, and the rewrite is tried again at the next start; check the database "
+            "container is healthy (docker compose ps db)"
+        )
+        return
+    counts = {"rewritten": summary.rewritten, "already_current": summary.current, "unreadable": summary.unreadable}
+    if summary.complete:
+        logger.info(
+            "ENCRYPTION_KEY rotation complete: every stored value is under ENCRYPTION_KEY and none remains under "
+            "ENCRYPTION_KEY_PREVIOUS; remove ENCRYPTION_KEY_PREVIOUS from the environment and restart",
+            extra=counts,
+        )
+        return
+    logger.error(
+        f"ENCRYPTION_KEY rotation incomplete: {summary.unreadable} stored value(s) in "
+        f"{', '.join(summary.unreadable_in)} open under neither ENCRYPTION_KEY nor ENCRYPTION_KEY_PREVIOUS, so they "
+        "were written under a third key; put that key in ENCRYPTION_KEY_PREVIOUS and restart, or re-enter those "
+        "secrets (KNOWN_ISSUES.md §5)",
+        extra=counts,
+    )
+
+
 async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
     """One line a night per tenant, with the count and never a case's words (docs/troubleshooting.md §21)."""
     async with tenant_job(tenant_id) as db:
@@ -478,6 +510,8 @@ async def lifespan(app: FastAPI):
             # 0 is the default and means the change log is kept for ever (#785).
             "change_log_retention_days": settings.change_log_retention_days,
             "siem_webhook_configured": bool(settings.siem_webhook_url),
+            # A rotation is under way while ENCRYPTION_KEY_PREVIOUS is set (#144).
+            "encryption_key_rotation": bool(settings.encryption_key_previous),
             # "custom" says an override is in force and never what it says (#187).
             "content_security_policy": content_security_policy_mode(),
         },
@@ -509,6 +543,13 @@ async def lifespan(app: FastAPI):
                     "titles": len(library.titles),
                 },
             )
+
+    # A rotation under way (#144): every stored value opens under ENCRYPTION_KEY or
+    # ENCRYPTION_KEY_PREVIOUS, and this rewrites the ones still under the previous key so the
+    # operator can take it out of the environment. One line says which of the three states
+    # the rotation is in; the step-through is docs/troubleshooting.md §4.
+    if settings.encryption_key_previous:
+        await _rekey_for_rotation()
 
     # First-run setup is a property of the deployment rather than of a tenant — there
     # is one claim token and one first administrator — so it runs against the single

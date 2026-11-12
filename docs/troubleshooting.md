@@ -555,6 +555,20 @@ the run `jobID`, the token's index settings, and the search you ran.
      tz database name that this image does not load. Both are Central time; its canonical
      name is `America/Chicago`. Set `SYNC_TIMEZONE` in `.env` to the canonical name for
      your zone, then `docker compose up -d`.
+   - *ENCRYPTION_KEY_PREVIOUS is set but is not a valid Fernet key* → a rotation
+     ([`operations.md`](operations.md) §1) named the old key wrongly. Copy it exactly from
+     where it was stored, or unset it if no rotation is under way; `docker compose up -d`.
+   - *ENCRYPTION_KEY_PREVIOUS is the same key as ENCRYPTION_KEY* → the new key was never
+     generated, or was pasted into both. Generate one, put it in `ENCRYPTION_KEY` with the old
+     key in `ENCRYPTION_KEY_PREVIOUS`; `docker compose up -d`.
+   - it started, and `docker compose logs app | grep "ENCRYPTION_KEY rotation"` says
+     *complete* → remove `ENCRYPTION_KEY_PREVIOUS` from `.env` and `docker compose up -d`.
+     *incomplete* → the line names the table and column whose values open under neither key:
+     they were written under a third key (a restore from another instance, usually); put that
+     key in `ENCRYPTION_KEY_PREVIOUS` and restart, or re-enter those secrets
+     ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §5). *did not run* → the database was not
+     reachable at start; every value still opens under either key, and the rewrite runs again
+     at the next start — step 1.
    - *The database role this instance connected as is a superuser* (or *a role with
      BYPASSRLS*) *, so row-level security would not apply to it* → `DATABASE_URL` names the
      master or `postgres` user, and the app refuses before any migration. Prepare the
