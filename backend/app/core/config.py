@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # a row per event per destination. See app.core.runs.purge_runs.
     run_retention_days: int = 30
 
+    # The change log's clock (#785), and the one clock that is off unless an operator turns it
+    # on: 0 keeps every `device_changes` row for ever, which is what every install has done since
+    # the table existed and what a month-14 investigation needs. A value bounds the table to that
+    # many days by `observed_at`, purged nightly beside the run log (app.changes.retention). The
+    # ledger the change log is derived from has no clock (KNOWN_ISSUES.md §2).
+    change_log_retention_days: int = 0
+
     # How many device failures one sweep may absorb before the whole run is failed:
     # the larger of the absolute floor and this percentage of the devices attempted so
     # far (app.mdm.service.sweep_failures_allowed, #92). The floor keeps a small fleet
@@ -377,6 +384,13 @@ class Settings(BaseSettings):
         if 1 <= value <= 3650:
             return value
         raise ValueError("run_retention_days must be between 1 and 3650")
+
+    @field_validator("change_log_retention_days")
+    @classmethod
+    def _validate_change_log_retention(cls, value: int) -> int:
+        if value == 0 or 1 <= value <= 3650:
+            return value
+        raise ValueError("change_log_retention_days must be 0 (keep the change log for ever) or between 1 and 3650")
 
     @field_validator("splunk_hec_max_request_bytes")
     @classmethod

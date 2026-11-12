@@ -13,7 +13,7 @@ Operating procedures — backup, restore, upgrade, rollback — are in
 
 ---
 
-## 1. `device_changes` grows for ever
+## 1. `device_changes` grows for ever, unless you bound it
 
 **The limit.** What ages out on a clock is the machinery around the record, not the
 record: outbox events after 7 days (`event_outbox_retention_days`, or 30 under
@@ -23,8 +23,10 @@ setting, the audit log by daily file rotation keeping `audit_retention_days` fil
 share log of what left the box after 90 days, terminal inventory summary jobs and cached
 prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), the URL, text and
 contact written on a coverage request or match report 90 days after its case closes, and expired or revoked sessions a day after
-they die. The change log is not one of them. Nothing deletes a `device_changes` row,
-ever, and there is no setting that would.
+they die. The change log is not one of them by default: nothing deletes a
+`device_changes` row while `CHANGE_LOG_RETENTION_DAYS` is `0`, which it is unless you set
+it. Set to a number of days (#785), rows observed longer ago than that are deleted
+nightly at 02:50, in batches of 10,000, and the table holds a steady window from then on.
 
 **Measured.** 514 bytes per row, all in — 390 bytes of heap and 124 of index across the
 seven indexes on the table — over 200,000 synthetic rows of the commonest shape (an
@@ -45,11 +47,19 @@ cadence sits well under it and a fleet mid-migration sits well over it. The chan
 counts every change your policy keeps, which is a larger number than the wire figure in
 the README, since that one counts only what a destination is subscribed to.)
 
-**Workaround.** Delete old rows. This is safe by design and not a hack:
-`device_changes` is *derived* from the observation ledger, and the model says so in as
-many words — "deletable without loss — the spans hold the truth and a re-derivation
-under a different policy is always possible". What you lose is the Changes view's
-history for that window; the ledger, the devices and the app catalog are untouched.
+**The setting.** `CHANGE_LOG_RETENTION_DAYS=90` in `.env`, then `docker compose up -d`.
+The first night deletes everything older than the window, ten thousand rows a statement,
+and each night after that deletes one day's worth. Deleting change rows is safe by design
+and not a hack: `device_changes` is *derived* from the observation ledger, and the model
+says so in as many words — "deletable without loss — the spans hold the truth and a
+re-derivation under a different policy is always possible". What you lose is the Changes
+view's history beyond that window, and the artifact search over it; the ledger, the
+devices and the app catalog are untouched, and nothing on the wire changes, since every
+event left through the outbox when it happened. The default is `0` on purpose: an
+investigation fourteen months after the fact needs the rows, and that is the product's
+strongest use, so the clock is yours to set and never set for you.
+
+**Reclaiming disk by hand**, once, for a window the nightly purge will keep from then on:
 
 ```bash
 docker compose exec -T db psql -U looninspect -d looninspect \
@@ -76,10 +86,11 @@ VACUUM
 ```
 
 **Note the second `on_disk`.** Plain `VACUUM` marks the pages reusable, it does not
-give them back to the filesystem, so a purge run to free disk frees none. `VACUUM FULL
-device_changes` does, and takes an `ACCESS EXCLUSIVE` lock on the table for the
-duration — every read and write blocks. Schedule it, or size the volume so you never
-need it.
+give them back to the filesystem, so a purge run to free disk frees none — the nightly
+purge included: it keeps the table from growing past the window, and the pages it frees
+are reused by the next day's rows. `VACUUM FULL device_changes` gives them back, and
+takes an `ACCESS EXCLUSIVE` lock on the table for the duration — every read and write
+blocks. Schedule it, or size the volume so you never need it.
 
 ## 2. The observation ledger grows for ever, and cannot be safely pruned
 

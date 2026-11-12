@@ -320,3 +320,17 @@ stays a `high` field change, on by default.
 - A contract field the policy does not name yet is treated as `normal`, so a new
   contract version cannot silently drop changes.
 - Rows record the policy version they were derived under.
+
+## 6. Retention
+
+Rows are kept for ever by default. `CHANGE_LOG_RETENTION_DAYS` (#785), `0` unless set,
+bounds `device_changes` to that many days by `observed_at`: the nightly cleanup at 02:50
+deletes older rows per tenant, ten thousand a statement, and logs `purged old change-log
+rows` with the count, or `change-log purge failed for this tenant` with the next check.
+Nothing else moves — the observation ledger the rows are derived from has no clock
+([KNOWN_ISSUES.md §2](../KNOWN_ISSUES.md)), and every event already left through the
+outbox when it happened. What goes is the Changes page's history beyond the window, and
+the artifact search over it, which is why the default keeps every row: a month-14
+investigation is the reason the rows exist. [KNOWN_ISSUES.md §1](../KNOWN_ISSUES.md)
+prices the alternative, and [troubleshooting.md §24](troubleshooting.md) is the
+step-through when the clock is on and the table still grows.

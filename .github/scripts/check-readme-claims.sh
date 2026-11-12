@@ -142,11 +142,11 @@ claim() {
 # away, and a count it cannot spell fails as `out-of-range`, which reads like a broken
 # script rather than like the stale number that is the actual finding (#402). It had
 # reached its end again by #529's sixteenth path, so it now runs to twenty.
-PATH_COUNT_MARKER='\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty) (ordered )?paths\b'
+PATH_COUNT_MARKER='\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-(one|two|three|four|five|six|seven|eight|nine)|thirty) (ordered )?paths\b'
 
 readme_path_count_matches_troubleshooting() {
   local doc=docs/troubleshooting.md counted written
-  local words=(zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty)
+  local words=(zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six twenty-seven twenty-eight twenty-nine thirty)
   [[ -f $doc ]] || return 1
   counted=$(grep -cE '^## [0-9]+\. "' "$doc")
   written=$(grep -oiE "$PATH_COUNT_MARKER" "$README" | head -1 | tr '[:upper:]' '[:lower:]' | cut -d' ' -f1)
@@ -199,6 +199,7 @@ RETENTION_CLOCKS=(
   'summary-jobs|summary jobs'
   'summary-metrics|summary metric counters'
   'submission-content|coverage request or match report'
+  'change-log|change log'
 )
 
 # file:Model of every statement-level delete that is not a clock.
