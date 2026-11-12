@@ -8989,6 +8989,95 @@
         "title": "SmartGroupCriterionOut",
         "type": "object"
       },
+      "StorageOut": {
+        "properties": {
+          "databaseBytes": {
+            "title": "Databasebytes",
+            "type": "integer"
+          },
+          "measuredAt": {
+            "format": "date-time",
+            "title": "Measuredat",
+            "type": "string"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/StorageTableOut"
+            },
+            "title": "Tables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "databaseBytes",
+          "measuredAt",
+          "tables"
+        ],
+        "title": "StorageOut",
+        "type": "object"
+      },
+      "StorageTableOut": {
+        "description": "One table: what it takes on disk, roughly how many rows, and the clock it is on (#786).",
+        "properties": {
+          "area": {
+            "enum": [
+              "record",
+              "machinery"
+            ],
+            "title": "Area",
+            "type": "string"
+          },
+          "bytes": {
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "retentionDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retentiondays"
+          },
+          "rowsEstimate": {
+            "title": "Rowsestimate",
+            "type": "integer"
+          },
+          "setting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "area",
+          "bytes",
+          "present",
+          "retentionDays",
+          "rowsEstimate",
+          "setting",
+          "table"
+        ],
+        "title": "StorageTableOut",
+        "type": "object"
+      },
       "SubmissionCaseOut": {
         "properties": {
           "appName": {
@@ -15754,6 +15843,28 @@
           }
         },
         "summary": "Download Share Log",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/storage": {
+      "get": {
+        "description": "What the database holds, table by table, and the clock each one is on (#786): sizes and\nrow estimates as Postgres holds them for this database, every tenant in it, beside the\nretention setting in force. SYSTEM_READ, like the update status: how big an instance is, is\nthe operator's question. Reads only; nothing here purges or vacuums.",
+        "operationId": "storage_api_system_storage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Storage",
         "tags": [
           "system"
         ]

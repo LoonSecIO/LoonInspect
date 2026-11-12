@@ -208,6 +208,13 @@ task definition.
 
 ---
 
+### What the database holds
+
+Settings › Support › **Storage** (#786) shows, for this database and every tenant in it,
+each table's size and row estimate as Postgres holds them, and the clock each one is on:
+*for ever* for the record, the setting in force for the machinery. It is the sizing input for
+the volume and the dump; `GET /api/system/storage` is the same answer for a script.
+
 ## 2. Backup
 
 ```bash

@@ -122,6 +122,10 @@ safe pruner is a design question, not a `DELETE`.
 
 ## 3. A full database volume takes the instance down, and says so only in the database's log
 
+**What the volume holds, before it is full:** Settings › Support › **Storage** (#786) lists
+every table in §1 and §2 with its size, its row estimate and the clock it is on, read from
+this database — the arithmetic above, measured rather than multiplied.
+
 **The limit.** Nothing in the product watches free space on the database volume.
 
 **Measured.** Filling the volume under a running Postgres 17.11:
