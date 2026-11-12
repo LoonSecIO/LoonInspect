@@ -1,0 +1,185 @@
+name: macOS release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/macos-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scripts:
+    name: macOS release script tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: for script in macos/scripts/*.sh; do bash -n "$script"; done
+      - run: python3 macos/tests/test_notarize.py
+
+  notarize:
+    name: Build, sign and notarize
+    needs: scripts
+    # PRs run isolated script tests only. Manual signing runs use main; version tags are
+    # admin-controlled by the existing release-tags ruleset, and checked for main ancestry.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
+    runs-on: macos-15
+    timeout-minutes: 150
+    environment: macos-release
+    env:
+      EXPECTED_TEAM_ID: 6CWZ5GA79H
+      TAG: ${{ github.event.release.tag_name }}
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      REQUIRE_DEVELOPER_ID: '1'
+      REQUIRE_CLEAN_TREE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify source and release version before importing credentials
+        id: source
+        run: |
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo '::error::This commit is not on main. Select main or publish a tag from main.'; exit 1; }
+          version=$(plutil -extract CFBundleShortVersionString raw -o - macos/shell/Info.plist)
+          backend=$(sed -n 's/^RELEASE = "\(.*\)"$/\1/p' backend/app/core/version.py)
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$backend" = "v$version" ] || {
+            echo '::error::The app and backend release versions differ. Update Info.plist and backend RELEASE together before building.'; exit 1; }
+          if [ -n "$TAG" ]; then
+            [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] && [ "${TAG%%-*}" = "v$version" ] || {
+              echo '::error::The release tag does not match the app version. Publish the correct version tag; do not move a published tag.'; exit 1; }
+            [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] || exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.9.30'
+          enable-cache: false
+      - name: Select the runner's Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          swift --version
+          [ "$(uname -m)" = arm64 ]
+
+      - name: Import signing and notarization credentials into a temporary keychain
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [ -n "$CERTIFICATE_BASE64" ] && [ -n "$CERTIFICATE_PASSWORD" ] || {
+            echo '::error::Missing MACOS_CERTIFICATE_BASE64 or MACOS_CERTIFICATE_PASSWORD in environment macos-release; see macos/README.md.'; exit 1; }
+          credentials="$RUNNER_TEMP/looninspect-signing"
+          mkdir -p "$credentials"
+          keychain="$credentials/signing.keychain-db"
+          password=$(openssl rand -hex 32)
+          echo "::add-mask::$password"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$credentials/signing.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 10800 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$credentials/signing.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          identity=$(security find-identity -v -p codesigning "$keychain" |
+            sed -n "s/.*) \([A-F0-9]\{40\}\) \"Developer ID Application: .*($EXPECTED_TEAM_ID)\"/\1/p")
+          [[ $identity =~ ^[A-F0-9]{40}$ ]] || {
+            echo '::error::The P12 must contain exactly one Developer ID Application identity for the expected team, including its private key.'; exit 1; }
+          if [ -n "$API_KEY" ]; then
+            [ -n "$API_KEY_ID" ] || { echo '::error::APPLE_API_KEY_ID is missing; see macos/README.md.'; exit 1; }
+            printf '%s' "$API_KEY" > "$credentials/AuthKey.p8"
+            auth=(--key "$credentials/AuthKey.p8" --key-id "$API_KEY_ID")
+            [ -z "$API_ISSUER_ID" ] || auth+=(--issuer "$API_ISSUER_ID")
+          else
+            [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] || {
+              echo '::error::Configure an App Store Connect API key or Apple ID app-specific password in macos-release; see macos/README.md.'; exit 1; }
+            auth=(--apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$EXPECTED_TEAM_ID")
+          fi
+          xcrun notarytool store-credentials LoonInspect --keychain "$keychain" "${auth[@]}"
+          rm -f "$credentials/signing.p12" "$credentials/AuthKey.p8"
+          {
+            echo "SIGN_IDENTITY=$identity"
+            echo "SIGN_KEYCHAIN=$keychain"
+            echo "NOTARY_KEYCHAIN=$keychain"
+            echo 'NOTARY_PROFILE=LoonInspect'
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed app and DMG
+        run: macos/scripts/build-app.sh
+      - name: Notarize, staple and verify app and DMG
+        run: macos/scripts/notarize.sh
+      - name: Save verified release assets
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: LoonInspect-${{ steps.source.outputs.version }}-arm64
+          path: |
+            macos/build/LoonInspect-*-arm64.dmg
+            macos/build/LoonInspect-*-arm64.zip
+            macos/build/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Save notarization responses for diagnosis
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-notarization-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            macos/build/notarize-*.json
+            macos/build/notarize-*.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove temporary signing credentials
+        if: always()
+        run: |
+          keychain="$RUNNER_TEMP/looninspect-signing/signing.keychain-db"
+          if [ -f "$keychain" ]; then security delete-keychain "$keychain" || true; fi
+          rm -rf "$RUNNER_TEMP/looninspect-signing"
+
+  publish:
+    name: Attach verified assets to the published release
+    needs: notarize
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: LoonInspect-*-arm64
+          path: assets
+          merge-multiple: true
+      - name: Verify checksums and upload without replacing existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        working-directory: assets
+        run: |
+          sha256sum --check SHA256SUMS
+          gh release upload "$TAG" ./*.dmg ./*.zip SHA256SUMS --repo "$GITHUB_REPOSITORY"

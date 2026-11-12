@@ -24,7 +24,9 @@ ln -s /Applications "$stage/Applications"
 hdiutil create -quiet -volname "LoonInspect $version" -srcfolder "$stage" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$dmg"
 rm -rf "$stage"
 if [ "$identity" != - ]; then
-  codesign --force --sign "$identity" --timestamp "$dmg"
+  sign=(codesign --force --sign "$identity" --timestamp)
+  [ -z "${SIGN_KEYCHAIN:-}" ] || sign+=(--keychain "$SIGN_KEYCHAIN")
+  "${sign[@]}" "$dmg"
   codesign --verify --strict "$dmg"
 else
   echo "package-dmg: the app is signed ad-hoc, so the image is not signed; it runs here and nowhere else" >&2

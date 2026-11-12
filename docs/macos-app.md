@@ -158,10 +158,11 @@ build signs ad-hoc with the same flags, so a development build fails where a rel
 and runs on the Mac that built it and nowhere else. The `.pyc` files are compiled at build time
 with `unchecked-hash`, so nothing writes into the sealed bundle at run time.
 
-**Notarization** is the release step, run once per release on the Mac with the identity:
+**Notarization** is the release step. It runs in the `macOS release` GitHub Action or locally
+on a Mac with the signing identity. This command prompts for an app-specific password:
 
 ```sh
-xcrun notarytool store-credentials LoonInspect --apple-id <Apple ID> --team-id <team id> --password <app-specific password>
+xcrun notarytool store-credentials LoonInspect --apple-id <Apple ID> --team-id 6CWZ5GA79H
 NOTARY_PROFILE=LoonInspect macos/scripts/notarize.sh
 ```
 
@@ -173,7 +174,11 @@ answers `rejected (Unnotarized Developer ID)` for the app on any Mac that did no
 
 **A release.** Build from the release commit, notarize, attach
 `macos/build/LoonInspect-<version>-arm64.dmg` to the GitHub release. The disk image holds the
-app and an Applications link; a user drags one onto the other and opens it.
+app and an Applications link; a user drags one onto the other and opens it. The GitHub Action
+builds and attaches these assets on release publication; manual runs from main save workflow
+artifacts. CI requires the app version and backend `RELEASE` to agree and validates tag/main
+ancestry before importing signing credentials. Environment setup and the full flow are in
+[`macos/README.md`](../macos/README.md#github-actions).
 
 **Updates.** There is no update mechanism in 1.0.0, and `UPDATE_CHECK` is off because its notice
 tells an operator to pull an image. A newer version is a newer disk image dragged over the old
@@ -221,8 +226,6 @@ the same user account has it.
 - **Intel.** The Postgres build is universal and python-build-standalone publishes x86_64; the
   wheels would need x86_64 builds, two bundles or a merged tree. Worth doing only if asked for.
 - **Logs rotate at launch only.**
-- **No CI job builds it.** A macOS runner could run `build-app.sh` and the headless checks below;
-  signing and notarization there need the certificate and a notarytool key as secrets.
 - **Size.** 11 MB is `fastapi[standard]`'s command line (fastapi-cli, typer, rich-toolkit and
   friends), which the running server never imports; 29 MB is ICU data EnterpriseDB's Postgres
   links and the builtin locale never uses. Dropping either is a dependency or a build of our own.
