@@ -35,6 +35,8 @@ final class Supervisor: @unchecked Sendable {
 
     /// Called when Postgres or the backend exits while nobody asked it to.
     var onUnexpectedExit: (@Sendable (String) -> Void)?
+    /// Startup milestones for the window; delivered on the thread running start().
+    var onProgress: (@Sendable (String, String) -> Void)?
 
     private let lock = NSLock()
     private var stopping = false
@@ -80,24 +82,30 @@ final class Supervisor: @unchecked Sendable {
     /// Brings Postgres and the backend up and returns the port the UI answers on. Blocks for
     /// as long as that takes, so it runs off the main thread.
     func start() throws -> Int {
-        rotateLogs()
-        log.info("launch: \(Bundle.main.bundlePath), version \(Self.version), data in \(support.path)")
+        onProgress?("Opening LoonInspect", "Preparing this Mac's workspace.")
         try prepareDirectories()
         try takeInstanceLock()
+        rotateLogs()
+        log.info("launch: \(Bundle.main.bundlePath), version \(Self.version), data in \(support.path)")
         let fresh = !FileManager.default.fileExists(atPath: pgdata.appendingPathComponent("PG_VERSION").path)
+        onProgress?("Reading saved credentials", "Checking the login keychain for this workspace's keys.")
         let secrets = try loadSecrets(fresh: fresh)
         if fresh {
+            onProgress?("Creating your local database", "This happens on the first launch and may take a little longer.")
             let began = Date()
             try initializeDatabase(appPassword: secrets.appPassword, superuserPassword: secrets.superuserPassword)
             log.info("first launch: initdb and the application role took \(since(began))")
         }
         excludeFromBackup(pgdata)
+        onProgress?("Starting the local database", "Preparing your saved workspace.")
         try stopOrphanedPostgres()
         try startPostgres()
         log.info("postgres ready, \(since(launched)) after launch")
         let port = try choosePort()
+        onProgress?("Starting LoonInspect", "Loading the server and checking for database updates.")
         try startBackend(port: port, secrets: secrets)
         try waitUntilHealthy(port: port)
+        onProgress?("Opening your workspace", "The server is ready.")
         log.info("healthy at http://127.0.0.1:\(port)/ \(since(launched)) after launch (\(fresh ? "first" : "warm") launch)")
         return port
     }
@@ -232,7 +240,7 @@ final class Supervisor: @unchecked Sendable {
         defer { try? initdbLog.close() }
 
         func step(_ what: String, _ result: ToolResult) throws {
-            initdbLog.write(Data("== \(what) (exit \(result.status))\n\(result.stdout)\(result.stderr)\n".utf8))
+            try? initdbLog.write(contentsOf: Data("== \(what) (exit \(result.status))\n\(result.stdout)\(result.stderr)\n".utf8))
             guard result.status == 0 else {
                 throw ShellFailure("First launch could not create the database: \(what) exited \(result.status). "
                     + "Its output is in \(logDir.path)/initdb.log; nothing was kept, so the next launch starts over.")
@@ -314,16 +322,21 @@ final class Supervisor: @unchecked Sendable {
         }
     }
 
+    /// Reuse a valid saved port only while available; zero asks the binder for a fresh port.
+    static func selectPort(remembered text: String?, bind: (Int) throws -> Int) rethrows -> Int {
+        if let text, let port = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+           (1...65535).contains(port), let available = try? bind(port) {
+            return available
+        }
+        return try bind(0)
+    }
+
     /// The port used last time if it is still free, so the UI's origin (and its per-origin
     /// storage) survives a relaunch; otherwise any free one. Written to run/port either way.
     private func choosePort() throws -> Int {
         let remembered = support.appendingPathComponent("preferred-port")
-        var chosen: Int?
-        if let text = try? String(contentsOf: remembered, encoding: .utf8), let last = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-           (try? bindLoopback(last)) != nil {
-            chosen = last
-        }
-        let port = try chosen ?? bindLoopback(0)
+        let text = try? String(contentsOf: remembered, encoding: .utf8)
+        let port = try Self.selectPort(remembered: text, bind: bindLoopback)
         try "\(port)\n".write(to: remembered, atomically: true, encoding: .utf8)
         try "\(port)\n".write(to: runDir.appendingPathComponent("port"), atomically: true, encoding: .utf8)
         self.port = port
@@ -379,6 +392,8 @@ final class Supervisor: @unchecked Sendable {
         let postgresPID = postgres?.processIdentifier
         lock.unlock()
         env["LOON_SHELL_PGDATA"] = pgdata.path
+        // Capture the shell before spawning Python, which may first run after the shell has died.
+        env["LOON_SHELL_PID"] = "\(getpid())"
         if let postgresPID { env["LOON_SHELL_POSTGRES_PID"] = "\(postgresPID)" }
         let process = Process()
         process.executableURL = resources.appendingPathComponent("python/bin/python3")

@@ -26,6 +26,31 @@ It is for an operator who wants to look at a Jamf Pro instance from a laptop wit
 host. It runs while it is open and the Mac is awake, and not otherwise; a fleet whose events must
 reach a SIEM every night runs the container (KNOWN_ISSUES.md §10).
 
+### Using the app on this Mac
+
+Open the release's disk image, drag **LoonInspect** to **Applications**, then launch it there.
+Python, PostgreSQL and the web interface are bundled; the receiving Mac needs no Docker,
+Homebrew, Xcode or separate database. The account created at setup belongs to this installation.
+
+**Help › Using LoonInspect on This Mac** explains the local instance, network connections,
+data location, updates and transfer. The startup screen names the phase in progress. A failure
+offers **Show Logs** and **Quit**; after correcting the cause, quit and reopen the app.
+
+Closing the window leaves collection running. **Window › Show LoonInspect** brings it back;
+**Quit LoonInspect** stops collection and delivery, and sleep pauses them. The interface is
+reachable only from this Mac. Jamf cannot send webhooks to its loopback address; use a reachable
+server deployment for incoming webhooks and continuous operation.
+
+Local storage does not mean no outbound traffic. LoonInspect contacts Jamf and the destinations
+you configure; community sharing and configured AI have their own controls. Setup preselects
+the community-sharing choice. Review it there and under **Settings › Data Sharing** before
+collecting production inventory. Connection secrets are encrypted in the database with a key
+in login Keychain; the database itself is not encrypted by LoonInspect.
+
+Copying the DMG to another Mac installs the software, not the existing instance's accounts,
+connections or inventory. Those stay in Application Support and Keychain. Moving an existing
+instance requires the matching database and secrets described under [Backup](#backup).
+
 | Path in the bundle | Holds |
 | --- | --- |
 | `Contents/MacOS/LoonInspect` | The shell: the window, the menu, the supervisor (`macos/shell/`). |
@@ -100,7 +125,8 @@ naming a live process whose command line is this data directory), starts
 waits for `postmaster.pid` to read `ready`, picks the port, starts the backend with the
 environment below, polls `/api/health` until it answers 200 behind a waiting page (or an error
 page that names the log if it never does), and loads `http://127.0.0.1:<port>/`. Links that
-leave the instance open in the default browser; file downloads go to `~/Downloads`.
+leave the instance open in the default browser. Downloads ask where to save the file and report
+completion or failure; cancelling the save dialog cancels that download.
 
 | Setting | Container | App | Why |
 | --- | --- | --- | --- |
@@ -141,10 +167,11 @@ running one alone.
 
 **The version.** `CFBundleShortVersionString` in `macos/shell/Info.plist` is the app's release,
 `1.0.0`, and the pull request that prepares a release moves it, as the one that prepares an image
-release moves `RELEASE` in `backend/app/core/version.py`. The two are not the same number and
-need not be: the app's names the bundle a Mac runs, the backend's is what the image inside it
-compares with a database's `schema_release` (BRANCHING.md §1.1). `build-manifest.json` records
-both. `CFBundleVersion` is the build number, `BUILD_NUMBER` or the UTC build minute, stamped by
+release moves `RELEASE` in `backend/app/core/version.py`. They serve different purposes but the
+release workflow requires them to agree (`1.0.0` in the app, `v1.0.0` in the backend): the app's
+version names the bundle a Mac runs; the backend compares its release with the database's
+`schema_release` (BRANCHING.md §1.1). `build-manifest.json` records both. `CFBundleVersion` is
+the build number, `BUILD_NUMBER` or the UTC build minute, stamped by
 `build-app.sh`; the page's build readout and the update check read `build_info.json`
 (`YYYY.MM.DD+<sha>`), written as the Dockerfile writes it.
 
@@ -181,8 +208,8 @@ ancestry before importing signing credentials. Environment setup and the full fl
 [`macos/README.md`](../macos/README.md#github-actions).
 
 **Updates.** There is no update mechanism in 1.0.0, and `UPDATE_CHECK` is off because its notice
-tells an operator to pull an image. A newer version is a newer disk image dragged over the old
-app; the data directory and the keychain items survive the swap, and the next launch runs the new
+tells an operator to pull an image. Quit LoonInspect before replacing it with the app from a newer
+disk image. The data directory and the keychain items survive the swap, and the next launch runs the new
 migrations as the container does. Stepping back obeys the same rule as the image: a build refuses
 a database written by a later `RELEASE` than its own (`operations.md` §5), and
 `troubleshooting.md` §25 step 5 says so. A Postgres major (17 to 18) would need `pg_upgrade` or a
@@ -197,14 +224,19 @@ The bundle ships no `pg_dump`, so `operations.md` §2 cannot be run against the 
    is why the app marks `pgdata` excluded from Time Machine (`tmutil isexcluded` reads
    `[Excluded]`).
 2. Copy `~/Library/Application Support/LoonInspect/pgdata`.
-3. Keep the `ENCRYPTION_KEY` item from the login keychain with it
-   (`security find-generic-password -s LoonInspect -a ENCRYPTION_KEY -w`). Without it the
-   credentials in the copy are unreadable, exactly as a `pg_dump` without the key is not a backup
-   (`operations.md`, "ENCRYPTION_KEY is not optional").
+3. Preserve the matching login Keychain items under service `LoonInspect`: `ENCRYPTION_KEY`,
+   `postgres-looninspect_app`, and `postgres-looninspect`. Without `ENCRYPTION_KEY`, the stored
+   connection credentials are unreadable (`operations.md`, "ENCRYPTION_KEY is not optional").
+   The database passwords must also match the copied cluster. Keep these secrets in protected
+   backup storage; an installer or a copy of `pgdata` does not contain them.
 
-A restore is the directory put back, with the app quit, and the keychain item present. The
-`postgres-looninspect_app` password must match too; it is in the same keychain, and a restore on
-the same user account has it.
+A restore puts the directory back with the app quit and all three matching Keychain items
+available to the receiving macOS user. A restore into the original user account may retain those
+items; copying files to another Mac does not transfer them. Do not replace a missing encryption
+key with a new one: that cannot decrypt the original credentials. There is no built-in migration
+assistant. Keep the original database and Keychain backup until the restored instance has been
+verified. This procedure backs up the database; preserve `data/` and `logs/` separately if their
+audit and diagnostic history is needed.
 
 ## What 1.0.0 leaves out
 
@@ -229,9 +261,9 @@ the same user account has it.
 - **Size.** 11 MB is `fastapi[standard]`'s command line (fastapi-cli, typer, rich-toolkit and
   friends), which the running server never imports; 29 MB is ICU data EnterpriseDB's Postgres
   links and the builtin locale never uses. Dropping either is a dependency or a build of our own.
-- **Downloads are wired and untested** in the app's window: the evidence report and the
-  data-sharing export. JavaScript `alert` and `confirm` are not implemented; the frontend uses
-  neither.
+- **Export validation.** Downloads have a save dialog and completion/error feedback. The
+  historical 1.0.0 validation below did not exercise the evidence report and data-sharing export
+  end to end. JavaScript `alert` and `confirm` are not implemented; the frontend uses neither.
 
 ## Measurements
 

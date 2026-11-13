@@ -23,6 +23,8 @@ ask not to be.
 
 - This repository: the application image (FastAPI backend, React frontend), the
   bundled Postgres configuration, and the deployment templates under `ops/`.
+- The macOS application under `macos/`: its native shell, bundled backend and runtimes,
+  local data and credential handling, and signing/notarization workflow.
 - The hosted LoonSec services (`api.next.loonsec.io`, `api.loonsec.io`, `*.pods.loonsec.io`): report through
   the same channel; it is the same maintainer.
 

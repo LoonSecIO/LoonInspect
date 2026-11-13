@@ -2934,14 +2934,23 @@ complaints are the same check run in opposite directions.
 ## 25. "LoonInspect.app will not open, or opens and says it could not start"
 
 The macOS app ([`macos-app.md`](macos-app.md)) is the container's backend, frontend and
-PostgreSQL running as child processes of a small shell, on one Mac. Everything it writes is under
-`~/Library/Application Support/LoonInspect`: the database in `pgdata`, and in `logs` the four
+PostgreSQL running as child processes of a small shell, on one Mac. Its database and service logs
+are under `~/Library/Application Support/LoonInspect`: the database in `pgdata`, and in `logs` the four
 files every sentence below names. **LoonInspect › Show Logs in Finder** opens that folder, and
-**LoonInspect › About LoonInspect** shows the version and build number a report needs. This path
-names no lettered state: each step ends in a file to read, and the report is that file.
+**LoonInspect › About LoonInspect** shows the version and build number a report needs.
+**Help › Using LoonInspect on This Mac** explains the local instance, network connections and
+manual updates. The startup screen names its current phase; a failure offers **Show Logs** and
+**Quit**. Read the failure before quitting, correct its cause, then reopen the app.
 
 **Maintainer: build or notarization fails.** In Actions, open **macOS release** and the failed
 step. The same script messages appear in a local terminal.
+
+If `could not sign` names a bundled executable, read the `codesign` diagnostic immediately
+above it. A missing identity or `errSecInternalComponent` can mean the signing keychain is
+locked, missing from the keychain search list, or its private key does not permit `codesign`.
+The Action unlocks its temporary keychain, adds it to the search list for the job, and restores
+the original list during cleanup. A timestamp-service or network error calls for checking
+Apple/network availability; changing Apple-ID notarization credentials does not fix code signing.
 
 - *uv 0.9.30 is required* → install the exact native exporter named in `macos/README.md` and
   put it on `PATH`. Docker is no longer needed to export dependencies.
@@ -3042,8 +3051,11 @@ step. The same script messages appear in a local terminal.
      name. The sentence says what to remove.
    - *postgres exited unexpectedly* or *backend exited unexpectedly (status …)*, after it was
      running → the named log's last lines, then quit and open the app again, which starts both.
-3. **The window stays on "Starting LoonInspect…" or is blank.** **View › Reload** (⌘R). If that
-   does not help, **LoonInspect › Open in Browser**: the same page in Safari means the server is
+3. **The window stays on the startup screen or is blank.** If startup is still running, check
+   its phase and the log it names; first launch includes database preparation and migrations.
+   Once the local server is ready, **View › Reload Window** (⌘R) loads its local app address again,
+   including when the window currently shows an error page. If that does not help,
+   **LoonInspect › Open in Browser**: the same page in Safari means the server is
    up and the window is what failed, which is WebKit's and worth a report with `shell.log` (its
    *window shows* line says what the page reported). The port is in `run/port` under the support
    directory, and `curl http://127.0.0.1:$(cat ~/Library/Application\ Support/LoonInspect/run/port)/api/health`
@@ -3057,5 +3069,17 @@ step. The same script messages appear in a local terminal.
    `backend_release` in `Contents/Resources/build-manifest.json`. Put the later version back.
 6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
    directory, the window's data and the three keychain items. It is the end of that instance's
-   data; a copy of `pgdata` taken while the app is quit, with the `ENCRYPTION_KEY` item, is the
-   backup that comes back from it.
+   data. A restorable database backup is `pgdata` copied while the app is quit plus the matching
+   `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain items.
+   Copying a DMG to another Mac installs the software; it does not transfer that instance's data
+   or its Keychain. See [`macos-app.md` › Backup](macos-app.md#backup).
+7. **An export did not appear where expected.** Downloads from the app's window open a save
+   dialog. Choose a writable location and wait for the completion message. Cancelling the dialog
+   cancels the download. If the download reports a failure, read the message and retry the export
+   after checking the chosen folder and available disk space; a selected filename alone does not
+   mean the file finished downloading.
+8. **Collection stopped after closing the lid, or Jamf cannot reach a webhook address.** Closing
+   only the window leaves LoonInspect running; quitting stops its services and sleep pauses them.
+   The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
+   reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
+   reads and configured SIEM delivery still work while the Mac app is running and awake.

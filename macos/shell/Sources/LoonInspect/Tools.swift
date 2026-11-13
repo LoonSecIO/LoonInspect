@@ -27,9 +27,10 @@ final class ShellLog: @unchecked Sendable {
     private func write(_ level: String, _ message: String) {
         queue.sync {
             let line = Data("\(clock.string(from: Date())) \(level) \(message)\n".utf8)
-            FileHandle.standardError.write(line)
+            // A detached terminal or full log volume must not stop the app's services.
+            try? FileHandle.standardError.write(contentsOf: line)
             if let handle = try? appendHandle(url) {
-                handle.write(line)
+                try? handle.write(contentsOf: line)
                 try? handle.close()
             }
         }
@@ -65,18 +66,27 @@ func runTool(_ path: String, _ arguments: [String], stdin: String? = nil, enviro
     process.standardError = errors
     process.standardInput = stdin == nil ? FileHandle.nullDevice : input
     try start(process)
-    if let stdin {
-        input.fileHandleForWriting.write(Data(stdin.utf8))
-        try? input.fileHandleForWriting.close()
-    }
     var out = Data(), err = Data()
     let group = DispatchGroup()
     group.enter()
     DispatchQueue.global().async { out = output.fileHandleForReading.readDataToEndOfFile(); group.leave() }
     group.enter()
     DispatchQueue.global().async { err = errors.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+    var inputFailed = false
+    if let stdin {
+        do { try input.fileHandleForWriting.write(contentsOf: Data(stdin.utf8)) }
+        catch {
+            inputFailed = true
+            if process.isRunning { process.terminate() }
+        }
+        try? input.fileHandleForWriting.close()
+    }
     group.wait()
     process.waitUntilExit()
+    if inputFailed {
+        throw ShellFailure("\(URL(fileURLWithPath: path).lastPathComponent) stopped accepting input (exit \(process.terminationStatus)). "
+            + "Check the local service logs, then quit and reopen LoonInspect.")
+    }
     return ToolResult(status: process.terminationStatus,
                       stdout: String(decoding: out, as: UTF8.self),
                       stderr: String(decoding: err, as: UTF8.self))
