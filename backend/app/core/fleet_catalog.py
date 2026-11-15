@@ -95,7 +95,7 @@ _FAILURE_INTERVAL = timedelta(minutes=55)
 _KEPT = "Nothing was changed, and the titles already held stay."
 _CHECK_EGRESS = (
     f"Check this container's outbound access to {API_HOST} and {RAW_HOST} on port 443: DNS, a proxy or an "
-    "egress firewall in between (docs/troubleshooting.md §26)."
+    "egress firewall in between (docs/troubleshooting.md §27)."
 )
 FLAG_OFF = (
     "Fleet's catalog is not read while the Fleet catalog flag is off for this organization. Turn on "
@@ -172,7 +172,7 @@ async def _get(client: httpx.AsyncClient, url: str, *, ceiling: int, what: str, 
                     OUTCOME_UNEXPECTED,
                     f"{host} answered {what} with a redirect, which this check does not follow. {_KEPT} Usually a "
                     "proxy or a sign-in page answering in GitHub's place; if not, Fleet has moved its repository "
-                    "(docs/troubleshooting.md §26).",
+                    "(docs/troubleshooting.md §27).",
                 )
             if status != 200:
                 raise CheckFailed(
@@ -212,7 +212,7 @@ def _not_the_catalogue(what: str) -> CheckFailed:
         OUTCOME_UNEXPECTED,
         f"GitHub answered, but {what}, so Fleet has changed how it publishes its catalog or something else answered "
         f"in GitHub's place. {_KEPT} If the address is right, this build cannot read the new layout until it is "
-        "updated (docs/troubleshooting.md §26).",
+        "updated (docs/troubleshooting.md §27).",
     )
 
 
@@ -243,7 +243,7 @@ def parse_tree(body: bytes) -> dict[str, str]:
             OUTCOME_UNEXPECTED,
             "GitHub cut its listing of Fleet's catalog short, which it does past 100,000 files or 7 MB, so the "
             f"listing is not the whole catalog. {_KEPT} This build cannot read a catalog that large "
-            "(docs/troubleshooting.md §26).",
+            "(docs/troubleshooting.md §27).",
         )
     manifests: dict[str, str] = {}
     for entry in entries:

@@ -12,7 +12,7 @@ an organization turns on the `fleet_maintained_apps` flag. Downgrade drops both;
 check after an upgrade reads the catalogue again.
 
 Revision ID: f794a1c3d5e7
-Revises: a4d7e1c9b2f3
+Revises: c793a1f5d2e8
 Create Date: 2026-11-15
 """
 
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "f794a1c3d5e7"
-down_revision = "a4d7e1c9b2f3"
+down_revision = "c793a1f5d2e8"
 branch_labels = None
 depends_on = None
 

@@ -21,6 +21,7 @@ import {
   type ShareLogEntry,
   type SharingTier
 } from "@/features/system/api";
+import { PromotedApps } from "@/features/system/PromotedApps";
 import { endpointHost, sendNowAvailability } from "@/features/system/sendNow";
 import { ApiError } from "@/config/api";
 import { env } from "@/config/env";
@@ -351,6 +352,7 @@ export function DataSharingPage() {
             </p>
             {sent.error && <p className="text-sm text-destructive">{sent.error}</p>}
             {sent.revealsShed && <p className="text-xs text-muted-foreground">{t.system.sharing.revealsShed}</p>}
+            {sent.promotionsShed && <p className="text-xs text-muted-foreground">{t.system.sharing.promotionsShed}</p>}
             <pre className="max-h-96 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
               {JSON.stringify(sent.payload, null, 2)}
             </pre>
@@ -497,6 +499,18 @@ export function DataSharingPage() {
         )}
       </section>
 
+      {/* Promoted applications (#793). After the exclusions, which hold a promotion back. A change
+          moves what the next exchange carries, so a preview or a sent row on screen is dropped
+          rather than left showing a body that is no longer the next one. */}
+      <PromotedApps
+        canWrite={canWrite}
+        sharingKey={`${settings.tier}|${settings.envDisabled}|${settings.excludeGlobs.join("\n")}`}
+        onChanged={() => {
+          setPreview(null);
+          setSent(null);
+        }}
+      />
+
       <section className="space-y-3 rounded-lg border bg-card p-6">
         <h2 className="font-semibold">{t.system.sharing.logHeading}</h2>
         <p className="text-sm text-muted-foreground">
@@ -511,7 +525,7 @@ export function DataSharingPage() {
                 t.system.sharing.skippedEnv(new Date(settings.lastExchangeAt).toLocaleString())
               : `${new Date(settings.lastExchangeAt).toLocaleString()} (${outcomeLabel(settings.lastExchangeOutcome)}${
                   settings.lastExchangeRevealsShed ? `, ${t.system.sharing.revealsShed}` : ""
-                })`}
+                }${settings.lastExchangePromotionsShed ? `, ${t.system.sharing.promotionsShed}` : ""})`}
         </p>
         {settings.lastExchangeOutcome === "failed" && settings.lastExchangeError && (
           // The row's own sentence (#408): before, "(failed)" was all the page said, and

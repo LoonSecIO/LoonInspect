@@ -3,7 +3,7 @@
 Status: **built, behind a flag that ships off**, 2026-11-15
 ([#794](https://github.com/LoonSecIO/LoonInspect/issues/794)) · the flag is
 `fleet_maintained_apps` ([the register](feature-flags.md)) · when the tab is missing, empty or
-says its last check got no answer, [`troubleshooting.md`](troubleshooting.md) §26 · read
+says its last check got no answer, [`troubleshooting.md`](troubleshooting.md) §27 · read
 against GitHub once, on 2026-11-15, with the numbers under [Validation](#validation).
 
 ## What it is

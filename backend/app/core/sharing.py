@@ -35,12 +35,13 @@ from app.catalog.service import rejudge_every_tenant
 from app.core import participation
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
+from app.core.feature_flags import APP_PROMOTION_FLAG
 from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
 from app.core.vuln import install_tenant_tier
 from app.core.vuln_library import CorpusPointer, corpus_pointer, load_epoch_if_new
-from app.models.schema import DataSharingSettings, Device, InstalledApp, ShareLog
+from app.models.schema import AppPromotion, DataSharingSettings, Device, FeatureFlag, InstalledApp, ShareLog
 
 CONTRACT_VERSION = "v1"
 
@@ -227,7 +228,7 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
         for row in hw_rows
     ]
 
-    return {
+    body = {
         "contract": CONTRACT_VERSION,
         "submission": str(settings_row.submission_uuid),
         "tier": settings_row.tier,
@@ -235,6 +236,86 @@ async def build_exchange_request(db: AsyncSession, settings_row: DataSharingSett
         "snapshot": {"apps": apps, "os": os_tuples, "hardware": hardware},
         "reveals": [],
     }
+    # Promoted applications (#793) are an administrator's own choice, so they are built here and
+    # ride the same body the preview shows. Absent, never `[]`, when there is nothing to send:
+    # with the flag off or nothing promoted the request is byte for byte what it was before.
+    promotions = await build_promotions(db, settings_row)
+    if promotions:
+        body["promotions"] = promotions
+    return body
+
+
+async def promotion_enabled(db: AsyncSession) -> bool:
+    """The `app_promotion` flag, read the way the flags API reads it: an absent row is off."""
+    flag = (await db.execute(select(FeatureFlag.enabled).where(FeatureFlag.key == APP_PROMOTION_FLAG))).scalar_one_or_none()
+    return bool(flag)
+
+
+async def build_promotions(db: AsyncSession, settings_row: DataSharingSettings) -> list[dict]:
+    """The plaintext an administrator chose to send (#793): for each promoted title this
+    organization still has installed, its name, bundle ID and versions, each version with the
+    `full` key the snapshot already carries for it, its install count and its platform.
+
+    This is the operator's bypass of the paused five-submitter reveal rule, and it is not that
+    rule resumed: nothing here answers a server's request, and no title is sent that a person
+    did not choose on this instance. Empty while the `app_promotion` flag is off, so switching
+    the area off stops the names leaving at the next exchange without deleting the choices.
+
+    The exclude list applies, as it does to everything that sends app data: an excluded bundle
+    ID is held back although promoted, and the page says which pattern holds it. A promoted
+    title nothing has installed any more sends nothing, because there is no version to state.
+
+    Ordered by key so two builds of one body are the same bytes."""
+    if not await promotion_enabled(db):
+        return []
+    promoted = (await db.execute(select(AppPromotion))).scalars().all()
+    globs = list(settings_row.exclude_globs or [])
+    wanted = {row.key_title: row for row in promoted if not _excluded(row.bundle_id, globs)}
+    if not wanted:
+        return []
+
+    rows = (
+        await db.execute(
+            select(
+                InstalledApp.key_title,
+                InstalledApp.key_full,
+                InstalledApp.version,
+                InstalledApp.short_version,
+                Device.platform,
+                func.count(distinct(InstalledApp.device_id)).label("count"),
+            )
+            .join(Device, Device.id == InstalledApp.device_id)
+            .where(InstalledApp.key_title.in_(wanted))
+            .group_by(
+                InstalledApp.key_title,
+                InstalledApp.key_full,
+                InstalledApp.version,
+                InstalledApp.short_version,
+                Device.platform,
+            )
+        )
+    ).all()
+
+    versions: dict[str, list[dict]] = {}
+    for row in rows:
+        versions.setdefault(row.key_title, []).append(
+            {
+                "full": row.key_full,
+                "version": row.version,
+                "short_version": row.short_version,
+                "count": row.count,
+                "platform": row.platform,
+            }
+        )
+    return [
+        {
+            "title": key_title,
+            "app_name": wanted[key_title].app_name,
+            "bundle_id": wanted[key_title].bundle_id,
+            "versions": sorted(found, key=lambda v: (v["platform"] or "", v["full"])),
+        }
+        for key_title, found in sorted(versions.items())
+    ]
 
 
 # --- The daily exchange -----------------------------------------------------------
@@ -356,6 +437,7 @@ class ExchangeResult:
 
     response: dict
     reveals_shed: bool = False
+    promotions_shed: bool = False
 
 
 async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTransport | None = None) -> ExchangeResult:
@@ -365,6 +447,10 @@ async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTranspo
     tomorrow. The snapshot is never shrunk — shedding the reveals is the only relief
     the container has, which is why the contract requires the server never to 413 a
     reveal-less body.
+
+    Promoted applications (#793) are shed in the same step, and for the same reason: they
+    are plaintext beside the snapshot, the snapshot is what the exchange is for, and a
+    body too large with them must still be able to arrive without them.
 
     "Anything else" includes a 200 whose body is not JSON — a captive portal or a
     misconfigured CDN answering with text/html. `response.json()` raises
@@ -378,18 +464,20 @@ async def post_exchange(request_body: dict, *, transport: httpx.AsyncBaseTranspo
         # Sticky rather than recomputed from `body`: it is the record of what this run
         # gave up, and it has to survive into the result that reports the eventual 200.
         reveals_shed = False
+        promotions_shed = False
         last_error: Exception | None = None
         for delay in (0, *_RETRY_DELAYS):
             if delay:
                 await asyncio.sleep(delay)
             try:
                 response = await client.post(app_settings.sharing_endpoint, json=body, headers=headers)
-                if response.status_code == 413 and body.get("reveals"):
-                    body = {**body, "reveals": []}
-                    reveals_shed = True
+                if response.status_code == 413 and (body.get("reveals") or body.get("promotions")):
+                    reveals_shed = reveals_shed or bool(body.get("reveals"))
+                    promotions_shed = promotions_shed or bool(body.get("promotions"))
+                    body = {key: value for key, value in body.items() if key != "promotions"} | {"reveals": []}
                     continue
                 response.raise_for_status()
-                return ExchangeResult(response.json() if response.content else {}, reveals_shed)
+                return ExchangeResult(response.json() if response.content else {}, reveals_shed, promotions_shed)
             except (httpx.HTTPError, ValueError) as exc:
                 last_error = exc
         raise last_error if last_error else RuntimeError("exchange failed")
@@ -531,6 +619,7 @@ async def run_exchange(
         payload=request_body,
         outcome="failed",
         reveals_shed=False,
+        promotions_shed=False,
     )
     try:
         result = await post_exchange(request_body, transport=transport)
@@ -551,6 +640,7 @@ async def run_exchange(
         # Only ever true on the success path: a run that shed and then failed anyway
         # sent nothing the server kept, so "failed" is the whole story of that row.
         log.reveals_shed = result.reveals_shed
+        log.promotions_shed = result.promotions_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
         asked = request_body.get("participation_receipt") is True

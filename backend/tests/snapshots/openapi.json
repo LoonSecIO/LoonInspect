@@ -2805,6 +2805,11 @@
             ],
             "title": "Lastexchangeoutcome"
           },
+          "lastExchangePromotionsShed": {
+            "default": false,
+            "title": "Lastexchangepromotionsshed",
+            "type": "boolean"
+          },
           "lastExchangeRevealsShed": {
             "default": false,
             "title": "Lastexchangerevealsshed",
@@ -7553,6 +7558,208 @@
         "title": "PresetOut",
         "type": "object"
       },
+      "PromotionCandidateOut": {
+        "description": "An installed title that could be promoted. `known` is whether a public source on this\ncontainer already knows it (a Jamf Patch title matches a build of it, or the loaded\nvulnerability library names it): the ones nothing knows are listed first.",
+        "properties": {
+          "appName": {
+            "title": "Appname",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "excludedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedby"
+          },
+          "keyTitle": {
+            "title": "Keytitle",
+            "type": "string"
+          },
+          "known": {
+            "title": "Known",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "appName",
+          "bundleId",
+          "deviceCount",
+          "excludedBy",
+          "keyTitle",
+          "known"
+        ],
+        "title": "PromotionCandidateOut",
+        "type": "object"
+      },
+      "PromotionCreate": {
+        "properties": {
+          "keyTitle": {
+            "pattern": "^v1:[0-9a-f]{64}$",
+            "title": "Keytitle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyTitle"
+        ],
+        "title": "PromotionCreate",
+        "type": "object"
+      },
+      "PromotionOut": {
+        "description": "One promoted application, and whether the next exchange carries it.",
+        "properties": {
+          "appName": {
+            "title": "Appname",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "excludedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedby"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "enum": [
+                  "excluded",
+                  "not_installed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "keyTitle": {
+            "title": "Keytitle",
+            "type": "string"
+          },
+          "promotedAt": {
+            "format": "date-time",
+            "title": "Promotedat",
+            "type": "string"
+          },
+          "promotedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotedby"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appName",
+          "bundleId",
+          "deviceCount",
+          "excludedBy",
+          "held",
+          "id",
+          "keyTitle",
+          "promotedAt",
+          "promotedBy",
+          "versionCount"
+        ],
+        "title": "PromotionOut",
+        "type": "object"
+      },
+      "PromotionsOut": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "moreCandidates": {
+            "title": "Morecandidates",
+            "type": "integer"
+          },
+          "paused": {
+            "anyOf": [
+              {
+                "enum": [
+                  "flag_off",
+                  "env_disabled",
+                  "sharing_off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          }
+        },
+        "required": [
+          "candidates",
+          "enabled",
+          "items",
+          "limit",
+          "moreCandidates",
+          "paused"
+        ],
+        "title": "PromotionsOut",
+        "type": "object"
+      },
       "PromptDeviceOut": {
         "properties": {
           "added": {
@@ -8954,6 +9161,11 @@
               }
             ],
             "title": "Payload"
+          },
+          "promotionsShed": {
+            "default": false,
+            "title": "Promotionsshed",
+            "type": "boolean"
           },
           "revealRequests": {
             "anyOf": [
@@ -15924,6 +16136,134 @@
           }
         },
         "summary": "Preview Exchange",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/data-sharing/promotions": {
+      "get": {
+        "description": "What is promoted, whether it is leaving, and the installed titles that could be promoted,\nthe ones no public source here knows first. `q` searches the candidates by name or bundle ID.",
+        "operationId": "list_promotions_api_system_data_sharing_promotions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Promotions",
+        "tags": [
+          "system"
+        ]
+      },
+      "post": {
+        "description": "Promote one installed title: its name, bundle ID and versions leave in plain text with\neach exchange from now on, while sharing is on. A refusal is a 409 whose `detail` is the\nsentence (the flag is off, the title is not installed, an exclusion covers it, the limit).\nPromoting a title already promoted answers 200 with the row that exists.",
+        "operationId": "promote_api_system_data_sharing_promotions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromotionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/data-sharing/promotions/{promotion_id}": {
+      "delete": {
+        "description": "Withdraw a promotion. Allowed with the flag off, so switching the area off never strands\na choice someone wants undone.",
+        "operationId": "withdraw_api_system_data_sharing_promotions__promotion_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "promotion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Promotion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw",
         "tags": [
           "system"
         ]

@@ -1019,8 +1019,31 @@ class ShareLog(Base):
     # ordinary reveal day, which makes "exactly what left the box" a claim the log
     # cannot support. False on every other row, including failures.
     reveals_shed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The same marker for promoted applications (#793): a 413 sheds them with the reveals, so a
+    # true here means `payload`'s `promotions` array did not leave either.
+    promotions_shed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     reveal_requests: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AppPromotion(Base):
+    """One application an administrator chose to send by name (#793, docs/data-sharing.md,
+    "Promoted applications"). The row is the choice, not the payload: it holds the `app.title`
+    key and the name and bundle ID that hash to it, and each exchange reads the title's versions
+    and counts from `installed_apps` as they are that day. Withdrawing is deleting the row."""
+
+    __tablename__ = "app_promotions"
+    __table_args__ = (UniqueConstraint("tenant_id", "key_title", name="uq_app_promotions_tenant_title"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid7)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    key_title: Mapped[str] = mapped_column(String(67))
+    app_name: Mapped[str] = mapped_column(String(255))
+    bundle_id: Mapped[str] = mapped_column(String(255))
+    promoted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # The administrator's address as it read that day, like `patching_policies.updated_by`:
+    # a label for the page, while the audit trail holds the account.
+    promoted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class SubmissionCase(Base):
