@@ -58,6 +58,7 @@ async def two_tenant_rows(*, outbox_events: bool = True) -> dict[str, dict]:
     the boundary it exists to test.
     """
     from app.core.bootstrap import bootstrap_tenants, create_account
+    from app.core.content_keys import app_title_key
     from app.core.database import init_db, session_for_tenant, unscoped_session
     from app.core.runs import COMPARISON_DELTA, LOCK_DEVICE_SWEEP, STATUS_SUCCEEDED, TRIGGER_MANUAL
     from app.core.submissions import mint_case_key
@@ -66,6 +67,7 @@ async def two_tenant_rows(*, outbox_events: bool = True) -> dict[str, dict]:
     from app.models.schema import (
         Account,
         ApiToken,
+        AppPromotion,
         Collection,
         Destination,
         Device,
@@ -197,6 +199,15 @@ async def two_tenant_rows(*, outbox_events: bool = True) -> dict[str, dict]:
                 versions=["1.0"],
                 case_key=mint_case_key(),
             )
+            # And a promoted application (`/api/system/data-sharing/promotions/{promotion_id}`, #793).
+            promotion = await one(
+                db,
+                AppPromotion,
+                AppPromotion.app_name == f"{label} Sweep Promotion",
+                key_title=app_title_key(f"{label} Sweep Promotion", f"com.{label}.promoted"),
+                app_name=f"{label} Sweep Promotion",
+                bundle_id=f"com.{label}.promoted",
+            )
             # Deliberately NOT get-or-create: the fan-out test needs an un-fanned
             # event, and a previous run's rows are all marked fanned_out.
             event = EventOutbox(
@@ -218,6 +229,7 @@ async def two_tenant_rows(*, outbox_events: bool = True) -> dict[str, dict]:
                 "token_id": token.id,
                 "job_id": run.id,
                 "case_id": case.id,
+                "promotion_id": promotion.id,
                 "event_id": event.id,
             }
     return ids

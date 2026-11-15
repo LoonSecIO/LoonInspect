@@ -171,6 +171,56 @@ export const de: Translations = {
       skippedEnv: (when: string) =>
         `${when} — übersprungen. COMMUNITY_SHARING=false ist gesetzt, daher lief der tägliche Austausch und sendete nichts. Das wiederholt sich täglich, bis die Vorgabe entfernt wird.`,
       revealsShed: "Reveals verworfen — der Server lehnte die vollständige Übermittlung ab und nahm einen Wiederholungsversuch ohne Reveals an",
+      promotionsShed: "Hochgestufte Anwendungen verworfen: Der Server lehnte die vollständige Übermittlung ab und nahm einen Wiederholungsversuch ohne deren Namen an",
+      promotions: {
+        heading: "Hochgestufte Anwendungen",
+        description:
+          "Der Dienst erfährt den Namen einer Anwendung erst, wenn fünf Organisationen sie gemeldet haben, und diese Regel ist pausiert. Das Hochstufen einer Anwendung sendet ihren Namen, ihre Bundle-ID und ihre Versionen im Klartext mit jedem Austausch, neben den bereits gesendeten Hashes, damit ihre Schwachstellenabdeckung nicht auf andere Organisationen warten muss. Nur was Sie hier hochstufen, wird mit Namen gesendet.",
+        whatLeaves:
+          "Für jede hochgestufte Anwendung: ihr Name, ihre Bundle-ID und jede installierte Version mit ihrer Installationsanzahl. Niemals ein Gerätename, eine Seriennummer, ein Benutzer oder ein Pfad. Die Vorschau oben zeigt die genauen Zeilen.",
+        paused: {
+          flag_off:
+            "Das Hochstufen ist unter Einstellungen › Feature-Flags ausgeschaltet, daher wird nichts von unten mit Namen gesendet. Eine Hochstufung kann weiterhin zurückgezogen werden.",
+          env_disabled:
+            "COMMUNITY_SHARING=false ist gesetzt, daher verlässt kein Austausch diese Instanz und nichts von unten wird gesendet.",
+          sharing_off:
+            "Die Freigabe ist für diese Organisation aus, daher wird kein Austausch gesendet und nichts von unten verlässt die Instanz. Wählen Sie unter Teilnahme eine Stufe, um sie zu senden."
+        },
+        none: "Keine Anwendung ist hochgestuft.",
+        columnApp: "Anwendung",
+        columnBundle: "Bundle-ID",
+        columnInstalled: "Installiert auf",
+        columnVersions: "Versionen",
+        columnState: "Nächster Austausch",
+        columnPromoted: "Hochgestuft",
+        devices: (count: number) => (count === 1 ? "1 Mac" : `${count} Macs`),
+        stateSending: "Mit Namen gesendet",
+        statePaused: "Nicht gesendet",
+        heldExcluded: (pattern: string) => `Zurückgehalten: entspricht dem ausgeschlossenen Muster ${pattern}`,
+        heldNotInstalled: "Zurückgehalten: derzeit auf keinem Mac installiert",
+        promotedBy: (when: string, who: string | null) => (who ? `${when} von ${who}` : when),
+        withdraw: "Zurückziehen",
+        withdrawFailed: "Die Hochstufung konnte nicht zurückgezogen werden. Prüfen Sie Ihre Berechtigungen und versuchen Sie es erneut.",
+        pickerHeading: "Eine Anwendung hochstufen",
+        pickerHelp:
+          "Installierte Anwendungen mit Bundle-ID, zuerst die, die keine öffentliche Quelle auf dieser Instanz kennt. Mit der Suche finden Sie jede andere.",
+        searchLabel: "Installierte Anwendungen durchsuchen",
+        searchPlaceholder: "Name oder Bundle-ID",
+        search: "Suchen",
+        unknownTag: "Keiner öffentlichen Quelle bekannt",
+        knownTag: "Einer öffentlichen Quelle bekannt",
+        excludedTag: (pattern: string) => `Ausgeschlossen durch ${pattern}`,
+        promote: "Hochstufen",
+        promoteFailed: "Die Anwendung konnte nicht hochgestuft werden. Prüfen Sie Ihre Berechtigungen und versuchen Sie es erneut.",
+        noCandidates: "Keine installierte Anwendung passt.",
+        moreCandidates: (count: number) =>
+          count === 1
+            ? "1 weitere Anwendung wird nicht angezeigt. Mit der Suche finden Sie sie."
+            : `${count} weitere Anwendungen werden nicht angezeigt. Mit der Suche finden Sie eine.`,
+        limit: (count: number, limit: number) => `${count} von ${limit} hochgestuft.`,
+        readOnly: "Hochstufen und Zurückziehen erfordern die Berechtigung zum Schreiben von Systemeinstellungen.",
+        loadFailed: "Hochgestufte Anwendungen konnten nicht geladen werden."
+      },
       logHeading: "Freigabeprotokoll",
       logHelp: "Jeder Austauschversuch mit der wörtlichen Payload, die der Lauf zusammengestellt hat — byte-genaue Historie dessen, was diese Instanz verlassen hat. Eine mit revealsShed markierte Zeile hat alles aus ihrer Payload gesendet außer den Reveals. Eine Zeile mit tier ai ist ein KI-Aufruf und nennt die Funktion, das angefragte Modell und die Felder, die die Instanz verlassen haben, nie deren Inhalt; nennt sie Felder, aber kein Modell, wurde sie geschrieben, bevor das Modell erfasst wurde. 90 Tage aufbewahrt.",
       downloadLog: "Herunterladen (NDJSON)",

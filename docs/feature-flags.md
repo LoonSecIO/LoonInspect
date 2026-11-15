@@ -45,6 +45,7 @@ pull request lands.
 | `vulnerabilities` (Settings › Feature Flags) | area override | #529 | off | the registry | keep, with the reason written here: a lab ahead of its first corpus can still list Posture › Vulnerabilities; a v2.1 delete question | v2.1 question |
 | `ai_features` (Settings › Feature Flags) | master switch | #402 | off | the registry, `core/ai.py` | keep, permanent: the whole AI area is one switch by doctrine | never |
 | `patch_policy` (Settings › Feature Flags) | area listing | #614 | off | the registry | **not ruled**: added 2026-10-02, after this gate, with the first slice of #614. It lists Posture › Patch policy, a reference replay that is not the organization's exposure; the address opens either way. For the next gate to rule | next gate |
+| `app_promotion` (Settings › Feature Flags) | area switch | #793 | off | the registry, `core/sharing.py` (the exchange builder), `core/promotions.py` | **not ruled**: added 2026-11-15, for the v1.1.0 gate to rule. On, an administrator can promote installed applications under Settings › Data Sharing, and each exchange then carries those titles' names in plain text. Off, nothing can be promoted, nothing promoted leaves, and the exchange body is unchanged | next gate |
 
 ## How a gate runs
 
@@ -65,3 +66,4 @@ pull request lands.
 | 2026-09-27 | `INTELLIGENCE_SUBMISSIONS` added (#692): Request coverage and Report an incorrect match get their own switch, off by default and kept off at the tag, as Kyle ruled ("I would prefer for the primary pod to not have it enabled out of the gate"). |
 | 2026-09-27 | `INTELLIGENCE_SUBMISSIONS`'s kill condition, per Kyle's instruction of 2026-09-27: its default flips on once prod Support has `SubmissionsEnabled` and #624's walk of a submission through to publication has passed, and the switch goes one release later. v2.0.0 still ships it off; that walk and LoonVD-Internal #36 come after the tag. |
 | 2026-10-02 | `patch_policy` added (#614, first slice): lists the patch-policy reference page under Posture, off by default. Added after the v2.0.0 gate and not ruled; the next gate rules it. |
+| 2026-11-15 | `app_promotion` added (#793): the switch for promoted applications, off by default. Added after the v2.0.0 gate and not ruled; the v1.1.0 gate rules it. |

@@ -56,6 +56,7 @@ from app.api.mfa import router as mfa_router
 from app.api.outbox import router as outbox_router
 from app.api.patch_policy_rules import router as patch_policy_rules_router
 from app.api.posture import router as posture_router
+from app.api.promotions import router as promotions_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
@@ -777,6 +778,7 @@ app.include_router(alerts_router)
 app.include_router(destinations_router)
 app.include_router(outbox_router)
 app.include_router(system_router)
+app.include_router(promotions_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
 app.include_router(inventory_summaries_router)

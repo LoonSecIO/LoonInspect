@@ -57,6 +57,7 @@ pytestmark = [
 OWNED = {
     "account_id": "Account",
     "case_id": "SubmissionCase",
+    "promotion_id": "AppPromotion",
     "collection_id": "Collection",
     "connection_id": "MdmConnection",
     "destination_id": "Destination",
@@ -122,6 +123,7 @@ BODIES: dict[str, dict] = {
     "POST /api/system/intelligence/activate": {"secret": "route-sweep"},
     "POST /api/submissions/preview": SUBMISSION,
     "POST /api/submissions": SUBMISSION,
+    "POST /api/system/data-sharing/promotions": {"keyTitle": "v1:" + "0" * 64},
 }
 # What app.core.auth's gate answers before any handler runs; the own lane's admin must never hear it.
 GATE = {"Not authenticated", "Insufficient permissions", "Invalid CSRF token", MFA_ENROLMENT_REQUIRED}
@@ -154,6 +156,7 @@ STOPS = {
         *("POST /api/system/intelligence/refresh", "POST /api/submissions/preview", "POST /api/submissions"),
     ],
     "sharing is off": ["POST /api/system/data-sharing/send"],
+    "promoting applications is switched off": ["POST /api/system/data-sharing/promotions"],
     "no Jamf patch title: titles are global, and the sweep loads none": [
         *("GET /api/jamf-patch/titles/{title_id}", "PUT /api/settings/patching-policy/overrides/{title_id}"),
     ],
@@ -317,7 +320,8 @@ async def _tidy(rows: dict[str, dict], since: datetime) -> None:
         await db.execute(delete(s.AuthIdentity).where(*totp))
         destinations = select(s.Destination.id).where(s.Destination.name.like("route sweep%"))
         await db.execute(delete(s.OutboxDelivery).where(s.OutboxDelivery.destination_id.in_(destinations)))
-        for model, column in ((s.Destination, "name"), (s.ApiToken, "name"), (s.SubmissionCase, "app_name")):
+        named = ((s.Destination, "name"), (s.ApiToken, "name"), (s.SubmissionCase, "app_name"), (s.AppPromotion, "app_name"))
+        for model, column in named:
             await db.execute(delete(model).where(getattr(model, column).like("route sweep%")))
         await db.execute(delete(s.Run).where(s.Run.started_at >= since))
         await db.execute(delete(s.Collection).where(s.Collection.name.like("route sweep%")))
@@ -472,7 +476,9 @@ def _marks(tenants: dict, label: str) -> list[str]:
     tenant, email = tenants[label], {"t1": ADMIN1, "t2": ADMIN2}[label][0]
     names = [f"com.{label}.app", f"{label}SERIAL", f"{label}-host", f"{label}-device-1", f"{label} jamf", f"{label}.jamfcloud"]
     names += [f"{label} token", f"{label} Sweep App", f"{label} sweep run", email, tenant["destination_name"]]
-    return [*names, *(str(tenant[key]) for key in ("tenant_id", "account_id", "token_id", "job_id", "case_id", "span_id"))]
+    names += [f"{label} Sweep Promotion", f"com.{label}.promoted"]
+    owned = ("tenant_id", "account_id", "token_id", "job_id", "case_id", "promotion_id", "span_id")
+    return [*names, *(str(tenant[key]) for key in owned)]
 
 
 @DIRECTIONS
@@ -491,9 +497,10 @@ async def test_no_read_carries_the_other_tenants_rows(tenants, method, path, rou
 async def _doomed(tenant: dict, name: str) -> object:
     """A row of `name`'s kind made for the write its path names, so no write changes a row another lane reads."""
     from app.core.bootstrap import create_account
+    from app.core.content_keys import app_title_key
     from app.core.database import session_for_tenant
     from app.core.submissions import mint_case_key
-    from app.models.schema import ApiToken, Collection, Destination, MdmConnection, SubmissionCase
+    from app.models.schema import ApiToken, AppPromotion, Collection, Destination, MdmConnection, SubmissionCase
 
     tag = uuidlib.uuid4().hex[:8]
     label = f"route sweep {tag}"
@@ -503,6 +510,9 @@ async def _doomed(tenant: dict, name: str) -> object:
         ),
         "collection_id": lambda: Collection(
             mdm_connection_id=tenant["connection_id"], name=label, kind="catalog", frequency="hourly", timezone="UTC"
+        ),
+        "promotion_id": lambda: AppPromotion(
+            key_title=app_title_key(label, f"com.sweep.{tag}"), app_name=label, bundle_id=f"com.sweep.{tag}"
         ),
         "connection_id": lambda: MdmConnection(name=label, provider="jamf", base_url="https://doomed.jamfcloud.com"),
         "destination_id": lambda: Destination(name=label, type="generic_webhook", url="https://doomed.example", auth_type="none"),
