@@ -691,6 +691,58 @@ class VulnLibraryEpoch(Base):
     title_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class FleetMaintainedApp(Base):
+    """One Mac title from Fleet's maintained-apps catalogue (#794), read from its repository.
+
+    Global, like `jamf_patch_titles`: a public catalogue with no customer data in it, joined to
+    a fleet only by a bundle identifier the fleet already reports, so it sits outside row-level
+    security. Only what a manifest says about the title is kept: its name, its bundle
+    identifier and its current version. The installer address, the scripts and the queries a
+    manifest also carries are never stored (docs/fleet-catalog.md).
+    """
+
+    __tablename__ = "fleet_maintained_apps"
+
+    # The directory a title's manifest lives in (`1password` for `1password/darwin.json`).
+    slug: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    # Fleet's `unique_identifier`, which for a Mac title is the bundle identifier. Indexed: it
+    # is the join to `installed_apps.bundle_id`.
+    bundle_id: Mapped[str] = mapped_column(String(255), index=True)
+    latest_version: Mapped[str] = mapped_column(String(64))
+    # The version before the last move this container saw, and when it saw the move. Both NULL
+    # until the version moves under this container's eyes: the first reading is not a move.
+    previous_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # The manifest's git blob sha, compared for equality with the tree's: the same sha is the
+    # same file, which is how a check reads only the manifests that changed.
+    manifest_sha: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class FleetCatalogState(Base):
+    """What the last check of Fleet's catalogue found: one row, or none before the first (#794).
+
+    `tree_sha` is the catalogue folder's git tree sha as of the last **complete** read, so a
+    check that finds the same sha has nothing to read. A check that failed leaves it where it
+    was and says why in `detail`, in the operator's words; the titles already held stay.
+    """
+
+    __tablename__ = "fleet_catalog_state"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_fleet_catalog_state_single_row"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    tree_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the titles held here last changed, which is not when GitHub was last asked.
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # `app.core.fleet_catalog`'s outcome word for the last check, and its sentence.
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    app_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class VulnLibraryRow(Base):
     """One assessed build of the loaded epoch, keyed by the content key both sides hash.
 

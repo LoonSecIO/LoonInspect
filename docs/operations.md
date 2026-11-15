@@ -766,10 +766,12 @@ it was answered on its `starting` line — `docker compose logs app | grep sched
 API, and the work a person starts still runs in the process that served the request:
 Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
 **Send now** on Settings › Data sharing. What it stops is everything on a clock — the
-eight jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
+nine jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
 the purges (sessions hourly; the outbox, the run log and, with `CHANGE_LOG_RETENTION_DAYS`
 set, the change log nightly), the hourly Jamf Patch
-catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So what a
+catalog sync, the sign-in cache renewals, the daily data-sharing exchange, and the daily
+check of Fleet's catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
+**Check now** on that tab still works in a web-only process). So what a
 web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
 the process that still has the scheduler, not by it; with no such process running, the
 queue simply grows.

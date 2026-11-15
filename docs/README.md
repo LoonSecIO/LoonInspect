@@ -23,6 +23,7 @@ ends with a reading order through the rest.
 | [`compliance-evidence.md`](compliance-evidence.md) | built, ruled 2026-09-16 (#219 R5) | The evidence artefact an auditor is handed, and what it may claim. |
 | [`controls.yml`](controls.yml) | version 1 | `BRANCHING.md` §6 made machine-readable; the policy workflow runs from it. |
 | [`feature-flags.md`](feature-flags.md) | verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692) | Every switch the product carries, its kind and default, and the verdict each release gave it. |
+| [`fleet-catalog.md`](fleet-catalog.md) | built, behind a flag that ships off, 2026-11-15 (#794) | Fleet's maintained-apps catalog as a second public list of Mac titles and latest versions: what is read from GitHub and kept, the licence it sits under, the daily check and what it can find. |
 | [`data-sharing.md`](data-sharing.md) | settled | The community exchange: key scheme, consent model, wire contract, share log. |
 | [`diagnosability.md`](diagnosability.md) | ruled, 2026-09-10 (#291) | The design language every new failure path is written in. Read before adding one. |
 | [`ingest-scheduling.md`](ingest-scheduling.md) | implemented, 2026-08-22 (#27) | Collections, the minute tick, the claim, the rate floor — what is read and when. |
