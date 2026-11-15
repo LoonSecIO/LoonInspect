@@ -1,7 +1,8 @@
 # Feature flags: the register
 
 Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
-condition per Kyle's instruction of 2026-09-27**. Every release runs a flag
+condition per Kyle's instruction of 2026-09-27; the v1.1.0 gate ruled 2026-11-15 (#797)**.
+Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
 to die in), or **delete** (the code path behind it goes with it), recorded here and in the
