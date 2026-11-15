@@ -128,7 +128,7 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 LoonInspect is deployed as two containers: the application — one image carrying both the
 React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
 --build` builds natively for your machine, Apple Silicon included. The images CI builds are
-multi-arch (`linux/amd64` + `linux/arm64`), and from v2.0.0 each release publishes them as
+multi-arch (`linux/amd64` + `linux/arm64`), and from v1.1.0 each release publishes them as
 `ghcr.io/loonsecio/looninspect` and `ghcr.io/loonsecio/looninspect-db` under its tag, so step 4
 can pull a release instead of building it.
 Both are in the bundle; nothing external is required, and the database port is never
@@ -234,14 +234,14 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
 
-**Or pull a release instead of building it** (v2.0.0 and later). `docker-compose.pull.yml`
+**Or pull a release instead of building it** (v1.1.0 and later). `docker-compose.pull.yml`
 names the two published images in place of both builds. Check out the release's tag, so the
 compose files are the ones that go with its images, then name the tag in `.env` with the file
 list that makes every later `docker compose` command read the override too:
 
 ```bash
-git fetch --tags && git checkout v2.0.0
-printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+git fetch --tags && git checkout v1.1.0
+printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.1.0\n' >> .env
 docker compose pull
 docker compose up -d
 ```
@@ -338,7 +338,7 @@ before sizing the database volume.
 Migrations run unattended at startup, so `docker compose up -d --build` on a newer
 release's tag (`git fetch --tags && git checkout <tag>`) *is* the upgrade. Take a dump
 first, and read [docs/operations.md §4–5](docs/operations.md) before rolling one back: from
-`v2.0.0` on, one step back is an image swap, but going back to a `v1.x` image, or further
+`v1.1.0` on, one step back is an image swap, but going back to the `v1.0.0` image, or further
 than the newer release allows, needs the downgrade run from the newer image first.
 Settings › Support › **Updates** prints the steps with the latest release's tag filled in.
 

@@ -543,8 +543,8 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
-   - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later
-     can read it; this image is v2.0.0 (build …), so it will not start on it* → the image is
+   - *This database was upgraded by a newer release … which recorded that only v1.2.0 or later
+     can read it; this image is v1.1.0 (build …), so it will not start on it* → the image is
      older than the database, and the release that upgraded it recorded that this one cannot
      read what it left. The sentence names both releases, what the database needs and what is
      running, so there is nothing to look up. Put an image of the named release or a later one
@@ -3068,10 +3068,14 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
 4. **Setup asks for a claim token.** The page was opened in a browser rather than in the app's
    window. Setup is meant to happen in the window, which holds this session's token; in a
    browser the token is the *claim token* line of `logs/backend.log`, as it is for the container.
-5. **After replacing the app with a newer one, it will not start, and `backend.log` names a
-   newer database.** The same rule as the image ([`operations.md`](operations.md) §5): a build
-   refuses a database written by a later release than its own. The release's `RELEASE` is
-   `backend_release` in `Contents/Resources/build-manifest.json`. Put the later version back.
+5. **After putting an older app back, it will not start, and `backend.log` names a newer
+   database.** The same rule as the image ([`operations.md`](operations.md) §5): an app that finds
+   a schema revision it does not carry reads the database's release record. *…so it starts
+   without migrating* is not a failure: the record says this release can read the schema, as
+   1.0.0 can read what 1.1.0 left. *…so it will not start on it* names two releases, the one the
+   database needs and the one this app is (`backend_release` in
+   `Contents/Resources/build-manifest.json`): put the later version back, or restore the copy of
+   `pgdata` taken before the update ([`macos-app.md`](macos-app.md#backup)).
 6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
    directory, the window's data and the three keychain items. It is the end of that instance's
    data. A restorable database backup is `pgdata` copied while the app is quit plus the matching

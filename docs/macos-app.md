@@ -1,10 +1,10 @@
 # LoonInspect as a macOS app
 
-Status: **built, 1.0.0**, 2026-11-10 · Apple silicon, macOS 13 or later · the files are under
-[`macos/`](../macos/README.md) · when it will not open or start,
+Status: **built, 1.1.0**, 2026-11-15 (packaged as 1.0.0 on 2026-11-10) · Apple silicon, macOS 13
+or later · the files are under [`macos/`](../macos/README.md) · when it will not open or start,
 [`troubleshooting.md`](troubleshooting.md) §25 · its limits, [KNOWN_ISSUES.md](../KNOWN_ISSUES.md)
-§10 · built and checked on one Mac (macOS 27.3, Xcode 27.2, Swift 6.4), on the commit this
-document names under [Validation](#validation-100).
+§10 · built and checked on one Mac (macOS 27.3, Xcode 27.2, Swift 6.4): the update from 1.0.0
+under [Validation (1.1.0)](#validation-110), the packaging under [Validation (1.0.0)](#validation-100).
 
 It began as the packaging spike of 2026-10-06 (`spike/macos-app`, pull request #750), whose
 question was whether LoonInspect could ship as a macOS application instead of a container. The
@@ -42,7 +42,8 @@ reachable only from this Mac. Jamf cannot send webhooks to its loopback address;
 server deployment for incoming webhooks and continuous operation.
 
 Local storage does not mean no outbound traffic. LoonInspect contacts Jamf and the destinations
-you configure; community sharing and configured AI have their own controls. Setup preselects
+you configure; community sharing and configured AI have their own controls, and the Fleet
+catalog, while its flag is on, reads Fleet's repository on GitHub once a day. Setup preselects
 the community-sharing choice. Review it there and under **Settings › Data Sharing** before
 collecting production inventory. Connection secrets are encrypted in the database with a key
 in login Keychain; the database itself is not encrypted by LoonInspect.
@@ -101,7 +102,7 @@ reaches single-user Postgres the same way. A later launch that finds the databas
 refuses to start and says why, rather than mint a new key that would leave every stored credential
 unreadable (KNOWN_ISSUES.md §5). The items are made through `/usr/bin/security`, so they trust
 `security` and any process of this user can read them without a prompt; why that is still so in
-1.0.0 is under [What 1.0.0 leaves out](#what-100-leaves-out).
+1.1.0 is under [What it leaves out](#what-it-leaves-out).
 
 **First launch.** `initdb -U looninspect --pwfile=/dev/stdin --auth=scram-sha-256
 --encoding=UTF8 --locale=C --locale-provider=builtin --builtin-locale=C.UTF-8`: the container's
@@ -153,7 +154,7 @@ container's, token field included, and the token is in `logs/backend.log`.
 The claim exchange is a container-era control. It is held by the shell for now, by Kyle's ruling
 of 2026-10-06, and is to be gutted before a public release: a loopback-only backend mode without
 a claim, or the shell creating the first account itself. That is a backend change, and it is not
-in 1.0.0 ([What 1.0.0 leaves out](#what-100-leaves-out)).
+in 1.1.0 ([What it leaves out](#what-it-leaves-out)).
 
 **Quit.** From the menu, with ⌘Q, through AppleScript, at logout, or on SIGTERM, SIGINT or
 SIGHUP: the backend first (SIGTERM, uvicorn's graceful shutdown, SIGKILL after 15 s), then
@@ -166,14 +167,20 @@ running one alone.
 ## Version, signature, release
 
 **The version.** `CFBundleShortVersionString` in `macos/shell/Info.plist` is the app's release,
-`1.0.0`, and the pull request that prepares a release moves it, as the one that prepares an image
+`1.1.0`, and the pull request that prepares a release moves it, as the one that prepares an image
 release moves `RELEASE` in `backend/app/core/version.py`. They serve different purposes but the
-release workflow requires them to agree (`1.0.0` in the app, `v1.0.0` in the backend): the app's
+release workflow requires them to agree (`1.1.0` in the app, `v1.1.0` in the backend): the app's
 version names the bundle a Mac runs; the backend compares its release with the database's
 `schema_release` (BRANCHING.md §1.1). `build-manifest.json` records both. `CFBundleVersion` is
 the build number, `BUILD_NUMBER` or the UTC build minute, stamped by
 `build-app.sh`; the page's build readout and the update check read `build_info.json`
 (`YYYY.MM.DD+<sha>`), written as the Dockerfile writes it.
+
+The app's 1.0.0 and the container's v1.0.0 share a name and not a commit. The container's is the
+tag of 2026-09-20. The app was first packaged from `main` on 2026-11-10, 110 commits later, with
+`RELEASE` still reading `v1.0.0`, so the 1.0.0 app carries everything `main` had by then,
+including the schema's release record ([Updates](#updates) is where that matters). From 1.1.0 on
+the app and the container are built from one tagged commit.
 
 **The signature.** Every Mach-O file in the bundle, the shell, `python3.12`, every extension
 module and dylib the wheels carry, every Postgres binary and library, is signed with the one
@@ -207,13 +214,36 @@ artifacts. CI requires the app version and backend `RELEASE` to agree and valida
 ancestry before importing signing credentials. Environment setup and the full flow are in
 [`macos/README.md`](../macos/README.md#github-actions).
 
-**Updates.** There is no update mechanism in 1.0.0, and `UPDATE_CHECK` is off because its notice
-tells an operator to pull an image. Quit LoonInspect before replacing it with the app from a newer
-disk image. The data directory and the keychain items survive the swap, and the next launch runs the new
-migrations as the container does. Stepping back obeys the same rule as the image: a build refuses
-a database written by a later `RELEASE` than its own (`operations.md` §5), and
-`troubleshooting.md` §25 step 5 says so. A Postgres major (17 to 18) would need `pg_upgrade` or a
-dump and restore, the same question the container's database volume has.
+### Updates
+
+There is no update mechanism, and `UPDATE_CHECK` is off because its notice tells an operator to
+pull an image: the app does not say that a newer release exists. An update is the newer disk
+image from the release page, taken by hand.
+
+1. **Quit LoonInspect**, from the menu or with ⌘Q. Closing the window is not quitting: the
+   backend and Postgres keep running, and the app must not be replaced under them.
+2. **Open the newer disk image and drag LoonInspect onto Applications**, replacing the old app.
+3. **Open it.** The launch runs the newer release's migrations, as the container's first start
+   does, before the window loads.
+
+What an update keeps: everything outside the bundle. The data directory, the three keychain
+items and `preferred-port` are the ones the older app made, so accounts, connections with their
+credentials, settings, inventory and the port all carry over, and a browser session opened with
+**Open in Browser** stays signed in because the origin did not move. What it replaces: the
+bundle, and so the backend, the frontend, the runtimes and the shell.
+
+**Stepping back** is the same three steps with the older disk image, and it obeys the image's
+rule (`operations.md` §5): a build that finds a schema revision it does not carry reads the
+database's release record, starts without migrating when its own `RELEASE` is at or above the
+record, and refuses with a sentence naming both when it is below. The 1.0.0 app carries that
+reader, and the record still reads `v1.0.0`, so 1.0.0 starts on a database 1.1.0 migrated and
+`backend.log` says *…which recorded that v1.0.0 or later can read it; this image is v1.0.0 (build
+…), so it starts without migrating*. The two tables 1.1.0 added stay, unread, and going forward
+again migrates nothing. `troubleshooting.md` §25 step 5 is the refusal's step-through.
+
+A Postgres major (17 to 18) would need `pg_upgrade` or a dump and restore, the same question the
+container's database volume has. The backup before any of this is [Backup](#backup): a copy of
+`pgdata` taken while the app is quit.
 
 ## Backup
 
@@ -238,15 +268,17 @@ assistant. Keep the original database and Keychain backup until the restored ins
 verified. This procedure backs up the database; preserve `data/` and `logs/` separately if their
 audit and diagnostic history is needed.
 
-## What 1.0.0 leaves out
+## What it leaves out
 
 - **It runs only while it is open**, and a sleeping Mac pauses it (KNOWN_ISSUES.md §10). A
   login-item or LaunchAgent mode (`SMAppService`) is the likely answer, and it reopens what
   **Quit** means.
 - **The setup claim exchange** stays, shell-held, by Kyle's ruling of 2026-10-06; gutting it is a
   backend change and a ruling, owed before a public release.
-- **No update mechanism.** Sparkle 2 (an EdDSA-signed appcast and a URL to host it), the
-  existing GitHub release check with words for an app, or a Homebrew cask. Undecided.
+- **No update mechanism, and no notice that an update exists.** Sparkle 2 (an EdDSA-signed
+  appcast and a URL to host it), the existing GitHub release check with words for an app, or a
+  Homebrew cask. Undecided. Until one is chosen an update is [by hand](#updates), and a 1.0.0
+  user learns of 1.1.0 from the releases page.
 - **No `pg_dump`.** EnterpriseDB's client binaries (zonky's own upstream) with a Back Up command
   in the app menu would give `operations.md` §2 to the app.
 - **The keychain items trust `/usr/bin/security`**, so any process of the same user reads them
@@ -283,6 +315,43 @@ support directory and no keychain items.
 | Shell SIGKILLed | Backend and Postgres both gone 0.45 s later, through the watchdog; Postgres logged a fast shutdown and *database system is shut down* |
 | Memory at rest, sign-in page shown | Shell 99 MB RSS (WebKit's own processes not counted), backend 184 MB, the postmaster 23 MB |
 | Support directory after setup | 50 MB |
+
+## Validation (1.1.0)
+
+The update from 1.0.0, walked on the Mac above on 2026-11-15, headless unless said. Both apps
+were built by `macos/scripts/build-app.sh` from clean trees and signed with the Developer ID:
+1.0.0 from `main` at `a2d75cb` (the commit the notarized 1.0.0 workflow artifact of 2026-11-13
+was built from), 1.1.0 from the release-prep branch at `e2300e4` (build `20261115.1442`,
+`backend_release: v1.1.0`, 89 s end to end). Each was installed the way a user installs it: its
+disk image mounted, and the app copied over the one in an Applications folder.
+
+- **A 1.0.0 instance, from nothing.** First launch healthy in 2.66 s. Set up through the API with
+  the session's claim token: an administrator, the `jamf_patch` flag on, an exclusion pattern,
+  and a destination with a stored secret. Quit: nothing left running in 0.29 s.
+- **The update.** The 1.1.0 app over the 1.0.0 app, same data directory and keychain items.
+  Healthy in 1.67 s on the same port (`50722`). `backend.log` shows the two migrations 1.1.0
+  adds to what 1.0.0 already had: `a4d7e1c9b2f3 -> c793a1f5d2e8` (promoted applications) and
+  `c793a1f5d2e8 -> f794a1c3d5e7` (the Fleet catalog). The session cookie minted under 1.0.0 still
+  answered `/api/auth/me`. Accounts, the destination, the flags, the sharing settings and the
+  setup status read as they did under 1.0.0, and the two new flags listed, off. The stored secret
+  was read and used (the destination test reached DNS resolution, which is past the decrypt).
+  The three keychain items were the same values (compared by digest).
+- **The step back.** The 1.0.0 app over the 1.1.0 app: healthy in 1.67 s, with the *starts
+  without migrating* warning quoted under [Updates](#updates) and `database ready, at a newer
+  release's schema, nothing migrated`. Every value read as it had before the update.
+- **Forward again.** The 1.1.0 app: healthy in 1.67 s, no migration run.
+- **Windowed.** `open` on the 1.1.0 app: healthy in 1.2 s, and the shell logged the window on
+  `/login` with a password field. `osascript -e 'quit app "LoonInspect"'`: everything gone in
+  0.48 s.
+- An earlier pass the same day, with a 1.1.0 that differed from 1.0.0 only in its two version
+  numbers, gave the same results with no migration to run.
+- Afterwards the support directory, the three keychain items and the window's WebKit and cache
+  entries were removed; this session had made them all.
+
+**Not run:** notarization of 1.1.0 and a launch from a quarantined download (the release
+workflow does both at publication, and a `v1.1.0-rc.1` prerelease is the way to see them before
+the release); the update on an instance with real inventory (the container's walk of the same
+migrations is in [the release notes](releases/v1.1.0.md)); a second Mac.
 
 ## Validation (1.0.0)
 
