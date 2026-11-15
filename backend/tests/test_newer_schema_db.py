@@ -64,8 +64,8 @@ def test_this_images_release_is_one_a_stamp_compares_with():
 @pytest_asyncio.fixture(loop_scope="session")
 async def newer(tenant_ready, tmp_path, monkeypatch):
     """(upgrade, stamp): moves the database one synthetic migration past head, recording what it is given;
-    `stamp` is what head recorded. This image is v2.0.0 for the test."""
-    monkeypatch.setattr(database, "RELEASE", "v2.0.0")
+    `stamp` is what head recorded. This image is v1.1.0 for the test, the first release that reads the stamp."""
+    monkeypatch.setattr(database, "RELEASE", "v1.1.0")
     async with database.engine.connect() as connection:
         head = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         stamp = await connection.scalar(text("SELECT min_readable_release FROM schema_release"))
@@ -94,16 +94,16 @@ async def test_the_database_holds_the_stamp_the_newest_migration_declares(tenant
 
 @needs_db[0]
 @needs_db[1]
-@pytest.mark.parametrize("recorded", ["v2.0.0", "v1.0.0"])
+@pytest.mark.parametrize("recorded", ["v1.1.0", "v1.0.0"])
 async def test_an_image_at_or_above_the_stamp_starts_without_migrating(newer, recorded, caplog):
     upgrade, stamp = newer
     await upgrade(_stamp(recorded), _stamp(stamp))
     with caplog.at_level(logging.WARNING, logger=database.__name__):
         assert await database.init_db() is False
     line = caplog.text.replace(f"(build {get_app_version()})", "(build …)")
-    phrase = f"which recorded that {recorded} or later can read it; this image is v2.0.0 (build …), so it starts without"
+    phrase = f"which recorded that {recorded} or later can read it; this image is v1.1.0 (build …), so it starts without"
     assert f"(its schema is at revision {AHEAD}, which this image does not carry), {phrase}" in line
-    assert _quoted_in(phrase.replace(recorded, "v2.0.0"), "operations.md")
+    assert _quoted_in(phrase.replace(recorded, "v1.1.0"), "operations.md")
     async with database.engine.connect() as connection:
         assert await connection.scalar(text("SELECT version_num FROM alembic_version")) == AHEAD
 
@@ -112,14 +112,14 @@ async def test_an_image_at_or_above_the_stamp_starts_without_migrating(newer, re
 @needs_db[1]
 async def test_an_image_below_the_stamp_refuses_with_a_sentence_naming_both(newer, caplog):
     upgrade, stamp = newer
-    await upgrade(_stamp("v2.1.0"), _stamp(stamp))
+    await upgrade(_stamp("v1.2.0"), _stamp(stamp))
     with pytest.raises(RuntimeError) as refused, caplog.at_level(logging.ERROR, logger=database.__name__):
         await database.init_db()
     sentence = str(refused.value)
-    phrase = "which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build …), so it will not start on it"
+    phrase = "which recorded that only v1.2.0 or later can read it; this image is v1.1.0 (build …), so it will not start on it"
     assert phrase in sentence.replace(f"(build {get_app_version()})", "(build …)")
     assert _quoted_in(phrase, "troubleshooting.md", "operations.md")
-    assert "Start an image of v2.1.0 or later" in sentence and "restore the backup taken before that upgrade" in sentence
+    assert "Start an image of v1.2.0 or later" in sentence and "restore the backup taken before that upgrade" in sentence
     # Logged as a line of its own, and raised without Alembic's traceback chained to it.
     assert sentence in caplog.text and refused.value.__suppress_context__
 
@@ -127,7 +127,7 @@ async def test_an_image_below_the_stamp_refuses_with_a_sentence_naming_both(newe
 @needs_db[0]
 @needs_db[1]
 async def test_a_database_with_no_stamp_keeps_alembics_refusal(newer):
-    """A v1.x database has no schema_release table; nothing says what can read it, so nothing starts on it."""
+    """A v1.0.0 database has no schema_release table; nothing says what can read it, so nothing starts on it."""
     upgrade, _ = newer
     await upgrade(
         'op.rename_table("schema_release", "schema_release_0672")', 'op.rename_table("schema_release_0672", "schema_release")'

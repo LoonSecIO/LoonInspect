@@ -48,6 +48,27 @@ pull request lands.
 | `app_promotion` (Settings › Feature Flags) | area switch | #793 | off | the registry, `core/sharing.py` (the exchange builder), `core/promotions.py` | **not ruled**: added 2026-11-15, for the v1.1.0 gate to rule. On, an administrator can promote installed applications under Settings › Data Sharing, and each exchange then carries those titles' names in plain text. Off, nothing can be promoted, nothing promoted leaves, and the exchange body is unchanged | next gate |
 | `fleet_maintained_apps` (Settings › Feature Flags) | area switch that also decides an outbound call | #794 | off | the registry, `core/fleet_catalog.py` (the daily check asks GitHub only while some organization has it on), `api/fleet_catalog.py` (off answers no titles) | **not ruled**: added 2026-11-15, after the v2.0.0 gate, for the v1.1.0 gate to rule. Lists Devices › Applications › Fleet catalog and has the instance read Fleet's maintained-apps catalog from GitHub once a day. It ships off because the catalog's files are under Fleet's `ee/` licence, which says production use needs a Fleet subscription ([fleet-catalog.md](fleet-catalog.md)) | v1.1.0 gate |
 
+## The v1.1.0 gate
+
+Status: **recommended, not ruled** (2026-11-15). v1.1.0 is cut from `main` ahead of v2.0.0, so
+this is the first gate run at a tag. The seventeen switches the v2.0.0 gate ruled keep their
+rulings: nothing here re-rules them, and the four *promote at the v2.0.0 tag* verdicts stay
+what they say, so those switches ship off in v1.1.0. The three registry keys added since are
+this gate's to rule, and each row below is a recommendation until the maintainer rules it.
+
+| Switch | Born in | Default at v1.1.0 | Recommended verdict | Kill release |
+| --- | --- | --- | --- | --- |
+| `INTELLIGENCE_ACCESS`, `CONTRIBUTION_RECEIPTS`, `VULN_TENANT_SELECTION`, `VULN_RELEASE_RETENTION` | #622, #621 | off | **keep off**: ruled *promote at the v2.0.0 tag* (#652), and v1.1.0 is not that tag | as ruled |
+| `INTELLIGENCE_SUBMISSIONS` | #692 | off | **keep off**, as ruled | as ruled |
+| The nine permanent switches and `ALLOW_INSECURE_DESTINATION_URL`, `jamf_patch`, `vulnerabilities` | above | as above | **keep**, as ruled | as ruled |
+| `patch_policy` (Settings › Feature Flags) | #614 | off | **keep**: it lists a reference page that reads no inventory, and the Patch Policy Lab behind it is unfinished | ruled again when the lab reads real history |
+| `app_promotion` (Settings › Feature Flags) | #793 | off | **keep off**: new in this release, and the service's pick-up of a promoted definition is not live | promote or delete once a promoted title has been walked to coverage |
+| `fleet_maintained_apps` (Settings › Feature Flags) | #794 | off | **keep off**: new in this release, and the source's licence is the operator's to read before turning it on | ruled at the next gate |
+
+No promote or delete verdict is recommended, so no default flips and no path is removed before
+the tag. The release notes carry the same table
+([`releases/v1.1.0.md`](releases/v1.1.0.md)).
+
 ## How a gate runs
 
 1. Before the release is tagged, list every switch (`grep -n ': bool = ' backend/app/core/config.py`
@@ -69,3 +90,4 @@ pull request lands.
 | 2026-10-02 | `patch_policy` added (#614, first slice): lists the patch-policy reference page under Posture, off by default. Added after the v2.0.0 gate and not ruled; the next gate rules it. |
 | 2026-11-15 | `app_promotion` added (#793): the switch for promoted applications, off by default. Added after the v2.0.0 gate and not ruled; the v1.1.0 gate rules it. |
 | 2026-11-15 | `fleet_maintained_apps` added (#794): lists Devices › Applications › Fleet catalog and, unlike the other registry keys, decides an outbound call: the daily read of Fleet's maintained-apps catalog from GitHub runs only while some organization has it on. Off by default and not ruled; the v1.1.0 gate rules it. |
+| 2026-11-15 | The v1.1.0 gate, as recommendations: v1.1.0 is cut ahead of v2.0.0, the seventeen ruled switches keep their rulings (the four promotes stay for the v2.0.0 tag), and `patch_policy`, `app_promotion` and `fleet_maintained_apps` are recommended keep. Not ruled until the maintainer rules it. |
