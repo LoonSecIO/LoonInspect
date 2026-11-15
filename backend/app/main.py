@@ -49,6 +49,7 @@ from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.exclusion_ranking import router as exclusion_ranking_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.fleet_catalog import router as fleet_catalog_router
 from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
@@ -76,6 +77,7 @@ from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, unscoped_session
+from app.core.fleet_catalog import tick as fleet_catalog_check
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
@@ -253,6 +255,23 @@ async def sharing_exchange_tick() -> None:
                     "(docs/troubleshooting.md: Paid intelligence preview).",
                     extra={"tenant_id": str(tenant_id)},
                 )
+
+
+async def fleet_catalog_tick() -> None:
+    """Fleet's maintained-apps catalogue (#794, docs/fleet-catalog.md). Looks every hour and
+    checks at most once a day, or within the hour after a check that got no answer, and only
+    while some organization has the `fleet_maintained_apps` flag on: with it off everywhere
+    this asks GitHub nothing. A check that fails writes its sentence to the catalogue's state
+    row and to the container log itself; what is caught here is everything else."""
+    try:
+        await fleet_catalog_check()
+    except Exception:
+        # A failure here must never take the scheduler down with it. The check's own
+        # failures (GitHub refusing, no route out) never reach this line.
+        logger.exception(
+            "Fleet catalog check could not run; the titles already held stay and the next hour tries again. "
+            "Check the database container is healthy (docker compose ps db)"
+        )
 
 
 async def hourly_session_cleanup() -> None:
@@ -601,6 +620,14 @@ async def lifespan(app: FastAPI):
             replace_existing=True,
         )
         scheduler.add_job(
+            fleet_catalog_tick,
+            # Twenty past, clear of the Jamf catalogue's sync on the hour. Hourly is how soon
+            # a flag just turned on gets its first check, not how often GitHub is asked.
+            CronTrigger(minute=20),
+            id="fleet_catalog_tick",
+            replace_existing=True,
+        )
+        scheduler.add_job(
             sharing_exchange_tick,
             IntervalTrigger(minutes=5),
             id="sharing_exchange_tick",
@@ -785,6 +812,7 @@ app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
+app.include_router(fleet_catalog_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
 app.include_router(posture_router)

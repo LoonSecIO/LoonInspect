@@ -161,6 +161,7 @@ STOPS = {
         "POST /api/jamf-patch/sync",
     ],
     "the connection holds no Jamf credential": ["POST /api/devices/{device_id}/refresh"],
+    "the Fleet catalog flag is off: the check is refused before anything asks GitHub": ["POST /api/fleet-catalog/refresh"],
 }
 STOPPED = {route: why for why, routes in STOPS.items() for route in routes}
 

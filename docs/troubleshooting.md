@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§24, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§26, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -64,6 +64,8 @@ they were written — §9 ends by saying the paths continue at §10.
   page lost history"](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
 - **§25** ["LoonInspect.app will not open, or opens and says it could not
   start"](#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
+- **§26** ["The Fleet catalog tab is missing, empty, or says its last check did not get an
+  answer"](#26-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -158,6 +160,7 @@ words nobody sees.
 | *AI search unavailable — the filters below still work.* | §11 step 2 |
 | *No Jamf Patch titles synced yet.* | §6 |
 | *… is available, and this build does not contain it.* — the update notice | §10 |
+| *The last check, … did not get an answer.* above the Fleet catalog table | §26 step 3 |
 
 ### The front page is not the same for every role
 
@@ -3083,3 +3086,82 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
    reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
    reads and configured SIEM delivery still work while the Mac app is running and awake.
+
+## 26. "The Fleet catalog tab is missing, empty, or says its last check did not get an answer"
+
+**Devices › Applications › Fleet catalog** lists the Mac apps Fleet maintains beside what this
+organization has installed ([`fleet-catalog.md`](fleet-catalog.md), #794). The list is one copy
+for the whole instance, read from Fleet's public repository on GitHub once a day, and only
+while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
+nothing here is a permissions problem in Jamf.
+
+1. **The tab is not there.** The flag is per organization and ships off. An administrator turns
+   on **Fleet catalog (maintained apps)** under Settings › Feature Flags, and the tab is listed
+   at once. Its address opened with the flag off reads *The Fleet catalog is off*, which is this
+   step. *This area could not be checked* is not: the flags themselves could not be read, so
+   reload, and if it stays, §4.
+2. **The tab says *Fleet's catalog has not been read yet.*** No check has run since the flag was
+   turned on. The scheduled check looks at twenty past each hour. **Check now**, for an Analyst
+   or an Admin, reads the catalog at once; the first read fetches every title and takes about
+   fifteen seconds. If an hour passes with no press and it still has not been read, see whether
+   any process has the scheduler: `docker compose logs app | grep scheduler_enabled`. A web-only
+   process (`SCHEDULER_ENABLED=false`, [`operations.md`](operations.md) §7) never checks on its
+   own; **Check now** still works there.
+3. **The status line says *The last check, …, did not get an answer.*** The sentence under it is
+   the whole reason, and the titles read before it are still listed, as of the date the line
+   gives. The same sentence is in the container log:
+   `docker compose logs app | grep "Fleet catalog check failed"`. A failed check is tried again
+   within the hour. By how the sentence opens:
+   - *api.github.com refused the request* → GitHub's limit for requests without a sign-in, 60
+     an hour for each address, shared by every instance and every other tool behind the same
+     address; the update check draws on it too (§10). One refusal needs nothing. Refused every
+     hour means many things share this address: leave the flag on only where the tab is used.
+   - *raw.githubusercontent.com refused the request* → GitHub slowed file reads from this
+     address part-way through. The sentence says how many manifests were read and kept; the
+     next check reads the rest.
+   - *No answer from …*, or *… answered 502* (or another number) *…, where GitHub answers 200*
+     → this container cannot reach GitHub, or something in between answered for it. From
+     inside the container:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
+     prints `200` when the way out is open. Anything else is DNS, a proxy or an egress
+     firewall between the container and `api.github.com` and `raw.githubusercontent.com` on
+     port 443. An air-gapped instance stays in this state for as long as the flag is on; turn
+     the flag off.
+   - *… resolves to …, so this container did not dial it* → the container's DNS or hosts file
+     answers one of GitHub's names with a loopback or link-local address. Fix the resolver;
+     the product will not dial those addresses under any name.
+   - *… with a body that is not JSON*, or *… with a redirect* → something answered in GitHub's
+     place: a captive portal, a proxy's sign-in page. The command above shows what the
+     container gets.
+   - *GitHub answered, but …* → GitHub was reached and what it returned is not the catalog
+     this build reads: the folder is gone, it holds no Mac manifest, or GitHub cut its listing
+     short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
+     release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
+4. **The check answered and the table is empty.** Read which sentence the table shows.
+   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
+     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
+     title matches an installed app by its exact bundle ID, on Macs only, so an organization
+     with no device sweep yet matches nothing (§1). For one title you know is installed,
+     compare its bundle ID under Devices › Applications with the tab's, letter for letter:
+     `com.Example.App` is not `com.example.app`.
+   - *No installed title matches this search* → the search missed among installed titles;
+     untick the box to search the whole catalog.
+   - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
+     failed; step 3.
+5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
+   is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
+   a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
+   latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
+   finding follows from a version is not this tab's question: it judges nothing but older or
+   not.
+6. **The status line ends with manifests that *could not be read … and were left as held*.**
+   The check succeeded. The named titles had a manifest this build could not read a version
+   from; they keep what they showed, or stay unlisted if they were new, until Fleet next
+   changes its catalog. Nothing to do.
+7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
+   answers it no titles. Once no organization on the instance has the flag on, the instance
+   stops asking GitHub. The titles it held stay in the database and are brought up to date by
+   the first check after the flag is turned on again.
+
+Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
+lines of the container log, and the build.

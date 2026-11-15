@@ -128,7 +128,7 @@ resumes if re-enabled. Both undelivered cases age out on a delivered event's clo
 fan-out state, is the purge's candidate test. The clocks are `event_outbox_retention_days` (7)
 and `dead_letter_retention_days` (30) — see `fan_out_pending` and `purge_delivered_events`.
 
-## 4. The scheduler: eight jobs
+## 4. The scheduler: nine jobs
 
 Registered in `backend/app/main.py`, every one of them behind `SCHEDULER_ENABLED`. Cron
 jobs fire in `SYNC_TIMEZONE`, not UTC.
@@ -141,6 +141,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `sharing_exchange_tick` | every 5 min | Sends at most once per tenant per day, at a minute of day derived from its submission UUID. |
 | `hourly_jamf_patch_sync` | hourly, :00 | Pulls the global Jamf Patch catalog, rebuilds the lookup, then re-judges every tenant's app catalog. |
 | `hourly_session_cleanup` | hourly, :30 | Deletes sessions a day past expiry or revocation. |
+| `fleet_catalog_tick` | hourly, :20 | Checks Fleet's maintained-apps catalog on GitHub at most once a day, and only while some organization has the `fleet_maintained_apps` flag on; with it off everywhere it makes no request ([`fleet-catalog.md`](fleet-catalog.md), #794). |
 | `outbox_cleanup` | daily, 02:45 | Purges events past retention, held ones included — age is the candidate test, and a delivery still pending or a dead letter inside its own window is what holds an event back. |
 | `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`, and clears the URL, text and contact of submission cases 90 days after they close or once they expire; with `CHANGE_LOG_RETENTION_DAYS` set, deletes change-log rows older than it, in batches (#785). |
 

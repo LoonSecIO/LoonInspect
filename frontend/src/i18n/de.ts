@@ -254,6 +254,11 @@ export const de: Translations = {
         offTitle: "KI-Funktionen sind aus",
         offDescription:
           "KI-Funktionen sind aus. Eine Administratorin oder ein Administrator schaltet sie unter Einstellungen › Feature-Flags ein."
+      },
+      fleet_maintained_apps: {
+        offTitle: "Der Fleet-Katalog ist aus",
+        offDescription:
+          "Der Fleet-Katalog ist für diese Organisation aus; Fleets Repository wird in ihrem Namen nicht gelesen. Eine Administratorin oder ein Administrator schaltet ihn unter Einstellungen › Feature-Flags ein."
       }
     }
   },
@@ -1329,6 +1334,61 @@ export const de: Translations = {
       `${field} enthält an Stelle ${at} das Zeichen ${code}, das ein Fall nicht übertragen kann: kein Formatzeichen außer den Verbindern U+200C und U+200D, ` +
       `kein unpaariges Surrogat, kein Zeilen- oder Absatztrenner und kein Steuerzeichen${field === "text" ? " außer Zeilenumbruch und Tabulator" : ""}. ` +
       (field === "text" || field === "contact" ? "Löschen Sie es, dann öffnen Sie die Vorschau." : "Es stammt aus dem Inventar, daher kann dieser Build nicht gesendet werden.")
+  },
+  fleetCatalog: {
+    tabLabel: "Fleet-Katalog",
+    eyebrow: "Geräte › Anwendungen",
+    title: "Fleet-Katalog",
+    description:
+      "Die Mac-Apps, die Fleet pflegt, mit Fleets neuester Version neben dem, was diese Organisation installiert hat. Einmal täglich aus Fleets Repository auf GitHub gelesen.",
+    checkNow: "Jetzt prüfen",
+    checking: "Wird geprüft...",
+    checkError: "Die Prüfung wurde nicht abgeschlossen. Versuchen Sie es erneut.",
+    loading: "Wird geladen...",
+    errorLoading: "Fleets Katalog konnte nicht geladen werden.",
+    searchPlaceholder: "Name, Bundle-ID, Version suchen...",
+    installedOnly: "Nur hier installierte Titel",
+    installedOnlyHint:
+      "Blendet Fleets Titel aus, die kein Mac dieser Organisation hat. Ein Titel wird über die exakte Bundle-ID einer installierten App zugeordnet.",
+    tableName: "Name",
+    tableBundleId: "Bundle-ID",
+    tableLatestVersion: "Fleets neueste",
+    tableDeviceCount: "Macs mit App",
+    tableDevicesBehind: "Macs im Rückstand",
+    tableVersionChanged: "Version zuletzt geändert",
+    notMoved: "Seit dem ersten Lesen nicht",
+    notMovedHint:
+      "Fleets Version dieses Titels hat sich nicht geändert, seit diese Instanz ihn zum ersten Mal gelesen hat; es gibt daher keine frühere Version zu zeigen.",
+    movedFrom: (at: string, previous: string) => `${at}, von ${previous}`,
+    statusNever:
+      "Fleets Katalog wurde noch nicht gelesen. Die erste Prüfung läuft innerhalb einer Stunde, nachdem das Flag eingeschaltet wurde.",
+    statusRead: (at: string, count: number) =>
+      `Geprüft ${at}: Fleets Katalog hatte sich geändert und wurde gelesen. Er führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}.`,
+    statusUnchanged: (at: string, count: number, changedAt: string) =>
+      `Geprüft ${at}: seit ${changedAt} hatte sich nichts geändert. Fleets Katalog führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}.`,
+    statusSource: (source: string) => `Quelle: ${source} auf GitHub.`,
+    statusFailed: (at: string) => `Die letzte Prüfung, ${at}, hat keine Antwort erhalten.`,
+    statusFailedHeld: (count: number, changedAt: string) =>
+      count === 1
+        ? `Der eine hier gehaltene Titel ist auf dem Stand vom ${changedAt}. Die nächste Prüfung folgt innerhalb einer Stunde.`
+        : `Die ${count} hier gehaltenen Titel sind auf dem Stand vom ${changedAt}. Die nächste Prüfung folgt innerhalb einer Stunde.`,
+    statusFailedNothingHeld: "Es wurde noch nichts gelesen. Die nächste Prüfung folgt innerhalb einer Stunde.",
+    emptyFlagOff: "Der Fleet-Katalog ist für diese Organisation aus.",
+    emptyNeverChecked: "Noch nichts aufzulisten: Fleets Katalog wurde noch nicht gelesen.",
+    emptyNeverCheckedCanCheck:
+      "Noch nichts aufzulisten: Fleets Katalog wurde noch nicht gelesen. „Jetzt prüfen“ liest ihn.",
+    emptyNeverRead:
+      "Noch nichts aufzulisten: Bisher konnte keine Prüfung Fleets Katalog lesen. Der Grund steht oben.",
+    emptyNoneInstalled: (count: number) =>
+      `Fleet führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}, und keine ist auf einem Mac, den diese Organisation erfasst hat. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu sehen.`,
+    emptyNoMatchInstalled:
+      "Kein installierter Titel passt zu dieser Suche. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu durchsuchen.",
+    emptyNoMatch: "Kein Titel passt zu dieser Suche.",
+    footer: (shown: number, total: number, installed: number) =>
+      `${shown} angezeigt · ${total} in Fleets Katalog · ${installed} hier installiert`,
+    licenceNote:
+      "Fleet veröffentlicht diesen Katalog unter der Lizenz im Ordner ee/ seines Repositorys; sie besagt, dass der Produktiveinsatz ein Fleet-Abonnement erfordert. LoonInspect behält von jedem Titel Name, Bundle-ID und Version und sonst nichts.",
+    licenceLink: "Lizenz lesen"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

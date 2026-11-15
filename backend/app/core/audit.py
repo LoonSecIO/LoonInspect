@@ -74,6 +74,9 @@ class AuditAction(StrEnum):
     MFA_POLICY_CHANGED = "settings.mfa_policy.changed"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
+    # A person's check of Fleet's maintained-apps catalogue (#794), with what it found. The
+    # daily check is the scheduler's and is in the container log, not here.
+    FLEET_CATALOG_CHECKED = "fleet-catalog.checked"
 
     INTELLIGENCE_ACTIVATED = "intelligence.activated"
     INTELLIGENCE_ROTATED = "intelligence.credential.rotated"

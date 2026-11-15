@@ -4512,6 +4512,207 @@
         "title": "FindingDetectedOut",
         "type": "object"
       },
+      "FleetCatalogOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "installedTitles": {
+            "default": 0,
+            "title": "Installedtitles",
+            "type": "integer"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FleetCatalogTitleOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 50,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCatalogStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "source"
+        ],
+        "title": "FleetCatalogOut",
+        "type": "object"
+      },
+      "FleetCatalogStateOut": {
+        "description": "What the last check of Fleet's catalogue found (#794). Absent from the page's answer\nbefore the first check, which is its own state and not an empty one.",
+        "properties": {
+          "appCount": {
+            "title": "Appcount",
+            "type": "integer"
+          },
+          "changedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changedat"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkedat"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "unchanged",
+                  "refused",
+                  "unreachable",
+                  "unexpected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "required": [
+          "appCount",
+          "changedAt",
+          "checkedAt",
+          "detail",
+          "outcome"
+        ],
+        "title": "FleetCatalogStateOut",
+        "type": "object"
+      },
+      "FleetCatalogTitleOut": {
+        "properties": {
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "default": 0,
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "devicesBehind": {
+            "default": 0,
+            "title": "Devicesbehind",
+            "type": "integer"
+          },
+          "devicesCurrent": {
+            "default": 0,
+            "title": "Devicescurrent",
+            "type": "integer"
+          },
+          "firstSeenAt": {
+            "format": "date-time",
+            "title": "Firstseenat",
+            "type": "string"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previousVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousversion"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "versionChangedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionchangedat"
+          }
+        },
+        "required": [
+          "bundleId",
+          "firstSeenAt",
+          "latestVersion",
+          "name",
+          "previousVersion",
+          "slug",
+          "versionChangedAt"
+        ],
+        "title": "FleetCatalogTitleOut",
+        "type": "object"
+      },
       "Frequency": {
         "enum": [
           "hourly",
@@ -13230,6 +13431,112 @@
         "summary": "Update Feature Flag",
         "tags": [
           "feature-flags"
+        ]
+      }
+    },
+    "/api/fleet-catalog": {
+      "get": {
+        "description": "Fleet's titles, each with this organization's Macs counted against Fleet's latest\nversion, and what the last check found. `installedOnly` (the default) keeps the titles\nat least one Mac has; `q` narrows by name, bundle identifier or slug.\n\nReads what is stored and never asks GitHub: a page load is not a check. With the flag\noff for this organization the answer is `enabled: false` and nothing else.",
+        "operationId": "read_catalog_api_fleet_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "installedOnly",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Installedonly",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/refresh": {
+      "post": {
+        "description": "Check Fleet's catalogue now: the daily check, with a person waiting.\n\nUnchanged, it is one request to GitHub and returns at once. The first check reads every\nMac manifest and takes about fifteen seconds. A refusal is a 409 whose `detail` is the\nsentence to read (docs/diagnosability.md rule 3): the flag is off, a check is already\nrunning, or GitHub could not be read, in which case the same sentence is stored as the\ncatalogue's state and stays on the page until a later check answers.",
+        "operationId": "refresh_catalog_api_fleet_catalog_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetCatalogStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Catalog",
+        "tags": [
+          "fleet-catalog"
         ]
       }
     },
