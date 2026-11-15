@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import {
@@ -180,12 +180,16 @@ export function PromotedAppsView(props: ViewProps) {
 /**
  * Settings › Data Sharing: the applications this organization sends by name (#793). `onChanged` tells the
  * page that what the next exchange carries has moved, so it can drop a preview that no longer shows it.
+ * `sharingKey` is the page's tier and exclusions as one string: when either changes on this page the list
+ * is read again, because both decide what a row here says (not sent, or held back by a pattern).
  */
-export function PromotedApps({ canWrite, onChanged }: { canWrite: boolean; onChanged: () => void }) {
+export function PromotedApps({ canWrite, sharingKey, onChanged }: { canWrite: boolean; sharingKey: string; onChanged: () => void }) {
   const { t, locale } = useLocale();
   const copy = t.system.sharing.promotions;
   const [read, setRead] = useState<PromotionsRead>({ state: "loading" });
   const [query, setQuery] = useState("");
+  // The search as last typed, for the re-read a settings change triggers: a ref, so typing is not one.
+  const typed = useRef("");
   const [busy, setBusy] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
 
@@ -197,7 +201,7 @@ export function PromotedApps({ canWrite, onChanged }: { canWrite: boolean; onCha
 
   useEffect(() => {
     let live = true;
-    listPromotions()
+    listPromotions(typed.current)
       .then((promotions) => {
         if (live) setRead({ state: "ready", promotions });
       })
@@ -207,7 +211,7 @@ export function PromotedApps({ canWrite, onChanged }: { canWrite: boolean; onCha
     return () => {
       live = false;
     };
-  }, []);
+  }, [sharingKey]);
 
   async function act(key: string, request: () => Promise<unknown>, failed: string) {
     setBusy(key);
@@ -233,7 +237,10 @@ export function PromotedApps({ canWrite, onChanged }: { canWrite: boolean; onCha
       busy={busy}
       refusal={refusal}
       query={query}
-      onQuery={setQuery}
+      onQuery={(value) => {
+        typed.current = value;
+        setQuery(value);
+      }}
       onSearch={() => void load(query)}
       onPromote={(candidate) => void act(candidate.keyTitle, () => promoteApplication(candidate.keyTitle), copy.promoteFailed)}
       onWithdraw={(promotion) => void act(promotion.id, () => withdrawPromotion(promotion.id), copy.withdrawFailed)}

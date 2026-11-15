@@ -504,6 +504,7 @@ export function DataSharingPage() {
           rather than left showing a body that is no longer the next one. */}
       <PromotedApps
         canWrite={canWrite}
+        sharingKey={`${settings.tier}|${settings.envDisabled}|${settings.excludeGlobs.join("\n")}`}
         onChanged={() => {
           setPreview(null);
           setSent(null);

@@ -3124,7 +3124,7 @@ has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Noth
    - *…200 applications are promoted already…* → withdraw one first. The limit is per organization.
    - A 403 → promoting and withdrawing need the system write permission, like the tier.
 5. **The row reads *Sent by name* and the preview shows no `promotions`.** The preview is the body
-   as it was when the button was pressed. Press **Show exactly what would be sent now** again.
+   as it was when the button was pressed. Press **Show the payload** again.
    The array lists each promoted title once, with one `versions` row per installed version and
    platform. Still absent, with the row reading *Sent by name* → report it with the listing's JSON
    and the preview (§8); the two are built from the same rows and must agree.
