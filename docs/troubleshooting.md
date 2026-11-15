@@ -543,8 +543,8 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
-   - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later
-     can read it; this image is v2.0.0 (build …), so it will not start on it* → the image is
+   - *This database was upgraded by a newer release … which recorded that only v1.2.0 or later
+     can read it; this image is v1.1.0 (build …), so it will not start on it* → the image is
      older than the database, and the release that upgraded it recorded that this one cannot
      read what it left. The sentence names both releases, what the database needs and what is
      running, so there is nothing to look up. Put an image of the named release or a later one
