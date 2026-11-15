@@ -425,7 +425,7 @@ Endpoints declare `Depends(require(Permission.CONNECTION_WRITE))`. Roles are bun
 | Audit read | — | ✅ | ✅ | ✅ |
 | Token create (own) | — | ✅ | ✅ | ✅ |
 
-`PATCH_CATALOG_SYNC` was added during implementation and isn't in the original list: `POST /api/jamf-patch/sync` triggers an outbound refresh of Jamf's public catalog. Harmless in content, but it hits a third party, so it shouldn't be something a read-only role can fire in a loop. Auditor is denied it precisely because read-only has to mean read-only — that asymmetry with Analyst is deliberate.
+`PATCH_CATALOG_SYNC` was added during implementation and isn't in the original list: `POST /api/jamf-patch/sync` triggers an outbound refresh of Jamf's public catalog. Harmless in content, but it hits a third party, so it shouldn't be something a read-only role can fire in a loop. Auditor is denied it precisely because read-only has to mean read-only — that asymmetry with Analyst is deliberate. `POST /api/fleet-catalog/refresh`, the check of Fleet's maintained-apps catalog on GitHub (#794), is the same kind of act and takes the same permission.
 
 **Auditor** is the read-only admin: full visibility into configuration, accounts, roles, and audit history, with no write permission anywhere. It's a strict subset of Admin, which makes it safe to hand to someone outside the team during a review.
 

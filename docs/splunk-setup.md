@@ -176,7 +176,8 @@ bundle into the `app` container and point the variable at it.
 > **The bundle must contain the public roots as well as your CA.** `SSL_CERT_FILE`
 > *replaces* the trust store for the whole process rather than adding to it, and the same
 > client settings are used for every outbound call this app makes — the daily update
-> check, Jamf Cloud, the sharing exchange. With only your own CA in the file, those start
+> check, Jamf Cloud, the sharing exchange, the Fleet catalog check where its flag is on.
+> With only your own CA in the file, those start
 > failing certificate verification. Both halves of that were tested.
 
 Build the bundle by concatenating:

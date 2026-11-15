@@ -226,6 +226,8 @@ RETENTION_NOT_A_CLOCK=(
   backend/app/core/vuln_library.py:VulnLibraryRow
   backend/app/core/vuln_library.py:VulnLibraryTitle
   backend/app/mdm/org_units.py:JamfOrgUnit
+  # A title Fleet's catalog no longer lists (#794): by what the source says, not by age.
+  backend/app/core/fleet_catalog.py:FleetMaintainedApp
 )
 
 # `comm` wants one line per item and an empty set as an empty stream, not a blank line.

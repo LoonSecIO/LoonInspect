@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 import { listConnections } from "@/features/mdm/api";
 import { listFeatureFlags } from "@/features/settings/api";
+import { useFlagGate } from "@/features/settings/flagStore";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -20,6 +21,12 @@ export function ApplicationsPage() {
   // jamf_patch feature flag (Settings > Feature Flags) can force it visible
   // regardless — e.g. to preview the feed before wiring up a real connection.
   const jamfPatchEnabled = hasJamfProCapability || jamfPatchFlagEnabled;
+
+  // Fleet's maintained-apps catalog (#794) has no connection behind it: the flag is the
+  // whole condition, read from the session's flag store so a toggle on Settings › Feature
+  // Flags lists or removes the tab at once. Loading and unreadable both leave it unlisted;
+  // the route's own guard says which, for someone who followed a link.
+  const fleetCatalogEnabled = useFlagGate("fleet_maintained_apps") === "on";
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +75,14 @@ export function ApplicationsPage() {
             className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
           >
             {t.jamfPatch.tabLabel}
+          </NavLink>
+        )}
+        {fleetCatalogEnabled && (
+          <NavLink
+            to="/devices/applications/fleet-catalog"
+            className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
+          >
+            {t.fleetCatalog.tabLabel}
           </NavLink>
         )}
       </div>
