@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§24, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§26, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -64,6 +64,8 @@ they were written — §9 ends by saying the paths continue at §10.
   page lost history"](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
 - **§25** ["LoonInspect.app will not open, or opens and says it could not
   start"](#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
+- **§26** ["A promoted application is not being sent, or Promote is
+  refused"](#26-a-promoted-application-is-not-being-sent-or-promote-is-refused)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -3083,3 +3085,56 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
    reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
    reads and configured SIEM delivery still work while the Mac app is running and awake.
+
+## 26. "A promoted application is not being sent, or Promote is refused"
+
+A promotion (#793, [`data-sharing.md`](data-sharing.md#promoted-applications)) is an administrator's
+choice that one installed application's name, bundle ID and versions leave in plain text with each
+exchange. **Promoted applications** on Settings › Data Sharing lists each choice with what the next
+exchange does with it (`GET /api/system/data-sharing/promotions`: `paused` for the whole list,
+`held` and `excludedBy` per title), a refusal is shown as the server's sentence, and the audit log
+has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Nothing here needs a log.
+
+1. **There is no Promoted applications section on Settings › Data Sharing.** The area is off and
+   nothing is promoted. An administrator turns on **Promote applications** under Settings › Feature
+   Flags, then reloads the page. A role without the system read permission does not see Data
+   Sharing at all.
+2. **The section says nothing below is being sent.** It names which of three things stops every
+   promotion, and each has one fix:
+   - *Promoting is switched off under Settings › Feature Flags…* → turn **Promote applications**
+     back on. The choices were kept; the flag stops the sending, and Withdraw still works.
+   - *COMMUNITY_SHARING=false is set…* → the environment override stops every exchange. Remove
+     the line from the `.env` beside `docker-compose.yml` and recreate the container (§5 step 6
+     has the same override for the exchange as a whole).
+   - *Sharing is off for this organization…* → choose **Share keys only** or the reveal tier
+     under Participation. A promotion needs an exchange to ride, and either tier sends one.
+3. **One row reads *Held back*.** The rest are leaving; this title is not.
+   - *…it matches the excluded pattern …* → the exclude list wins over a promotion. Remove that
+     pattern under Excluded bundle IDs to send the title, or withdraw the promotion to agree
+     with the pattern.
+   - *…no Mac has it installed now* → there is no version to state, so nothing is sent. It
+     resumes by itself when a sweep finds the title again. A renamed application is a different
+     title (the key hashes the name): promote it under its new name.
+4. **Promote was refused.** The sentence under the heading is the server's, and nothing was stored.
+   - *…promoting applications is switched off…* → step 1.
+   - *…no device in this organization has that application installed now, or it has no bundle
+     identifier* → only an installed title with a bundle ID can be promoted. Reload the page and
+     choose from the list, which is read from inventory as it is now.
+   - *…matches the excluded pattern …* → step 3's first case, before the click instead of after.
+   - *…200 applications are promoted already…* → withdraw one first. The limit is per organization.
+   - A 403 → promoting and withdrawing need the system write permission, like the tier.
+5. **The row reads *Sent by name* and the preview shows no `promotions`.** The preview is the body
+   as it was when the button was pressed. Press **Show exactly what would be sent now** again.
+   The array lists each promoted title once, with one `versions` row per installed version and
+   platform. Still absent, with the row reading *Sent by name* → report it with the listing's JSON
+   and the preview (§8); the two are built from the same rows and must agree.
+6. ***Last exchange* says *promoted applications shed*.** The collector answered `413`: the request
+   with the names was larger than it accepts. The run gave up the names and sent the snapshot,
+   which is what the share-log row's `promotionsShed: true` records beside the body it had
+   assembled. It repeats each day until the body fits: withdraw promotions you no longer need. A
+   fleet whose snapshot alone is refused is §5 step 6, not this.
+7. **It is being sent, and Posture › Vulnerabilities still reads *Outside the corpus* for it.** A
+   promotion is a contribution, not a request with a status: the title is assessed here when a
+   published release covers it, and this instance cannot see the service's side of that. Nothing
+   on this instance is wrong. Where a tracked answer is wanted, **Request coverage** on Posture ›
+   Vulnerabilities opens a case that has one (§21).
