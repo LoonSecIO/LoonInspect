@@ -92,6 +92,7 @@ async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
         last_exchange_at=last.occurred_at if last else None,
         last_exchange_outcome=last.outcome if last else None,
         last_exchange_reveals_shed=bool(last.reveals_shed) if last else False,
+        last_exchange_promotions_shed=bool(last.promotions_shed) if last else False,
         last_exchange_error=last.error if last else None,
         participation=participation.summary(row),
     )
@@ -282,6 +283,9 @@ async def download_share_log(
                 # ("exactly what left the box") needs this beside the payload, not a
                 # rewritten payload — see docs/data-sharing.md, "The share log".
                 "revealsShed": row.reveals_shed,
+                # The same for promoted applications (#793): true = `payload`'s `promotions`
+                # array was dropped to a 413 and did not leave.
+                "promotionsShed": row.promotions_shed,
                 "revealRequests": row.reveal_requests,
                 "error": row.error,
             },
