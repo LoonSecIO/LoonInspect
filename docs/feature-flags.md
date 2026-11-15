@@ -44,19 +44,20 @@ pull request lands.
 | `jamf_patch` (Settings › Feature Flags) | area override | catalog | off | the registry | keep, with the reason written here: a demo or lab without a Jamf Pro connection can still show the Jamf Patch tab; a v2.1 delete question | v2.1 question |
 | `vulnerabilities` (Settings › Feature Flags) | area override | #529 | off | the registry | keep, with the reason written here: a lab ahead of its first corpus can still list Posture › Vulnerabilities; a v2.1 delete question | v2.1 question |
 | `ai_features` (Settings › Feature Flags) | master switch | #402 | off | the registry, `core/ai.py` | keep, permanent: the whole AI area is one switch by doctrine | never |
-| `patch_policy` (Settings › Feature Flags) | area listing | #614 | off | the registry | **not ruled**: added 2026-10-02, after this gate, with the first slice of #614. It lists Posture › Patch policy, a reference replay that is not the organization's exposure; the address opens either way. For the next gate to rule | next gate |
-| `app_promotion` (Settings › Feature Flags) | area switch | #793 | off | the registry, `core/sharing.py` (the exchange builder), `core/promotions.py` | **not ruled**: added 2026-11-15, for the v1.1.0 gate to rule. On, an administrator can promote installed applications under Settings › Data Sharing, and each exchange then carries those titles' names in plain text. Off, nothing can be promoted, nothing promoted leaves, and the exchange body is unchanged | next gate |
-| `fleet_maintained_apps` (Settings › Feature Flags) | area switch that also decides an outbound call | #794 | off | the registry, `core/fleet_catalog.py` (the daily check asks GitHub only while some organization has it on), `api/fleet_catalog.py` (off answers no titles) | **not ruled**: added 2026-11-15, after the v2.0.0 gate, for the v1.1.0 gate to rule. Lists Devices › Applications › Fleet catalog and has the instance read Fleet's maintained-apps catalog from GitHub once a day. It ships off because the catalog's files are under Fleet's `ee/` licence, which says production use needs a Fleet subscription ([fleet-catalog.md](fleet-catalog.md)) | v1.1.0 gate |
+| `patch_policy` (Settings › Feature Flags) | area listing | #614 | off | the registry | not ruled at this gate: added 2026-10-02, after it, with the first slice of #614. It lists Posture › Patch policy, a reference replay that is not the organization's exposure; the address opens either way. Ruled **keep** at the v1.1.0 gate, below | as the v1.1.0 gate says |
+| `app_promotion` (Settings › Feature Flags) | area switch | #793 | off | the registry, `core/sharing.py` (the exchange builder), `core/promotions.py` | not ruled at this gate: added 2026-11-15, after it. On, an administrator can promote installed applications under Settings › Data Sharing, and each exchange then carries those titles' names in plain text. Off, nothing can be promoted, nothing promoted leaves, and the exchange body is unchanged. Ruled **keep off** at the v1.1.0 gate, below | as the v1.1.0 gate says |
+| `fleet_maintained_apps` (Settings › Feature Flags) | area switch that also decides an outbound call | #794 | off | the registry, `core/fleet_catalog.py` (the daily check asks GitHub only while some organization has it on), `api/fleet_catalog.py` (off answers no titles) | not ruled at this gate: added 2026-11-15, after it. Lists Devices › Applications › Fleet catalog and has the instance read Fleet's maintained-apps catalog from GitHub once a day. It ships off because the catalog's files are under Fleet's `ee/` licence, which says production use needs a Fleet subscription ([fleet-catalog.md](fleet-catalog.md)). Ruled **keep off** at the v1.1.0 gate, below | as the v1.1.0 gate says |
 
 ## The v1.1.0 gate
 
-Status: **recommended, not ruled** (2026-11-15). v1.1.0 is cut from `main` ahead of v2.0.0, so
-this is the first gate run at a tag. The seventeen switches the v2.0.0 gate ruled keep their
-rulings: nothing here re-rules them, and the four *promote at the v2.0.0 tag* verdicts stay
-what they say, so those switches ship off in v1.1.0. The three registry keys added since are
-this gate's to rule, and each row below is a recommendation until the maintainer rules it.
+Status: **ruled** (2026-11-15). v1.1.0 is cut from `main` ahead of v2.0.0, so this is the
+first gate run at a tag. The seventeen switches the v2.0.0 gate ruled keep their rulings:
+nothing here re-rules them, and the four *promote at the v2.0.0 tag* verdicts stay what they
+say, so those switches ship off in v1.1.0. The three registry keys added since were this
+gate's to rule. Kyle ruled every row on 2026-11-15 ("accept all"), before the release pull
+request (#797) merged, so each verdict is the one that pull request recommended.
 
-| Switch | Born in | Default at v1.1.0 | Recommended verdict | Kill release |
+| Switch | Born in | Default at v1.1.0 | Verdict for v1.1.0 | Kill release |
 | --- | --- | --- | --- | --- |
 | `INTELLIGENCE_ACCESS`, `CONTRIBUTION_RECEIPTS`, `VULN_TENANT_SELECTION`, `VULN_RELEASE_RETENTION` | #622, #621 | off | **keep off**: ruled *promote at the v2.0.0 tag* (#652), and v1.1.0 is not that tag | as ruled |
 | `INTELLIGENCE_SUBMISSIONS` | #692 | off | **keep off**, as ruled | as ruled |
@@ -65,8 +66,8 @@ this gate's to rule, and each row below is a recommendation until the maintainer
 | `app_promotion` (Settings › Feature Flags) | #793 | off | **keep off**: new in this release, and the service's pick-up of a promoted definition is not live | promote or delete once a promoted title has been walked to coverage |
 | `fleet_maintained_apps` (Settings › Feature Flags) | #794 | off | **keep off**: new in this release, and the source's licence is the operator's to read before turning it on | ruled at the next gate |
 
-No promote or delete verdict is recommended, so no default flips and no path is removed before
-the tag. The release notes carry the same table
+No row was ruled promote or delete, so no default flips and no path is removed before the
+tag. The release notes carry the same table
 ([`releases/v1.1.0.md`](releases/v1.1.0.md)).
 
 ## How a gate runs
@@ -91,3 +92,4 @@ the tag. The release notes carry the same table
 | 2026-11-15 | `app_promotion` added (#793): the switch for promoted applications, off by default. Added after the v2.0.0 gate and not ruled; the v1.1.0 gate rules it. |
 | 2026-11-15 | `fleet_maintained_apps` added (#794): lists Devices › Applications › Fleet catalog and, unlike the other registry keys, decides an outbound call: the daily read of Fleet's maintained-apps catalog from GitHub runs only while some organization has it on. Off by default and not ruled; the v1.1.0 gate rules it. |
 | 2026-11-15 | The v1.1.0 gate, as recommendations: v1.1.0 is cut ahead of v2.0.0, the seventeen ruled switches keep their rulings (the four promotes stay for the v2.0.0 tag), and `patch_policy`, `app_promotion` and `fleet_maintained_apps` are recommended keep. Not ruled until the maintainer rules it. |
+| 2026-11-15 | The v1.1.0 verdicts as ruled ("accept all", #797): every recommendation became its row's verdict. `patch_policy` is kept, `app_promotion` and `fleet_maintained_apps` are kept off, and the seventeen earlier rulings stand. No default flipped. |
