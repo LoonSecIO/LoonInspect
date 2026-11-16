@@ -71,18 +71,43 @@ development build fails where a release build would.
    The script submits the app, staples it, rebuilds and signs the disk image from the stapled
    app, submits and staples that, and ends with `spctl` reading `accepted` for both. It refuses a
    bundle built from a modified tree.
-4. Attach `build/LoonInspect-<version>-arm64.dmg` (and the `.zip` beside it, if wanted) to the
-   GitHub release. Nothing under `build/` is committed.
+4. Put `build/LoonInspect-<version>-arm64.dmg`, the `.zip` beside it and `build/SHA256SUMS` on
+   the GitHub release **while it is a draft**, then publish it. This repository's releases are
+   immutable: once one is published GitHub refuses every further file (*Cannot upload assets to
+   an immutable release*), so a disk image built after publication cannot ship on that version.
+   Nothing under `build/` is committed.
+
+The workflow below does all four steps and makes the draft; these are the steps by hand.
 
 ## GitHub Actions
 
 [macOS release](../.github/workflows/macos-release.yml) builds on an Apple-silicon `macos-15`
-runner with Xcode 26.3, Node 22 and uv 0.9.30. A manual run from **main** produces downloadable
-workflow artifacts. Publishing a `vMAJOR.MINOR.PATCH` release (including prereleases) builds
-its tagged commit and attaches the verified DMG, ZIP and `SHA256SUMS` to that release. The tag
-must be on main and match both the app version and backend `RELEASE` (excluding a prerelease
-suffix). Existing release assets are never overwritten. Keep the existing admin-only `v*`
-tag ruleset. Old tags without this workflow do not start it retroactively.
+runner with Xcode 26.3, Node 22 and uv 0.9.30. It is run by hand, from **main**:
+
+- **Without a tag** it builds, signs and notarizes main's head and keeps the DMG, ZIP and
+  `SHA256SUMS` as downloadable workflow artifacts. No release is touched.
+- **With a tag** (`v1.2.0`, or a candidate such as `v1.2.0-rc.1`) it does the same, then makes
+  a **draft release** for that tag at the commit it built, holding the three files. A
+  release's draft takes its notes from `docs/releases/<tag>.md`, from the file's first rule
+  down; a candidate's gets one line. Nothing is published.
+
+```sh
+gh workflow run "macOS release" --ref main -f tag=v1.2.0
+```
+
+The repository admin reads the draft and publishes it. Publishing creates the tag at that
+commit and starts [Release](../.github/workflows/release.yml), which tags and copies the
+container images. The order is the point: this repository's releases are immutable, so a
+published release takes no more files, and one published first can never carry the app
+(`v1.1.0-rc.1` was published first, and carries none). When a release is published, this
+workflow checks that it holds the three files and that they match their sums. It cannot add
+them.
+
+The tag must match both the app version and backend `RELEASE` (excluding a prerelease
+suffix). A tag that already names another commit, a published release, and a draft made from
+another commit are each refused, with nothing uploaded; a second run for the same commit
+refills its own draft and leaves the draft's title and notes alone. The workflow never creates
+a tag: keep the existing admin-only `v*` tag ruleset.
 
 Create the **macos-release** GitHub environment. Restrict its deployment branches/tags to
 branch `main` and tags `v*`, and store these environment secrets:
@@ -113,8 +138,8 @@ failure. Pull requests run isolated script tests and a complete ad-hoc build wit
 that unsigned-for-distribution build is never uploaded.
 
 Only after both artifacts pass notarization, stapling and Gatekeeper assessment are they
-uploaded. A separate job with `contents: write` attaches assets to a published release; the
-signing job has `contents: read`. Apple submission responses and rejection logs are saved as a
+uploaded. A separate job with `contents: write` puts them on the draft release; the
+signing job has `contents: read`, and no job publishes. Apple submission responses and rejection logs are saved as a
 separate diagnostic artifact even on failure. Artifacts expire after 14 days; release assets
 remain with the release. See troubleshooting §25, **Maintainer: build or notarization fails**.
 
@@ -123,6 +148,8 @@ The local script saves a submission ID before its bounded wait (`NOTARY_TIMEOUT`
 starting another run; rerunning the script submits again. `ALLOW_DIRTY=1` is a local test
 escape hatch, never set by the workflow. Run the isolated script tests with
 `python3 macos/tests/test_notarize.py`; they require macOS `plutil` but no credentials/network.
+`python3 macos/tests/test_release_assets.py` does the same for the draft and the publication
+check, against a fake `gh`; it needs `jq`, which macOS and the runners ship.
 
 ## Native regression checks
 
