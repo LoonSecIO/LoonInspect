@@ -456,7 +456,7 @@ DEVICE_STATEMENTS: dict[tuple[str, str], tuple[int, int, int, int, int]] = {
     ("SELECT", "installed_apps"): (2, 2, 1, 2, 0),  # its app rows, loaded to diff; `record_device_apps` reads them again
     ("INSERT", "installed_apps"): (0, 0, 1, 1, 0),  # rows for the builds it did not carry: 961 a statement
     ("DELETE", "installed_apps"): (0, 0, 0, 1, 0),  # the build it no longer carries
-    ("INSERT", "app_catalog"): (1, 1, 1, 1, 0),  # every build it carries, ON CONFLICT DO NOTHING (#763): one, whatever it carries
+    ("INSERT", "app_catalog"): (1, 1, 1, 1, 0),  # every build it carries, ON CONFLICT DO NOTHING (#763): 1,000 a statement (#768)
     ("SELECT", "app_catalog"): (1, 1, 1, 1, 0),  # then its builds' rows by hash, locked FOR UPDATE in hash order: one IN
     ("UPDATE", "installed_apps"): (0, 0, 1, 1, 0),  # the Jamf Patch answer copied to new rows; one if all change the same columns
     ("SELECT", "device_findings"): (1, 1, 1, 1, 0),  # the finding ledger, to diff (#590)
@@ -813,35 +813,36 @@ async def test_found_a_catalog_move_is_re_judged_on_the_device_path_once_per_cha
 async def test_found_each_batched_write_costs_one_statement_per_page_of_rows(
     db, jamf: FakeJamf, connection, budget_tag, monkeypatch
 ) -> None:
-    """Pinned at today's numbers, not endorsed: each batched write costs one statement per page of rows,
-    and the one write that no longer pages has a ceiling instead.
+    """Pinned at today's numbers, not endorsed: each batched write costs one statement per page of rows.
 
     SQLAlchemy sizes a multi-row INSERT's page by the row's columns: 961 app rows (`process_sync`), a
     thousand title matches (`evaluate_entries`, app.catalog.service), change rows (`derive_and_record`,
     app.changes.derive) and events (`enqueue_events`, app.core.outbox); the ledger's `_ENTRY_BATCH`
     (app.observations.ledger), a thousand entries across every section it writes. The catalog rows
-    (`record_device_apps`) went from 838 a page to one statement of every build the device carries (#763),
-    which asyncpg caps at 32,767 arguments: 2,978 builds pass and the 2,979th fails the device — measured,
-    not pinned, and filed as #768. 1,200 titled apps cost a new Mac 25 where the budget is 23, and the
-    first Mac to show them 29 (26 below every page); a repeat, nothing extra; that Mac updating all 1,200,
-    38 where a smaller titled update costs 33 (only it updates, to keep the test short). A page's rows are
-    its INSERT's `($n` groups."""
+    (`record_device_apps`) are paged by hand, `CATALOG_INSERT_BATCH` a statement: since #763 they are a
+    statement the code builds whole, which SQLAlchemy does not page, and sent as one it was refused at
+    asyncpg's 32,767 arguments (#768, the test below). Every process sends a device's builds, so the
+    catalog's second page is the one cost here a repeat pays too. 1,200 titled apps cost a new Mac 26
+    where the budget is 23, and the first Mac to show them 30 (27 below every page); a repeat, 17 where
+    the budget is 16; that Mac updating all 1,200, 39 where a smaller titled update costs 33 (only it
+    updates, to keep the test short). A page's rows are its INSERT's `($n` groups."""
     await _titled(db)
     apps = _apps(1200, budget_tag, ("latest",))
     _carry(jamf, apps, apps)
 
     _, devices = await _sweep(db, connection, monkeypatch)
-    pages = Counter({("INSERT", "observation_entries"): 1, ("INSERT", "installed_apps"): 1})
+    catalog = Counter({("INSERT", "app_catalog"): 1})  # the catalog's second page, on every process
+    pages = Counter({("INSERT", "observation_entries"): 1, ("INSERT", "installed_apps"): 1}) + catalog
     matches = Counter({("INSERT", "app_catalog_title_matches"): 2})  # the matches' two pages
     assert _shapes(devices[0][1]) == _expected("new") + pages + FIRST_SIGHT + matches
     assert _shapes(devices[1][1]) == _expected("new") + pages
-    assert [len(sent) for _, sent in devices] == [29, 25]
-    writes = pages + matches + Counter({("INSERT", "app_catalog"): 1})  # the catalog's one statement, every row
-    rows = {t: next(s.count("($") for s in devices[0][1] if s.startswith(f"INSERT INTO {t} ")) for _, t in writes}
-    assert rows == {"observation_entries": 1000, "installed_apps": 961, "app_catalog": 1200, "app_catalog_title_matches": 1000}
+    assert [len(sent) for _, sent in devices] == [30, 26]
+    rows = {t: next(s.count("($") for s in devices[0][1] if s.startswith(f"INSERT INTO {t} ")) for _, t in pages + matches}
+    assert rows == {"observation_entries": 1000, "installed_apps": 961, "app_catalog": 1000, "app_catalog_title_matches": 1000}
 
     _, devices = await _sweep(db, connection, monkeypatch)
-    assert [(outcome, len(sent)) for outcome, sent in devices] == [("repeat", BUDGET["repeat"])] * 2
+    assert [_shapes(sent) for _, sent in devices] == [_expected("repeat") + catalog] * 2
+    assert [(outcome, len(sent)) for outcome, sent in devices] == [("repeat", BUDGET["repeat"] + 1)] * 2
 
     jamf.real["general"]["reportDate"] = "2026-08-23T07:15:42.391Z"
     for app in jamf.real["applications"]:
@@ -849,7 +850,59 @@ async def test_found_each_batched_write_costs_one_statement_per_page_of_rows(
     _, devices = await _sweep(db, connection, monkeypatch)
     change_log = Counter({("INSERT", "device_changes"): 1, ("INSERT", "event_outbox"): 1})
     assert _shapes(devices[0][1]) == _expected("changed") + pages + change_log + FIRST_SIGHT + matches
-    assert [(outcome, len(sent)) for outcome, sent in devices] == [("changed", 38), ("repeat", BUDGET["repeat"])]
+    assert [(outcome, len(sent)) for outcome, sent in devices] == [("changed", 39), ("repeat", BUDGET["repeat"] + 1)]
+
+
+async def test_a_mac_carrying_more_builds_than_one_statement_holds_is_ingested_and_so_is_its_repeat(
+    db, jamf: FakeJamf, connection, budget_tag, monkeypatch
+) -> None:
+    """#768: 3,000 builds on one Mac, past what one statement of eleven columns a row can carry.
+
+    asyncpg refuses a statement with more than 32,767 arguments, which is 2,978 catalog rows: the
+    2,979th build failed the Mac inside `ingest_computer` on every sweep, new or repeat, and the sweep
+    went on without it. `_sweep` cannot say so (a device that fails is neither counted nor listed), so
+    this test names both Macs. The rows land a thousand a statement, in `version_hash` order within a
+    page and across them — the order every writer takes shared catalog rows in (#763) — read back here
+    as the rows' ids, which the sequence hands out in the order the rows were sent.
+
+    Measured with the pages in place, not pinned: a Mac carrying 32,766 builds is ingested, and the
+    32,767th is refused by the next statement, the catalog SELECT's `IN` list (an argument a build,
+    and one for the platform)."""
+    from sqlalchemy import func
+
+    from app.catalog.service import CATALOG_INSERT_BATCH
+    from app.models.schema import AppCatalogEntry, Device, InstalledApp
+
+    assert CATALOG_INSERT_BATCH * 11 <= 32767  # a page fits one statement: eleven arguments a row
+    apps = _apps(3000, budget_tag)
+    _carry(jamf, apps, apps[:80])
+
+    def sent_rows(sent: list[str]) -> list[int]:
+        return [s.count("($") for s in sent if s.startswith("INSERT INTO app_catalog ")]
+
+    _, devices = await _sweep(db, connection, monkeypatch)
+    assert [outcome for outcome, _ in devices] == ["new", "new"]
+    assert [sent_rows(sent) for _, sent in devices] == [[1000, 1000, 1000], [80]]
+
+    builds = AppCatalogEntry.name.like(f"Budget {budget_tag} %")
+    hashes = list(await db.scalars(select(AppCatalogEntry.version_hash).where(builds).order_by(AppCatalogEntry.id)))
+    assert len(hashes) == 3000 and hashes == sorted(hashes)
+    carried = (
+        select(func.count())
+        .select_from(InstalledApp)
+        .join(Device, Device.id == InstalledApp.device_id)
+        .where(Device.mdm_connection_id == connection.id)
+        .group_by(Device.id)
+        .order_by(func.count().desc())
+    )
+    assert list(await db.scalars(carried)) == [3000, 80]
+
+    _, devices = await _sweep(db, connection, monkeypatch)
+    assert [outcome for outcome, _ in devices] == ["repeat", "repeat"]
+    assert [sent_rows(sent) for _, sent in devices] == [[1000, 1000, 1000], [80]]
+    extra = Counter({("INSERT", "app_catalog"): 2})  # the second and third pages, and nothing else
+    assert [_shapes(sent) for _, sent in devices] == [_expected("repeat") + extra, _expected("repeat")]
+    assert await db.scalar(select(func.count()).select_from(AppCatalogEntry).where(builds)) == 3000
 
 
 # --- the measurement -----------------------------------------------------------------
