@@ -206,12 +206,16 @@ and staples that, and ends with `spctl` reading `accepted` for both. Until it ha
 answers `rejected (Unnotarized Developer ID)` for the app on any Mac that did not build it, and
 `troubleshooting.md` §25 step 1 reads that back to the operator.
 
-**A release.** Build from the release commit, notarize, attach
-`macos/build/LoonInspect-<version>-arm64.dmg` to the GitHub release. The disk image holds the
-app and an Applications link; a user drags one onto the other and opens it. The GitHub Action
-builds and attaches these assets on release publication; manual runs from main save workflow
-artifacts. CI requires the app version and backend `RELEASE` to agree and validates tag/main
-ancestry before importing signing credentials. Environment setup and the full flow are in
+**A release.** Build from the release commit, notarize, and put
+`macos/build/LoonInspect-<version>-arm64.dmg` on the GitHub release while it is still a draft:
+this repository's releases are immutable, so a published one takes no more files. The disk
+image holds the app and an Applications link; a user drags one onto the other and opens it.
+The GitHub Action does this when it is run from main with the release's tag: it builds,
+notarizes and makes the draft release holding the files, and publishing that draft is the
+release. A run without a tag saves workflow artifacts. CI requires the app version and backend
+`RELEASE` to agree and validates main ancestry before importing signing credentials, and at
+publication it checks that the release carries the files. Environment setup and the full flow
+are in
 [`macos/README.md`](../macos/README.md#github-actions).
 
 ### Updates

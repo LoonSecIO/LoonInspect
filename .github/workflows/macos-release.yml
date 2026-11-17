@@ -1,7 +1,23 @@
+# Builds, signs and notarizes LoonInspect.app, and puts it on a release (macos/README.md).
+#
+# This repository's releases are immutable: a published release takes no more files. So the
+# files go onto a DRAFT, before publication. A manual run from main with a tag builds main's
+# head, notarizes it and makes the draft release for that tag, holding the disk image, the zip
+# and SHA256SUMS; the repository admin reads the draft and publishes it, and publishing creates
+# the tag at that commit (the release-tags ruleset leaves that to the admin role) and starts
+# release.yml. A manual run without a tag keeps the files as workflow artifacts only. When a
+# release is published, this workflow only checks that it carries the files: it cannot add them.
 name: macOS release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          The version to draft a release for: v1.2.0, or a candidate such as v1.2.0-rc.1.
+          Leave empty to build and notarize without touching any release.
+        required: false
+        type: string
   release:
     types: [published]
   pull_request:
@@ -20,6 +36,7 @@ concurrency:
 jobs:
   scripts:
     name: macOS release script tests
+    if: github.event_name != 'release'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,6 +44,7 @@ jobs:
           persist-credentials: false
       - run: for script in macos/scripts/*.sh; do bash -n "$script"; done
       - run: python3 macos/tests/test_notarize.py
+      - run: python3 macos/tests/test_release_assets.py
       - run: bash macos/tests/run-shell-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: github.event_name == 'pull_request'
@@ -49,17 +67,17 @@ jobs:
   notarize:
     name: Build, sign and notarize
     needs: scripts
-    # PRs run isolated script tests only. Manual signing runs use main; version tags are
-    # admin-controlled by the existing release-tags ruleset, and checked for main ancestry.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
+    # PRs run isolated script tests only. Signing runs are manual and use main. A publication
+    # does not build: by then the release can take no files, so the build comes first.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: macos-15
     timeout-minutes: 150
     environment: macos-release
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
     env:
       EXPECTED_TEAM_ID: 6CWZ5GA79H
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ inputs.tag }}
       BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
       REQUIRE_DEVELOPER_ID: '1'
       REQUIRE_CLEAN_TREE: '1'
@@ -71,19 +89,31 @@ jobs:
 
       - name: Verify source and release version before importing credentials
         id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git merge-base --is-ancestor HEAD origin/main || {
-            echo '::error::This commit is not on main. Select main or publish a tag from main.'; exit 1; }
+            echo '::error::This commit is not on main. Run the workflow from main.'; exit 1; }
           version=$(plutil -extract CFBundleShortVersionString raw -o - macos/shell/Info.plist)
           backend=$(sed -n 's/^RELEASE = "\(.*\)"$/\1/p' backend/app/core/version.py)
           [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "$backend" = "v$version" ] || {
             echo '::error::The app and backend release versions differ. Update Info.plist and backend RELEASE together before building.'; exit 1; }
           if [ -n "$TAG" ]; then
             [[ $TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]] && [ "${TAG%%-*}" = "v$version" ] || {
-              echo '::error::The release tag does not match the app version. Publish the correct version tag; do not move a published tag.'; exit 1; }
-            [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] || exit 1
+              echo "::error::The release tag does not match the app version: this commit builds $version, and '$TAG' is not v$version or a candidate of it (v$version-rc.1). Run the workflow again with a tag for this version, or move the version in a pull request first."; exit 1; }
+            # Said here, before the build and Apple's wait, so a tag that cannot be used costs a minute rather than an hour;
+            # the draft job asks GitHub the same question again, since a tag can appear while this one runs.
+            if tagged=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}"); then
+              [ "$tagged" = "$(git rev-parse HEAD)" ] || {
+                echo "::error::The tag $TAG already names $tagged, not $(git rev-parse HEAD), the commit this run would build, and a published tag never moves. Run the workflow again with the next version (after a candidate, the next -rc.N)."; exit 1; }
+            fi
+            # A failed question here is not an answer, and is left for the draft job to settle.
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --silent 2>/dev/null; then
+              echo "::error::$TAG is already published, and a published release here takes no more files (this repository's releases are immutable). Run the workflow again with the next version (after a candidate, the next -rc.N)."; exit 1
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -194,24 +224,46 @@ jobs:
           if [ -f "$keychain" ]; then security delete-keychain "$keychain" || true; fi
           rm -rf "$RUNNER_TEMP/looninspect-signing"
 
-  publish:
-    name: Attach verified assets to the published release
+  draft:
+    # The only job that writes to a release, and only to a draft: the signing job above holds
+    # contents: read, and nothing here publishes. Publishing the draft is the repository admin's
+    # act; it creates the tag and starts release.yml.
+    name: Put the verified files on a draft release
     needs: notarize
-    if: github.event_name == 'release'
+    if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.notarize.outputs.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: LoonInspect-*-arm64
-          path: assets
+          path: ${{ runner.temp }}/assets
           merge-multiple: true
-      - name: Verify checksums and upload without replacing existing assets
+      - name: Verify checksums, then make the draft or refill this commit's draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ needs.notarize.outputs.sha }}
+          ASSETS: ${{ runner.temp }}/assets
+        run: macos/scripts/release-assets.sh draft
+
+  published:
+    # A published release takes no more files, so this cannot add the Mac app: it says whether
+    # the release carries it, and what to do when it does not (docs/troubleshooting.md §25).
+    name: The published release carries the Mac app
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The release holds the disk image, the zip and their sums, and they match
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        working-directory: assets
-        run: |
-          sha256sum --check SHA256SUMS
-          gh release upload "$TAG" ./*.dmg ./*.zip SHA256SUMS --repo "$GITHUB_REPOSITORY"
+        run: macos/scripts/release-assets.sh check
