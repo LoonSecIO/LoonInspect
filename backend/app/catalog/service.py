@@ -34,8 +34,9 @@ from Jamf Pro to Splunk as fast as possible — wait for as little as possible, 
 possible cached. Jamf patching, vulnerability and the other enrichments are *lookups*, not
 things calculated per device; calculating them means touching hundreds of MB for each device
 when the goal is 40k devices in ten minutes. So the per-device cost of this module is kept to
-its own rows: one SELECT of the device's apps, one SELECT of their catalog rows by hash, the
-inserts for triples the fleet has never shown, a `last_seen_at` write at most once per
+its own rows: one SELECT of the device's apps, an INSERT of its builds that lands only the
+triples the fleet has never shown (a thousand rows a statement), one SELECT of their catalog
+rows by hash, a `last_seen_at` write at most once per
 `LAST_SEEN_GRANULARITY` per distinct app (not once per device carrying it), an in-memory rule
 pass only for rows the current catalog has not judged, and copies onto app rows only when a row
 is new or its answer moved. Nothing per device reads the catalog tables themselves; the title
@@ -83,6 +84,11 @@ logger = logging.getLogger(__name__)
 # when it is older than this, so a sweep writes it about once per distinct app rather than once
 # per device carrying the app (40k devices x 80 apps would otherwise be ~3M row updates a sweep).
 LAST_SEEN_GRANULARITY = timedelta(minutes=15)
+
+# asyncpg caps a statement at 32,767 bind parameters and a catalog row carries eleven, so one
+# statement of every build a device carries refused the Mac that carried 2,979 (#768). The rows
+# go a thousand a statement, as the ledger pages its entries (`_ENTRY_BATCH`).
+CATALOG_INSERT_BATCH = 1000
 
 
 def catalog_signature(catalog: Catalog) -> str:
@@ -487,7 +493,9 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
     now = now or datetime.now(UTC)
     hashes = {row.version_hash for row in rows if row.version_hash}
     # A tenant-wide build can first arrive from several Macs together. Insert and
-    # lock in hash order so every writer takes shared catalog rows in the same order.
+    # lock in hash order so every writer takes shared catalog rows in the same order:
+    # the pages below are slices of one sorted list, sent in turn, so the order holds
+    # within a page and across them.
     by_hash = {row.version_hash: row for row in rows if row.version_hash}
     candidates = [
         {
@@ -505,9 +513,11 @@ async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime 
         }
         for _, row in sorted(by_hash.items())
     ]
-    if candidates:
+    for start in range(0, len(candidates), CATALOG_INSERT_BATCH):
         await db.execute(
-            pg_insert(AppCatalogEntry).values(candidates).on_conflict_do_nothing(constraint="uq_app_catalog_platform_version")
+            pg_insert(AppCatalogEntry)
+            .values(candidates[start : start + CATALOG_INSERT_BATCH])
+            .on_conflict_do_nothing(constraint="uq_app_catalog_platform_version")
         )
     existing = {
         entry.version_hash: entry
