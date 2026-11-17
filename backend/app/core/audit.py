@@ -74,6 +74,9 @@ class AuditAction(StrEnum):
     MFA_POLICY_CHANGED = "settings.mfa_policy.changed"
 
     FEATURE_FLAG_UPDATED = "feature-flag.updated"
+    # A person's check of Fleet's maintained-apps catalogue (#794), with what it found. The
+    # daily check is the scheduler's and is in the container log, not here.
+    FLEET_CATALOG_CHECKED = "fleet-catalog.checked"
 
     INTELLIGENCE_ACTIVATED = "intelligence.activated"
     INTELLIGENCE_ROTATED = "intelligence.credential.rotated"
@@ -101,6 +104,11 @@ class AuditAction(StrEnum):
     # An administrator's Send now (#408): data left the box because a person asked, not
     # because the schedule came round, so it is on the trail beside the tier it sent under.
     SHARING_EXCHANGE_SENT = "sharing.exchange.sent"
+    # A title promoted or withdrawn (#793): an administrator's decision that an application's
+    # name and bundle ID leave in plain text with each exchange, so it is on the trail with the
+    # title it named.
+    SHARING_PROMOTION_ADDED = "sharing.promotion.added"
+    SHARING_PROMOTION_REMOVED = "sharing.promotion.removed"
     # Request coverage / Report an incorrect match (#623): a case sent (once, by the click that made it),
     # withdrawn, or sent although the data-sharing exclusions hold its app back. Never the case key.
     SUBMISSION_SENT = "submission.sent"

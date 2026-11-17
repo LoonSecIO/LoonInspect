@@ -35,7 +35,8 @@ class Permission(StrEnum):
 
     # Triggers an outbound refresh of Jamf's public patch catalog. Not sensitive, but
     # it hits a third party, so it isn't something a read-only role should be able to
-    # fire in a loop.
+    # fire in a loop. The check of Fleet's maintained-apps catalogue (#794) is the same
+    # kind of act against GitHub and takes the same permission.
     PATCH_CATALOG_SYNC = "patch:catalog-sync"
 
     # Trigger an on-demand inventory pull from an MDM. Not a configuration change, so

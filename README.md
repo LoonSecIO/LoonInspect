@@ -128,7 +128,7 @@ is what stops 40k devices fitting in ten minutes. See [docs/app-catalog.md](docs
 LoonInspect is deployed as two containers: the application — one image carrying both the
 React frontend and the FastAPI backend — and a Postgres alongside it. `docker compose up
 --build` builds natively for your machine, Apple Silicon included. The images CI builds are
-multi-arch (`linux/amd64` + `linux/arm64`), and from v2.0.0 each release publishes them as
+multi-arch (`linux/amd64` + `linux/arm64`), and from v1.1.0 each release publishes them as
 `ghcr.io/loonsecio/looninspect` and `ghcr.io/loonsecio/looninspect-db` under its tag, so step 4
 can pull a release instead of building it.
 Both are in the bundle; nothing external is required, and the database port is never
@@ -234,14 +234,14 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
 
-**Or pull a release instead of building it** (v2.0.0 and later). `docker-compose.pull.yml`
+**Or pull a release instead of building it** (v1.1.0 and later). `docker-compose.pull.yml`
 names the two published images in place of both builds. Check out the release's tag, so the
 compose files are the ones that go with its images, then name the tag in `.env` with the file
 list that makes every later `docker compose` command read the override too:
 
 ```bash
-git fetch --tags && git checkout v2.0.0
-printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v2.0.0\n' >> .env
+git fetch --tags && git checkout v1.1.0
+printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.1.0\n' >> .env
 docker compose pull
 docker compose up -d
 ```
@@ -322,7 +322,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty-two ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, lists one app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing, a LoonInspect.app that will not open or says it could not start, a change log that keeps growing with its clock set or a Changes page that lost history — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty-four ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, lists one app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing, a LoonInspect.app that will not open or says it could not start, a change log that keeps growing with its clock set or a Changes page that lost history, a promoted application that is not being sent or a Promote that is refused, a Fleet catalog tab that is missing, empty or says its last check did not get an answer — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
@@ -338,7 +338,7 @@ before sizing the database volume.
 Migrations run unattended at startup, so `docker compose up -d --build` on a newer
 release's tag (`git fetch --tags && git checkout <tag>`) *is* the upgrade. Take a dump
 first, and read [docs/operations.md §4–5](docs/operations.md) before rolling one back: from
-`v2.0.0` on, one step back is an image swap, but going back to a `v1.x` image, or further
+`v1.1.0` on, one step back is an image swap, but going back to the `v1.0.0` image, or further
 than the newer release allows, needs the downgrade run from the newer image first.
 Settings › Support › **Updates** prints the steps with the latest release's tag filled in.
 
@@ -539,6 +539,15 @@ deployments can also simply leave it on: the banner stays silent, and the Update
 says GitHub could not be reached. `UPDATE_CHECK_URL` points the check at another provider
 that answers the same two paths.
 
+**One more call to GitHub, and only if you turn it on.** With the **Fleet catalog** flag on
+under Settings › Feature Flags (it ships off), the backend also reads Fleet's maintained-apps
+catalog once a day from Fleet's public repository: at most two requests to
+`api.github.com/repos/fleetdm/fleet` and the changed manifests from
+`raw.githubusercontent.com`, which is one request on a day Fleet changed nothing. Those
+requests name Fleet's files and carry nothing of this instance. With the flag off for every
+organization, none of them is made. What is read and kept, and the licence those files sit
+under, are in [docs/fleet-catalog.md](docs/fleet-catalog.md).
+
 ---
 
 ## 🤝 Community data sharing
@@ -555,7 +564,10 @@ exchange. Once a day, a sharing instance sends per-tenant **content-hash keys** 
 applications with aggregated install counts (plus OS tuples; the hardware tuple is
 reserved and ships empty) — never per-device rows, and
 never device identifiers, serials, hostnames, user names, file paths, or anything from
-the accounts and credential tables. App *names* are not part of the exchange. The reveal
+the accounts and credential tables. App *names* are not part of the exchange, with one
+exception that is off by default: where an administrator turns on **Promote applications**
+and promotes a title, that title's name, bundle ID and versions leave in plain text with
+each exchange. The reveal
 protocol — the instance answering a service's request for a title seen at 5+ contributors
 with its plaintext name — is paused while that threshold is unproven, and this build
 answers no such request at any tier. The full design — including what the k-threshold did

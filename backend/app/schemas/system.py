@@ -81,6 +81,9 @@ class DataSharingOut(BaseModel):
     # page says so beside the outcome: "sent" alone would report a degraded day as a
     # whole one, and the share log is the only other place the difference shows.
     last_exchange_reveals_shed: bool = False
+    # The same for promoted applications (#793): the last exchange dropped its `promotions`
+    # array to a 413, so the names an administrator promoted did not leave that day.
+    last_exchange_promotions_shed: bool = False
     # Why that last exchange failed, in the sentence the share-log row carries (#408).
     # Before, the page said "(failed)" and the reason lived only in the NDJSON download.
     last_exchange_error: str | None = None
@@ -102,6 +105,7 @@ class ShareLogEntryOut(BaseModel):
     outcome: str
     payload: dict | None
     reveals_shed: bool
+    promotions_shed: bool = False
     reveal_requests: list | None
     error: str | None
 

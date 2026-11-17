@@ -109,7 +109,7 @@ func randomBytes(_ count: Int) -> Data {
 /// (`security -i`), never in an argument `ps` could show. An item that trusted only the app's
 /// Developer ID signature would prompt every other reader, but the same secrets sit in the
 /// backend's environment, which the same user can read, until the backend takes them another
-/// way; so the move to SecItem waits for that (docs/macos-app.md, "What 1.0.0 leaves out").
+/// way; so the move to SecItem waits for that (docs/macos-app.md, "What it leaves out").
 enum Keychain {
     static let service = "LoonInspect"
     private static let tool = "/usr/bin/security"

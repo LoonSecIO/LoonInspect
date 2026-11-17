@@ -21,6 +21,10 @@ feed query, one conversation per tenant per day.
 > rationale below describe the v1 contract every shipped client still speaks; v2
 > supersedes them where those sections say so. [The contributor transition](#the-contributor-transition-v2)
 > says what changes for an instance that shares today, and when.
+>
+> **Promoted applications (2026-11-15):** an administrator can send chosen titles by name,
+> past the paused five-submitter rule, behind the `app_promotion` flag, off by default
+> (#793). [Promoted applications](#promoted-applications) is the whole of it.
 
 ## Why sharing is coupled to the feeds
 
@@ -137,6 +141,10 @@ nothing a fleet is not already telling the collector by the OS keys it sends, an
 corpus cannot be partitioned without it. Counts are raw (not bucketed) because the
 cloud's whole job is summation across customers, and buckets don't sum — the cost, that a
 tenant's top-app count approximates its fleet size, is disclosed rather than obfuscated.
+
+Shared by name, and only for the titles an administrator promoted: that title's name, bundle
+ID and version strings, beside the keys and counts above
+([Promoted applications](#promoted-applications), off by default).
 
 Never shared, by construction: device identifiers, serials, hostnames, user names,
 file paths (macOS paths embed user names), extension attributes, connection names,
@@ -265,6 +273,55 @@ every AI feature must call, and the standing doctrine (no model-sourced numbers,
 fleet-identifying payloads BYO-key or on-device only, no silent egress), live in
 `backend/app/core/ai.py`.
 
+## Promoted applications
+
+Added 2026-11-15 ([#793](https://github.com/LoonSecIO/LoonInspect/issues/793)), additively, behind the `app_promotion` flag (Settings › Feature
+Flags, off by default; [the register](feature-flags.md)).
+
+The reveal rule was how the service learned what an application *is*: its name and bundle
+ID, once five submission UUIDs had reported the title. That rule is paused, and early in a
+corpus's life most titles would not reach five in any case, so the publisher holds hashes it
+cannot name for exactly the long-tail software an early contributor runs. A promotion is the
+operator's own way past the rule, for the applications they choose and no others.
+
+- **An administrator's act, per title.** `SYSTEM_WRITE`, on Settings → Data Sharing, audited
+  as `sharing.promotion.added` and `sharing.promotion.removed` with the title named. Only a
+  title this organization has installed, with a bundle identifier, can be promoted. The name
+  and bundle ID that leave are read from inventory by the title's key, never taken from the
+  request, so nobody can have a string of their own sent under the organization's submission.
+  At most 200 titles per organization.
+- **What leaves.** While the flag is on and the tier is `keys` or `reveal`, each exchange
+  carries a `promotions` array: for each promoted title its `app.title` key, `app_name` and
+  `bundle_id`, and its versions, each with the `app.full` key and the install count the
+  snapshot already states for it, the version string, and the platform. No device, user or
+  path, and no count the snapshot did not already carry. The plain text is the addition.
+- **Standing, not one-time.** The stored row is the choice. The versions are read at each
+  exchange, so a promoted title's row follows the fleet. Withdrawing the promotion stops the
+  name leaving at the next exchange; what the service already received is the service's.
+- **Not the reveal protocol resumed.** Nothing here answers a server's request, `reveals`
+  stays `[]`, and no tier changes its meaning: `keys` still answers no reveal. A promotion
+  works at `keys` because it is the operator's decision about one title, which a tier never
+  was.
+- **The exclude list wins.** A title whose bundle ID matches an exclusion cannot be promoted,
+  and one excluded later is held back, with the pattern named on the page.
+- **Off is unchanged.** With the flag off, nothing promoted, or every promoted title held
+  back, the request has no `promotions` key and is byte for byte the body a build without the
+  area sends. Turning the flag off stops the names at the next exchange and keeps the
+  choices, and a promotion can still be withdrawn while it is off.
+- **A `413` sheds them first.** The names are given up in the step that gives up reveals, the
+  snapshot is never shrunk, and the share-log row says `promotionsShed`
+  ([the exchange](#the-exchange-outbound-contract-v1), [the share log](#the-share-log)).
+- **The preview and the share log show them**, because the preview is the exchange's own
+  builder and the log keeps the body that builder made.
+
+What the service does with a promotion is not this container's to promise. LoonSec's
+collector stores the whole request with the snapshot and ignores fields it does not know, so
+a promoted definition arrives today. Validating the field, and the pick-up by the
+publisher's identification and CVE workflows, are the service's and the publisher's work
+([#793](https://github.com/LoonSecIO/LoonInspect/issues/793), "Upstream"). A promotion earns nothing by itself: the title is assessed here when a
+published release covers it ([`vulnerabilities.md`](vulnerabilities.md)). When a promoted
+title is not leaving, [`troubleshooting.md`](troubleshooting.md) §26 is the step-through.
+
 ## The exchange (outbound contract, v1)
 
 One scheduled conversation per tenant per day, plus any an administrator sends with
@@ -314,6 +371,14 @@ thing that distinguishes an exchange from an update check.
       "app_name": "Some Common Tool",
       "bundle_id": "com.vendor.tool",
       "versions": [ { "version": "88", "short_version": "2.4.1", "count": 31 }, … ]
+    }
+  ],
+  "promotions": [                         // ONLY while the app_promotion flag is on and a
+    {                                     //   promoted title is being sent (#793); absent
+      "title": "v1:…",                    //   otherwise, never [] or null
+      "app_name": "Some Long-Tail Tool",
+      "bundle_id": "com.vendor.tool",     // each version repeats a snapshot row's full key,
+      "versions": [ { "full": "v1:…", "version": "2.4.1", "short_version": null, "count": 31, "platform": "macos" }, … ]
     }
   ],
   "participation_receipt": true           // ONLY with the v2 receipt preview on (#622);
@@ -449,7 +514,16 @@ Semantics the server may rely on:
   from there on, retried until the delays are exhausted and then logged as failed. The
   load-bearing consequence for the server: **it must never `413` a reveal-less
   snapshot** — the container has nothing further to give up, so that is a day lost, not
-  a day degraded. Since #624 every body is reveal-less, so every `413` is that lost day.
+  a day degraded. Since #624 every body is reveal-less, so every `413` is that lost day,
+  with one exception: a body carrying `promotions` (#793) sheds them in the same step. The
+  retry drops the `promotions` key and nothing else, at most once per run, and the rule
+  above then reads: the server must never `413` a body with neither reveals nor promotions.
+- **A `promotions` key is absent, never empty.** It is present only while the
+  `app_promotion` flag is on and at least one promoted title is being sent, and a server must
+  treat its absence as "nothing promoted", which is what every older container says by not
+  having the key. Rows are ordered by title key and versions by platform and `full` key, so
+  one day's body is the same bytes however often it is built. `short_version` is null on
+  every Jamf app, for the reason [the key scheme](#the-key-scheme) gives.
 - Unknown request fields must be ignored by the server; unknown response fields are
   ignored by the container. Contract changes bump the version string.
 
@@ -488,7 +562,7 @@ timestamp, tier, what started it (`scheduled`, or `manual` for a [Send now](#sen
 endpoint, outcome (sent / failed / skipped-by-env), the request payload
 the run assembled (verbatim JSON — this is the point; reveals especially; a failed row
 with no payload is an upload held back until a receipt withdrawal is acknowledged), the
-`revealsShed` marker below, the response's request list, and on a failure the reason,
+`revealsShed` and `promotionsShed` markers below, the response's request list, and on a failure the reason,
 as a sentence naming the host and what it answered. Rows older than 90 days are
 pruned on write.
 
@@ -504,6 +578,10 @@ pruned on write.
   offer, and what did it actually send?" needs both halves, and one boolean beside the
   full payload carries them where a rewritten payload would silently lose the first.
   A container since #624 sends no reveals, so every row it writes reads false.
+- **`promotionsShed`** (#793). The same marker for promoted applications: true when the
+  `413` path ran and the accepted submission was the retry without the `promotions` array,
+  so the names in the row's `payload` did not leave that day. False on every other row,
+  including every row written before the column existed.
 - **The response's request list** (`revealRequests` in the download) is what the service
   asked for, recorded whether or not it was answered. Since #624 none is: a list there
   beside a payload whose `reveals` is `[]` is an ask this instance declined.

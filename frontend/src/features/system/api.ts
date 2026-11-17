@@ -72,6 +72,8 @@ export interface DataSharingSettings {
   lastExchangeOutcome: string | null;
   /** The last exchange answered a 413 by dropping its reveals — a degraded "sent". */
   lastExchangeRevealsShed: boolean;
+  /** The same for promoted applications (#793): the names did not leave that day. */
+  lastExchangePromotionsShed?: boolean;
   /** Why the last exchange failed, as the share-log row says it (#408). */
   lastExchangeError: string | null;
   /** AI-inference consent (#112): whether any byte may leave the pod for inference. */
@@ -109,6 +111,8 @@ export interface ShareLogEntry {
   outcome: string;
   payload: unknown;
   revealsShed: boolean;
+  /** True when a 413 made the run drop its `promotions` array (#793). */
+  promotionsShed?: boolean;
   revealRequests: unknown[] | null;
   error: string | null;
 }
@@ -152,6 +156,60 @@ export function sendExchangeNow(): Promise<SendExchangeResponse> {
   return apiRequest<SendExchangeResponse>("/system/data-sharing/send", {
     method: "POST"
   });
+}
+
+/** One promoted application (#793), as `PromotionOut` (backend/app/schemas/promotions.py) names it. */
+export interface Promotion {
+  id: string;
+  keyTitle: string;
+  appName: string;
+  bundleId: string;
+  promotedAt: string;
+  promotedBy: string | null;
+  deviceCount: number;
+  versionCount: number;
+  /** Why it is held back although promoted; null when the next exchange carries it. */
+  held: "excluded" | "not_installed" | null;
+  /** The exclusion pattern holding it back, when `held` is "excluded". */
+  excludedBy: string | null;
+}
+
+/** An installed title that could be promoted. `known`: a public source here already knows it. */
+export interface PromotionCandidate {
+  keyTitle: string;
+  appName: string;
+  bundleId: string;
+  deviceCount: number;
+  known: boolean;
+  excludedBy: string | null;
+}
+
+export type PromotionsPaused = "flag_off" | "env_disabled" | "sharing_off";
+
+export interface Promotions {
+  /** The `app_promotion` flag. */
+  enabled: boolean;
+  /** Why nothing promoted is leaving at all; null when the next exchange carries them. */
+  paused: PromotionsPaused | null;
+  limit: number;
+  items: Promotion[];
+  candidates: PromotionCandidate[];
+  moreCandidates: number;
+}
+
+/** Promoted applications and what could be promoted; `q` searches the candidates (#793). */
+export function listPromotions(q?: string): Promise<Promotions> {
+  const query = q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return apiRequest<Promotions>(`/system/data-sharing/promotions${query}`);
+}
+
+/** Promote one installed title by its key. A 409's detail is the refusal, as a sentence. */
+export function promoteApplication(keyTitle: string): Promise<Promotion> {
+  return apiRequest<Promotion>("/system/data-sharing/promotions", { method: "POST", json: { keyTitle } });
+}
+
+export function withdrawPromotion(id: string): Promise<void> {
+  return apiRequest<void>(`/system/data-sharing/promotions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** One title no public source on this container knows (#483). `reason` is

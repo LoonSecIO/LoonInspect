@@ -462,8 +462,8 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
 docker compose logs -f app
 ```
 
-The backup is the first line because not every way back is an image swap. From `v2.0.0` on,
-one step back is; going back to a `v1.x` image, or past the release the stamp names, is a
+The backup is the first line because not every way back is an image swap. From `v1.1.0` on,
+one step back is; going back to the `v1.0.0` image, or past the release the stamp names, is a
 downgrade run from the newer image *before* the older one goes back, or a restore of this
 dump — §5.
 
@@ -548,23 +548,23 @@ is a migration that has to say so in its own docstring.
 
 ## 5. Rollback
 
-**From `v2.0.0` on, one step back is an image swap.** A release's migrations leave the schema
+**From `v1.1.0` on, one step back is an image swap.** A release's migrations leave the schema
 readable by the release before it and record, in `schema_release`, the oldest release that can
 read it ([`BRANCHING.md`](BRANCHING.md#11-release-planning-milestones-labels-and-tags) §1.1). An
 image that finds a revision it does not carry reads that stamp instead of migrating. So when the
-release you go back to is `v2.0.0` or later, check out its tag and start it on the same volume
+release you go back to is `v1.1.0` or later, check out its tag and start it on the same volume
 (`docker compose up -d --build`, as in §4), with no `downgrade`. `docker compose logs app` says
-*…which recorded that v2.0.0 or later can read it; this image is v2.0.0 (build …), so it starts
+*…which recorded that v1.1.0 or later can read it; this image is v1.1.0 (build …), so it starts
 without migrating*. The database stays at the newer revision, so putting the newer image back
 later migrates nothing.
 
 If the stamp names a later release than the one you put back, the image refuses instead:
-*…which recorded that only v2.1.0 or later can read it; this image is v2.0.0 (build …), so it will
+*…which recorded that only v1.2.0 or later can read it; this image is v1.1.0 (build …), so it will
 not start on it*. That release dropped or renamed something older code reads, and its upgrade
 notes say so. Put that release or a later one back, or restore the pre-upgrade dump beside the
 older image (recovery 3 below). The stamp speaks for the schema only: for what the newer build
 wrote into it, read *A downgrade does not un-write what the newer image wrote* below. Going back
-to a `v1.x` image, which predates the stamp, or past the release the stamp names, is the downgrade.
+to the `v1.0.0` image, which predates the stamp, or past the release the stamp names, is the downgrade.
 
 A sideways database reads as newer too: one migrated by a branch build, or by a prerelease whose
 migration was later reverted, is at a revision the image does not carry, so it starts without
@@ -652,7 +652,7 @@ spellings, which is why this hazard runs one way only.
 
 ### If you swap the image back first, it crash-loops
 
-This is the failure that costs an evening: a `v1.x` image *older*
+This is the failure that costs an evening: the `v1.0.0` image, which predates the stamp, *older*
 than the database it boots against — `docker compose up -d` after a `git checkout` of
 the previous tag, with the volume untouched. Alembic finds a `version_num` no script in
 the image knows about, refuses to plan, and startup fails; `restart: unless-stopped`
@@ -766,10 +766,12 @@ it was answered on its `starting` line — `docker compose logs app | grep sched
 API, and the work a person starts still runs in the process that served the request:
 Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
 **Send now** on Settings › Data sharing. What it stops is everything on a clock — the
-eight jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
+nine jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
 the purges (sessions hourly; the outbox, the run log and, with `CHANGE_LOG_RETENTION_DAYS`
 set, the change log nightly), the hourly Jamf Patch
-catalog sync, the sign-in cache renewals, the daily data-sharing exchange. So what a
+catalog sync, the sign-in cache renewals, the daily data-sharing exchange, and the daily
+check of Fleet's catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
+**Check now** on that tab still works in a web-only process). So what a
 web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
 the process that still has the scheduler, not by it; with no such process running, the
 queue simply grows.
@@ -801,7 +803,7 @@ second process. One process with the scheduler on is still the supported shape.
 Everything above assumes the bundled `db` service. This is what changes when the database
 is yours (#654), and what does not: `ENCRYPTION_KEY` is still half of every backup (§1),
 migrations still run at startup (§4), and going back is still §5's: one step back from
-`v2.0.0` on is an image swap, and going back to `v1.x` or past the stamp is a downgrade run
+`v1.1.0` on is an image swap, and going back to `v1.0.0` or past the stamp is a downgrade run
 from the newer image before the swap.
 
 **The role.** The app never connects as your master user. Prepare `looninspect_app` with

@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§24, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§27, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -64,6 +64,10 @@ they were written — §9 ends by saying the paths continue at §10.
   page lost history"](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
 - **§25** ["LoonInspect.app will not open, or opens and says it could not
   start"](#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start)
+- **§26** ["A promoted application is not being sent, or Promote is
+  refused"](#26-a-promoted-application-is-not-being-sent-or-promote-is-refused)
+- **§27** ["The Fleet catalog tab is missing, empty, or says its last check did not get an
+  answer"](#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -158,6 +162,7 @@ words nobody sees.
 | *AI search unavailable — the filters below still work.* | §11 step 2 |
 | *No Jamf Patch titles synced yet.* | §6 |
 | *… is available, and this build does not contain it.* — the update notice | §10 |
+| *The last check, … did not get an answer.* above the Fleet catalog table | §27 step 3 |
 
 ### The front page is not the same for every role
 
@@ -538,8 +543,8 @@ the run `jobID`, the token's index settings, and the search you ran.
      and follow the migration-failure step below; do not remove indexes by hand.
    - an Alembic error → the migration on startup failed. Do not downgrade by hand
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §6); reportable **F**.
-   - *This database was upgraded by a newer release … which recorded that only v2.1.0 or later
-     can read it; this image is v2.0.0 (build …), so it will not start on it* → the image is
+   - *This database was upgraded by a newer release … which recorded that only v1.2.0 or later
+     can read it; this image is v1.1.0 (build …), so it will not start on it* → the image is
      older than the database, and the release that upgraded it recorded that this one cannot
      read what it left. The sentence names both releases, what the database needs and what is
      running, so there is nothing to look up. Put an image of the named release or a later one
@@ -3063,10 +3068,14 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
 4. **Setup asks for a claim token.** The page was opened in a browser rather than in the app's
    window. Setup is meant to happen in the window, which holds this session's token; in a
    browser the token is the *claim token* line of `logs/backend.log`, as it is for the container.
-5. **After replacing the app with a newer one, it will not start, and `backend.log` names a
-   newer database.** The same rule as the image ([`operations.md`](operations.md) §5): a build
-   refuses a database written by a later release than its own. The release's `RELEASE` is
-   `backend_release` in `Contents/Resources/build-manifest.json`. Put the later version back.
+5. **After putting an older app back, it will not start, and `backend.log` names a newer
+   database.** The same rule as the image ([`operations.md`](operations.md) §5): an app that finds
+   a schema revision it does not carry reads the database's release record. *…so it starts
+   without migrating* is not a failure: the record says this release can read the schema, as
+   1.0.0 can read what 1.1.0 left. *…so it will not start on it* names two releases, the one the
+   database needs and the one this app is (`backend_release` in
+   `Contents/Resources/build-manifest.json`): put the later version back, or restore the copy of
+   `pgdata` taken before the update ([`macos-app.md`](macos-app.md#backup)).
 6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
    directory, the window's data and the three keychain items. It is the end of that instance's
    data. A restorable database backup is `pgdata` copied while the app is quit plus the matching
@@ -3083,3 +3092,135 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
    reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
    reads and configured SIEM delivery still work while the Mac app is running and awake.
+
+## 26. "A promoted application is not being sent, or Promote is refused"
+
+A promotion (#793, [`data-sharing.md`](data-sharing.md#promoted-applications)) is an administrator's
+choice that one installed application's name, bundle ID and versions leave in plain text with each
+exchange. **Promoted applications** on Settings › Data Sharing lists each choice with what the next
+exchange does with it (`GET /api/system/data-sharing/promotions`: `paused` for the whole list,
+`held` and `excludedBy` per title), a refusal is shown as the server's sentence, and the audit log
+has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Nothing here needs a log.
+
+1. **There is no Promoted applications section on Settings › Data Sharing.** The area is off and
+   nothing is promoted. An administrator turns on **Promote applications** under Settings › Feature
+   Flags, then reloads the page. A role without the system read permission does not see Data
+   Sharing at all.
+2. **The section says nothing below is being sent.** It names which of three things stops every
+   promotion, and each has one fix:
+   - *Promoting is switched off under Settings › Feature Flags…* → turn **Promote applications**
+     back on. The choices were kept; the flag stops the sending, and Withdraw still works.
+   - *COMMUNITY_SHARING=false is set…* → the environment override stops every exchange. Remove
+     the line from the `.env` beside `docker-compose.yml` and recreate the container (§5 step 6
+     has the same override for the exchange as a whole).
+   - *Sharing is off for this organization…* → choose **Share keys only** or the reveal tier
+     under Participation. A promotion needs an exchange to ride, and either tier sends one.
+3. **One row reads *Held back*.** The rest are leaving; this title is not.
+   - *…it matches the excluded pattern …* → the exclude list wins over a promotion. Remove that
+     pattern under Excluded bundle IDs to send the title, or withdraw the promotion to agree
+     with the pattern.
+   - *…no Mac has it installed now* → there is no version to state, so nothing is sent. It
+     resumes by itself when a sweep finds the title again. A renamed application is a different
+     title (the key hashes the name): promote it under its new name.
+4. **Promote was refused.** The sentence under the heading is the server's, and nothing was stored.
+   - *…promoting applications is switched off…* → step 1.
+   - *…no device in this organization has that application installed now, or it has no bundle
+     identifier* → only an installed title with a bundle ID can be promoted. Reload the page and
+     choose from the list, which is read from inventory as it is now.
+   - *…matches the excluded pattern …* → step 3's first case, before the click instead of after.
+   - *…200 applications are promoted already…* → withdraw one first. The limit is per organization.
+   - A 403 → promoting and withdrawing need the system write permission, like the tier.
+5. **The row reads *Sent by name* and the preview shows no `promotions`.** The preview is the body
+   as it was when the button was pressed. Press **Show the payload** again.
+   The array lists each promoted title once, with one `versions` row per installed version and
+   platform. Still absent, with the row reading *Sent by name* → report it with the listing's JSON
+   and the preview (§8); the two are built from the same rows and must agree.
+6. ***Last exchange* says *promoted applications shed*.** The collector answered `413`: the request
+   with the names was larger than it accepts. The run gave up the names and sent the snapshot,
+   which is what the share-log row's `promotionsShed: true` records beside the body it had
+   assembled. It repeats each day until the body fits: withdraw promotions you no longer need. A
+   fleet whose snapshot alone is refused is §5 step 6, not this.
+7. **It is being sent, and Posture › Vulnerabilities still reads *Outside the corpus* for it.** A
+   promotion is a contribution, not a request with a status: the title is assessed here when a
+   published release covers it, and this instance cannot see the service's side of that. Nothing
+   on this instance is wrong. Where a tracked answer is wanted, **Request coverage** on Posture ›
+   Vulnerabilities opens a case that has one (§21).
+
+## 27. "The Fleet catalog tab is missing, empty, or says its last check did not get an answer"
+
+**Devices › Applications › Fleet catalog** lists the Mac apps Fleet maintains beside what this
+organization has installed ([`fleet-catalog.md`](fleet-catalog.md), #794). The list is one copy
+for the whole instance, read from Fleet's public repository on GitHub once a day, and only
+while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
+nothing here is a permissions problem in Jamf.
+
+1. **The tab is not there.** The flag is per organization and ships off. An administrator turns
+   on **Fleet catalog (maintained apps)** under Settings › Feature Flags, and the tab is listed
+   at once. Its address opened with the flag off reads *The Fleet catalog is off*, which is this
+   step. *This area could not be checked* is not: the flags themselves could not be read, so
+   reload, and if it stays, §4.
+2. **The tab says *Fleet's catalog has not been read yet.*** No check has run since the flag was
+   turned on. The scheduled check looks at twenty past each hour. **Check now**, for an Analyst
+   or an Admin, reads the catalog at once; the first read fetches every title and takes about
+   fifteen seconds. If an hour passes with no press and it still has not been read, see whether
+   any process has the scheduler: `docker compose logs app | grep scheduler_enabled`. A web-only
+   process (`SCHEDULER_ENABLED=false`, [`operations.md`](operations.md) §7) never checks on its
+   own; **Check now** still works there.
+3. **The status line says *The last check, …, did not get an answer.*** The sentence under it is
+   the whole reason, and the titles read before it are still listed, as of the date the line
+   gives. The same sentence is in the container log:
+   `docker compose logs app | grep "Fleet catalog check failed"`. A failed check is tried again
+   within the hour. By how the sentence opens:
+   - *api.github.com refused the request* → GitHub's limit for requests without a sign-in, 60
+     an hour for each address, shared by every instance and every other tool behind the same
+     address; the update check draws on it too (§10). One refusal needs nothing. Refused every
+     hour means many things share this address: leave the flag on only where the tab is used.
+   - *raw.githubusercontent.com refused the request* → GitHub slowed file reads from this
+     address part-way through. The sentence says how many manifests were read and kept; the
+     next check reads the rest.
+   - *No answer from …*, or *… answered 502* (or another number) *…, where GitHub answers 200*
+     → this container cannot reach GitHub, or something in between answered for it. From
+     inside the container:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
+     prints `200` when the way out is open. Anything else is DNS, a proxy or an egress
+     firewall between the container and `api.github.com` and `raw.githubusercontent.com` on
+     port 443. An air-gapped instance stays in this state for as long as the flag is on; turn
+     the flag off.
+   - *… resolves to …, so this container did not dial it* → the container's DNS or hosts file
+     answers one of GitHub's names with a loopback or link-local address. Fix the resolver;
+     the product will not dial those addresses under any name.
+   - *… with a body that is not JSON*, or *… with a redirect* → something answered in GitHub's
+     place: a captive portal, a proxy's sign-in page. The command above shows what the
+     container gets.
+   - *GitHub answered, but …* → GitHub was reached and what it returned is not the catalog
+     this build reads: the folder is gone, it holds no Mac manifest, or GitHub cut its listing
+     short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
+     release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
+4. **The check answered and the table is empty.** Read which sentence the table shows.
+   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
+     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
+     title matches an installed app by its exact bundle ID, on Macs only, so an organization
+     with no device sweep yet matches nothing (§1). For one title you know is installed,
+     compare its bundle ID under Devices › Applications with the tab's, letter for letter:
+     `com.Example.App` is not `com.example.app`.
+   - *No installed title matches this search* → the search missed among installed titles;
+     untick the box to search the whole catalog.
+   - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
+     failed; step 3.
+5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
+   is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
+   a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
+   latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
+   finding follows from a version is not this tab's question: it judges nothing but older or
+   not.
+6. **The status line ends with manifests that *could not be read … and were left as held*.**
+   The check succeeded. The named titles had a manifest this build could not read a version
+   from; they keep what they showed, or stay unlisted if they were new, until Fleet next
+   changes its catalog. Nothing to do.
+7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
+   answers it no titles. Once no organization on the instance has the flag on, the instance
+   stops asking GitHub. The titles it held stay in the database and are brought up to date by
+   the first check after the flag is turned on again.
+
+Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
+lines of the container log, and the build.

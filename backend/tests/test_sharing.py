@@ -173,6 +173,30 @@ async def test_a_shed_is_reported_to_the_caller() -> None:
 
 
 @pytest.mark.asyncio
+async def test_413_sheds_the_promotions_with_the_reveals_and_says_which() -> None:
+    """Promoted applications (#793) are plaintext beside the snapshot, like reveals, so a 413
+    gives them up in the same step and the retry is the snapshot alone. The result names what
+    was shed separately: a day that lost its promotions is not a day that lost reveals."""
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        body = json.loads(request.content)
+        seen.append(body)
+        return httpx.Response(413 if "promotions" in body else 200, json={})
+
+    snapshot = {"apps": [{"title": "v1:aa", "full": "v1:bb", "count": 2}]}
+    result = await post_exchange(
+        {"contract": "v1", "snapshot": snapshot, "reveals": [], "promotions": [{"title": "v1:aa", "app_name": "A"}]},
+        transport=httpx.MockTransport(handler),
+    )
+    # Absent on the retry, never an empty list: the body is the one a build without the area sends.
+    assert seen[1] == {"contract": "v1", "snapshot": snapshot, "reveals": []}
+    assert (result.promotions_shed, result.reveals_shed) == (True, False)
+
+
+@pytest.mark.asyncio
 async def test_a_413_against_a_reveal_less_body_is_an_ordinary_failure() -> None:
     """The container has nothing left to give up, which is why the contract requires
     the server never to 413 a reveal-less snapshot: the run burns its remaining
@@ -426,12 +450,18 @@ class _StubResult:
     def all(self) -> list:
         return self._rows
 
+    def scalar_one_or_none(self):
+        # The `app_promotion` flag's row (#793): absent, which is off.
+        return None
+
 
 class _StubSession:
-    """Answers `build_exchange_request`'s three aggregates in order: apps, os, hardware."""
+    """Answers `build_exchange_request`'s three aggregates in order: apps, os, hardware. Then
+    the builder reads the `app_promotion` flag (#793), which is off here, so these tests also
+    pin that a build with the area off asks nothing more and adds nothing to the body."""
 
     def __init__(self, app_rows: list, os_rows: list, hw_rows: list) -> None:
-        self._results = [app_rows, os_rows, hw_rows]
+        self._results = [app_rows, os_rows, hw_rows, []]
 
     async def execute(self, _statement):
         return _StubResult(self._results.pop(0))

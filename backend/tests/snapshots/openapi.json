@@ -2805,6 +2805,11 @@
             ],
             "title": "Lastexchangeoutcome"
           },
+          "lastExchangePromotionsShed": {
+            "default": false,
+            "title": "Lastexchangepromotionsshed",
+            "type": "boolean"
+          },
           "lastExchangeRevealsShed": {
             "default": false,
             "title": "Lastexchangerevealsshed",
@@ -4510,6 +4515,207 @@
           "lastDetectedAt"
         ],
         "title": "FindingDetectedOut",
+        "type": "object"
+      },
+      "FleetCatalogOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "installedTitles": {
+            "default": 0,
+            "title": "Installedtitles",
+            "type": "integer"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FleetCatalogTitleOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "default": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 50,
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCatalogStateOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "source"
+        ],
+        "title": "FleetCatalogOut",
+        "type": "object"
+      },
+      "FleetCatalogStateOut": {
+        "description": "What the last check of Fleet's catalogue found (#794). Absent from the page's answer\nbefore the first check, which is its own state and not an empty one.",
+        "properties": {
+          "appCount": {
+            "title": "Appcount",
+            "type": "integer"
+          },
+          "changedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changedat"
+          },
+          "checkedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkedat"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "unchanged",
+                  "refused",
+                  "unreachable",
+                  "unexpected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "required": [
+          "appCount",
+          "changedAt",
+          "checkedAt",
+          "detail",
+          "outcome"
+        ],
+        "title": "FleetCatalogStateOut",
+        "type": "object"
+      },
+      "FleetCatalogTitleOut": {
+        "properties": {
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "default": 0,
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "devicesBehind": {
+            "default": 0,
+            "title": "Devicesbehind",
+            "type": "integer"
+          },
+          "devicesCurrent": {
+            "default": 0,
+            "title": "Devicescurrent",
+            "type": "integer"
+          },
+          "firstSeenAt": {
+            "format": "date-time",
+            "title": "Firstseenat",
+            "type": "string"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "previousVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousversion"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "versionChangedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionchangedat"
+          }
+        },
+        "required": [
+          "bundleId",
+          "firstSeenAt",
+          "latestVersion",
+          "name",
+          "previousVersion",
+          "slug",
+          "versionChangedAt"
+        ],
+        "title": "FleetCatalogTitleOut",
         "type": "object"
       },
       "Frequency": {
@@ -7352,6 +7558,208 @@
         "title": "PresetOut",
         "type": "object"
       },
+      "PromotionCandidateOut": {
+        "description": "An installed title that could be promoted. `known` is whether a public source on this\ncontainer already knows it (a Jamf Patch title matches a build of it, or the loaded\nvulnerability library names it): the ones nothing knows are listed first.",
+        "properties": {
+          "appName": {
+            "title": "Appname",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "excludedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedby"
+          },
+          "keyTitle": {
+            "title": "Keytitle",
+            "type": "string"
+          },
+          "known": {
+            "title": "Known",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "appName",
+          "bundleId",
+          "deviceCount",
+          "excludedBy",
+          "keyTitle",
+          "known"
+        ],
+        "title": "PromotionCandidateOut",
+        "type": "object"
+      },
+      "PromotionCreate": {
+        "properties": {
+          "keyTitle": {
+            "pattern": "^v1:[0-9a-f]{64}$",
+            "title": "Keytitle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyTitle"
+        ],
+        "title": "PromotionCreate",
+        "type": "object"
+      },
+      "PromotionOut": {
+        "description": "One promoted application, and whether the next exchange carries it.",
+        "properties": {
+          "appName": {
+            "title": "Appname",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "excludedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excludedby"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "enum": [
+                  "excluded",
+                  "not_installed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "keyTitle": {
+            "title": "Keytitle",
+            "type": "string"
+          },
+          "promotedAt": {
+            "format": "date-time",
+            "title": "Promotedat",
+            "type": "string"
+          },
+          "promotedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotedby"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appName",
+          "bundleId",
+          "deviceCount",
+          "excludedBy",
+          "held",
+          "id",
+          "keyTitle",
+          "promotedAt",
+          "promotedBy",
+          "versionCount"
+        ],
+        "title": "PromotionOut",
+        "type": "object"
+      },
+      "PromotionsOut": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionCandidateOut"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "moreCandidates": {
+            "title": "Morecandidates",
+            "type": "integer"
+          },
+          "paused": {
+            "anyOf": [
+              {
+                "enum": [
+                  "flag_off",
+                  "env_disabled",
+                  "sharing_off"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          }
+        },
+        "required": [
+          "candidates",
+          "enabled",
+          "items",
+          "limit",
+          "moreCandidates",
+          "paused"
+        ],
+        "title": "PromotionsOut",
+        "type": "object"
+      },
       "PromptDeviceOut": {
         "properties": {
           "added": {
@@ -8753,6 +9161,11 @@
               }
             ],
             "title": "Payload"
+          },
+          "promotionsShed": {
+            "default": false,
+            "title": "Promotionsshed",
+            "type": "boolean"
           },
           "revealRequests": {
             "anyOf": [
@@ -13233,6 +13646,112 @@
         ]
       }
     },
+    "/api/fleet-catalog": {
+      "get": {
+        "description": "Fleet's titles, each with this organization's Macs counted against Fleet's latest\nversion, and what the last check found. `installedOnly` (the default) keeps the titles\nat least one Mac has; `q` narrows by name, bundle identifier or slug.\n\nReads what is stored and never asks GitHub: a page load is not a check. With the flag\noff for this organization the answer is `enabled: false` and nothing else.",
+        "operationId": "read_catalog_api_fleet_catalog_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "installedOnly",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Installedonly",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetCatalogOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/refresh": {
+      "post": {
+        "description": "Check Fleet's catalogue now: the daily check, with a person waiting.\n\nUnchanged, it is one request to GitHub and returns at once. The first check reads every\nMac manifest and takes about fifteen seconds. A refusal is a 409 whose `detail` is the\nsentence to read (docs/diagnosability.md rule 3): the flag is off, a check is already\nrunning, or GitHub could not be read, in which case the same sentence is stored as the\ncatalogue's state and stays on the page until a later check answers.",
+        "operationId": "refresh_catalog_api_fleet_catalog_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetCatalogStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "description": "Liveness that depends on the database, because the product does.\n\nThis returned a bare literal until it was demonstrated, against a database holding\nzero tables and every authenticated endpoint returning 500, that the endpoint\nstill answered 200 and the container still reported healthy. Nothing would ever\nhave restarted it and no monitor watching the documented endpoint would ever have\nfired. The same hole is open during any outage \u2014 connection exhaustion, a crashed\nPostgres, a network partition, a half-applied migration.\n\nThe body is deliberately the same *shape* in both states so a monitor parses one\nschema, and deliberately says nothing beyond the failure class: this route is in\n`_PUBLIC_EXACT`, so anyone who can reach the port reads it, and a DSN, a host name\nor a driver traceback here is free reconnaissance. The exception goes to the log,\nwhich is authenticated by being the log.",
@@ -15617,6 +16136,134 @@
           }
         },
         "summary": "Preview Exchange",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/data-sharing/promotions": {
+      "get": {
+        "description": "What is promoted, whether it is leaving, and the installed titles that could be promoted,\nthe ones no public source here knows first. `q` searches the candidates by name or bundle ID.",
+        "operationId": "list_promotions_api_system_data_sharing_promotions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Promotions",
+        "tags": [
+          "system"
+        ]
+      },
+      "post": {
+        "description": "Promote one installed title: its name, bundle ID and versions leave in plain text with\neach exchange from now on, while sharing is on. A refusal is a 409 whose `detail` is the\nsentence (the flag is off, the title is not installed, an exclusion covers it, the limit).\nPromoting a title already promoted answers 200 with the row that exists.",
+        "operationId": "promote_api_system_data_sharing_promotions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromotionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/data-sharing/promotions/{promotion_id}": {
+      "delete": {
+        "description": "Withdraw a promotion. Allowed with the flag off, so switching the area off never strands\na choice someone wants undone.",
+        "operationId": "withdraw_api_system_data_sharing_promotions__promotion_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "promotion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Promotion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw",
         "tags": [
           "system"
         ]

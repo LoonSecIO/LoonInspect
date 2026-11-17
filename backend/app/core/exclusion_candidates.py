@@ -53,6 +53,8 @@ class _Row(NamedTuple):
     name: str
     device_count: int
     known: bool
+    # The title's `app.title` key (#793): the promotion picker promotes by it.
+    key_title: str = ""
 
 
 def prefix_of(bundle_id: str) -> str | None:
@@ -85,7 +87,7 @@ async def _rows(db: AsyncSession) -> list[_Row]:
         .group_by(InstalledApp.bundle_id, InstalledApp.key_title)
     )
     library = set((await db.execute(select(VulnLibraryTitle.key_title))).scalars())
-    return [_Row(r.bundle_id, r.name, r.device_count, r.matches > 0 or r.key_title in library) for r in result.all()]
+    return [_Row(r.bundle_id, r.name, r.device_count, r.matches > 0 or r.key_title in library, r.key_title) for r in result.all()]
 
 
 async def _device_counts(db: AsyncSession, sets: list[set[str]]) -> list[int]:

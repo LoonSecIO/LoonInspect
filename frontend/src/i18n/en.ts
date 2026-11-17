@@ -183,6 +183,56 @@ export const en = {
       skippedEnv: (when: string) =>
         `${when} — skipped. COMMUNITY_SHARING=false is set, so the daily exchange ran and sent nothing. This repeats every day until the override is removed.`,
       revealsShed: "reveals shed — the server refused the full submission and took a reveal-less retry",
+      promotionsShed: "promoted applications shed: the server refused the full submission and took a retry without their names",
+      promotions: {
+        heading: "Promoted applications",
+        description:
+          "The service learns an application's name only once five organizations have reported it, and that rule is paused. Promoting an application sends its name, bundle ID and versions in plain text with each exchange, beside the hashes already sent, so its vulnerability coverage does not have to wait for other organizations. Only what you promote here is sent by name.",
+        whatLeaves:
+          "For each promoted application: its name, its bundle ID, and each installed version with its install count. Never a device name, serial, user or path. The preview above shows the exact rows.",
+        paused: {
+          flag_off:
+            "Promoting is switched off under Settings › Feature Flags, so nothing below is being sent by name. You can still withdraw a promotion.",
+          env_disabled:
+            "COMMUNITY_SHARING=false is set, so no exchange leaves this instance and nothing below is being sent.",
+          sharing_off:
+            "Sharing is off for this organization, so no exchange is sent and nothing below leaves. Choose a tier under Participation to send them."
+        },
+        none: "No application is promoted.",
+        columnApp: "Application",
+        columnBundle: "Bundle ID",
+        columnInstalled: "Installed on",
+        columnVersions: "Versions",
+        columnState: "Next exchange",
+        columnPromoted: "Promoted",
+        devices: (count: number) => (count === 1 ? "1 Mac" : `${count} Macs`),
+        stateSending: "Sent by name",
+        statePaused: "Not sent",
+        heldExcluded: (pattern: string) => `Held back: it matches the excluded pattern ${pattern}`,
+        heldNotInstalled: "Held back: no Mac has it installed now",
+        promotedBy: (when: string, who: string | null) => (who ? `${when} by ${who}` : when),
+        withdraw: "Withdraw",
+        withdrawFailed: "Could not withdraw the promotion. Check your permissions and try again.",
+        pickerHeading: "Promote an application",
+        pickerHelp:
+          "Installed applications with a bundle ID, the ones no public source on this instance knows first. Search to find any other.",
+        searchLabel: "Search installed applications",
+        searchPlaceholder: "Name or bundle ID",
+        search: "Search",
+        unknownTag: "No public source knows it",
+        knownTag: "Known to a public source",
+        excludedTag: (pattern: string) => `Excluded by ${pattern}`,
+        promote: "Promote",
+        promoteFailed: "Could not promote the application. Check your permissions and try again.",
+        noCandidates: "No installed application matches.",
+        moreCandidates: (count: number) =>
+          count === 1
+            ? "1 more application is not shown. Search to find it."
+            : `${count} more applications are not shown. Search to find one.`,
+        limit: (count: number, limit: number) => `${count} of ${limit} promoted.`,
+        readOnly: "Promoting and withdrawing need the system write permission.",
+        loadFailed: "Could not load promoted applications."
+      },
       logHeading: "Share log",
       logHelp: "Every exchange attempt, with the verbatim payload the run assembled — byte-accurate history of what left this instance. A row marked revealsShed sent everything in its payload except the reveals. A row with tier ai is an AI call, naming the feature, the model asked for and the fields that left, never their contents; one naming fields but no model was written before the model was recorded. Retained for 90 days.",
       downloadLog: "Download (NDJSON)",
@@ -282,6 +332,11 @@ export const en = {
         offTitle: "AI features are off",
         offDescription:
           "AI features are off. An administrator turns them on under Settings › Feature Flags."
+      },
+      fleet_maintained_apps: {
+        offTitle: "The Fleet catalog is off",
+        offDescription:
+          "The Fleet catalog is off for this organization, so Fleet's repository is not read on its behalf. An administrator turns it on under Settings › Feature Flags."
       }
     }
   },
@@ -1472,6 +1527,62 @@ export const en = {
       `${field} has ${code} at character ${at}, which a case cannot carry: no format character but the joiners U+200C and U+200D, ` +
       `no unpaired surrogate, no line or paragraph separator, and no control character${field === "text" ? " but newline and tab" : ""}. ` +
       (field === "text" || field === "contact" ? "Delete it, then preview." : "It comes from the inventory, so this build cannot be sent.")
+  },
+  // #794. Fleet's maintained-apps catalog, read from Fleet's repository on GitHub and listed
+  // only while its flag is on. "Macs", not "devices": Fleet's Mac manifests describe Mac apps.
+  fleetCatalog: {
+    tabLabel: "Fleet catalog",
+    eyebrow: "Devices › Applications",
+    title: "Fleet catalog",
+    description:
+      "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day.",
+    checkNow: "Check now",
+    checking: "Checking...",
+    checkError: "The check did not finish. Try again.",
+    loading: "Loading...",
+    errorLoading: "Failed to load Fleet's catalog.",
+    searchPlaceholder: "Search name, bundle ID, version...",
+    installedOnly: "Only titles installed here",
+    installedOnlyHint:
+      "Hides Fleet's titles that no Mac in this organization has. A title is matched to an installed app by its exact bundle ID.",
+    tableName: "Name",
+    tableBundleId: "Bundle ID",
+    tableLatestVersion: "Fleet's latest",
+    tableDeviceCount: "Macs with app",
+    tableDevicesBehind: "Macs behind",
+    tableVersionChanged: "Version last moved",
+    notMoved: "Not since first read",
+    notMovedHint:
+      "Fleet's version of this title has not changed since this instance first read it, so there is no earlier version to show.",
+    movedFrom: (at: string, previous: string) => `${at}, from ${previous}`,
+    // The status line: never asked, answered (changed or not), and no answer. The failure's
+    // own sentence comes from the server and is shown under `statusFailed`.
+    statusNever:
+      "Fleet's catalog has not been read yet. The first check runs within the hour after the flag is turned on.",
+    statusRead: (at: string, count: number) =>
+      `Checked ${at}: Fleet's catalog had changed and was read. It lists ${count} Mac app${count === 1 ? "" : "s"}.`,
+    statusUnchanged: (at: string, count: number, changedAt: string) =>
+      `Checked ${at}: nothing had changed since ${changedAt}. Fleet's catalog lists ${count} Mac app${count === 1 ? "" : "s"}.`,
+    statusSource: (source: string) => `Source: ${source} on GitHub.`,
+    statusFailed: (at: string) => `The last check, ${at}, did not get an answer.`,
+    statusFailedHeld: (count: number, changedAt: string) =>
+      `The ${count} title${count === 1 ? "" : "s"} held here ${count === 1 ? "is" : "are"} as read ${changedAt}. The next check is within the hour.`,
+    statusFailedNothingHeld: "Nothing has been read yet. The next check is within the hour.",
+    // Five reasons for an empty table, each in its own words (docs/diagnosability.md rule 1).
+    emptyFlagOff: "The Fleet catalog is off for this organization.",
+    emptyNeverChecked: "Nothing to list yet: Fleet's catalog has not been read.",
+    emptyNeverCheckedCanCheck: "Nothing to list yet: Fleet's catalog has not been read. Check now reads it.",
+    emptyNeverRead: "Nothing to list yet: no check has been able to read Fleet's catalog. The reason is above.",
+    emptyNoneInstalled: (count: number) =>
+      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac this organization has collected. Untick "Only titles installed here" to see the whole catalog.`,
+    emptyNoMatchInstalled:
+      'No installed title matches this search. Untick "Only titles installed here" to search the whole catalog.',
+    emptyNoMatch: "No title matches this search.",
+    footer: (shown: number, total: number, installed: number) =>
+      `${shown} shown · ${total} in Fleet's catalog · ${installed} installed here`,
+    licenceNote:
+      "Fleet publishes this catalog under the licence in its repository's ee/ folder, which says production use needs a Fleet subscription. LoonInspect keeps each title's name, bundle ID and version, and nothing else from it.",
+    licenceLink: "Read the licence"
   },
   jamfPatch: {
     tabLabel: "Jamf Patch",

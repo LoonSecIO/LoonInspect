@@ -26,6 +26,7 @@ import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
+import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
@@ -52,7 +53,13 @@ export function AppRoutes() {
           <Route path="catalog" element={<CatalogPage />} />
           <Route path="jamf-patch" element={<JamfPatchPage />} />
           <Route path="jamf-patch/:titleId" element={<JamfPatchDetailPage />} />
-          {/* After the three static children on purpose, so static-over-dynamic ranking
+          {/* Fleet's maintained-apps catalog (#794). Behind its flag, and unlike Posture's
+              listed-only flags the guard is real: with the flag off the API answers no
+              titles, so the route says the area is off instead of drawing an empty table. */}
+          <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
+            <Route path="fleet-catalog" element={<FleetCatalogPage />} />
+          </Route>
+          {/* After the static children on purpose, so static-over-dynamic ranking
               is visible to a reader and not merely true to the router (#299). The key
               is app_hash, never bundleId: two apps sharing a bundle ID under different
               names are two records. */}

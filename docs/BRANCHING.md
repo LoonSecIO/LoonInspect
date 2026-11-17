@@ -95,7 +95,7 @@ saying that the step back is a restore; CI refuses the later release without one
 `backend/app/core/version.py`: the pull request that prepares a release sets it, and `release.yml`
 tags no image whose tag disagrees. An image that finds a revision it does not carry starts
 without migrating when its `RELEASE` is at or above the stamp, and refuses with a sentence naming
-both when it is below, so from v2.0.0 on one step back is an image swap with no
+both when it is below, so from v1.1.0 on one step back is an image swap with no
 `alembic downgrade` ([`operations.md`](operations.md) §5). A migration that needs a maintenance
 window or free disk says so in a `# release-note:` line, and `.github/workflows/release.yml` puts
 those in a published release's upgrade notes.
@@ -117,8 +117,8 @@ it is expected to die in), or **delete** (the code path behind it goes with it).
 exist to land unfinished work safely, not to ship two products, so their number is
 meant to fall across releases. A hazard knob such as `SECURE_COOKIES` and a deployment
 switch such as `SCHEDULER_ENABLED` are configuration, not flags: the gate lists them so
-the inventory is complete, and their verdict is always keep. The first gate is the
-v2.0.0 one, #652.
+the inventory is complete, and their verdict is always keep. The first gate ruled was the
+v2.0.0 one, #652; the first run at a tag is v1.1.0's, which carries those verdicts forward.
 
 The [v2.0.0 milestone](https://github.com/LoonSecIO/LoonInspect/milestone/1) tracks
 contribute-or-pay vulnerability access, bounded MFA, supported external PostgreSQL,
@@ -904,3 +904,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.18 | 2026-09-27 | PR-10 (§6.3, §7) and its `controls.yml` entry: the migration contract check of §1.1 (#671), `block` and `active` in the backend job. |
 | v1.19 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |
 | v1.20 | 2026-09-27 | §1.1: publishing a release also copies its commit's two images to `ghcr.io/loonsecio` under the tag, never as `latest` (#655). |
+| v1.21 | 2026-11-15 | §1.1: v1.1.0 is cut from `main` before v2.0.0, so it is the first release whose image reads the schema's release record and the first with published images: "from v2.0.0 on" reads "from v1.1.0 on", and the flag gate runs at v1.1.0 on the verdicts #652 ruled. |

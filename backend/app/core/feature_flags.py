@@ -6,6 +6,16 @@ from __future__ import annotations
 # in app.core.ai — which is also where the standing doctrine lives.
 AI_FEATURES_FLAG = "ai_features"
 
+# Promoted applications (#793). The flag turns the area on: off, nothing can be promoted and the
+# exchange body is what it was before the area existed. Whether anything leaves at all is still
+# the data-sharing tier's decision, read where the exchange is built (app.core.sharing).
+APP_PROMOTION_FLAG = "app_promotion"
+
+# Fleet's maintained-apps catalogue (#794). The one registry key that also decides an outbound
+# call: while no organization on this instance has it on, nothing asks GitHub for the catalogue
+# (`app.core.fleet_catalog`), and the tab under Devices > Applications is not listed.
+FLEET_MAINTAINED_APPS_FLAG = "fleet_maintained_apps"
+
 FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
     "jamf_patch": {
         "label": "Jamf Patch feed",
@@ -30,6 +40,25 @@ FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
             "Show Posture › Patch policy: a reference replay of a hypothetical Mac under a patch "
             "policy, drawn from a file that ships with the build. It is not this organization's "
             "exposure, and it reads no inventory."
+        ),
+    },
+    APP_PROMOTION_FLAG: {
+        "label": "Promote applications",
+        "description": (
+            "Let an administrator promote an installed application under Settings › Data Sharing. "
+            "While sharing is on, each exchange then sends that application's name, bundle ID and "
+            "versions in plain text beside its hashes, without waiting for five organizations to "
+            "report it. Off, nothing is promoted and the exchange is unchanged."
+        ),
+    },
+    FLEET_MAINTAINED_APPS_FLAG: {
+        "label": "Fleet catalog (maintained apps)",
+        "description": (
+            "Show Devices › Applications › Fleet catalog: the Mac apps Fleet maintains, with Fleet's latest "
+            "version beside what this organization has installed. While this is on, the instance asks GitHub "
+            "once a day for the catalog in Fleet's repository (fleetdm/fleet) and sends nothing about this "
+            "organization. The catalog's files are under the licence in that repository's ee/ folder, which "
+            "says production use needs a Fleet subscription."
         ),
     },
     AI_FEATURES_FLAG: {

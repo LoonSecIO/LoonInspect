@@ -22,7 +22,8 @@ ends with a reading order through the rest.
 | [`change-log.md`](change-log.md) | v0, 2026-08-22 (#61) | Which differences between two observations become change rows and events, at what level. |
 | [`compliance-evidence.md`](compliance-evidence.md) | built, ruled 2026-09-16 (#219 R5) | The evidence artefact an auditor is handed, and what it may claim. |
 | [`controls.yml`](controls.yml) | version 1 | `BRANCHING.md` §6 made machine-readable; the policy workflow runs from it. |
-| [`feature-flags.md`](feature-flags.md) | verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692) | Every switch the product carries, its kind and default, and the verdict each release gave it. |
+| [`feature-flags.md`](feature-flags.md) | verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692); the v1.1.0 gate ruled 2026-11-15 (#797) | Every switch the product carries, its kind and default, and the verdict each release gave it. |
+| [`fleet-catalog.md`](fleet-catalog.md) | built, behind a flag that ships off, 2026-11-15 (#794) | Fleet's maintained-apps catalog as a second public list of Mac titles and latest versions: what is read from GitHub and kept, the licence it sits under, the daily check and what it can find. |
 | [`data-sharing.md`](data-sharing.md) | settled | The community exchange: key scheme, consent model, wire contract, share log. |
 | [`diagnosability.md`](diagnosability.md) | ruled, 2026-09-10 (#291) | The design language every new failure path is written in. Read before adding one. |
 | [`ingest-scheduling.md`](ingest-scheduling.md) | implemented, 2026-08-22 (#27) | Collections, the minute tick, the claim, the rate floor — what is read and when. |
@@ -50,7 +51,8 @@ ends with a reading order through the rest.
 | Document | Status | What it is for |
 | --- | --- | --- |
 | [`jamf-webhooks.md`](jamf-webhooks.md) | built, 2026-09-12 (#406) | Pointing Jamf Pro's webhooks at this instance, and what each event costs. |
-| [`macos-app.md`](macos-app.md) | built, 1.0.0 (2026-11-10) | LoonInspect as a signed macOS app with Postgres embedded: how it runs, where its data lives, how a release is notarized, what 1.0.0 leaves out. |
+| [`macos-app.md`](macos-app.md) | built, 1.1.0 (2026-11-15) | LoonInspect as a signed macOS app with Postgres embedded: how it runs, where its data lives, how a release is notarized, how an update is taken, what it leaves out. |
+| [`releases/v1.1.0.md`](releases/v1.1.0.md) | draft for the v1.1.0 tag | The v1.1.0 release notes, which become the GitHub release's body: what is new since v1.0.0, how the container and the Mac app are updated, the flag verdicts, the way back. |
 | [`operations.md`](operations.md) | runbook, revised 2026-09-16 | Backup, restore, upgrade, rollback — every command run before it was written down. |
 | [`splunk-setup.md`](splunk-setup.md) | runbook, revised 2026-09-16 | Sending events to Splunk: HEC, tokens, sourcetypes, what a dead letter means. |
 | [`troubleshooting.md`](troubleshooting.md) | ruled, 2026-09-10 (#290) | The step-throughs, written with only what a fresh operator has. |
