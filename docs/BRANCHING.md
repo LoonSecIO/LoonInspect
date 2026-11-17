@@ -62,12 +62,20 @@ Legacy `v0`, `post-v0`, and `v1` labels describe earlier planning phases; they d
 assign a release. Use milestones for that. Historical document and schema version
 numbers likewise do not identify product releases.
 
-**Tags identify shipped code.** Create a `vMAJOR.MINOR.PATCH` tag at the tested commit
-when cutting a release, then publish the GitHub Release with validation and known
-limitations. Publishing it copies the images `main` built for that commit to
-`ghcr.io/loonsecio/looninspect` and `looninspect-db` under the tag, never as `latest`
-(`.github/workflows/release.yml`, #655), and a prerelease's the same way. Do not create a
-future release tag for planning or move a published tag.
+**Tags identify shipped code.** A release is cut from a draft, because this repository's
+releases are immutable: once published, a release takes no more files. With the tested
+commit at `main`'s head, run `macOS release` from `main` with the version
+(`gh workflow run "macOS release" --ref main -f tag=vMAJOR.MINOR.PATCH`). It builds and
+notarizes the Mac app from that commit and makes a draft release for the tag, holding the
+disk image ([`macos/README.md`](../macos/README.md#github-actions)). Then publish the
+draft, with validation and known limitations; publishing creates the
+`vMAJOR.MINOR.PATCH` tag at that commit. Publishing it copies the images `main` built for
+that commit to `ghcr.io/loonsecio/looninspect` and `looninspect-db` under the tag, never as
+`latest` (`.github/workflows/release.yml`, #655), and a prerelease's the same way. `main`
+builds images only for a commit that changes what an image is made from (`Dockerfile`,
+`backend/`, `frontend/`, `ops/postgres/`), so when the release commit changed none of those,
+run `Publish images` from `main` before publishing; it does nothing for a commit whose
+images exist. Do not create a future release tag for planning or move a published tag.
 Only the repository admin role can create, move or delete a `v*` tag (the `release-tags`
 ruleset, §8.1), because the role that pushes images trusts a workflow run on one (#672).
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
@@ -905,3 +913,4 @@ Appended 2026-09-05, immediately before the flip to public:
 | v1.19 | 2026-09-27 | §1.1: the schema records the oldest release that can read it, CI keeps that stamp truthful, and `RELEASE` is set before a tag, so from v2.0.0 on one step back is an image swap (#672). |
 | v1.20 | 2026-09-27 | §1.1: publishing a release also copies its commit's two images to `ghcr.io/loonsecio` under the tag, never as `latest` (#655). |
 | v1.21 | 2026-11-15 | §1.1: v1.1.0 is cut from `main` before v2.0.0, so it is the first release whose image reads the schema's release record and the first with published images: "from v2.0.0 on" reads "from v1.1.0 on", and the flag gate runs at v1.1.0 on the verdicts #652 ruled. |
+| v1.22 | 2026-11-16 | §1.1: a release is cut from a draft. The repository's releases are immutable, so the Mac app's files go onto a draft that `macOS release` makes from `main`, and publishing the draft creates the tag; and a release commit that changed nothing an image is built from needs `Publish images` run from `main` first. Both found by `v1.1.0-rc.1`. |
