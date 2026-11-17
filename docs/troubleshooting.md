@@ -1419,22 +1419,37 @@ is not the check to make here.
    - The notice stayed after the Updates block's steps → their build line has nothing to build
      on this install. Set `LOONINSPECT_VERSION` in `.env` to the release's tag, then
      `docker compose pull && docker compose up -d`.
-   - `docker compose pull` stops at `not found` (some Docker versions say `manifest unknown`) →
-     no image carries that tag. `v1.0.0` and earlier have none; the tag is spelled the way the
-     Releases page spells it, `v` included; and a release's images arrive a few minutes after
-     it is published. Correct `LOONINSPECT_VERSION` and pull again.
-   - It stops at `denied` → the registry will not show you that image: a name edited in a
-     compose file, or a package the project has not made public. `docker compose config
-     --images` prints what it pulls: `ghcr.io/loonsecio/looninspect`, and with the bundled
-     database `ghcr.io/loonsecio/looninspect-db` too (with the external one, the app alone),
-     the tag after the colon. With those names and a tag the Releases page lists, the refusal
-     is the project's: report it (§8) with the tag and the pull's output. Meanwhile build the
-     same tag from source: take `docker-compose.pull.yml` out of the `COMPOSE_FILE` line in
-     `.env` and keep the rest. With the external database the line then reads
-     `docker-compose.yml:docker-compose.external.yml`; deleting the whole line would start the
-     bundled Postgres in place of your server. With the bundled one the line can go. Then
-     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`; the volumes are
-     the same.
+   - `docker compose pull`, signed in to `ghcr.io`, stops at `not found` (some Docker versions
+     say `manifest unknown`) → no image carries that tag. `v1.0.0` and earlier have none; the
+     tag is spelled the way the Releases page spells it, `v` included; and a release's images
+     arrive a few minutes after it is published. Correct `LOONINSPECT_VERSION` and pull again.
+   - It stops at `unauthorized` (some Docker versions say `denied`) → the registry will not
+     show this host the image. The two images are private, as the repository is, so a pull
+     needs Docker signed in to `ghcr.io` as a GitHub account that can read the repository
+     (README step 4). Without a sign-in the registry gives this answer for every tag, one that
+     does not exist included, so it says nothing yet about `LOONINSPECT_VERSION`. In order:
+     - **Sign in on this host**: `docker login ghcr.io -u <your GitHub username>`, and at
+       `Password:` a personal access token (classic) that carries `read:packages`, not the
+       account's password. `Login Succeeded` is the answer to wait for; then pull again. A
+       sign-in that worked before stops when its token expires or is revoked: make a new token
+       and sign in again.
+     - **Signed in, and still refused** → the account or the token cannot read the package. The
+       account reads it when it can open this repository on github.com; if it cannot, ask the
+       project for read access. The token has to be a classic one with `read:packages`; this
+       registry takes no other kind.
+     - **Both hold** → check the names. `docker compose config --images` prints what it
+       pulls: `ghcr.io/loonsecio/looninspect`, and with the bundled database
+       `ghcr.io/loonsecio/looninspect-db` too (with the external one, the app alone), the tag
+       after the colon. With those names and a tag the Releases page lists, the refusal is the
+       project's: report it (§8) with the tag and the pull's output.
+
+     Meanwhile, or on a host that cannot sign in, build the same tag from source: take
+     `docker-compose.pull.yml` out of the `COMPOSE_FILE` line in `.env` and keep the rest. With
+     the external database the line then reads `docker-compose.yml:docker-compose.external.yml`;
+     deleting the whole line would start the bundled Postgres in place of your server. With the
+     bundled one the line can go. Then
+     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`; the volumes are the
+     same.
    - `required variable LOONINSPECT_VERSION is missing a value` → `.env` has no
      `LOONINSPECT_VERSION` line. Add it, with the tag.
 5. **A *Publish images* run timed out**: its page says *The job has exceeded the maximum

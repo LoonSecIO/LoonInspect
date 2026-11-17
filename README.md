@@ -130,7 +130,8 @@ React frontend and the FastAPI backend — and a Postgres alongside it. `docker 
 --build` builds natively for your machine, Apple Silicon included. The images CI builds are
 multi-arch (`linux/amd64` + `linux/arm64`), and from v1.1.0 each release publishes them as
 `ghcr.io/loonsecio/looninspect` and `ghcr.io/loonsecio/looninspect-db` under its tag, so step 4
-can pull a release instead of building it.
+can pull a release instead of building it. The two images are private, as this repository is:
+a pull needs Docker signed in to `ghcr.io` as a GitHub account that can read the repository.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 
@@ -235,9 +236,20 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
 
 **Or pull a release instead of building it** (v1.1.0 and later). `docker-compose.pull.yml`
-names the two published images in place of both builds. Check out the release's tag, so the
-compose files are the ones that go with its images, then name the tag in `.env` with the file
-list that makes every later `docker compose` command read the override too:
+names the two published images in place of both builds. The images are private, as this
+repository is, so sign Docker in to `ghcr.io` first, once per host, as a GitHub account that can
+read the repository:
+
+```bash
+docker login ghcr.io -u <your GitHub username>
+```
+
+At `Password:` paste a personal access token (classic) that carries `read:packages`, made
+under GitHub › Settings › Developer settings; the registry takes no other kind of token, and
+not the account's password. `Login Succeeded` is the answer to wait for. Then check out the
+release's tag, so the compose files are the ones that go with its images, and name the tag in
+`.env` with the file list that makes every later `docker compose` command read the override
+too:
 
 ```bash
 git fetch --tags && git checkout v1.1.0
@@ -251,7 +263,7 @@ The override needs Docker Compose 2.24 or newer (`docker compose version`). On W
 separates the files. With the external database below, `COMPOSE_FILE` is
 `docker-compose.yml:docker-compose.external.yml:docker-compose.pull.yml`, and that section's
 commands go without their `-f` flags: a `-f` replaces the list, so its `up -d --build` would
-build from source. A pull that stops at `not found` or `denied` is
+build from source. A pull that stops at `unauthorized`, `denied` or `not found` is
 [docs/troubleshooting.md](docs/troubleshooting.md) §10 step 4.
 
 > **Note:** the container logs and `docker ps` will show the address as `0.0.0.0:8001` — that's the server listening on all interfaces, not a URL you can open. Use `http://localhost:8001` (or `127.0.0.1:8001`) in your browser instead; some browsers will refuse to navigate to `0.0.0.0` directly.
@@ -344,7 +356,8 @@ Settings › Support › **Updates** prints the steps with the latest release's 
 
 An install that pulls (`docker-compose.pull.yml` in `COMPOSE_FILE`) takes the same dump and
 checkout, then changes `LOONINSPECT_VERSION` in `.env` to the new tag and runs
-`docker compose pull && docker compose up -d`. The Updates block's build line changes nothing
+`docker compose pull && docker compose up -d`. That pull needs the host's `ghcr.io` sign-in
+from step 4, which lapses when its token expires. The Updates block's build line changes nothing
 there: with the override in force there is nothing to build, so the old version keeps running.
 
 The container now runs as a non-root user (`looninspect`, uid 10001) rather than
