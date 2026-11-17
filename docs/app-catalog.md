@@ -123,15 +123,18 @@ exactly those rows once.
 
 ### 3a. What one device process costs (the hot path)
 
-`record_device_apps`, per device, in order: one SELECT of the device's app rows; one SELECT of
-their catalog rows by `version_hash` (indexed); an INSERT per triple the fleet has never shown;
+`record_device_apps`, per device, in order: one SELECT of the device's app rows; an INSERT of
+every build the device carries, `ON CONFLICT DO NOTHING`, in `version_hash` order and a thousand
+rows a statement, so that only the builds this device is the first to show land and a Mac
+carrying any number of builds is ingested (#763, #768); one SELECT of those builds' catalog rows
+by `version_hash` (indexed), locked in the same order;
 a `last_seen_at` UPDATE only for rows older than `LAST_SEEN_GRANULARITY` (15 minutes) — so a
 sweep writes it about once per distinct app, not once per device carrying it (40k devices × 80
 apps would otherwise be ~3M row updates for one timestamp); an in-memory rule pass only for rows
 the current catalog has not judged (new triples, or a catalog that moved since); and a copy onto
 an app row only when that row is new or its catalog row was just judged. A device whose apps the
-fleet has already shown, processed after the first device of the sweep, writes nothing for the
-catalog. Nothing on this path reads `jamf_patch_titles` or `app_catalog_versions` per device:
+fleet has already shown, processed after the first device of the sweep, sends that INSERT and
+lands no row: it writes nothing for the catalog. Nothing on this path reads `jamf_patch_titles` or `app_catalog_versions` per device:
 the catalog signature check — one `count / max(synced_at)` query that tells the in-process
 index whether the catalog moved — runs at most once per `CATALOG_PROBE_INTERVAL` (a minute),
 not once per device (#142). Every in-process writer of the catalog resets the index as it
