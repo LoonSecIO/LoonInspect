@@ -2959,9 +2959,33 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
 
 - *uv 0.9.30 is required* → install the exact native exporter named in `macos/README.md` and
   put it on `PATH`. Docker is no longer needed to export dependencies.
-- *not on main*, *versions differ*, or *tag does not match* → select main for a manual run;
-  for a release, use a main commit whose `Info.plist` version and backend `RELEASE` match the
-  version tag. Fix versions in a pull request; do not move a published tag.
+- *not on main*, *versions differ*, or *tag does not match* → run the workflow from main, and
+  give it a tag whose version is the one `Info.plist` and backend `RELEASE` both name (a
+  candidate adds `-rc.N`). Fix versions in a pull request; do not move a published tag.
+- *is already published*, *already names* (the tag is on another commit), or *was made from*
+  (a draft from another commit) → the tag given to the run cannot be used as it stands, and
+  nothing was uploaded. A published release takes no more files, because this repository's
+  releases are immutable, and a published tag never moves: run **macOS release** again from
+  main with the next version (after a candidate, the next `-rc.N`). A stale draft is the one
+  case with another way out: delete it under **Releases** and run again. *There are N drafts
+  named…* → delete all but the one you mean to keep, or all of them, and run again.
+- *was published without LoonInspect-…* (the **macOS release** run a publication starts) → the
+  release was published before the Mac app was on it, usually because it was created
+  directly instead of from the draft the workflow makes. Nothing can add the files now. The
+  container images are not affected. Publish the next version from a draft: run **macOS
+  release** from main with that tag, read the draft it makes, and publish that
+  (`macos/README.md`, GitHub Actions).
+- *the question went unanswered* → GitHub did not answer the job, which is not the same as
+  there being no release or no tag; the line above it is GitHub's own error. Nothing was
+  uploaded. Re-run the failed job; if it says so again, check GitHub's status and that the
+  **draft** job still has `contents: write`.
+- *do not match their SHA256SUMS* (the **draft** job) → the built files changed between the
+  build job and the draft job, so nothing was uploaded. Run the workflow again.
+- *GitHub refused the draft release*, *refused the files*, or *does not hold … whole* → the
+  release is still a draft and nothing is published. Run the workflow again with the same
+  tag: a second run of the same commit replaces the draft's files. If the refusal names a
+  repository rule, the draft job has been asked to create a tag, which it never should: read
+  the line above the error and report it (§8).
 - *clean checkout* or *modified tree* → commit all intended inputs, including new files, and
   rebuild from that commit. Do not use `ALLOW_DIRTY` to publish a release.
 - *Missing MACOS_CERTIFICATE…*, *exactly one Developer ID…*, or *not signed by team…* → check
@@ -2982,13 +3006,13 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
   CI deletes its temporary keychain, so use the ID with your **local** notary profile instead.
   If Apple still reports `In Progress`, wait and check again. If there is no ID, check the
   authentication/network error and retry. Rerunning the script uploads a new submission.
-- A **stapler** or **spctl** failure after acceptance → the release assets were not uploaded.
+- A **stapler** or **spctl** failure after acceptance → no draft was made and no file uploaded.
   Check the named file, verify its signature with `codesign --verify --strict`, and retry after
   resolving any Apple network error. Do not publish an artifact from a failed verification.
-- **Attach verified assets** says an asset already exists → the workflow refuses replacement.
-  Compare the release's checksum file with this run. Keep a matching release; publish a new
-  version for changed bytes. For another upload error, check the job's `contents: write`
-  permission and the release's existence before retrying the failed publish job.
+- *do not match the SHA256SUMS published beside them* (at publication) → do not point anyone
+  at that release's disk image. Compare the three files with the `LoonInspect-…-arm64`
+  artifact of the run that made the draft, which is kept for 14 days; nothing can replace a
+  published file, so publish the next version from a fresh draft.
 
 1. **macOS refuses to open it** — *"LoonInspect" can't be opened because Apple cannot check it for
    malicious software*, or *is damaged and can't be opened*. Ask Gatekeeper what it thinks, in
