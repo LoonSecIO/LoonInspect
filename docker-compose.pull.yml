@@ -1,10 +1,14 @@
 # A release's published images in place of a build (#655; README "4. Build and run").
 #
+#   docker login ghcr.io -u <your GitHub username>
 #   git fetch --tags && git checkout v1.1.0
 #   printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.1.0\n' >> .env
 #   docker compose pull
 #   docker compose up -d
 #
+# The images are private, as the repository is: the sign-in, once per host, is a GitHub account
+# that can read the repository and a personal access token (classic) with read:packages as its
+# password. Without it the pull stops at `unauthorized` (docs/troubleshooting.md §10 step 4).
 # Each release from v1.1.0 on is at ghcr.io/loonsecio under its own tag and nothing else: there
 # is no `latest` to drift to, so what runs is the release .env names until you change it.
 # COMPOSE_FILE in .env is what makes every later `docker compose` command read this file too;
