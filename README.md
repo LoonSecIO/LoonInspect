@@ -355,9 +355,9 @@ first, and read [docs/operations.md §4–5](docs/operations.md) before rolling 
 `v1.1.0` on, one step back is an image swap, but going back to the `v1.0.0` image, or further
 than the newer release allows, needs the downgrade run from the newer image first.
 Settings › Support › **Updates** prints the steps with the latest release's tag filled in.
-From `v1.2.0` the update check asks LoonSec's update service and is counted; *Update
-notifications* below says what it sends, and how to keep the notice without being counted,
-so that it can be decided before the update.
+From `v1.2.0` the update check asks LoonSec's update service, which counts the instance;
+*Update notifications* below says what it sends and how to keep the notice without being
+counted, so that it can be decided before the update.
 
 An install that pulls (`docker-compose.pull.yml` in `COMPOSE_FILE`) takes the same dump and
 checkout, then changes `LOONINSPECT_VERSION` in `.env` to the new tag and runs
@@ -591,9 +591,9 @@ of day, those counts follow none. LoonSec never receives an instance identifier 
 inventory. One limit, stated plainly: in a small population a tally of one is one instance's
 release, kind, stage and the days it ran, with nothing that says whose it is.
 
-**Read it before it is sent.** While the check is on, the container log says at startup whom
-it asks and how to stop it: `update check on: it asks api.next.loonsec.io once a day;
-UPDATE_CHECK=false turns it off`. Settings › Support › **Updates** shows the body the last
+**Read it before it is sent.** While the check is on, the container that runs the scheduler
+says at startup, in its log, whom it asks and how to stop it: `update check on: it asks
+api.next.loonsec.io once a day; UPDATE_CHECK=false turns it off`. Settings › Support › **Updates** shows the body the last
 check sent and the one the next will carry, built from this instance as it stands, and when
 that one is owed; `GET /api/system/update-status` serves the same and asks no one. The block
 also shows this build, the latest release, when the check last ran, and, when the check could
