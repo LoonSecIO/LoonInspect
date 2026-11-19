@@ -110,6 +110,10 @@ downloads the corpus from whichever address that exchange hands it. Re-running t
 deploy with only the parameters that change keeps the rest (an update keeps a
 stack's previous values).
 
+A pod LoonSec runs for itself also takes `UpdateCheckUrl=https://api.staging.next.loonsec.io/v1/update`,
+so that its update check asks the development service and it is not counted as an install (#821).
+Left empty, the default, the task definition has no `UPDATE_CHECK_URL`: the pod asks as an install does.
+
 ## 5. Verify
 
 The public IP hangs off the task's network interface:

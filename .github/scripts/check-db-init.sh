@@ -22,6 +22,7 @@ if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$MASTER_PW" && echo "::a
 fail() { echo "::error::$*" && exit 1; }
 as_superuser() { docker exec -e PGOPTIONS=--client-min-messages=warning "$SERVER" psql -X -q -tA -v ON_ERROR_STOP=1 -U "$SUPERUSER" "$@"; }
 db_init() { # $1: the master password to present
+  # Not the app image: $IMAGE is the db image, this script's first argument (check_test_stacks.py).
   docker run --rm --user postgres --network "$NETWORK" \
     -e PGHOST="$SERVER" -e PGDATABASE="$DB" -e PGUSER="$MASTER" -e PGPASSWORD="$1" \
     -e PGSSLMODE=disable -e APP_USER="$APP" -e APP_PASSWORD="$APP_PW" \
@@ -52,6 +53,7 @@ attributes=$(as_superuser -c "SELECT rolsuper, rolbypassrls, rolcreaterole, rolc
 owner=$(as_superuser -d "$DB" -c "SELECT nspowner::regrole FROM pg_namespace WHERE nspname = 'public'")
 [ "$owner" = "$APP" ] || fail "schema public in $DB is owned by '$owner', not $APP"
 # What the app does next: sign in with APP_PASSWORD and create its tables in public.
+# Not the app image: psql from the db image again.
 docker run --rm --user postgres --network "$NETWORK" -e PGPASSWORD="$APP_PW" "$IMAGE" \
   psql -X -q -v ON_ERROR_STOP=1 -h "$SERVER" -U "$APP" -d "$DB" -c 'CREATE TABLE dbinit_probe (); DROP TABLE dbinit_probe' ||
   fail "$APP cannot sign in with APP_PASSWORD and create a table in schema public"
