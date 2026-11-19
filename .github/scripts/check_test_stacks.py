@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Nothing this repository starts for a test may be counted by LoonSec's production service as an install (#821).
 
-It reads every tracked workflow's run steps, shell script and compose file (any YAML file with a top-level `services:` mapping,
-whatever its name). It fails a container a step or script starts, and a service a compose file other than SHIPPED defines, that
-could be LoonInspect with neither UPDATE_CHECK=false nor an UPDATE_CHECK_URL off LoonSec's production hosts. Without the setting,
-a container passes only on an image NOT_THE_APP names or, an image it cannot read, on a `# not the app image` comment directly
-above it; an option it does not know fails, as it can then not tell which word is the image. A compose start passes on the step's
-env or an earlier unindented `export`, and only if each file it names (-f, --file, COMPOSE_FILE; from the checkout's root) is a
-tracked compose file, held to its own rule. Unseen: what an action, a job's `services:`, swarm or a program other than sh starts
-(make, python, podman); a command built at run time; a compose file written at run time and found by its default name; env set
-through $GITHUB_ENV; an --env-file or env_file; LoonInspect.app (#820); docs/.
+It reads every tracked workflow's run steps, shell script and compose file (any YAML file with a top-level `services:`, whatever
+its name). It fails a container a step or script starts, and a service a compose file other than SHIPPED defines, that could be
+LoonInspect with neither UPDATE_CHECK=false nor an UPDATE_CHECK_URL off PRODUCTION_HOSTS. Without the setting, a container passes
+only on an image NOT_THE_APP names or, one it cannot read, on a `# not the app image` comment directly above; an option it does
+not know fails, as it then cannot tell the image. A compose start passes on the step's env or an earlier unindented `export`, and
+only if each file it may start (-f, --file, the env's COMPOSE_FILE, any COMPOSE_FILE= in the step or script; from the checkout's
+root) is a tracked compose file, held to its own rule. Unseen: what an action, a job's `services:`, swarm or a program other than
+sh starts (make, python, podman); a command built at run time; a compose file written at run time and found by its default name;
+env from $GITHUB_ENV; --env-file, env_file; an UPDATE_CHECK the step sets over its env; LoonInspect.app (#820); docs/.
 """
 
 from __future__ import annotations
@@ -43,9 +43,8 @@ DOCKER = re.compile(r"(?:^|(?<=[\s;&|()`'\"{]))(?:[\w.-]*/)*docker(?:-compose)?(
 OPERATORS = ";&|()<>\n"
 STARTS = {"up", "run", "create", "start", "restart", "watch", "scale"}  # the compose commands that start a container
 GLOBAL_VALUES = {"-c", "--context", "-H", "--host", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"}
-# docker run's options (`docker run --help`): the image is the first word that is neither one of them nor a value.
 RUN_FLAGS = {"-d", "--detach", "--rm", "-i", "--interactive", "-t", "--tty", "--init", "--privileged", "-P", "--publish-all",
-             "--read-only", "-q"}
+             "--read-only", "-q"}  # `docker run --help`: the image is the first word neither an option nor an option's value
 RUN_VALUES = set(" ".join(("-e --env --env-file -p --publish -v --volume --mount -u --user -w --workdir --name --network",
                            "--entrypoint --platform -h --hostname --add-host -l --label -m --memory --restart --pull")).split())
 Text = type("Text", (str,), {"line": 1})  # a YAML string, and the line its text starts on, below a block's indicator
@@ -79,8 +78,7 @@ def _load(text: str) -> dict:
 
 
 def _assignments(words) -> dict[str, str]:
-    pairs = (str(word).partition("=") for word in words)
-    return {name: value.strip("\"'") for name, eq, value in pairs if eq and re.fullmatch(r"[A-Za-z_]\w*", name)}
+    return {k: v.strip("\"'") for k, eq, v in (str(w).partition("=") for w in words) if eq and re.fullmatch(r"[A-Za-z_]\w*", k)}
 
 
 def _env(node) -> dict[str, str]:
@@ -154,8 +152,7 @@ def _container(seen: Seen, command: str, stop: str, lines: list[str]) -> Seen:
                     f"it is never LoonInspect, say what it is in a '# {MARKER}: …' comment directly above.")
     else:
         seen.why = (f"{command} starts {'LoonInspect, ' * own}{image}, {NEITHER}, so from v1.2.0 LoonSec's production service "
-                    "would count it as an install (#821): give it UPDATE_CHECK=false"
-                    + ("." if own else ", or name it in NOT_THE_APP."))
+                    f"would count it as an install (#821): give it UPDATE_CHECK=false{', or add it to NOT_THE_APP' * (not own)}.")
     return seen
 
 
@@ -174,6 +171,7 @@ def _script(path: str, text: str, first: int, env: dict, lines: list[str], where
         elif "compose" in command:
             seen = Seen(path, line, command, {**env, **_assignments(re.findall(r"^export\s+(\w+=\S*)", text[:begin], re.M))})
             named = re.findall(r"(?:^| )(?:--file[= ]|-f ?)(\S+)", " ".join(takewhile(lambda word: word not in STARTS, args)))
+            named += [f.strip("\"'") for v in re.findall(r"\bCOMPOSE_FILE=(\S+)", text) for f in v.split(":")]  # anywhere in it
             unread = [f for f in named + seen.env.get("COMPOSE_FILE", "").split(":") if f and f.removeprefix("./") not in compose]
             seen.passed = "the setting" if keeps_out(seen.env) and not unread else None
             seen.why = None if seen.passed else f"{command} starts " + (
@@ -218,8 +216,7 @@ def check(root: Path, paths: list[str]) -> list[Seen]:
 
 def main() -> int:
     if yaml is None:
-        print("::error::PyYAML is not installed, so this check cannot read the workflows: run it with a python3 that has "
-              "it, as GitHub's runner images do, or with `uv run python` from backend/.")
+        print("::error::PyYAML is not installed, so this check cannot read the workflows: run it with `uv run` from backend/.")
         return 1
     seen = check(ROOT, subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, text=True).split("\0"))
     for s in (s for s in seen if s.why):

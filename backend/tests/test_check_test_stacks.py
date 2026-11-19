@@ -65,10 +65,12 @@ def test_the_smoke_instance_without_the_setting_fails_on_its_own_line(tmp_path):
         ("# docker run looninspect:ci, in a comment", False),
         ("echo 'docker run reads as a command'", True),  # it cannot tell a sentence from sh -c '…', so it fails closed
         ("docker compose up -d", True),
-        ("export UPDATE_CHECK=false\ndocker compose up -d", False),
+        ("export UPDATE_CHECK=false\nCOMPOSE_FILE='docker-compose.yml:./docker-compose.pull.yml' docker compose up -d", False),
         ('if [ -n "$CI" ]; then\n  export UPDATE_CHECK=false\nfi\ndocker compose up -d', True),  # an indented export: a branch's
         ("export UPDATE_CHECK=false\ndocker compose -f docker-compose.yml -f ./docker-compose.pull.yml up -d", False),
-        ("export COMPOSE_FILE=/tmp/e2e.yml\nexport UPDATE_CHECK=false\ndocker compose watch", True),  # a file it cannot read
+        ("export UPDATE_CHECK=false COMPOSE_FILE=/tmp/e2e.yml\ndocker compose watch", True),  # a file it cannot read, named 2nd
+        ("export UPDATE_CHECK=false\nCOMPOSE_FILE=docker-compose.yml:/tmp/e2e.yml docker compose up -d", True),  # in front of it
+        ("export UPDATE_CHECK=false\nf() { docker compose up; }\nif true; then\n  export COMPOSE_FILE=/tmp/e2e.yml\nfi\nf", True),
         ("docker-compose up", True),
         ("docker compose logs app", False),
     ],
@@ -81,8 +83,9 @@ def test_a_planted_command_is_counted_unless_it_keeps_out(tmp_path, script, coun
 def test_a_compose_file_is_read_whatever_its_name_and_a_step_env_passes_its_start_but_not_its_app_nor_a_container(tmp_path, name):
     e2e = "services:\n  app:\n    environment: {LOG_LEVEL: DEBUG}\n  db:\n    build: ./ops/postgres\n  web: {extends: app}\n"
     steps = f"  - run: docker compose -f {name} up -d\n  - run: docker compose -f - up\n  - run: docker run looninspect:ci\n"
+    steps += "  - {env: {COMPOSE_FILE: x.yml}, run: docker compose up}\n"  # a file the step's env names is read as -f's is
     found = _plant(tmp_path, ".github/workflows/w.yml", "env: {UPDATE_CHECK: '0'}\njobs:\n e2e:\n  steps:\n" + steps, {name: e2e})
-    assert [(s.path == name, s.line) for s in found] == [(False, 6), (False, 7), (True, 2), (True, 6)]
-    assert [s.why.split(",")[0].split(" starts ")[1] for s in found] == ["-", "LoonInspect", "its image", "its image"]
+    assert [(s.path == name, s.line) for s in found] == [(False, 6), (False, 7), (False, 8), (True, 2), (True, 6)]
+    assert [s.why.split(",")[0].split(" starts ")[1] for s in found] == ["-", "LoonInspect", "x.yml", "its image", "its image"]
     assert stacks.check(ROOT, sorted(stacks.SHIPPED)) == []  # the files an operator runs, read only through a start's env
     assert _plant(tmp_path, "two.yml", "a: 1\n---\nb: 2\n")[0].why.startswith("this check cannot load it as YAML")
