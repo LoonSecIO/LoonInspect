@@ -65,6 +65,15 @@ async def test_the_github_shaped_provider_shows_no_body_and_names_its_shape(gith
     assert served.next_check_at == (await _row()).next_check_at and len(github.requests) == 2
 
 
+async def test_an_address_that_cannot_be_read_names_no_host_and_the_route_still_answers(service, monkeypatch) -> None:  # noqa: F811
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "update_check_url", "https://[fe80::1/v1/update")  # urlsplit refuses the host
+    served = await _served()
+    assert (served.provider, served.provider_host, served.reason) == ("loonsec", None, "not_checked")
+    assert served.next_body is not None and service.requests == []
+
+
 OFF = [(False, SHORT, "disabled"), (True, "0.0.0-dev+local", "dev_build")]
 
 

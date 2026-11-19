@@ -313,11 +313,15 @@ async def read_update_status(db: AsyncSession) -> UpdateStatus:
     return _status_from(version, state.checked_at, _judged(state.latest_tag, state.release_url))  # against RELEASE
 
 
-def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
-    try:  # a bracketed host urlsplit cannot read never stops startup, check on or off; the check fails at its tick instead
-        host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's unreadable address"
+def _host(address: str) -> str | None:
+    try:  # a bracketed host urlsplit cannot read stops neither startup nor the status route; the check fails at its tick
+        return urlsplit(address).hostname
     except ValueError:
-        host = "UPDATE_CHECK_URL's unreadable address"
+        return None
+
+
+def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
+    host = _host(provider()[1]) or "UPDATE_CHECK_URL's unreadable address"
     return None if _unasked(get_app_version()) else f"update check on: it asks {host} once a day; UPDATE_CHECK=false turns it off"
 
 
@@ -400,7 +404,7 @@ async def disclosed(db: AsyncSession, now: datetime) -> dict:
     owed = state.next_check_at if state is not None and asks else None
     return {
         "provider": shape,
-        "provider_host": urlsplit(address).hostname,
+        "provider_host": _host(address),
         "kind": settings.instance_kind,
         "last_body": sent,
         "next_body": request_body(await stage(now), getattr(state, "last_day", None)) if asks and shape == "loonsec" else None,
