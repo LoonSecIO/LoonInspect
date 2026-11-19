@@ -533,7 +533,8 @@ it, and where the two part ways.
   entry was read on or before the day of that tag's commit, or on a day still to come
   (`.github/scripts/check_requirement_rereads.py`).
 - **The catalogue today** is one entry. *Cyber Essentials: Requirements for IT
-  Infrastructure* v3.3 (NCSC, April 2026), Security update management, read 2026-10-03:
+  Infrastructure* v3.3 (NCSC, April 2026), Security update management, read 2026-10-03 and
+  again 2026-11-18 for v1.2.0, unchanged:
   14 days from release for updates that fix critical or high-risk vulnerabilities, score 7
   or above on CVSS v3, or whose severity the vendor does not state. Mapped to
   `maxDaysBehind: 14`, not to the severe limit: a rule cannot tell an update of unstated

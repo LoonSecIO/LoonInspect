@@ -1,8 +1,8 @@
 # A release's published images in place of a build (#655; README "4. Build and run").
 #
 #   docker login ghcr.io -u <your GitHub username>
-#   git fetch --tags && git checkout v1.1.0
-#   printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.1.0\n' >> .env
+#   git fetch --tags && git checkout v1.2.0
+#   printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.2.0\n' >> .env
 #   docker compose pull
 #   docker compose up -d
 #
@@ -19,8 +19,8 @@
 # separates the files. `!reset` needs Docker Compose 2.24 or newer (`docker compose version`).
 services:
   db:
-    image: ghcr.io/loonsecio/looninspect-db:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v1.1.0}
+    image: ghcr.io/loonsecio/looninspect-db:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v1.2.0}
     build: !reset null
   app:
-    image: ghcr.io/loonsecio/looninspect:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v1.1.0}
+    image: ghcr.io/loonsecio/looninspect:${LOONINSPECT_VERSION:?set LOONINSPECT_VERSION in .env to the release tag to run, such as v1.2.0}
     build: !reset null
