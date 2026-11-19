@@ -7,6 +7,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from app.core.update_check import UpdateReason
+
 
 class VersionOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -32,8 +34,9 @@ class UpdateStatusOut(BaseModel):
     # Why `update_available` is None: `disabled` (UPDATE_CHECK=false), `dev_build` (no
     # comparable commit in the stamp), `unreachable`, `refused` (403/429, usually the shared
     # rate limit), `no_release` (none published yet), `unknown_commit` (GitHub does not know
-    # this build's commit). Null whenever the check answered.
-    reason: Literal["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"] | None = None
+    # this build's commit), `not_checked` (no check of this build stored yet, #819). Null
+    # whenever the check answered.
+    reason: UpdateReason | None = None
 
 
 class SharingTier(StrEnum):

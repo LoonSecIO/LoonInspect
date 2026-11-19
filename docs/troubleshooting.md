@@ -1369,12 +1369,11 @@ The notice is the banner at the top of every page, shown to roles that can read 
 settings. It means one thing: a published release exists that this build does not contain.
 It never appears for a merge to `main`, which is staging, and it never appears while the
 check cannot answer. Its answer, and when it has none its reason, are on **Settings ›
-Support › Updates**, with the steps to update. The check asks once a day, and again within
-the hour after a failure; `docker compose restart app` makes it ask now. Unlike the other
-clock-driven sections here, this check does not run on the scheduler: it is asked when a
-page reads it and the answer is cached for that long, so it keeps asking on a container
-started with `SCHEDULER_ENABLED=false` (§3) — `scheduler_enabled` on the `starting` line
-is not the check to make here.
+Support › Updates**, with the steps to update. The check runs on the scheduler, once a UTC
+day at a minute this instance drew for itself, and again an hour after a check that got no
+answer. A page only reads the answer it stored, so neither opening the block nor
+`docker compose restart app` makes it ask, and a container started with
+`SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
@@ -1386,6 +1385,9 @@ is not the check to make here.
    - *This build carries no commit to compare* → a development build, or an image built
      without `GIT_SHA`. Build it with the commit stamped:
      `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
+   - *No check of this build has run yet* → a fresh install or an update, waiting up to a
+     day for its minute. Longer: a container must run the scheduler (`scheduler_enabled` is
+     `true` on its `starting` line), and its log's `update check could not run` says why.
    - *GitHub could not be reached, or something else answered in its place* → from the
      host, check that the container reaches GitHub at all:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`

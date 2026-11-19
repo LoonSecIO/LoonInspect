@@ -128,7 +128,7 @@ resumes if re-enabled. Both undelivered cases age out on a delivered event's clo
 fan-out state, is the purge's candidate test. The clocks are `event_outbox_retention_days` (7)
 and `dead_letter_retention_days` (30) — see `fan_out_pending` and `purge_delivered_events`.
 
-## 4. The scheduler: nine jobs
+## 4. The scheduler: ten jobs
 
 Registered in `backend/app/main.py`, every one of them behind `SCHEDULER_ENABLED`. Cron
 jobs fire in `SYNC_TIMEZONE`, not UTC.
@@ -139,6 +139,7 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `sign_in_tick` | every 1 min, and once at startup | Starts and retires held Jamf sign-ins to match each connection's token-cache mode. |
 | `outbox_worker_tick` | every 30 s | Fans out new events, then attempts every delivery due; one process at a time per tenant (`outbox_tick_lock`). |
 | `sharing_exchange_tick` | every 5 min | Sends at most once per tenant per day, at a minute of day derived from its submission UUID. |
+| `update_check_tick` | every 1 min | Asks whether a newer release exists once a UTC day per instance, at a minute drawn and kept in `update_check_state`, and an hour after a check with no answer; the attempt is claimed in that row, so a second process asks nothing (#819). |
 | `hourly_jamf_patch_sync` | hourly, :00 | Pulls the global Jamf Patch catalog, rebuilds the lookup, then re-judges every tenant's app catalog. |
 | `hourly_session_cleanup` | hourly, :30 | Deletes sessions a day past expiry or revocation. |
 | `fleet_catalog_tick` | hourly, :20 | Checks Fleet's maintained-apps catalog on GitHub at most once a day, and only while some organization has the `fleet_maintained_apps` flag on; with it off everywhere it makes no request ([`fleet-catalog.md`](fleet-catalog.md), #794). |
