@@ -112,8 +112,7 @@ stack's previous values).
 
 A pod LoonSec runs for itself also takes `UpdateCheckUrl=https://api.staging.next.loonsec.io/v1/update`,
 so that its update check asks the development service and it is not counted as an install (#821).
-Left empty, the default, the task definition carries no `UPDATE_CHECK_URL` and the pod asks what
-the application asks by default, as an install does.
+Left empty, the default, the task definition has no `UPDATE_CHECK_URL`: the pod asks as an install does.
 
 ## 5. Verify
 

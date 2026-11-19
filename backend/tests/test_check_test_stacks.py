@@ -18,19 +18,19 @@ SPEC.loader.exec_module(stacks)
 TRACKED = shutil.which("git") and subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, text=True)
 
 
-def _plant(tmp_path: Path, name: str, text: str) -> list:
-    (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-    (tmp_path / name).write_text(text)
-    return [s for s in stacks.check(tmp_path, [name]) if s.why]
+def _plant(tmp_path: Path, name: str, text: str, also: dict[str, str] | None = None) -> list:
+    for path, body in {name: text, **(also or {})}.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(body)
+    return [s for s in stacks.check(tmp_path, [name, *(also or {})]) if s.why]
 
 
 @pytest.mark.skipif(not TRACKED or TRACKED.returncode, reason="lists the tracked files with git; CI's own job runs it anyway")
 def test_the_tree_starts_nothing_that_would_be_counted():
     seen = stacks.check(ROOT, TRACKED.stdout.split("\0"))
     assert [f"{s.path}:{s.line}: {s.why}" for s in seen if s.why] == []
-    # CI's image job starts the app six times, each with the check off; the rest are databases and a secret scanner.
     app = [s.env.get("UPDATE_CHECK") for s in seen if s.path == ".github/workflows/ci.yml" and s.image == "looninspect:ci"]
-    assert app == ["false"] * 6
+    assert app == ["false"] * 6  # CI's image job starts the app six times, each with the check off; the rest are not the app
     assert Counter(s.passed for s in seen) == {"the setting": 6, "not the app": 4, "the comment": 2}
 
 
@@ -55,6 +55,7 @@ def test_the_smoke_instance_without_the_setting_fails_on_its_own_line(tmp_path):
         ("docker run -d \\\n  -e UPDATE_CHECK=false \\\n  looninspect:ci", False),
         ("KEY=$(docker run --rm other/image:1 python -c 'print(1)')", True),  # an image it does not know
         ("sh -c 'docker container create looninspect:ci'", True),
+        ("sh -c 'docker run -e UPDATE_CHECK=false looninspect:ci'", False),  # read to the quote that closes it
         ("docker run --rm --user postgres postgres:17-alpine", False),
         ('docker run --rm "$IMAGE"', True),
         ('# Not the app image: the db sidecar.\ndocker run --rm "$IMAGE"', False),
@@ -65,6 +66,9 @@ def test_the_smoke_instance_without_the_setting_fails_on_its_own_line(tmp_path):
         ("echo 'docker run reads as a command'", True),  # it cannot tell a sentence from sh -c '…', so it fails closed
         ("docker compose up -d", True),
         ("export UPDATE_CHECK=false\ndocker compose up -d", False),
+        ('if [ -n "$CI" ]; then\n  export UPDATE_CHECK=false\nfi\ndocker compose up -d', True),  # an indented export: a branch's
+        ("export UPDATE_CHECK=false\ndocker compose -f docker-compose.yml -f ./docker-compose.pull.yml up -d", False),
+        ("export COMPOSE_FILE=/tmp/e2e.yml\nexport UPDATE_CHECK=false\ndocker compose watch", True),  # a file it cannot read
         ("docker-compose up", True),
         ("docker compose logs app", False),
     ],
@@ -73,14 +77,12 @@ def test_a_planted_command_is_counted_unless_it_keeps_out(tmp_path, script, coun
     assert bool(_plant(tmp_path, "s.sh", script + "\n")) is counted
 
 
-def test_a_workflow_env_reaches_a_compose_start_and_not_a_container(tmp_path):
-    steps = "      - run: docker compose up -d\n      - name: start\n        run: docker run looninspect:ci\n"
-    found = _plant(tmp_path, ".github/workflows/w.yml", "env: {UPDATE_CHECK: 'false'}\njobs:\n  e2e:\n    steps:\n" + steps)
-    assert [(s.line, s.where) for s in found] == [(7, "job e2e, step start")]
-
-
-def test_a_test_compose_file_must_set_it_and_the_files_an_operator_runs_are_not_read(tmp_path):
-    e2e = "services:\n  app:\n    environment: {LOG_LEVEL: DEBUG}\n  db:\n    build: ./ops/postgres\n"
-    (found,) = _plant(tmp_path, "docker-compose.e2e.yml", e2e)
-    assert (found.line, found.why.startswith("service app starts the image it builds, with neither")) == (2, True)
-    assert stacks.check(ROOT, sorted(stacks.SHIPPED)) == []
+@pytest.mark.parametrize("name", ["docker-compose.e2e.yml", "docker-compose-e2e.yml", "compose-test.yml", "ops/e2e/stack.yaml"])
+def test_a_compose_file_is_read_whatever_its_name_and_a_step_env_passes_its_start_but_not_its_app_nor_a_container(tmp_path, name):
+    e2e = "services:\n  app:\n    environment: {LOG_LEVEL: DEBUG}\n  db:\n    build: ./ops/postgres\n  web: {extends: app}\n"
+    steps = f"  - run: docker compose -f {name} up -d\n  - run: docker compose -f - up\n  - run: docker run looninspect:ci\n"
+    found = _plant(tmp_path, ".github/workflows/w.yml", "env: {UPDATE_CHECK: '0'}\njobs:\n e2e:\n  steps:\n" + steps, {name: e2e})
+    assert [(s.path == name, s.line) for s in found] == [(False, 6), (False, 7), (True, 2), (True, 6)]
+    assert [s.why.split(",")[0].split(" starts ")[1] for s in found] == ["-", "LoonInspect", "its image", "its image"]
+    assert stacks.check(ROOT, sorted(stacks.SHIPPED)) == []  # the files an operator runs, read only through a start's env
+    assert _plant(tmp_path, "two.yml", "a: 1\n---\nb: 2\n")[0].why.startswith("this check cannot load it as YAML")

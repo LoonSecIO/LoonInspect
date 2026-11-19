@@ -17,9 +17,8 @@ images.template.yml's push role (#673) is held to the workflows that assume it: 
 repositories. The template is deployed by hand (ops/aws/README.md §1), so this proves the
 file, not the account.
 
-pod.template.yml's UpdateCheckUrl (#821) is rendered both ways, resolving its condition the
-way CloudFormation would: left empty, the app container's environment is the one the template
-always rendered, with no UPDATE_CHECK_URL at all; given the development service, it is that.
+pod.template.yml's UpdateCheckUrl (#821) is rendered both ways, its condition resolved as CloudFormation
+would: left empty, the app's environment is the one it always rendered, with no UPDATE_CHECK_URL; given a URL, it gains it.
 """
 
 from __future__ import annotations

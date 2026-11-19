@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Nothing this repository starts for a test may be counted by LoonSec's production service as an install (#821).
 
-It fails a container a workflow step or a tracked shell script starts, and a service a compose file other than SHIPPED
-defines, that could be LoonInspect and has neither UPDATE_CHECK=false nor an UPDATE_CHECK_URL off LoonSec's production
-hosts. Without the setting, a container passes only on an image NOT_THE_APP names or, an image it cannot read, on a
-`# not the app image` comment directly above it; an option it does not know fails, as it can then not tell which word is
-the image. A compose start passes on the step's env or an earlier `export`. Unseen: what an action, a job's `services:`
-or a program other than sh starts, a command built at run time, an --env-file, LoonInspect.app (#820), docs/.
+It reads every tracked workflow's run steps, shell script and compose file (any YAML file with a top-level `services:` mapping,
+whatever its name). It fails a container a step or script starts, and a service a compose file other than SHIPPED defines, that
+could be LoonInspect with neither UPDATE_CHECK=false nor an UPDATE_CHECK_URL off LoonSec's production hosts. Without the setting,
+a container passes only on an image NOT_THE_APP names or, an image it cannot read, on a `# not the app image` comment directly
+above it; an option it does not know fails, as it can then not tell which word is the image. A compose start passes on the step's
+env or an earlier unindented `export`, and only if each file it names (-f, --file, COMPOSE_FILE; from the checkout's root) is a
+tracked compose file, held to its own rule. Unseen: what an action, a job's `services:`, swarm or a program other than sh starts
+(make, python, podman); a command built at run time; a compose file written at run time and found by its default name; env set
+through $GITHUB_ENV; an --env-file or env_file; LoonInspect.app (#820); docs/.
 """
 
 from __future__ import annotations
@@ -38,12 +41,14 @@ MARKER = "not the app image"
 NEITHER = "with neither UPDATE_CHECK=false nor an UPDATE_CHECK_URL off LoonSec's production hosts"
 DOCKER = re.compile(r"(?:^|(?<=[\s;&|()`'\"{]))(?:[\w.-]*/)*docker(?:-compose)?(?=[ \t]|\\\n)", re.M)
 OPERATORS = ";&|()<>\n"
+STARTS = {"up", "run", "create", "start", "restart", "watch", "scale"}  # the compose commands that start a container
 GLOBAL_VALUES = {"-c", "--context", "-H", "--host", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey"}
 # docker run's options (`docker run --help`): the image is the first word that is neither one of them nor a value.
 RUN_FLAGS = {"-d", "--detach", "--rm", "-i", "--interactive", "-t", "--tty", "--init", "--privileged", "-P", "--publish-all",
              "--read-only", "-q"}
 RUN_VALUES = set(" ".join(("-e --env --env-file -p --publish -v --volume --mount -u --user -w --workdir --name --network",
                            "--entrypoint --platform -h --hostname --add-host -l --label -m --memory --restart --pull")).split())
+Text = type("Text", (str,), {"line": 1})  # a YAML string, and the line its text starts on, below a block's indicator
 
 
 @dataclass
@@ -55,10 +60,6 @@ class Seen:
     where: str = ""
     passed: str | None = None  # "the setting", "not the app" or "the comment"
     why: str | None = None  # why it would be counted
-
-
-class Text(str):
-    line = 1  # where a YAML string's text starts, below a block's indicator
 
 
 def _load(text: str) -> dict:
@@ -74,7 +75,7 @@ def _load(text: str) -> dict:
     loader = type("Loader", (yaml.SafeLoader,), {})
     loader.add_constructor("tag:yaml.org,2002:str", string)
     loader.add_multi_constructor("!", tagged)
-    return yaml.load(text, Loader=loader) or {}
+    return data if isinstance(data := yaml.load(text, Loader=loader), dict) else {}
 
 
 def _assignments(words) -> dict[str, str]:
@@ -101,25 +102,25 @@ def repository(image: str) -> str:
     return image.split("@")[0].rsplit("/", 1)[-1].split(":")[0]
 
 
-def _start(text: str, i: int) -> tuple[str, list[str], bool] | None:
+def _start(text: str, i: int, end: int = -1) -> tuple[str, list[str], bool] | None:
     """The command at text[i], its arguments split as sh splits them, and whether its quotes close, when it starts a
-    container or a compose stack. It ends at an operator, a newline or a comment."""
-    lexer = shlex.shlex(re.sub(r"\\\n", " ", text[i:]), posix=True, punctuation_chars=OPERATORS)
+    container or a compose stack. It ends at an operator, a newline, a comment or `end`, the quote closing sh -c '…'."""
+    lexer = shlex.shlex(re.sub(r"\\\n", " ", text[i : end if end > i else None]), posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace, lexer.whitespace_split, lexer.commenters = " \t\r", True, ""
-    words, closed, starts = [], True, {"up", "run", "create", "start", "restart"}
+    words, closed = [], True
     try:
         words += takewhile(lambda word: not word or word[0] not in OPERATORS + "#", lexer)
     except ValueError:  # quotes that do not close: a start this cannot read, if it is a start at all
         closed = False
     rest = words[1:]
     if words[0].endswith("docker-compose"):
-        return ("docker-compose", rest, closed) if starts & set(rest) else None
+        return ("docker-compose", rest, closed) if STARTS & set(rest) else None
     while rest and rest[0].startswith("-"):
         rest = rest[2:] if rest[0] in GLOBAL_VALUES else rest[1:]
     rest = rest[1:] if rest[:1] == ["container"] else rest
     if rest[:1] in (["run"], ["create"]):
         return "docker " + rest[0], rest[1:], closed
-    return ("docker compose", rest[1:], closed) if rest[:1] == ["compose"] and starts & set(rest[1:]) else None
+    return ("docker compose", rest[1:], closed) if rest[:1] == ["compose"] and STARTS & set(rest[1:]) else None
 
 
 def _run_options(args: list[str]) -> tuple[dict[str, str], str | None, str]:
@@ -158,22 +159,26 @@ def _container(seen: Seen, command: str, stop: str, lines: list[str]) -> Seen:
     return seen
 
 
-def _script(path: str, text: str, first: int, env: dict, lines: list[str], where: str) -> list[Seen]:
-    """Every container start and compose start in a workflow step's run, or in a shell file."""
+def _script(path: str, text: str, first: int, env: dict, lines: list[str], where: str, compose: set) -> list[Seen]:
+    """Every container start and compose start in a workflow step's run, or in a shell file; `compose`: the files it reads."""
     found = []
     for match in DOCKER.finditer(text):
         begin = text.rfind("\n", 0, match.start()) + 1
         line = first + text.count("\n", 0, match.start())
-        if text[begin : match.start()].lstrip().startswith("#") or not (started := _start(text, match.start())):
+        end = text.find(quote, match.end()) if (quote := text[match.start() - 1 : match.start()]) in ("'", '"') else -1
+        if text[begin : match.start()].lstrip().startswith("#") or not (started := _start(text, match.start(), end)):
             continue
         command, args, closed = started
         if not closed:
-            seen = Seen(path, line, "?", why=f"a quote in this {command} does not close, so this check cannot read it.")
+            seen = Seen(path, line, "?", why=f"this check cannot read this {command}: an open quote, or a backslash at its end.")
         elif "compose" in command:
-            seen = Seen(path, line, command, {**env, **_assignments(re.findall(r"^\s*export\s+(\w+=\S*)", text[:begin], re.M))})
-            seen.passed = "the setting" if keeps_out(seen.env) else None
-            seen.why = None if seen.passed else (f"{command} starts a stack {NEITHER} set for it: give it UPDATE_CHECK=false "
-                                                 "in the step's env, or export it first (#821).")
+            seen = Seen(path, line, command, {**env, **_assignments(re.findall(r"^export\s+(\w+=\S*)", text[:begin], re.M))})
+            named = re.findall(r"(?:^| )(?:--file[= ]|-f ?)(\S+)", " ".join(takewhile(lambda word: word not in STARTS, args)))
+            unread = [f for f in named + seen.env.get("COMPOSE_FILE", "").split(":") if f and f.removeprefix("./") not in compose]
+            seen.passed = "the setting" if keeps_out(seen.env) and not unread else None
+            seen.why = None if seen.passed else f"{command} starts " + (
+                f"{unread[0]}, not a tracked compose file, so this check cannot read it: start one that is (#821)." if unread
+                else f"a stack {NEITHER} set for it: give it UPDATE_CHECK=false in the step's env, or export it first (#821).")
         else:
             run_env, image, stop = _run_options(args)
             seen = _container(Seen(path, line, image or "?", run_env), command, stop, lines)
@@ -184,26 +189,30 @@ def _script(path: str, text: str, first: int, env: dict, lines: list[str], where
 
 def check(root: Path, paths: list[str]) -> list[Seen]:
     """Every container start, compose start and compose service in the files at `paths`, relative to `root`."""
-    found = []
-    for path in sorted(p for p in paths if (root / p).is_file()):
-        text = (root / path).read_text(errors="replace")
+    found, data, texts = [], {}, {p: (root / p).read_text(errors="replace") for p in sorted(paths) if (root / p).is_file()}
+    for path in (p for p in texts if p.endswith((".yml", ".yaml"))):  # a compose file is told by what it holds, not its name
+        try:
+            data[path] = _load(texts[path])
+        except yaml.YAMLError as exc:  # compose may read what PyYAML cannot, so a file this check cannot load fails
+            found.append(Seen(path, 1, "?", where=path, why=f"this check cannot load it as YAML: {' '.join(str(exc).split())}"))
+    compose = SHIPPED | {p for p, d in data.items() if isinstance(d.get("services"), dict)}  # no workflow has a top-level one
+    for path, text in texts.items():
         lines = text.splitlines()
-        if path.startswith(".github/workflows/") and path.endswith((".yml", ".yaml")):
-            data = _load(text)
-            for job_id, job in (data.get("jobs") or {}).items():
+        if path.startswith(".github/workflows/") and path in data:
+            for job_id, job in (data[path].get("jobs") or {}).items():
                 for n, step in enumerate((job or {}).get("steps") or [], 1):
                     if run := step.get("run"):
-                        env = {**_env(data), **_env(job), **_env(step)}
-                        found += _script(path, run, run.line, env, lines, f"job {job_id}, step {step.get('name') or n}")
-        elif re.search(r"(?:^|/)(?:docker-)?compose(?:\.[\w-]+)*\.ya?ml$", path) and path not in SHIPPED:
-            for name, service in (_load(text).get("services") or {}).items():
-                image, build = (service or {}).get("image"), (service or {}).get("build")
+                        env = {**_env(data[path]), **_env(job), **_env(step)}
+                        found += _script(path, run, run.line, env, lines, f"job {job_id}, step {step.get('name') or n}", compose)
+        elif path in compose - SHIPPED:
+            for name, service in ((n, s if isinstance(s, dict) else {}) for n, s in data[path]["services"].items()):
+                image, build, app = service.get("image"), service.get("build"), name == "app" or "extends" in service
                 context = str((build.get("context") if isinstance(build, dict) else build) or "").strip("./")
-                if name == "app" or (image and repository(image) not in NOT_THE_APP) or (build and context != "ops/postgres"):
-                    seen = Seen(path, name.line, str(image or "the image it builds"), _env(service), path)
+                if app or (image and repository(image) not in NOT_THE_APP) or (build and context != "ops/postgres"):
+                    seen = Seen(path, name.line, str(image or "its image"), _env(service), path)
                     found.append(_container(seen, f"service {name}", "", lines))  # a service: the same rule as a container
         elif path.endswith(".sh") or re.match(r"#!\s*\S*(?:/|env\s+)(?:ba)?sh\b", text):
-            found += _script(path, text, 1, {}, lines, path)
+            found += _script(path, text, 1, {}, lines, path, compose)
     return found
 
 
@@ -212,8 +221,7 @@ def main() -> int:
         print("::error::PyYAML is not installed, so this check cannot read the workflows: run it with a python3 that has "
               "it, as GitHub's runner images do, or with `uv run python` from backend/.")
         return 1
-    tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True, text=True).stdout
-    seen = check(ROOT, tracked.split("\0"))
+    seen = check(ROOT, subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT, text=True).split("\0"))
     for s in (s for s in seen if s.why):
         print(f"::error file={s.path},line={s.line}::{s.where}: {s.why}")
     marked = ", ".join(f"{s.path}:{s.line} ({s.image})" for s in seen if s.passed == "the comment") or "none"

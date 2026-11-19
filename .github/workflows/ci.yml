@@ -38,8 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: .github/scripts/check-action-pins.sh
 
-  # Nothing CI or a script here starts may be counted as an install (#821); what it reads heads the
-  # script. The runner's python3 has PyYAML, as policy.yml relies on; the backend job's tests run it too.
+  # Nothing CI starts may be counted as an install (#821). The runner's python3 has PyYAML; backend's tests run it too.
   test-stacks:
     name: Test stacks uncounted
     runs-on: ubuntu-latest
@@ -188,8 +187,7 @@ jobs:
         if: ${{ !cancelled() }}  # like the step above (docs/BRANCHING.md §1.1)
         run: ../.github/scripts/check_requirement_rereads.py
 
-  # Every container of looninspect:ci here starts with UPDATE_CHECK=false, one-line commands too: from
-  # v1.2.0 one started with the check on is counted as an install, and none of these is one (#821).
+  # Every looninspect:ci container here starts with UPDATE_CHECK=false, one-liners too: none is an install (#821).
   image:
     name: Docker image
     runs-on: ubuntu-latest
