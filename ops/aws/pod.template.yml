@@ -56,6 +56,20 @@ Parameters:
       else about the pod changes, and the container downloads the corpus from
       whatever address that exchange hands it.
 
+  UpdateCheckUrl:
+    Type: String
+    Default: ""
+    AllowedPattern: ^(https://[A-Za-z0-9.-]+(/\S*)?)?$
+    ConstraintDescription: must be empty, or an https:// address
+    Description: >-
+      UPDATE_CHECK_URL, where the update check asks. Empty, the default, leaves
+      it out of the task definition, so the pod asks what the application asks
+      by default, as an install does. A pod LoonSec runs for itself names the
+      development service, so that it is not counted as an install (#821).
+
+Conditions:
+  HasUpdateCheckUrl: !Not [!Equals [!Ref UpdateCheckUrl, ""]]
+
 Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -186,6 +200,10 @@ Resources:
             # the pod's real name and cert arrive with the ALB later.
             - {Name: TLS_MODE, Value: self-signed}
             - {Name: SHARING_ENDPOINT, Value: !Ref SharingEndpoint}
+            - !If  # absent unless given, never empty: the default is the task definition as it was
+              - HasUpdateCheckUrl
+              - {Name: UPDATE_CHECK_URL, Value: !Ref UpdateCheckUrl}
+              - !Ref AWS::NoValue
           Secrets:
             - Name: DATABASE_URL
               ValueFrom: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/pods/${PodName}/database-url

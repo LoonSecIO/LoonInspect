@@ -16,6 +16,9 @@ images.template.yml's push role (#673) is held to the workflows that assume it: 
 `aws ecr` call their run steps make needs an action the push policy grants, on the two
 repositories. The template is deployed by hand (ops/aws/README.md §1), so this proves the
 file, not the account.
+
+pod.template.yml's UpdateCheckUrl (#821) is rendered both ways, its condition resolved as CloudFormation
+would: left empty, the app's environment is the one it always rendered, with no UPDATE_CHECK_URL; given a URL, it gains it.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ OPS_AWS = REPO / "ops" / "aws"
 INGRESS = OPS_AWS / "pods-ingress.template.yml"
 POD_DATA = OPS_AWS / "pod-data.template.yml"
 IMAGES = OPS_AWS / "images.template.yml"
+POD = OPS_AWS / "pod.template.yml"
 WORKFLOWS = REPO / ".github" / "workflows"
 
 # The pods naming ruling (2026-08-28). ingress-<anything> is PodName's pattern's to refuse.
@@ -294,6 +298,34 @@ def test_push_policy_grants_every_ecr_call_a_workflow_on_its_role_makes():
         assert action in grants, f"{workflow} runs `aws ecr {verb}`, which needs {action}; the push policy does not grant it"
         scope = "*" if action == "ecr:GetAuthorizationToken" else repositories
         assert grants[action] == scope, f"{action} is granted on {grants[action]}, not {scope}"
+
+
+DEV_UPDATE_CHECK = "https://api.staging.next.loonsec.io/v1/update"
+# The app container's environment as pod.template.yml rendered it before UpdateCheckUrl existed.
+POD_APP_ENVIRONMENT = [
+    {"Name": "INITIAL_ADMIN_EMAIL", "Value": "admin@example.invalid"},
+    {"Name": "TLS_MODE", "Value": "self-signed"},
+    {"Name": "SHARING_ENDPOINT", "Value": "https://api.next.loonsec.io/v1/exchange"},
+]
+
+
+def _pod_app_environment(**given: str) -> list[dict]:
+    """The app container's environment as CloudFormation renders it: its one condition decided, AWS::NoValue dropped."""
+    pod = load(POD)
+    parameters = {name: given.get(name, spec.get("Default")) for name, spec in pod["Parameters"].items()}
+    assert pod["Conditions"] == {"HasUpdateCheckUrl": {"Fn::Not": [{"Fn::Equals": [{"Ref": "UpdateCheckUrl"}, ""]}]}}
+    (app,) = [c for c in pod["Resources"]["TaskDefinition"]["Properties"]["ContainerDefinitions"] if c["Name"] == "app"]
+    items = [i["Fn::If"][1 if parameters["UpdateCheckUrl"] else 2] if "Fn::If" in i else i for i in app["Environment"]]
+    return [{k: parameters[v["Ref"]] if isinstance(v, dict) else v for k, v in i.items()} for i in items if "Ref" not in i]
+
+
+def test_a_pod_left_on_the_default_renders_as_it_did_and_one_given_the_development_service_asks_it():
+    assert _pod_app_environment(AdminEmail="admin@example.invalid") == POD_APP_ENVIRONMENT
+    given = _pod_app_environment(AdminEmail="admin@example.invalid", UpdateCheckUrl=DEV_UPDATE_CHECK)
+    assert given == [*POD_APP_ENVIRONMENT, {"Name": "UPDATE_CHECK_URL", "Value": DEV_UPDATE_CHECK}]
+    pattern = re.compile(load(POD)["Parameters"]["UpdateCheckUrl"]["AllowedPattern"])
+    for value in ("", DEV_UPDATE_CHECK, "https://api.github.com/repos/LoonSecIO/LoonInspect", "http://x", "x", " "):
+        assert bool(pattern.fullmatch(value)) is (value == "" or value.startswith("https://")), value
 
 
 @pytest.mark.parametrize("path", sorted(OPS_AWS.glob("*.yml")), ids=lambda p: p.name)
