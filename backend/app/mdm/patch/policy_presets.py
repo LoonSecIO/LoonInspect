@@ -58,14 +58,21 @@ class Preset:
 # update — `max_days_behind_severe` reads the corpus's findings for the installed build, and a
 # build the corpus has not assessed is judged by the ordinary limit. A 14-day severe limit
 # alone would leave exactly the builds the text sweeps in unjudged.
+#
+# Re-read 2026-11-18 for v1.2.0 (#809). The section reads as above. NCSC put a second copy of
+# v3.3 up on 2026-11-05, which its Cyber Essentials resources page now links as the current
+# version: the body text of the two copies is identical (5,146 words, compared after
+# extraction), and only the layout, and so the page numbers, differ. `url` is that copy; the
+# earlier address, /files/cyber-essentials-requirements-for-it-infrastructure-v3-3.pdf, still
+# answers with the first.
 CYBER_ESSENTIALS_3_3 = Preset(
     id="cyber-essentials-3.3",
     framework="Cyber Essentials",
     document="Requirements for IT Infrastructure v3.3",
     published="April 2026",
     section="Security update management",
-    url="https://www.ncsc.gov.uk/files/cyber-essentials-requirements-for-it-infrastructure-v3-3.pdf",
-    verified_on=date(2026, 10, 3),
+    url="https://www.ncsc.gov.uk/sites/default/files/2026-11/Cyber-Essentials-Requirements-for-IT-Infrastructure-v3-3.pdf",
+    verified_on=date(2026, 11, 18),
     rule=Rule(max_days_behind=14),
 )
 

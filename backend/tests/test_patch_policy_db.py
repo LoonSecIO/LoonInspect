@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select
 
+from app.mdm.patch.policy_presets import CYBER_ESSENTIALS_3_3
 from app.models.schema import AppCatalogEntry, Device, InstalledApp, JamfPatchTitle, MdmConnection, PatchingPolicy
 from tests.test_patching_policy_db import ADMIN, accounts, admin, viewer  # noqa: F401
 from tests.test_vuln_answer_db import _device, _pointer, _set_tier, acting_tenant  # noqa: F401
@@ -319,7 +320,9 @@ async def test_the_catalogue_is_read_by_anyone_who_reads_the_page(viewer) -> Non
     entries = {entry["id"]: entry for entry in response.json()}
     essentials = entries["cyber-essentials-3.3"]
     assert essentials["rule"] == {"maxDaysBehind": 14, "maxReleasesBehind": None, "maxDaysBehindSevere": None}
-    assert essentials["framework"] == "Cyber Essentials" and essentials["verifiedOn"] == "2026-10-03"
+    # The day is the catalogue's own, served as recorded: each release re-reads the text and moves it (#809).
+    assert essentials["framework"] == "Cyber Essentials"
+    assert essentials["verifiedOn"] == CYBER_ESSENTIALS_3_3.verified_on.isoformat()
 
 
 async def test_a_rule_confirmed_unchanged_records_its_basis_and_a_changed_one_does_not(admin, fleet) -> None:  # noqa: F811
