@@ -10162,7 +10162,7 @@
                 "type": "null"
               }
             ],
-            "description": "The host the check asks, as the `update check on` line at startup names it; null when `UPDATE_CHECK_URL` names none. Named while the check is off too: `enabled` and `reason` say whether it asks.",
+            "description": "The host the check asks, as the `update check on` line at startup names it; null when `UPDATE_CHECK_URL` names none it can read. Named while the check is off too: `enabled` and `reason` say whether it asks.",
             "title": "Providerhost"
           },
           "reason": {
