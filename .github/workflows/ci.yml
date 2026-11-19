@@ -102,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0  # the migration contract step reads the last release's tag and the history since
+          fetch-depth: 0  # the migration contract and re-read steps read the last release's tag and the history since
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -172,6 +172,12 @@ jobs:
       - name: Migration contract
         if: ${{ !cancelled() }}  # after failed tests too, so a red job shows both (docs/BRANCHING.md §1.1, #655)
         run: ../.github/scripts/check_migration_contract.py
+
+      # A release re-reads every published requirement a patching rule can start from (#809): a pull request that sets
+      # RELEASE past the newest release tag fails while an entry of the catalogue was read on or before that tag's day.
+      - name: Published requirements re-read
+        if: ${{ !cancelled() }}  # like the step above (docs/BRANCHING.md §1.1)
+        run: ../.github/scripts/check_requirement_rereads.py
 
   image:
     name: Docker image

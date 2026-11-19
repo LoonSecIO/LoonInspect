@@ -520,6 +520,18 @@ it, and where the two part ways.
   records the document, version, date, section, URL and the day it was read. The id carries
   the document's version, so a revised document is a new entry and an old basis keeps
   naming the text it was drawn from.
+- **Each release re-reads every entry** (#809), the way it rules every flag
+  ([`BRANCHING.md`](BRANCHING.md) §1.1). Before the tag, for each entry: open its `url` and
+  read its `section`; check the numbers against the entry's `rule` and against its three
+  paragraphs of page copy (`requires`, `maps` and `differs`, in `frontend/src/i18n/en.ts` and
+  `de.ts`); move its `verified_on` to the day you read it; and record in the release notes
+  which entries were re-read and when. When the text has been revised, the revised document
+  is a **new** entry with a new `id`, admitted like any other, and the old entry stays, so a
+  basis recorded against it still names the text it was drawn from; whether the old entry is
+  still offered, and what its *Drawn from* line then says, is filed when a re-read first
+  finds one. CI fails a pull request that sets `RELEASE` past the newest release tag while an
+  entry was read on or before the day of that tag's commit, or on a day still to come
+  (`.github/scripts/check_requirement_rereads.py`).
 - **The catalogue today** is one entry. *Cyber Essentials: Requirements for IT
   Infrastructure* v3.3 (NCSC, April 2026), Security update management, read 2026-10-03:
   14 days from release for updates that fix critical or high-risk vulnerabilities, score 7
