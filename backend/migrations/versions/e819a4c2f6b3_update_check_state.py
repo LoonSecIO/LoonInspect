@@ -1,19 +1,23 @@
-"""update_check_state: the update check's minute of the day and its last answer, in one row (#819).
+"""update_check_state: when the update check is next owed, and its last answer, in one row (#819).
 
-The update check moves from a call a page made, cached in one process's memory, to the scheduler:
-once a UTC day per instance, at a minute of the day drawn here at random and kept, and again an hour
-after a check that got no answer. This row is what every process reads, so a restart or a second
-process asks nothing more, and `/api/system/update-status` serves its answer without asking.
-Global, outside tenancy and row-level security like `fleet_catalog_state`: it describes the
-instance, not a tenant.
+The update check moves from a call a page made, cached in one process's memory, to the scheduler.
+No time of day belongs to an instance: every moment the check is owed at is drawn afresh at random,
+from nothing else the instance holds or sends. The check carries no identifier, and a minute drawn
+once and kept would be one: anyone counting arrivals per minute would see it, and the instance
+never changes it, so in a small population it would follow an instance from one day to the next.
+This row is what every process reads, so a restart or a second process asks nothing more, and
+`/api/system/update-status` serves its answer without asking. Global, outside tenancy and
+row-level security like `fleet_catalog_state`: it describes the instance, not a tenant.
 
 The columns:
 
-- `check_minute`: the minute of the UTC day (0 to 1439) the check is asked at, drawn here and kept.
-- `answered_on`: the instance's UTC date of the last check that got an answer; nothing more is
-  asked that day.
+- `next_check_at`: the moment the next check is owed. Drawn here at random within the next 24
+  hours, so a new instance's first check waits. An attempt sets it an hour on, the retry; an
+  answered one sets it 20 to 23 hours on, drawn afresh. A check stays owed from this moment until
+  one is answered, on either side of midnight, and is owed at once when this moment is more than a
+  day ahead of the clock, so a clock set back does not silence it.
 - `attempted_at`: the last attempt, answered or not. `tick` claims each attempt by setting it in
-  one UPDATE that compares it with the value it read, and an unanswered one is retried an hour on.
+  one UPDATE that compares it with the value it read, before anything is asked.
 - `checked_at`, `update_available`, `latest_tag`, `release_url`, `latest_sha`, `reason`: the answer
   `/api/system/update-status` serves, written by every attempt, answered or not.
 - `checked_version`: the build that answer is for. Another build is served `not_checked`.
@@ -34,6 +38,7 @@ Create Date: 2026-11-19
 """
 
 import secrets
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from alembic import op
@@ -46,24 +51,27 @@ depends_on = None
 
 MIN_READABLE_RELEASE = "v1.1.0"
 _PREVIOUS_RELEASE = "v1.0.0"
+_FIRST_DAY_MICROSECONDS = 24 * 60 * 60 * 1_000_000
 
 
 def _an_account_exists(bind) -> bool:
     """Whether any tenant holds an account. Row-level security shows a tenant's accounts only while
-    that tenant is bound, so each is bound in turn, as 28b0d447bc53 does."""
+    that tenant is bound, so each is bound in turn, as 28b0d447bc53 does. The whole upgrade is one
+    transaction, so it ends with no tenant bound rather than the last one it looked at."""
+    found = False
     for tenant_id in bind.execute(sa.text("SELECT id FROM tenants")).scalars().all():
         bind.execute(sa.text("SELECT set_config('looninspect.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
-        if bind.execute(sa.text("SELECT EXISTS (SELECT FROM accounts)")).scalar():
-            return True
-    return False
+        if found := bool(bind.execute(sa.text("SELECT EXISTS (SELECT FROM accounts)")).scalar()):
+            break
+    bind.execute(sa.text("SELECT set_config('looninspect.tenant_id', '', true)"))
+    return found
 
 
 def upgrade() -> None:
     op.create_table(
         "update_check_state",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=False),
-        sa.Column("check_minute", sa.Integer(), nullable=False),
-        sa.Column("answered_on", sa.Date(), nullable=True),
+        sa.Column("next_check_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("checked_version", sa.Text(), nullable=True),
@@ -76,12 +84,12 @@ def upgrade() -> None:
         sa.Column("last_sent", postgresql.JSONB(), nullable=True),
         sa.Column("notice_pending", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.CheckConstraint("id = 1", name="ck_update_check_state_single_row"),
-        sa.CheckConstraint("check_minute BETWEEN 0 AND 1439", name="ck_update_check_state_minute"),
     )
     bind = op.get_bind()
+    first = datetime.now(UTC) + timedelta(microseconds=secrets.randbelow(_FIRST_DAY_MICROSECONDS))
     bind.execute(
-        sa.text("INSERT INTO update_check_state (id, check_minute, notice_pending) VALUES (1, :minute, :notice)"),
-        {"minute": secrets.randbelow(1440), "notice": _an_account_exists(bind)},
+        sa.text("INSERT INTO update_check_state (id, next_check_at, notice_pending) VALUES (1, :first, :notice)"),
+        {"first": first, "notice": _an_account_exists(bind)},
     )
     op.execute(f"UPDATE schema_release SET min_readable_release = '{MIN_READABLE_RELEASE}'")
 

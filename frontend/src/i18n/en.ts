@@ -635,11 +635,11 @@ export const en = {
         dev_build:
           "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
         not_checked:
-          "No check of this build has run yet. The first runs within a day, at a minute this instance drew for itself, from a container with the scheduler on; a container started with SCHEDULER_ENABLED=false never asks.",
+          "No check of this build has run yet. A new instance's first check is owed at a moment drawn at random within its first 24 hours, and an updated one waits for its next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
         unreachable:
-          "GitHub could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again within the hour; check that this container can reach api.github.com over HTTPS.",
+          "GitHub could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again an hour later; check that this container can reach api.github.com over HTTPS.",
         refused:
-          "GitHub refused the check. Unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again within the hour.",
+          "GitHub refused the check. Unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again an hour later.",
         no_release:
           "No release has been published yet. main is staging, and only a published release is compared against, so there is nothing to be behind.",
         unknown_commit:
