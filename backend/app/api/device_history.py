@@ -1,10 +1,12 @@
 """Bounded device history and up to twenty user/tenant slots; this read never invokes inference (#605)."""
 
+import json
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import String, case, cast, exists, literal, select, union_all
+from sqlalchemy import String, case, cast, exists, func, literal, select, tuple_, union_all
 from sqlalchemy.dialects.postgresql import insert
 
 from app.changes.derive import load_policy
@@ -29,6 +31,7 @@ DEFAULTS = [
     "disk_encryption.fileVault2Enabled",
     "security.firewallEnabled",
 ]
+SCAN = 200  # The most earlier states one previous-value lookup reads, however long the history grows (#617).
 
 
 class Selection(BaseModel):
@@ -67,6 +70,11 @@ def points_query(device):
     return union_all(legacy, recorded).subquery()
 
 
+def place(query, row, key):
+    """A state's place in the timeline's one total order: (the columns, this state's values)."""
+    return tuple_(query.c.observed_at, query.c.collected_at, query.c.key), tuple_(row["observed_at"], row["collected_at"], key)
+
+
 async def point_for(db, device, key):
     query = points_query(device)
     row = (await db.execute(select(query).where(query.c.key == key))).mappings().first()
@@ -77,14 +85,15 @@ async def point_for(db, device, key):
     return row, span, point
 
 
-async def documents(db, span):
+async def documents(db, span, only=None, entries=None):
+    """Each section's document; `only` reads one section, and `entries` keeps entry rows across calls (#617)."""
     if not span:
         return {}
-    sections = (
-        await db.scalars(select(ObservationSection).where(ObservationSection.digest.in_(list(span.section_digests.values()))))
-    ).all()
-    entry_ids = {d for section in sections for d in (section.entry_digests or [])}
-    entries = (
+    digests = [digest for name, digest in span.section_digests.items() if only in (None, name)]
+    sections = (await db.scalars(select(ObservationSection).where(ObservationSection.digest.in_(digests)))).all()
+    entries = {} if entries is None else entries
+    entry_ids = {d for section in sections for d in (section.entry_digests or [])} - entries.keys()
+    entries |= (
         {e.digest: e for e in (await db.scalars(select(ObservationEntry).where(ObservationEntry.digest.in_(entry_ids)))).all()}
         if entry_ids
         else {}
@@ -199,9 +208,14 @@ def value_for(choice, docs, aperture, assessment, connection_id):
 
 
 @router.get("/{device_id}/history")
-async def history(device_id: int, page: int = Query(1, ge=1), db=Depends(get_db)):
+async def history(
+    device_id: int, page: int = Query(1, ge=1), point: Annotated[str | None, Query(max_length=40)] = None, db=Depends(get_db)
+):
     device = await device_for(db, device_id)
     query = points_query(device)
+    if point:  # The page holding this state, counted as it is read, so a jump to it selects exactly it (#617).
+        columns, values = place(query, (await point_for(db, device, point))[0], point)
+        page = await db.scalar(select(func.count()).select_from(query).where(columns > values)) // 12 + 1
     rows = (
         (
             await db.execute(
@@ -255,8 +269,6 @@ async def detail(
     row, span, recorded, docs, options, slots = await context(db, device, point, principal)
     query = points_query(device)
     # Same total ordering as the timeline, including equal inventory timestamps.
-    from sqlalchemy import tuple_
-
     prior_key = await db.scalar(
         select(query.c.key)
         .where(
@@ -348,3 +360,55 @@ async def save_preferences(
     await db.execute(statement.on_conflict_do_update(index_elements=["tenant_id", "account_id"], set_={"slots": chosen}))
     await db.commit()
     return {"slots": [s["key"] for s in chosen]}
+
+
+def as_recorded(value):
+    """A value's identity: its state and its JSON, so 0, false and missing evidence never compare equal."""
+    return value["state"], json.dumps(value["value"], sort_keys=True, default=str)
+
+
+@router.get("/{device_id}/history/previous")
+async def previous_value(
+    device_id: int,
+    point: str = Query(max_length=40),
+    slot: str = Query(max_length=200),
+    db=Depends(get_db),
+    principal: Principal = Depends(current_principal),
+):
+    """The newest state before `point` whose recorded value for `slot` differs from the value at `point` (#617):
+    recorded content and retained assessments only, never today's corpus; at most SCAN earlier states, newest
+    first, reading each section's content once however many of them share it."""
+    device = await device_for(db, device_id)
+    row, span, recorded, docs, options, slots = await context(db, device, point, principal)
+    choice = next((c for c in slots if c["key"] == slot), None) or options.get(slot)
+    if choice is None:
+        raise HTTPException(404, "This value is not recorded for this device")
+    section, apertures, entries = choice["section"], {}, {}
+    contents = {span.section_digests.get(section): docs}  # The selected state's own, as the card read it.
+
+    async def value_at(then, assessment):
+        digest = then.section_digests.get(section)
+        if digest not in contents:
+            own = slot.startswith(("findings.", "observation."))  # A total or a clock is the point's, not the section's.
+            contents[digest] = ({section: []} if digest else {}) if own else await documents(db, then, section, entries)
+        if then.aperture_digest not in apertures:
+            apertures[then.aperture_digest] = await aperture_sections(db, then.aperture_digest)
+        return value_for(choice, contents[digest], apertures[then.aperture_digest], assessment, device.mdm_connection_id)
+
+    selected = as_recorded(await value_at(span, recorded.assessment if recorded else None))
+    query = points_query(device)
+    columns, values = place(query, row, point)
+    newest_first = query.c.observed_at.desc(), query.c.collected_at.desc(), query.c.key.desc()  # The timeline's order.
+    statement = select(query).where(columns < values).order_by(*newest_first).limit(SCAN + 1)
+    rows = (await db.execute(statement)).mappings().all()
+    spans = {s.id: s for s in await db.scalars(select(Span).where(Span.id.in_({r["span_id"] for r in rows})))}
+    fields = (choice["field"], "lastCheckIn")  # All value_for reads of an assessment; never its evidence body.
+    ids = [uuid.UUID(r["key"][2:]) for r in rows if r["key"].startswith("p:")]
+    found = await db.execute(select(Point.id, *(Point.assessment[f] for f in fields)).where(Point.id.in_(ids)))
+    held = {f"p:{i}": dict(zip(fields, v, strict=True)) for i, *v in found}
+    for searched, r in enumerate(rows[:SCAN], 1):
+        value = await value_at(spans[r["span_id"]], held.get(r["key"]))
+        if as_recorded(value) != selected:
+            state = {"id": r["key"], "kind": r["kind"], "observedAt": r["observed_at"], "collectedAt": r["collected_at"]}
+            return {"previous": {**state, **value}, "searched": searched, "complete": True}
+    return {"previous": None, "searched": min(len(rows), SCAN), "complete": len(rows) <= SCAN}

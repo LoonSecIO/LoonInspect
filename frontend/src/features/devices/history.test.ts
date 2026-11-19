@@ -4,7 +4,9 @@ import {
   changedValue,
   dotLabel,
   formatHistoryValue,
+  loadHistory,
   loadHistoryPoint,
+  loadPreviousValue,
   recordedSectionLabels,
   saveHistorySlots,
   type HistoryPoint,
@@ -42,12 +44,18 @@ it("keys reads and writes to the selected point, not a date guess", async () => 
     json: { point: "p:abc", slots: ["security.firewallEnabled"] },
   });
 });
+it("reads a page by number or by the state it holds, and a previous value by state and slot (#617)", async () => {
+  await Promise.all([loadHistory(7, 2), loadHistory(7, "p:abc"), loadPreviousValue(7, "p:abc", "entry:v0 x")]);
+  expect(vi.mocked(apiRequest).mock.calls.map(([path]) => path)).toEqual(["/devices/7/history?page=2",
+    "/devices/7/history?point=p%3Aabc", "/devices/7/history/previous?point=p%3Aabc&slot=entry%3Av0+x"]);
+});
 describe("localized history states", () => {
   it("covers every state in both languages", () => {
     expect(Object.keys(historyGerman.states)).toEqual(Object.keys(copy.states));
     expect(Object.keys(historyGerman.summaries)).toEqual(
       Object.keys(copy.summaries),
     );
+    expect(Object.keys(historyGerman.previous)).toEqual(Object.keys(copy.previous)); // #617
     expect(historyGerman.personal).toContain("Mandanten");
   });
   it("points the paging controls the way the timeline reads (#618)", () => {

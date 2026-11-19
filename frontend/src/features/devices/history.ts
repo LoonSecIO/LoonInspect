@@ -63,12 +63,18 @@ export interface HistoryDetail extends HistoryPoint {
     reason: string | null;
   };
 }
-export const loadHistory = (device: number, page: number) =>
-  apiRequest<HistoryPage>(`/devices/${device}/history?page=${page}`);
+/** The newest earlier state whose recorded value differs; `complete` is false when the bounded read stopped
+ *  after `searched` states without one (#617). */
+export interface PreviousRead { previous: (HistoryPoint & HistoryValue) | null; searched: number; complete: boolean }
+/** A page by number, or by a recorded state's id: the page holding that state (#617). */
+export const loadHistory = (device: number, page: number | string) =>
+  apiRequest<HistoryPage>(`/devices/${device}/history?${new URLSearchParams(typeof page === "number" ? { page: String(page) } : { point: page })}`);
 export const loadHistoryPoint = (device: number, point: string) =>
   apiRequest<HistoryDetail>(
     `/devices/${device}/history/point?${new URLSearchParams({ point })}`,
   );
+export const loadPreviousValue = (device: number, point: string, slot: string) =>
+  apiRequest<PreviousRead>(`/devices/${device}/history/previous?${new URLSearchParams({ point, slot })}`);
 export const saveHistorySlots = (
   device: number,
   point: string,

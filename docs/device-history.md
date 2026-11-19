@@ -93,6 +93,14 @@ the firewall, and the extension attributes the Change Log records — and the ca
 sections the observation itself recorded changes in, read off the span chain (#644), so a change
 outside that scope never reads as nothing having changed.
 
+**Previous different value (#617).** Hovering, focusing or tapping a value (not one disabled in the
+Change Log) opens the newest earlier state recording a different value than the *selected* state, not
+Latest: that value, its *Observed* clock, and an action selecting that state through the normal selection,
+on whichever page holds it (`/history?point=`). Equal states between are skipped; missing evidence is a
+different state shown as missing, never zero. `/history/previous?point=&slot=` compares recorded content
+and retained assessments only, never today's corpus, reading at most 200 earlier states; it says when none
+differs, or when that bound stopped it first.
+
 ## Retention and upgrading
 
 Migration `d605a1b2c3d4` adds history points and preferences with FORCE RLS. Device event shapes are unchanged; `run.completed` adds `lockClass` to distinguish targeted refreshes.

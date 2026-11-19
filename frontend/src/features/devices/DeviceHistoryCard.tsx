@@ -13,6 +13,7 @@ import {
   type HistoryDetail,
   type HistoryPage,
 } from "./history";
+import { PreviousValue } from "./PreviousValue";
 
 /** A keyed instance drops every request and saved value when the account, tenant or device changes. */
 export function DeviceHistoryCard({ deviceId }: { deviceId: number }) {
@@ -25,11 +26,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const { t, locale } = useLocale();
   const copy = t.deviceHistory;
   const sectionLabels = t.changes.sections;
-  const [page, setPage] = useState(1);
+  // A page number, or a recorded state's id while the page holding it loads (#617).
+  const [page, setPage] = useState<number | string>(1);
   const [selection, setSelection] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [timeline, setTimeline] = useState<{
-    page: number;
+    page: number | string;
     value?: HistoryPage;
     error?: boolean;
   } | null>(null);
@@ -60,6 +62,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     };
   }, [deviceId, page, retry]);
   const list = timeline?.page === page ? timeline : null;
+  const at = list?.value?.page ?? 1;
   const selected =
     selection && list?.value?.items.some((p) => p.id === selection)
       ? selection
@@ -81,7 +84,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   }, [deviceId, selected, requestKey]);
   const result = loaded?.key === requestKey ? loaded : null;
   const detail = result?.value;
-  const latest = page === 1 && selected === list?.value?.items[0]?.id;
+  const latest = at === 1 && selected === list?.value?.items[0]?.id;
   const date = (value: string) => new Date(value).toLocaleString(locale);
   const valueText = (v: { state: string; value: unknown; key?: string }) =>
     v.key === "observation.lastCheckIn" &&
@@ -141,6 +144,14 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     setSelection(id);
     setRevision((r) => r + 1);
     setEditing(false);
+  };
+  /** A previous value's action: that state, on whichever page holds it, through the normal selection (#617). */
+  const jump = (id: string) => {
+    if (!list?.value?.items.some((p) => p.id === id)) {
+      setTimeline(null);
+      setPage(id); // The server counts that state's page as it reads it, so a newer state cannot shift it away.
+    }
+    choose(id);
   };
 
   return (
@@ -213,7 +224,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                 onClick={() => {
                   setTimeline(null);
                   setRevision((r) => r + 1);
-                  setPage((p) => p + 1);
+                  setPage(at + 1);
                   setSelection(null);
                   setEditing(false);
                 }}
@@ -223,12 +234,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
               <span>{copy.recordedStates}</span>
               <button
                 type="button"
-                disabled={page === 1 || saving}
+                disabled={at === 1 || saving}
                 className="underline disabled:opacity-40"
                 onClick={() => {
                   setTimeline(null);
                   setRevision((r) => r + 1);
-                  setPage((p) => p - 1);
+                  setPage(at - 1);
                   setSelection(null);
                   setEditing(false);
                 }}
@@ -495,7 +506,10 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                           {label(v)}
                         </dt>
                         <dd className="max-w-full break-words text-right text-sm font-semibold tabular-nums">
-                          {valueText(v)}
+                          {v.state === "disabled" ? valueText(v) : (
+                            <PreviousValue key={detail.id} deviceId={deviceId} point={detail.id} slot={v.key} label={label(v)} text={valueText(v)}
+                              copy={copy} format={(p) => valueText({ ...p, key: v.key })} date={date} onSelect={jump} />
+                          )}
                           {changedValue(v, v.before) && (
                             <span className="ml-2 font-normal text-muted-foreground">
                               ← {valueText(v.before!)}
