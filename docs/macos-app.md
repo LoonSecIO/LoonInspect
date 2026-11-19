@@ -1,10 +1,11 @@
 # LoonInspect as a macOS app
 
-Status: **built, 1.1.0**, 2026-11-15 (packaged as 1.0.0 on 2026-11-10) · Apple silicon, macOS 13
+Status: **built, 1.2.0**, 2026-11-18 (packaged as 1.0.0 on 2026-11-10) · Apple silicon, macOS 13
 or later · the files are under [`macos/`](../macos/README.md) · when it will not open or start,
 [`troubleshooting.md`](troubleshooting.md) §25 · its limits, [KNOWN_ISSUES.md](../KNOWN_ISSUES.md)
-§10 · built and checked on one Mac (macOS 27.3, Xcode 27.2, Swift 6.4): the update from 1.0.0
-under [Validation (1.1.0)](#validation-110), the packaging under [Validation (1.0.0)](#validation-100).
+§10 · built and checked on one Mac (macOS 27.3, Xcode 27.2, Swift 6.4): the update from 1.1.0
+under [Validation (1.2.0)](#validation-120), the one from 1.0.0 under
+[Validation (1.1.0)](#validation-110), the packaging under [Validation (1.0.0)](#validation-100).
 
 It began as the packaging spike of 2026-10-06 (`spike/macos-app`, pull request #750), whose
 question was whether LoonInspect could ship as a macOS application instead of a container. The
@@ -167,9 +168,9 @@ running one alone.
 ## Version, signature, release
 
 **The version.** `CFBundleShortVersionString` in `macos/shell/Info.plist` is the app's release,
-`1.1.0`, and the pull request that prepares a release moves it, as the one that prepares an image
+`1.2.0`, and the pull request that prepares a release moves it, as the one that prepares an image
 release moves `RELEASE` in `backend/app/core/version.py`. They serve different purposes but the
-release workflow requires them to agree (`1.1.0` in the app, `v1.1.0` in the backend): the app's
+release workflow requires them to agree (`1.2.0` in the app, `v1.2.0` in the backend): the app's
 version names the bundle a Mac runs; the backend compares its release with the database's
 `schema_release` (BRANCHING.md §1.1). `build-manifest.json` records both. `CFBundleVersion` is
 the build number, `BUILD_NUMBER` or the UTC build minute, stamped by
@@ -281,8 +282,8 @@ audit and diagnostic history is needed.
   backend change and a ruling, owed before a public release.
 - **No update mechanism, and no notice that an update exists.** Sparkle 2 (an EdDSA-signed
   appcast and a URL to host it), the existing GitHub release check with words for an app, or a
-  Homebrew cask. Undecided. Until one is chosen an update is [by hand](#updates), and a 1.0.0
-  user learns of 1.1.0 from the releases page.
+  Homebrew cask. Undecided. Until one is chosen an update is [by hand](#updates), and a user
+  learns of a newer release from the releases page.
 - **No `pg_dump`.** EnterpriseDB's client binaries (zonky's own upstream) with a Back Up command
   in the app menu would give `operations.md` §2 to the app.
 - **The keychain items trust `/usr/bin/security`**, so any process of the same user reads them
@@ -319,6 +320,36 @@ support directory and no keychain items.
 | Shell SIGKILLed | Backend and Postgres both gone 0.45 s later, through the watchdog; Postgres logged a fast shutdown and *database system is shut down* |
 | Memory at rest, sign-in page shown | Shell 99 MB RSS (WebKit's own processes not counted), backend 184 MB, the postmaster 23 MB |
 | Support directory after setup | 50 MB |
+
+## Validation (1.2.0)
+
+The update from 1.1.0, walked on the Mac above on 2026-11-18, headless (#812). Both apps were
+built by `macos/scripts/build-app.sh` and signed with the Developer ID: 1.1.0 from the `v1.1.0`
+tag (`21521d89`, build `20261119.0328`, `backend_release: v1.1.0`), 1.2.0 from the v1.2.0
+candidate (build `20261119.0416`, `backend_release: v1.2.0`). Each was copied over the one in an
+Applications folder of the walk's own.
+
+- **A 1.1.0 instance, from nothing.** Healthy 1.9 s after launch. Set up through the API with
+  the session's claim token: an administrator, the `jamf_patch` flag on, an exclusion pattern, a
+  destination with a stored secret, and a patching rule confirmed from the Cyber Essentials
+  entry. Quit: nothing left running in 0.48 s.
+- **The update.** The 1.2.0 app over the 1.1.0 app, same data directory and keychain items.
+  Healthy 1.0 s after launch on the same port. v1.2.0 adds no migration, and `backend.log` shows
+  none run. The session cookie minted under 1.1.0 still answered `/api/auth/me`. Of 50 answers
+  read under each, 46 were the same; the other four were two clocks and the catalogue entry's
+  link and read date, which the release moved, in the catalogue and under the confirmed rule.
+  The stored secret was read and used (the destination test reached name resolution, which is
+  past the decrypt). The three keychain items were the same values (compared by digest).
+- **The step back.** The 1.1.0 app over the 1.2.0 app: healthy 1.0 s after launch, the session
+  still signed in, and every answer as it read before the update, the two clocks aside. With no
+  migration between them the 1.1.0 app found its own head, so the *starts without migrating*
+  path was not exercised here; the release notes record it exercised on the container.
+- Afterwards the support directory and the three keychain items were removed; this walk had
+  made them all.
+
+**Not run:** the window, notarization of 1.2.0 and a launch from a quarantined download (the
+release workflow does the last two at publication), the update on an instance with inventory
+(the container's walk is in [the release notes](releases/v1.2.0.md)), and a second Mac.
 
 ## Validation (1.1.0)
 
