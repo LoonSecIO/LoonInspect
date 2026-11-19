@@ -766,11 +766,12 @@ it was answered on its `starting` line — `docker compose logs app | grep sched
 API, and the work a person starts still runs in the process that served the request:
 Sync now, Run now, Re-emit inventory, a destination's **Test** button, **Redrive**, and
 **Send now** on Settings › Data sharing. What it stops is everything on a clock — the
-nine jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
+ten jobs in `app/main.py`: collections coming due, the outbox's fan-out and delivery,
 the purges (sessions hourly; the outbox, the run log and, with `CHANGE_LOG_RETENTION_DAYS`
 set, the change log nightly), the hourly Jamf Patch
-catalog sync, the sign-in cache renewals, the daily data-sharing exchange, and the daily
-check of Fleet's catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
+catalog sync, the sign-in cache renewals, the daily data-sharing exchange, the daily update
+check ([`troubleshooting.md`](troubleshooting.md) §10), and the daily check of Fleet's
+catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
 **Check now** on that tab still works in a web-only process). So what a
 web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
 the process that still has the scheduler, not by it; with no such process running, the
@@ -793,8 +794,8 @@ at-least-once, as it is with one process.
 
 The other timed loops are outside that promise. Collections claim their work with a run
 row and are safe by the same argument
-([`ingest-scheduling.md`](ingest-scheduling.md) §5); the rest have not been audited for a
-second process. One process with the scheduler on is still the supported shape.
+([`ingest-scheduling.md`](ingest-scheduling.md) §5), and so is the update check, claiming
+each attempt in its row; the rest have not been audited for a second process. One process with the scheduler on is still the supported shape.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Daily check of this build against the latest published release (#43, #407).
+"""Daily check of this build against the latest published release (#43, #407), from the scheduler (#819).
 
 **What "update available" means.** Kyle, 2026-09-11: `main` is staging, and publishing a
 GitHub Release is the release. So an update is available when this build does not contain
@@ -7,7 +7,7 @@ before #407 compared against `main`'s HEAD, which told every install that a newe
 existed after every merge, docs-only included, and told a pod built from a release the
 same the first time anything landed after its tag.
 
-**Two unauthenticated calls per check**, on one 24-hour cache:
+**Two unauthenticated calls per check**:
 
 1. `GET /releases/latest` — the tag and the release page. GitHub's answer skips drafts and
    prereleases, and a `404` means no release has been published yet.
@@ -32,19 +32,24 @@ next check in it.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
+import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Literal
 from urllib.parse import quote
 
 import httpx
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import unscoped_session
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
+from app.models.schema import UpdateCheckState
 
 logger = logging.getLogger(__name__)
 
@@ -53,26 +58,28 @@ logger = logging.getLogger(__name__)
 # `UPDATE_CHECK_URL`, which names a base answering the same two paths (#43).
 _GITHUB_REPO_API = "https://api.github.com/repos/LoonSecIO/LoonInspect"
 
-_SUCCESS_TTL = timedelta(hours=24)
 # Retry sooner after a failure, but not so soon that an air-gapped instance is
-# hammering a wall on every page load. A rate-limit refusal resets within the hour too.
-_FAILURE_TTL = timedelta(hours=1)
+# hammering a wall. A rate-limit refusal resets within the hour too.
+_RETRY = timedelta(hours=1)
+_STATE = UpdateCheckState.__table__
+_STORED = ("update_available", "latest_sha", "checked_at", "latest_tag", "release_url", "reason")
 
 # What a stamp's sha must look like before it goes into a URL path. Anything else — the
 # dev sentinel, "unknown" from an image built without GIT_SHA, a hand-typed build arg —
 # is a build with nothing comparable, and is never sent anywhere.
 _SHA = re.compile(r"[0-9a-f]{7,40}")
 
-UpdateReason = Literal["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"]
+UpdateReason = Literal["disabled", "dev_build", "not_checked", "unreachable", "refused", "no_release", "unknown_commit"]
 REASON_DISABLED: UpdateReason = "disabled"  # UPDATE_CHECK=false; nothing is asked
 REASON_DEV_BUILD: UpdateReason = "dev_build"  # the build carries no comparable commit
+REASON_NOT_CHECKED: UpdateReason = "not_checked"  # no check of this build is stored yet
 REASON_UNREACHABLE: UpdateReason = "unreachable"  # no answer, or not one GitHub gives
 REASON_REFUSED: UpdateReason = "refused"  # 403 or 429: the shared rate limit, usually
 REASON_NO_RELEASE: UpdateReason = "no_release"  # releases/latest answered 404
 REASON_UNKNOWN_COMMIT: UpdateReason = "unknown_commit"  # compare answered 404
 
-# The two reasons that are a failure to get an answer, retried on the short TTL. The
-# others are answers — GitHub said "no release" or "no such commit" — and keep the long one.
+# The two reasons that are a failure to get an answer, retried within the hour. The
+# others are answers — GitHub said "no release" or "no such commit" — and end the day.
 _RETRIED = frozenset({REASON_UNREACHABLE, REASON_REFUSED})
 
 _CURRENT = frozenset({"ahead", "identical"})
@@ -103,20 +110,6 @@ class _Answer:
     latest_tag: str | None = None
     release_url: str | None = None
     reason: UpdateReason | None = None
-
-
-@dataclass
-class _CacheEntry:
-    checked_at: datetime
-    answer: _Answer
-
-    @property
-    def ttl(self) -> timedelta:
-        return _FAILURE_TTL if self.answer.reason in _RETRIED else _SUCCESS_TTL
-
-
-_cache: _CacheEntry | None = None
-_lock = asyncio.Lock()
 
 
 def _current_sha() -> str | None:
@@ -212,10 +205,7 @@ async def _ask(current_sha: str) -> _Answer:
         return _Answer(update_available=None, reason=REASON_UNREACHABLE)
 
 
-async def get_update_status() -> UpdateStatus:
-    global _cache
-    version = get_app_version()
-
+def _unasked(version: str) -> UpdateStatus | None:  # the check is off, or the build has no commit
     if not settings.update_check:
         return UpdateStatus(
             enabled=False,
@@ -235,23 +225,73 @@ async def get_update_status() -> UpdateStatus:
             checked_at=None,
             reason=REASON_DEV_BUILD,
         )
-
-    async with _lock:
-        now = datetime.now(UTC)
-        if _cache is None or now - _cache.checked_at >= _cache.ttl:
-            _cache = _CacheEntry(checked_at=now, answer=await _ask(current_sha))
-        return _status_from(version, _cache)
+    return None
 
 
-def _status_from(version: str, entry: _CacheEntry) -> UpdateStatus:
-    answer = entry.answer
+async def get_update_status(now: datetime | None = None) -> UpdateStatus:
+    """One check, asked now and stored nowhere; `tick` stores it, and a page reads `read_update_status`."""
+    version = get_app_version()
+    if (unasked := _unasked(version)) is not None:
+        return unasked
+    return _status_from(version, now or datetime.now(UTC), await _ask(_current_sha()))
+
+
+async def read_update_status(db: AsyncSession) -> UpdateStatus:
+    """What the route serves, never asking: the answer stored for this build, or `not_checked`."""
+    version = get_app_version()
+    if (unasked := _unasked(version)) is not None:
+        return unasked
+    state = await db.get(UpdateCheckState, 1)
+    if state is None or state.checked_at is None or state.checked_version != version:
+        return _status_from(version, None, _Answer(update_available=None, reason=REASON_NOT_CHECKED))
+    return _status_from(version, state.checked_at, state)  # the row's columns carry an answer's names
+
+
+def _status_from(version: str, checked_at: datetime | None, answer: _Answer | UpdateCheckState) -> UpdateStatus:
     return UpdateStatus(
         enabled=True,
         current_version=version,
         update_available=answer.update_available,
         latest_sha=answer.latest_sha,
-        checked_at=entry.checked_at,
+        checked_at=checked_at,
         latest_tag=answer.latest_tag,
         release_url=answer.release_url,
         reason=answer.reason,
     )
+
+
+def due(state: UpdateCheckState, now: datetime) -> bool:
+    """Once a UTC day, never before its kept minute, and an hour after that day's unanswered attempt."""
+    slot = datetime.combine(now.date(), time(tzinfo=UTC)) + timedelta(minutes=state.check_minute)
+    if now < slot or state.answered_on == now.date():
+        return False
+    return state.attempted_at is None or state.attempted_at < slot or now - state.attempted_at >= _RETRY
+
+
+async def tick(now: datetime | None = None) -> bool:
+    """The scheduler's look, True when it asked. One UPDATE claims the attempt (`attempted_at` as read),
+    so of two processes one asks; one dying mid-check leaves an unanswered attempt, retried in an hour."""
+    if _unasked(get_app_version()) is not None:
+        return False
+    now = (now or datetime.now(UTC)).astimezone(UTC)
+    async with unscoped_session() as db:
+        if (state := await db.get(UpdateCheckState, 1)) is None:  # its migration made it; something removed it
+            await db.execute(insert(_STATE).values(id=1, check_minute=secrets.randbelow(1440)).on_conflict_do_nothing())
+            await db.commit()
+            state = await db.get(UpdateCheckState, 1)
+        if not due(state, now):
+            return False
+        unchanged = _STATE.c.attempted_at.is_not_distinct_from(state.attempted_at)
+        claimed = await db.execute(update(_STATE).where(_STATE.c.id == 1, unchanged).values(attempted_at=now))
+        await db.commit()
+        if claimed.rowcount != 1:
+            return False
+        status = await get_update_status(now)
+        stored = {name: getattr(status, name) for name in _STORED} | {"checked_version": status.current_version}
+        if answered := status.reason not in _RETRIED:
+            stored["answered_on"] = now.date()
+        await db.execute(update(_STATE).where(_STATE.c.id == 1, _STATE.c.attempted_at == now).values(**stored))
+        await db.commit()
+    if answered:
+        logger.info("update check answered", extra={"update_available": status.update_available, "latest_tag": status.latest_tag})
+    return True

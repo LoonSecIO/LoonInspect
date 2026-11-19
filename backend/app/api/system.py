@@ -26,7 +26,7 @@ from app.core.sharing import (
     send_exchange_now,
 )
 from app.core.storage import measure_storage
-from app.core.update_check import get_update_status
+from app.core.update_check import read_update_status
 from app.core.version import get_app_version
 from app.models.schema import ShareLog
 from app.schemas.system import (
@@ -59,12 +59,12 @@ async def version() -> VersionOut:
     response_model=UpdateStatusOut,
     dependencies=[Depends(require(Permission.SYSTEM_READ))],
 )
-async def update_status() -> UpdateStatusOut:
+async def update_status(db: AsyncSession = Depends(get_db)) -> UpdateStatusOut:
     """Whether this build lacks the latest published release (#407) — a release, not
     `main`, which is staging. Authenticated on purpose: the sign-in page must not
     advertise that an instance is behind. When the check cannot answer, `reason` says
     why, for the Updates block on Settings > Support."""
-    status = await get_update_status()
+    status = await read_update_status(db)
     return UpdateStatusOut(
         enabled=status.enabled,
         current_version=status.current_version,

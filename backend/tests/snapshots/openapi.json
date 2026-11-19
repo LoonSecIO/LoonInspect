@@ -10097,6 +10097,7 @@
                 "enum": [
                   "disabled",
                   "dev_build",
+                  "not_checked",
                   "unreachable",
                   "refused",
                   "no_release",

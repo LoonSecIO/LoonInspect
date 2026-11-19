@@ -590,6 +590,8 @@ export const de: Translations = {
           "Die Prüfung ist aus: UPDATE_CHECK=false ist für diesen Container gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten die Zeile aus der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen.",
         dev_build:
           "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
+        not_checked:
+          "Für diesen Build lief noch keine Prüfung. Die erste läuft innerhalb eines Tages, zu einer Minute, die diese Instanz für sich gezogen hat, aus einem Container mit eingeschaltetem Scheduler; ein mit SCHEDULER_ENABLED=false gestarteter Container fragt nie.",
         unreachable:
           "GitHub war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es innerhalb einer Stunde erneut; prüfen Sie, ob dieser Container api.github.com über HTTPS erreicht.",
         refused:
