@@ -6,8 +6,14 @@
 # publishing the draft is the release.
 #
 #   release-assets.sh draft   make the draft release for $TAG at $SHA from the files in $ASSETS,
-#                             or refill the draft an earlier run of the same commit made
-#   release-assets.sh check   after publication: $TAG carries the files and they match their sums
+#                             or refill the draft an earlier run of the same commit made; then say
+#                             what it still owes: lines of its notes to fill, and $SHA's images
+#   release-assets.sh check   after publication: $TAG carries the files and they match their sums,
+#                             and no line of its notes is still marked to be filled in
+#
+# A line of the notes filled in at the tag carries the marker *(filled in at the tag)*
+# (docs/releases/README.md). The draft writes $SHA over it on the "Release commit:" line; every
+# other marked line is a person's to fill, and is named until it is.
 #
 # Needs gh (signed in, or GH_TOKEN) and jq. Environment: TAG and GITHUB_REPOSITORY; for draft
 # also SHA (the full commit the files were built from), ASSETS (the directory holding the disk
@@ -15,8 +21,16 @@
 # docs/releases/<tag>.md becomes the draft's notes; default: the current directory).
 set -euo pipefail
 
+nl=$'\n'
 fail() { echo "::error::$*"; exit 1; }
+# annotate <level> <message>: one workflow command, escaped so a message quoting lines keeps them.
+annotate() { local text=${2//%/%25}; text=${text//$'\r'/%0D}; echo "::$1::${text//$'\n'/%0A}"; }
 sums() { if command -v sha256sum >/dev/null 2>&1; then sha256sum --check SHA256SUMS; else shasum -a 256 -c SHA256SUMS; fi; }
+# The marker is written *(filled in at the tag)*; any *(filled in …)* is read as one.
+marker='\*\([Ff]illed in[^)]*\)\*'
+# marked <file>: each line of the notes in <file> that still carries the marker, as "    line N: …".
+marked() { tr -d '\r' <"$1" | grep -anE "$marker" | sed 's/^\([0-9]*\):/    line \1: /' || true; }
+counted() { local n; n=$(grep -c . <<<"$1"); if [ "$n" = 1 ]; then echo "1 line"; else echo "$n lines"; fi; }
 
 mode=${1:-}
 case $mode in draft | check) ;; *) echo "usage: release-assets.sh draft|check (see the comment at the top of this file)" >&2; exit 2 ;; esac
@@ -30,24 +44,32 @@ files=("LoonInspect-$version-arm64.dmg" "LoonInspect-$version-arm64.zip" SHA256S
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/looninspect-release-assets.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 
-# ask <what, for the error> <gh api arguments>: leaves the answer in $answer, empty for a 404.
-# Any other failure is the question going unanswered, which is never the same as "there is none".
+# try_ask <gh api arguments>: leaves the answer in $answer, empty for a 404, and fails after showing
+# GitHub's error for any other failure: the question went unanswered, which is never "there is none".
 answer=
+try_ask() {
+  if answer=$(gh api "$@" 2>"$scratch/gh-error"); then return 0; fi
+  answer=
+  if grep -q 'HTTP 404' "$scratch/gh-error"; then return 0; fi
+  cat "$scratch/gh-error"
+  return 1
+}
+# ask <what, for the error> <gh api arguments>: try_ask, and an unanswered question stops the run.
 ask() {
   local what=$1
   shift
-  if answer=$(gh api "$@" 2>"$scratch/gh-error"); then return 0; fi
-  if grep -q 'HTTP 404' "$scratch/gh-error"; then
-    answer=
-    return 0
-  fi
-  cat "$scratch/gh-error"
-  fail "Asking GitHub for $what failed. That is not the same as there being none: the question went unanswered (see the line above). Check that this job's token may read this repository's releases (contents: write for the draft job, contents: read for the check), then run it again. Nothing was uploaded."
+  try_ask "$@" ||
+    fail "Asking GitHub for $what failed. That is not the same as there being none: the question went unanswered (see the line above). Check that this job's token may read this repository's releases (contents: write for the draft job, contents: read for the check), then run it again. Nothing was uploaded."
 }
 
 if [ "$mode" = check ]; then
   ask "the published release $TAG" "repos/$GITHUB_REPOSITORY/releases/tags/$TAG"
   [ -n "$answer" ] || fail "GitHub has no published release named $TAG, so there is nothing to check. This check runs when a release is published; if you ran it by hand, name a published tag."
+  jq -r '.body // ""' <<<"$answer" >"$scratch/published.md"
+  owed=$(marked "$scratch/published.md")
+  # Said before the files are checked, so a release short of both hears of both.
+  [ -z "$owed" ] ||
+    annotate error "$TAG was published with $(counted "$owed") of its notes still marked to be filled in at the tag, and its release page shows the marker. A published release here takes no more files, but the body of an immutable release can still be edited: under Releases, edit $TAG, fill in each line below, save, and re-run this job, which reads the notes again.$nl$owed"
   missing=
   for file in "${files[@]}"; do
     jq -e --arg name "$file" 'any(.assets[]; .name == $name)' <<<"$answer" >/dev/null || missing="$missing $file"
@@ -58,6 +80,7 @@ if [ "$mode" = check ]; then
     fail "Could not download the files published on $TAG; the lines above say why. Re-run this job: the release is not changed by it."
   (cd "$scratch/published" && sums) ||
     fail "The files published on $TAG do not match the SHA256SUMS published beside them, so the Mac app should not be installed from this release. Nothing can replace a published file here: publish the next version from a fresh draft (macos/README.md, Release)."
+  [ -z "$owed" ] || exit 1
   echo "::notice::$TAG carries ${files[0]}, ${files[1]} and SHA256SUMS, and both files match their sums."
   exit 0
 fi
@@ -106,13 +129,16 @@ else
     body="a one-line candidate note"
   elif [ -f "$notes_root/docs/releases/$TAG.md" ]; then
     if grep -qx -- '---' "$notes_root/docs/releases/$TAG.md"; then # the notes are what follows the file's first rule
-      awk 'seen; /^---$/ { seen = 1 }' "$notes_root/docs/releases/$TAG.md" >"$scratch/body.md"
+      awk 'seen; /^---$/ { seen = 1 }' "$notes_root/docs/releases/$TAG.md" >"$scratch/notes.md"
     else
-      cp "$notes_root/docs/releases/$TAG.md" "$scratch/body.md"
+      cp "$notes_root/docs/releases/$TAG.md" "$scratch/notes.md"
     fi
+    # The one marked line this script can fill: the commit it built.
+    sed -E "s/Release commit: $marker/Release commit: \`$SHA\`/" "$scratch/notes.md" >"$scratch/body.md"
     body="docs/releases/$TAG.md"
+    cmp -s "$scratch/notes.md" "$scratch/body.md" || body="$body, with the commit written on its Release commit: line"
   else
-    echo "docs/releases/$TAG.md was not found at $SHA, so this draft has no release notes yet. Write them here before publishing." >"$scratch/body.md"
+    echo "Release notes: *(filled in at the tag)*. docs/releases/$TAG.md was not found at $SHA, so this draft has none yet: write them here before publishing." >"$scratch/body.md"
     body="a placeholder, because docs/releases/$TAG.md was not found"
   fi
   flags=(--draft --target "$SHA" --title "LoonInspect $TAG" --notes-file "$scratch/body.md")
@@ -134,5 +160,33 @@ for file in "${files[@]}"; do
 done
 url=$(jq -r '.html_url' <<<"$draft")
 message="Draft release $TAG is ready: $url. It holds ${files[0]}, ${files[1]} and SHA256SUMS, built from $SHA. $did Nothing is published: read the draft, then publish it. Publishing creates the tag at that commit and starts Release, which tags and copies the container images."
-echo "::notice::$message"
-[ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "$message" >>"$GITHUB_STEP_SUMMARY"
+
+# What the draft still owes before a publication that cannot be taken back. First, the lines only a
+# person can fill, read from the draft itself, so a refilled draft's notes count as they now stand.
+jq -r '.body // ""' <<<"$draft" >"$scratch/drafted.md"
+owed=$(marked "$scratch/drafted.md")
+owes="Its notes carry no line marked to be filled in at the tag."
+[ -z "$owed" ] ||
+  owes="Its notes still carry $(counted "$owed") marked to be filled in at the tag, which only a person can fill: edit the draft and fill in each before publishing."
+# Then the images. Release tags the ones Publish images pushed for this commit, which it builds only
+# for a commit that changes what an image is made from. Asked here, never started: starting it would
+# need actions: write in a job that holds contents: write.
+if try_ask "repos/$GITHUB_REPOSITORY/actions/workflows/publish-images.yml/runs?head_sha=$SHA&status=success&per_page=1"; then
+  run=$(jq -r '.workflow_runs[0].html_url // empty' <<<"$answer")
+  if [ -n "$run" ]; then
+    images="Publish images succeeded for $SHA ($run), so Release has this commit's images to tag."
+  else
+    images="No Publish images run for $SHA has succeeded, so this commit has no images yet, and Release would stop at publication (ECR has no looninspect:…). Before publishing, and while this commit is still main's head, run gh workflow run \"Publish images\" --ref main (it builds main's head) and wait for it to succeed."
+  fi
+else
+  images="Asking GitHub for a successful Publish images run of $SHA failed. That is not the same as there being none: the question went unanswered (see the line above), and the draft is ready all the same. Check that this job may read Actions (actions: read on the draft job), and before publishing look under Actions › Publish images for a successful run of $SHA; if there is none, run gh workflow run \"Publish images\" --ref main."
+fi
+
+report="$message$nl$owes"
+[ -z "$owed" ] || report="$report$nl$owed"
+annotate notice "$report$nl$images"
+[ -z "${GITHUB_STEP_SUMMARY:-}" ] || {
+  printf '%s\n\n%s\n\n' "$message" "$owes"
+  [ -z "$owed" ] || printf '%s\n\n' "$owed"
+  printf '%s\n' "$images"
+} >>"$GITHUB_STEP_SUMMARY"
