@@ -5,6 +5,7 @@ import {
   dotLabel,
   formatHistoryValue,
   loadHistoryPoint,
+  loadPreviousValue,
   recordedSectionLabels,
   saveHistorySlots,
   type HistoryPoint,
@@ -34,6 +35,8 @@ it("preserves unknown, zero and false and compares only comparable values", () =
 it("keys reads and writes to the selected point, not a date guess", async () => {
   await loadHistoryPoint(7, "p:abc");
   await saveHistorySlots(7, "p:abc", ["security.firewallEnabled"]);
+  await loadPreviousValue(7, "p:abc", "entry:v0 x"); // #617: the selected state and the value's slot
+  expect(apiRequest).toHaveBeenCalledWith("/devices/7/history/previous?point=p%3Aabc&slot=entry%3Av0+x");
   expect(apiRequest).toHaveBeenCalledWith(
     "/devices/7/history/point?point=p%3Aabc",
   );
@@ -48,6 +51,7 @@ describe("localized history states", () => {
     expect(Object.keys(historyGerman.summaries)).toEqual(
       Object.keys(copy.summaries),
     );
+    expect(Object.keys(historyGerman.previous)).toEqual(Object.keys(copy.previous)); // #617
     expect(historyGerman.personal).toContain("Mandanten");
   });
   it("points the paging controls the way the timeline reads (#618)", () => {

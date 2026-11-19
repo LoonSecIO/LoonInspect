@@ -81,6 +81,7 @@ SHARED = {
     "full_path": "devices",
     "key": "jamf_patch",
     "provider": "openai_compatible",
+    "slot": "security.firewallEnabled",  # a history value every layout can name (#617)
     "title_id": "route-sweep",
     "vuln_id": "CVE-2024-3094",
 }
