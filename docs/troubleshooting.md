@@ -1369,11 +1369,13 @@ The notice is the banner at the top of every page, shown to roles that can read 
 settings. It means one thing: a published release exists that this build does not contain.
 It never appears for a merge to `main`, which is staging, and it never appears while the
 check cannot answer. Its answer, and when it has none its reason, are on **Settings ›
-Support › Updates**, with the steps to update. The check runs on the scheduler, once a UTC
-day at a minute this instance drew for itself, and again an hour after a check that got no
-answer. A page only reads the answer it stored, so neither opening the block nor
-`docker compose restart app` makes it ask, and a container started with
-`SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
+Support › Updates**, with the steps to update. The check runs on the scheduler, and no time
+of day is this instance's own: its first check is owed at a moment drawn at random within its
+first 24 hours, each answer owes the next 20 to 23 hours later at a moment drawn afresh, and a
+check that got no answer is asked again an hour later. One that came due while the instance
+was off is asked once it runs again. A page only reads the answer it stored, so neither
+opening the block nor `docker compose restart app` brings a check forward, and a container
+started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
@@ -1385,9 +1387,10 @@ answer. A page only reads the answer it stored, so neither opening the block nor
    - *This build carries no commit to compare* → a development build, or an image built
      without `GIT_SHA`. Build it with the commit stamped:
      `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
-   - *No check of this build has run yet* → a fresh install or an update, waiting up to a
-     day for its minute. Longer: a container must run the scheduler (`scheduler_enabled` is
-     `true` on its `starting` line), and its log's `update check could not run` says why.
+   - *No check of this build has run yet* → a fresh install or an update, waiting for a
+     moment drawn at random less than a day away. Longer: a container must run the scheduler
+     (`scheduler_enabled` is `true` on its `starting` line), and its log's
+     `update check could not run` says why.
    - *GitHub could not be reached, or something else answered in its place* → from the
      host, check that the container reaches GitHub at all:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
