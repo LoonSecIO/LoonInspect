@@ -355,6 +355,9 @@ first, and read [docs/operations.md §4–5](docs/operations.md) before rolling 
 `v1.1.0` on, one step back is an image swap, but going back to the `v1.0.0` image, or further
 than the newer release allows, needs the downgrade run from the newer image first.
 Settings › Support › **Updates** prints the steps with the latest release's tag filled in.
+From `v1.2.0` the update check asks LoonSec's update service and is counted; *Update
+notifications* below says what it sends, and how to keep the notice without being counted,
+so that it can be decided before the update.
 
 An install that pulls (`docker-compose.pull.yml` in `COMPOSE_FILE`) takes the same dump and
 checkout, then changes `LOONINSPECT_VERSION` in `.env` to the new tag and runs
@@ -523,20 +526,101 @@ which is where the API's own security fixes live.
 
 ## 🔔 Update notifications
 
-Once a day, the backend asks GitHub for the latest published release
-(`api.github.com/repos/LoonSecIO/LoonInspect/releases/latest`) and whether this build
-contains that release's commit (`…/compare/<tag>...<this build's sha>`). A release is the
-unit: `main` is staging, so a merge to `main` never raises the notice. Nothing is sent
-beyond the two requests themselves — no instance ID, no telemetry, no inventory. When a
-release exists that this build does not contain, signed-in operators see a banner naming
-it, with what changed and how to update; the sign-in page deliberately shows nothing, so
-an outdated instance never advertises that fact to strangers.
+About once a day the backend's scheduler asks **LoonSec's update service**, at
+`api.next.loonsec.io` (the production service on its interim name, which a v1.2.0 build goes on
+asking for as long as it runs), whether a newer release has been published. It asks whether or
+not anyone opens the app: a page only reads the answer the last check stored. No time of day
+belongs to an instance. The first check falls at a moment drawn at random within the 24 hours
+after a new instance first starts, or after it is updated to v1.2.0; each answer owes the next
+check 20 to 23 hours later, at a moment drawn afresh; a check that gets no answer is asked again
+an hour later; and one that came due while the instance was off is asked once it runs again.
+Each attempt is claimed in the database before it is sent, so a restart or a second container
+with the scheduler on asks nothing more, and one started with `SCHEDULER_ENABLED=false` never
+asks. A development build, one with no `build_info.json`, asks nothing.
 
-Settings › Support › **Updates** shows this build, the latest release, when the check last
-ran, and, when the check could not answer, why: checking is off, a development build,
-GitHub unreachable or refusing (its unauthenticated limit is 60 requests an hour per
-address, shared by everything behind it), no release published yet, or a build whose
-commit GitHub does not know. The banner says nothing in any of those states.
+**The request, whole**, as the container sends it; `stage` and `last` are this instance's own
+on the day:
+
+```http
+POST /v1/update HTTP/1.1
+Host: api.next.loonsec.io
+Accept: */*
+Accept-Encoding: gzip, deflate
+Connection: keep-alive
+User-Agent: LoonSecIO/v1.2.0 update-check
+Content-Length: 89
+Content-Type: application/json
+
+{"contract":"v1","release":"v1.2.0","kind":"container","stage":"collecting","last":20775}
+```
+
+Five keys, and no others:
+
+| Key | What it says |
+| --- | --- |
+| `contract` | `v1`, the shape of this request. |
+| `release` | This build's release, `vMAJOR.MINOR.PATCH`. Never the build stamp, whose build date and commit could single an install out; the `User-Agent` names the same release and nothing more. |
+| `kind` | `container`, or `mac-app` when LoonInspect.app runs the backend. |
+| `stage` | How far setup has got, one word for the whole instance: the furthest any organization on it has got. `unclaimed`: no account. `claimed`: an account, and no MDM connection. `connected`: a connection, and no device sweep or catalog collection has succeeded in the last 7 days; an instance fed only by Jamf webhooks reads `connected`, since only a sweep or a catalog collection records a success. `collecting`: one has, on its schedule or run by hand. Nothing about the fleet rides on it: no count of devices, connections or organizations. |
+| `last` | The `day` number LoonSec's answer gave this instance's previous answered check, sent back untouched. Absent before the first answer, never null. |
+
+**The answer, and the notice.** The service answers with its UTC day number (whole days since
+1970-01-01, so 20776 is 2026-11-19) and, once one is published, the latest release:
+`{"contract":"v1","day":20776,"latest":{"tag":"v1.2.1","url":"https://github.com/LoonSecIO/LoonInspect/releases/tag/v1.2.1"}}`.
+The instance keeps that day and sends it back as the next check's `last`; it never works one out
+from its own clock. An update is available when the tag is a higher `vMAJOR.MINOR.PATCH` than
+this build's release, compared as numbers (`v1.10.0` is above `v1.9.0`). A release is the
+unit: `main` is staging, so a merge to `main` never raises the notice. When one is available,
+signed-in operators see a banner naming it, with what changed and how to update; the sign-in
+page deliberately shows nothing, so an outdated instance never advertises that fact to
+strangers.
+
+**Counted, with no identifier.** Running instances are counted by default (#819), and `last` is
+how. Every instance answered on one day is given the same number, so `last` says when this
+instance was last answered and never which instance it is. A check whose `last` is absent, or
+older than the day, ISO week or calendar month it arrives in, is that instance's first in it,
+so LoonSec counts each running instance once in each day, week and month it is answered in.
+
+**What LoonSec keeps, and what it never receives.** Tallies, and nothing else: counts by day,
+week and month, split by `release`, `kind` and `stage`. Nothing is kept of a single check: no
+row, no log line (the hosting platform's own included), and not `last` itself, only the counts
+it moves. The request arrives from an address, as every request does; the service never reads
+it and nothing stores it, and the `User-Agent` is not read either. The platform does count how
+many requests arrive in each minute, five minutes and hour, and since no instance keeps a time
+of day, those counts follow none. LoonSec never receives an instance identifier or any
+inventory. One limit, stated plainly: in a small population a tally of one is one instance's
+release, kind, stage and the days it ran, with nothing that says whose it is.
+
+**Read it before it is sent.** While the check is on, the container log says at startup whom
+it asks and how to stop it: `update check on: it asks api.next.loonsec.io once a day;
+UPDATE_CHECK=false turns it off`. Settings › Support › **Updates** shows the body the last
+check sent and the one the next will carry, built from this instance as it stands, and when
+that one is owed; `GET /api/system/update-status` serves the same and asks no one. The block
+also shows this build, the latest release, when the check last ran, and, when the check could
+not answer, why: checking is off, a development build, no check run yet, the provider
+unreachable or refusing (LoonSec's service at its limit, or GitHub's 60 unauthenticated
+requests an hour per address, shared by everything behind it), no release published yet, or,
+from a GitHub-shaped provider only, an image built without `GIT_SHA` or a commit GitHub does
+not know. The banner says nothing in any of those states.
+
+**The switches, and no new one.** Being counted has no switch of its own; the two settings the
+check already had decide it:
+
+- `UPDATE_CHECK=false` in `.env` asks nothing: no notice, and nothing counted. Air-gapped
+  deployments can also leave it on: the banner stays silent, and the Updates block says the
+  check got no answer.
+- `UPDATE_CHECK_URL` set to a GitHub-shaped base keeps the notice and is not counted. The check
+  then asks that base as v1.1.0 asked GitHub, `GET <base>/releases/latest` and then
+  `GET <base>/compare/<tag>...<this build's sha>`, with no body, under the user agent the
+  container's other calls send (`LoonSecIO/<build stamp> update-check`). For GitHub itself:
+  `UPDATE_CHECK_URL=https://api.github.com/repos/LoonSecIO/LoonInspect`. A value ending
+  `/v1/update` is taken for a service of LoonSec's shape, and is sent the five keys.
+- LoonInspect.app has no `.env`: its switch is **LoonInspect › Check for Updates Daily**, which
+  sets `UPDATE_CHECK` for the backend it runs ([docs/macos-app.md](docs/macos-app.md#updates)).
+
+**Behind an egress allowlist**, the update check needs `api.next.loonsec.io` on port 443, or
+the host `UPDATE_CHECK_URL` names. It does not ask `api.github.com` unless `UPDATE_CHECK_URL`
+names it; the Fleet catalog check below does, while its flag is on.
 
 The check never performs the update. Updating stays a host-side decision, and the Updates
 block prints the steps with the release's tag in place of `<tag>`, dump first:
@@ -549,12 +633,7 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build
 docker compose logs -f app
 ```
 
-Set `UPDATE_CHECK=false` in `.env` to disable the outbound call entirely. Air-gapped
-deployments can also simply leave it on: the banner stays silent, and the Updates block
-says GitHub could not be reached. `UPDATE_CHECK_URL` points the check at another provider
-that answers the same two paths.
-
-**One more call to GitHub, and only if you turn it on.** With the **Fleet catalog** flag on
+**GitHub, and only if you turn it on.** With the **Fleet catalog** flag on
 under Settings › Feature Flags (it ships off), the backend also reads Fleet's maintained-apps
 catalog once a day from Fleet's public repository: at most two requests to
 `api.github.com/repos/fleetdm/fleet` and the changed manifests from
@@ -669,8 +748,9 @@ Two places to ask, and one thing that goes to neither of them.
 Leave out device names, serial numbers, hostnames and email addresses. A screenshot of
 LoonInspect is largely made of those — the Devices table is hostnames and serials, and
 your own name sits in the top bar — so crop or black them out before attaching one.
-Nothing in the product files a report for you: LoonInspect is self-hosted and phones
-home to nobody.
+Nothing in the product files a report for you. LoonInspect is self-hosted: the one thing it
+sends LoonSec without an administrator choosing it is the update check's five keys
+(*Update notifications*, above), and nothing of a report goes with them.
 
 ## 📄 License
 
