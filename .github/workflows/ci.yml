@@ -188,8 +188,8 @@ jobs:
         if: ${{ !cancelled() }}  # like the step above (docs/BRANCHING.md §1.1)
         run: ../.github/scripts/check_requirement_rereads.py
 
-  # Every container of looninspect:ci here starts with UPDATE_CHECK=false, one-line commands too:
-  # from v1.2.0 one started with the check on is counted as an install, and none is (#821).
+  # Every container of looninspect:ci here starts with UPDATE_CHECK=false, one-line commands too: from
+  # v1.2.0 one started with the check on is counted as an install, and none of these is one (#821).
   image:
     name: Docker image
     runs-on: ubuntu-latest
