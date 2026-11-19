@@ -142,7 +142,7 @@ async def test_what_asks_and_what_says_so_at_startup(service, monkeypatch, on, s
     said = "update check on: it asks api.next.loonsec.io once a day; UPDATE_CHECK=false turns it off"
     assert startup_line() == (said if asks else None)
     monkeypatch.setattr(settings, "update_check_url", "https://[fe80::1/v1/update")  # urlsplit raises; startup goes on
-    assert startup_line() == (said.replace("api.next.loonsec.io", "UPDATE_CHECK_URL's address") if asks else None)
+    assert startup_line() == (said.replace("api.next.loonsec.io", "UPDATE_CHECK_URL's unreadable address") if asks else None)
     assert (await tick((await _row()).next_check_at), (await _row()).reason) == (asks, "unreachable" if asks else None)
 
 

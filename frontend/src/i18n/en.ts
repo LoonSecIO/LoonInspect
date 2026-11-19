@@ -635,7 +635,7 @@ export const en = {
         dev_build:
           "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
         not_checked:
-          "No check of this build has run yet. A new instance's first check is owed at a moment drawn at random within its first 24 hours; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated build also waits for its next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
+          "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
         unreachable:
           "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again an hour later; check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names.",
         refused:

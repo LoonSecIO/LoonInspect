@@ -315,9 +315,9 @@ async def read_update_status(db: AsyncSession) -> UpdateStatus:
 
 def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
     try:  # a bracketed host urlsplit cannot read never stops startup, check on or off; the check fails at its tick instead
-        host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's address"
+        host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's unreadable address"
     except ValueError:
-        host = "UPDATE_CHECK_URL's address"
+        host = "UPDATE_CHECK_URL's unreadable address"
     return None if _unasked(get_app_version()) else f"update check on: it asks {host} once a day; UPDATE_CHECK=false turns it off"
 
 
