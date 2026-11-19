@@ -326,13 +326,13 @@ support directory and no keychain items.
 The update from 1.1.0, walked on the Mac above on 2026-11-18, headless (#812). Both apps were
 built by `macos/scripts/build-app.sh` and signed with the Developer ID: 1.1.0 from the `v1.1.0`
 tag (`21521d89`, build `20261119.0328`, `backend_release: v1.1.0`), 1.2.0 from the v1.2.0
-candidate (build `20261119.0416`, `backend_release: v1.2.0`). Each was copied over the one in an
+candidate (build `20261119.0523`, `backend_release: v1.2.0`). Each was copied over the one in an
 Applications folder of the walk's own.
 
 - **A 1.1.0 instance, from nothing.** Healthy 1.9 s after launch. Set up through the API with
   the session's claim token: an administrator, the `jamf_patch` flag on, an exclusion pattern, a
   destination with a stored secret, and a patching rule confirmed from the Cyber Essentials
-  entry. Quit: nothing left running in 0.48 s.
+  entry. Quit: nothing left running in 0.35 s.
 - **The update.** The 1.2.0 app over the 1.1.0 app, same data directory and keychain items.
   Healthy 1.0 s after launch on the same port. v1.2.0 adds no migration, and `backend.log` shows
   none run. The session cookie minted under 1.1.0 still answered `/api/auth/me`. Of 50 answers
