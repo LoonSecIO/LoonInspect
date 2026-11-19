@@ -584,12 +584,13 @@ so LoonSec counts each running instance once in each day, week and month it is a
 **What LoonSec keeps, and what it never receives.** Tallies, and nothing else: counts by day,
 week and month, split by `release`, `kind` and `stage`. Nothing is kept of a single check: no
 row, no log line (the hosting platform's own included), and not `last` itself, only the counts
-it moves. The request arrives from an address, as every request does; the service never reads
-it and nothing stores it, and the `User-Agent` is not read either. The platform does count how
-many requests arrive in each minute, five minutes and hour, and since no instance keeps a time
-of day, those counts follow none. LoonSec never receives an instance identifier or any
-inventory. One limit, stated plainly: in a small population a tally of one is one instance's
-release, kind, stage and the days it ran, with nothing that says whose it is.
+it moves: whether a check is an instance's first, and how long since its last answer, in
+broad buckets. The request arrives from an address, as every request does; the service never
+reads it and nothing stores it, and the `User-Agent` is not read either. The platform does
+count how many requests arrive in each minute, five minutes and hour, and since no instance
+keeps a time of day, those counts follow none. LoonSec never receives an instance identifier
+or any inventory. One limit, stated plainly: in a small population a tally of one is one
+instance's release, kind, stage and the days it ran, with nothing that says whose it is.
 
 **Read it before it is sent.** While the check is on, the container that runs the scheduler
 says at startup, in its log, whom it asks and how to stop it: `update check on: it asks
