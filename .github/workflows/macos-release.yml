@@ -7,6 +7,8 @@
 # the tag at that commit (the release-tags ruleset leaves that to the admin role) and starts
 # release.yml. A manual run without a tag keeps the files as workflow artifacts only. When a
 # release is published, this workflow only checks that it carries the files: it cannot add them.
+# The draft run's notice says what the draft still owes before then: the lines of its notes left
+# to fill, and whether Publish images has built the commit (docs/releases/README.md).
 name: macOS release
 
 on:
@@ -227,13 +229,15 @@ jobs:
   draft:
     # The only job that writes to a release, and only to a draft: the signing job above holds
     # contents: read, and nothing here publishes. Publishing the draft is the repository admin's
-    # act; it creates the tag and starts release.yml.
+    # act; it creates the tag and starts release.yml. The job ends by saying what the draft still
+    # owes; actions: read asks whether Publish images built the commit, and never starts it.
     name: Put the verified files on a draft release
     needs: notarize
     if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -244,7 +248,7 @@ jobs:
           pattern: LoonInspect-*-arm64
           path: ${{ runner.temp }}/assets
           merge-multiple: true
-      - name: Verify checksums, then make the draft or refill this commit's draft
+      - name: Verify checksums, make or refill this commit's draft, and say what it still owes
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -254,7 +258,8 @@ jobs:
 
   published:
     # A published release takes no more files, so this cannot add the Mac app: it says whether
-    # the release carries it, and what to do when it does not (docs/troubleshooting.md §25).
+    # the release carries it, and what to do when it does not (docs/troubleshooting.md §25). It
+    # also fails while the notes keep a line marked to be filled in, which can still be edited.
     name: The published release carries the Mac app
     if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
@@ -262,7 +267,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: The release holds the disk image, the zip and their sums, and they match
+      - name: The release holds the disk image, the zip and their sums, they match, and no line is left to fill
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}

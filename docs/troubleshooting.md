@@ -2990,10 +2990,19 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
   container images are not affected. Publish the next version from a draft: run **macOS
   release** from main with that tag, read the draft it makes, and publish that
   (`macos/README.md`, GitHub Actions).
+- *was published with … still marked to be filled in at the tag* (the **macOS release** run a
+  publication starts) → the release's notes kept lines meant to be filled in before
+  publication, and the error lists each one beneath it, by its line in the notes. Unlike its
+  files, the body of an immutable release can still be edited: under **Releases**, edit that
+  release, fill in each line (a `Release commit:` line takes the commit the tag names), save,
+  and re-run the failed job, which reads the notes again.
 - *the question went unanswered* → GitHub did not answer the job, which is not the same as
   there being no release or no tag; the line above it is GitHub's own error. Nothing was
   uploaded. Re-run the failed job; if it says so again, check GitHub's status and that the
-  **draft** job still has `contents: write`.
+  **draft** job still has `contents: write`. In the draft run's notice, about `Publish images`,
+  the same words are not a failure: the draft is ready and only that question went unanswered.
+  Check that the **draft** job has `actions: read`, and before publishing look under
+  **Actions › Publish images** for a successful run of the commit.
 - *do not match their SHA256SUMS* (the **draft** job) → the built files changed between the
   build job and the draft job, so nothing was uploaded. Run the workflow again.
 - *GitHub refused the draft release*, *refused the files*, or *does not hold … whole* → the

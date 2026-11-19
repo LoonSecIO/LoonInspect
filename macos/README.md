@@ -79,6 +79,17 @@ development build fails where a release build would.
 
 The workflow below does all four steps and makes the draft; these are the steps by hand.
 
+**Before publishing, the draft run says what is still owed.** A release's notes are
+`docs/releases/<tag>.md` below its first rule ([the convention](../docs/releases/README.md)),
+and a line only a person can fill at the tag carries the marker `*(filled in at the tag)*`. On
+the line `Release commit: *(filled in at the tag)*` the workflow writes the commit it built
+instead. The draft run's notice, repeated in the run's summary, then lists every line of the
+draft's notes still marked, with how many, and says whether a `Publish images` run for the
+commit succeeded. When none has, the commit has no images yet: while it is still `main`'s head,
+run `gh workflow run "Publish images" --ref main` and publish once that succeeds. A release
+published with a marked line fails the publication check, which names the lines; a published
+release's notes can still be edited, so fill them in and re-run the check (troubleshooting §25).
+
 ## GitHub Actions
 
 [macOS release](../.github/workflows/macos-release.yml) builds on an Apple-silicon `macos-15`
