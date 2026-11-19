@@ -130,8 +130,9 @@ React frontend and the FastAPI backend — and a Postgres alongside it. `docker 
 --build` builds natively for your machine, Apple Silicon included. The images CI builds are
 multi-arch (`linux/amd64` + `linux/arm64`), and from v1.1.0 each release publishes them as
 `ghcr.io/loonsecio/looninspect` and `ghcr.io/loonsecio/looninspect-db` under its tag, so step 4
-can pull a release instead of building it. The two images are private, as this repository is:
-a pull needs Docker signed in to `ghcr.io` as a GitHub account that can read the repository.
+can pull a release instead of building it. The two images are private, though this repository
+is public: a pull needs Docker signed in to `ghcr.io` as a GitHub account the project has given
+read access to them, and building from source needs no sign-in.
 Both are in the bundle; nothing external is required, and the database port is never
 published to the host.
 
@@ -236,9 +237,10 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up --build
 This builds the frontend, bundles it into the FastAPI image, and starts the app at <http://localhost:8001>. API docs are at <http://localhost:8001/docs>.
 
 **Or pull a release instead of building it** (v1.1.0 and later). `docker-compose.pull.yml`
-names the two published images in place of both builds. The images are private, as this
-repository is, so sign Docker in to `ghcr.io` first, once per host, as a GitHub account that can
-read the repository:
+names the two published images in place of both builds. The images are private, though this
+repository is public: being able to open the repository does not let an account pull them. Sign
+Docker in to `ghcr.io` first, once per host, as a GitHub account the project has given read
+access to the two images; without one, build from source as above, which needs no sign-in:
 
 ```bash
 docker login ghcr.io -u <your GitHub username>
