@@ -2,7 +2,7 @@
 
 Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
 condition per Kyle's instruction of 2026-09-27; the v1.1.0 gate ruled 2026-11-15 (#797); the
-v1.2.0 gate recommended 2026-11-18 and not yet ruled (#813)**.
+v1.2.0 gate ruled 2026-11-19 (#813)**.
 Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
@@ -74,12 +74,13 @@ tag. The release notes carry the same table
 
 ## The v1.2.0 gate
 
-Status: **recommended, not ruled** (2026-11-18, #813). v1.2.0 is cut from `main` ahead of
+Status: **ruled** (2026-11-19, #813). v1.2.0 is cut from `main` ahead of
 v2.0.0, three days after v1.1.0. The inventory is the one the v1.1.0 gate listed: fourteen
 settings in `backend/app/core/config.py` and six registry keys, with no switch added since.
-Every row below is a recommendation until the maintainer rules it on #813.
+Kyle ruled every row on 2026-11-19 ("accept all"), before the release pull request (#818)
+merged, so each verdict is the one #813 recommended on 2026-11-18.
 
-| Switch | Default at v1.2.0 | Recommended for v1.2.0 | Kill release |
+| Switch | Default at v1.2.0 | Verdict for v1.2.0 | Kill release |
 | --- | --- | --- | --- |
 | `INTELLIGENCE_ACCESS`, `CONTRIBUTION_RECEIPTS`, `VULN_TENANT_SELECTION`, `VULN_RELEASE_RETENTION` | off | **keep off**: ruled *promote at the v2.0.0 tag* (#652), and v1.2.0 is not that tag | as ruled |
 | `INTELLIGENCE_SUBMISSIONS` | off | **keep off**, as ruled | as ruled |
@@ -89,7 +90,7 @@ Every row below is a recommendation until the maintainer rules it on #813.
 | `app_promotion` (Settings › Feature Flags) | off | **keep off**: its condition has not been met. Checked on 2026-11-18 with the published v1.1.0 image against LoonSec's development collector: a promoted title's definition is sent and is stored with that exchange's snapshot, and nothing in the service reads it from there, so no promoted title has been walked to coverage | promote or delete once a promoted title has been walked to coverage |
 | `fleet_maintained_apps` (Settings › Feature Flags) | off | **keep off**: this is the gate the v1.1.0 ruling deferred it to, and what it waits on has not moved. The catalogue's files are still under Fleet's `ee/` licence, which is the operator's to read, and the area has not changed since v1.1.0 shipped it | a verdict at the v2.0.0 gate: promote, or delete |
 
-Nothing is recommended promote or delete, so no default flips and no path is removed before the
+No row was ruled promote or delete, so no default flips and no path is removed before the
 tag. **The count does not fall at this release**: twenty switches at v1.1.0, twenty at v1.2.0.
 The register says the number is meant to fall, and the first removals already ruled are the
 v2.1 ones in the v2.0.0 gate above.
@@ -118,3 +119,4 @@ v2.1 ones in the v2.0.0 gate above.
 | 2026-11-15 | The v1.1.0 gate, as recommendations: v1.1.0 is cut ahead of v2.0.0, the seventeen ruled switches keep their rulings (the four promotes stay for the v2.0.0 tag), and `patch_policy`, `app_promotion` and `fleet_maintained_apps` are recommended keep. Not ruled until the maintainer rules it. |
 | 2026-11-15 | The v1.1.0 verdicts as ruled ("accept all", #797): every recommendation became its row's verdict. `patch_policy` is kept, `app_promotion` and `fleet_maintained_apps` are kept off, and the seventeen earlier rulings stand. No default flipped. |
 | 2026-11-18 | The v1.2.0 gate, as recommendations (#813): the inventory is unchanged since v1.1.0, every switch is recommended keep or keep off, and `fleet_maintained_apps`, which the v1.1.0 gate deferred to this one, is recommended keep off with a verdict due at the v2.0.0 gate. Not ruled until the maintainer rules it. |
+| 2026-11-19 | The v1.2.0 verdicts as ruled ("accept all", #813): every recommendation became its row's verdict. All twenty switches are kept as they are, `fleet_maintained_apps` is kept off with a verdict due at the v2.0.0 gate, and the earlier rulings stand. No default flipped. |
