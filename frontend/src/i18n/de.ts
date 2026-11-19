@@ -591,11 +591,11 @@ export const de: Translations = {
         dev_build:
           "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
         not_checked:
-          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz ist zu einem zufällig gezogenen Zeitpunkt innerhalb ihrer ersten 24 Stunden fällig, und eine aktualisierte wartet auf ihre nächste, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
+          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz ist zu einem zufällig gezogenen Zeitpunkt innerhalb ihrer ersten 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet auch ein aktualisierter Build auf seine nächste, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
         unreachable:
-          "GitHub war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es eine Stunde später erneut; prüfen Sie, ob dieser Container api.github.com über HTTPS erreicht.",
+          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es eine Stunde später erneut; prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt.",
         refused:
-          "GitHub hat die Prüfung abgelehnt. Anfragen ohne Anmeldung sind auf 60 pro Stunde und Adresse begrenzt, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
+          "Der Anbieter hat die Prüfung abgelehnt: der Update-Dienst von LoonSec an seiner Grenze, oder GitHub, dessen Anfragen ohne Anmeldung auf 60 pro Stunde und Adresse begrenzt sind, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
         no_release:
           "Es wurde noch kein Release veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte.",
         unknown_commit:

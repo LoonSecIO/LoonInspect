@@ -79,7 +79,7 @@ categories. Windows manifests are not read at all.
 **Sent:** nothing of the instance or its organizations. Every request is a GET naming one of
 Fleet's files, under the user agent `LoonSecIO/<build> fleet-catalog` (every outbound call
 names itself this way). No inventory, count, identifier, token or cookie goes with it. GitHub
-sees the address the request came from, as it does for the update check.
+sees the address the request came from, as it does for an update check that asks GitHub.
 
 ## The check
 

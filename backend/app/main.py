@@ -88,6 +88,7 @@ from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_ex
 from app.core.submissions import forget_closed
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
+from app.core.update_check import startup_line as update_check_line
 from app.core.update_check import tick as update_check
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
@@ -677,6 +678,8 @@ async def lifespan(app: FastAPI):
                 "timezone": settings.sync_timezone,
             },
         )
+        if line := update_check_line():  # said before the first check is sent (#819)
+            logger.info(line)
 
     yield
 

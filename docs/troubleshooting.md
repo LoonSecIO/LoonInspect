@@ -1376,6 +1376,8 @@ check that got no answer is asked again an hour later. One that came due while t
 was off is asked once it runs again. A page only reads the answer it stored, so neither
 opening the block nor `docker compose restart app` brings a check forward, and a container
 started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
+It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_URL` names another provider
+(the container log's `update check on` line at startup names the host), and compares releases by number.
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
@@ -1387,23 +1389,29 @@ started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.
    - *This build carries no commit to compare* → a development build, or an image built
      without `GIT_SHA`. Build it with the commit stamped:
      `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
-   - *No check of this build has run yet* → a fresh install or an update, waiting for a
+   - *No check of this build has run yet* → a fresh install, or an update asking a GitHub-shaped provider, waiting for a
      moment drawn at random less than a day away. Longer: a container must run the scheduler
      (`scheduler_enabled` is `true` on its `starting` line), and its log's
      `update check could not run` says why.
-   - *GitHub could not be reached, or something else answered in its place* → from the
-     host, check that the container reaches GitHub at all:
-     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
-     prints `200` when it does. An error here is the network's answer, not the app's.
-   - *GitHub refused the check* → its unauthenticated limit, 60 requests an hour per
-     address, is shared by everything behind this instance's egress address. The container
-     log carries `update check refused by the provider` once per attempt. Several
+   - *The update check got no answer it could read* → from the host, check that the
+     container reaches the host its `update check on` line names, here the default:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.next.loonsec.io/v1/update', timeout=5).status)"`
+     prints a status, or ends `HTTP Error` with one, when it does; any other error is the
+     network's answer, not the app's. Reached, the answer was not one the check reads: a proxy's
+     page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour.
+   - *The provider refused the check* → the container log says which, once per attempt.
+     `update check refused (429) by LoonSec's update service` is that service's limit, shared
+     by every instance: the check asks again in an hour, and there is nothing to change here.
+     `update check refused by the provider` is GitHub's unauthenticated limit, 60 requests an hour per
+     address, shared by everything behind this instance's egress address. Several
      instances behind one address use the budget up together; `UPDATE_CHECK=false` on all
      but one is the fix available today.
    - *No release has been published yet* → true until the first release. Nothing to do.
    - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
      was never pushed. Build from a release tag and it is compared again.
-2. **The notice names a release you believe you have.** *This build* ends in the commit it
+2. **The notice names a release you believe you have.** From LoonSec's update service it means
+   the release this build was made from is lower: build from the release's tag. From a GitHub-shaped
+   `UPDATE_CHECK_URL`: *This build* ends in the commit it
    was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
    release's. From the checkout the image was built from, fetch the tag first, then ask git:
 
@@ -1487,7 +1495,8 @@ started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.
      reaches this sentence: it reads as not-yet-published and the build or the tag proceeds.
 
 **N.** The Updates block says a release is available while `git merge-base --is-ancestor`
-says this build contains it; or its sentence names a state this instance is not in.
+says this build contains it, or, from LoonSec's update service, for a build of that release's
+tag; or its sentence names a state this instance is not in.
 Report the block's four lines (build, latest release, last checked, the sentence), the
 `git merge-base` command and its output, whether `UPDATE_CHECK_URL` is set, and the
 `update check` lines from `docker compose logs app --since 24h`.

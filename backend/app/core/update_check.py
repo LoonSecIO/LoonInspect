@@ -2,12 +2,13 @@
 
 **What "update available" means.** Kyle, 2026-09-11: `main` is staging, and publishing a
 GitHub Release is the release. So an update is available when this build does not contain
-the latest published release's commit — never merely because `main` moved. The check
+the latest published release — never merely because `main` moved. The check
 before #407 compared against `main`'s HEAD, which told every install that a newer build
 existed after every merge, docs-only included, and told a pod built from a release the
 same the first time anything landed after its tag.
 
-**Two unauthenticated calls per check**:
+**LoonSec's update service is asked by default** (#819; the block under `provider()`): `latest.tag`
+against `RELEASE`, by number. A GitHub-shaped `UPDATE_CHECK_URL` is asked as v1.1.0 asks, by commit:
 
 1. `GET /releases/latest` — the tag and the release page. GitHub's answer skips drafts and
    prereleases, and a `404` means no release has been published yet.
@@ -39,25 +40,20 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
-from sqlalchemy import update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import unscoped_session
+from app.core.database import session_for_tenant, unscoped_session
 from app.core.user_agent import build_user_agent
-from app.core.version import get_app_version
-from app.models.schema import UpdateCheckState
+from app.core.version import _DEV_VERSION, RELEASE, get_app_version
+from app.models.schema import Tenant, UpdateCheckState
 
 logger = logging.getLogger(__name__)
-
-# The default provider is this repository's GitHub API. The destination provider is
-# api.loonsec.io once the data layer exists — behind this module's seam, and behind
-# `UPDATE_CHECK_URL`, which names a base answering the same two paths (#43).
-_GITHUB_REPO_API = "https://api.github.com/repos/LoonSecIO/LoonInspect"
 
 # Retry sooner after a failure, but not so soon that an air-gapped instance is
 # hammering a wall. A rate-limit refusal resets within the hour too.
@@ -78,7 +74,7 @@ UpdateReason = Literal["disabled", "dev_build", "not_checked", "unreachable", "r
 REASON_DISABLED: UpdateReason = "disabled"  # UPDATE_CHECK=false; nothing is asked
 REASON_DEV_BUILD: UpdateReason = "dev_build"  # the build carries no comparable commit
 REASON_NOT_CHECKED: UpdateReason = "not_checked"  # no check of this build is stored yet
-REASON_UNREACHABLE: UpdateReason = "unreachable"  # no answer, or not one GitHub gives
+REASON_UNREACHABLE: UpdateReason = "unreachable"  # no answer, or not one the provider gives
 REASON_REFUSED: UpdateReason = "refused"  # 403 or 429: the shared rate limit, usually
 REASON_NO_RELEASE: UpdateReason = "no_release"  # releases/latest answered 404
 REASON_UNKNOWN_COMMIT: UpdateReason = "unknown_commit"  # compare answered 404
@@ -125,8 +121,74 @@ def _current_sha() -> str | None:
     return sha if _SHA.fullmatch(sha) else None
 
 
-def _provider_base() -> str:
-    return (settings.update_check_url or _GITHUB_REPO_API).rstrip("/")
+# LoonSec's update service (#819): who is asked, what is sent and how the answer is read, all of it in this
+# block so that a change to that wire is one edit. A v1.2.0 build asks this interim name for as long as it runs.
+_LOONSEC_UPDATE = "https://api.next.loonsec.io/v1/update"
+_RELEASE_TAG = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
+_STAGES = ("unclaimed", "claimed", "connected", "collecting")
+# One tenant's account, MDM connection, and collection run completed since :since (`last_success_at` outlives runs).
+_SETUP = text(
+    "SELECT EXISTS (SELECT FROM accounts), EXISTS (SELECT FROM mdm_connections), "
+    "EXISTS (SELECT FROM collections WHERE last_success_at >= :since)"
+)
+Provider = Literal["loonsec", "github"]
+
+
+def provider() -> tuple[Provider, str]:
+    """Who is asked: ending /v1/update, less any trailing slash, the five keys; else a GitHub-shaped base, as v1.1.0."""
+    address = (settings.update_check_url or _LOONSEC_UPDATE).rstrip("/")
+    return ("loonsec" if address.endswith("/v1/update") else "github"), address
+
+
+def request_body(stage: str, last: int | None) -> dict:
+    """Five keys and no others; `last`, the `day` the last answered check was given, is absent before one, never null."""
+    body = {"contract": "v1", "release": RELEASE, "kind": settings.instance_kind, "stage": stage}
+    return body if last is None else body | {"last": last}
+
+
+async def stage(now: datetime, tenant_ids: tuple | None = None) -> str:
+    """How far setup has got, one word for the instance: the furthest any tenant has got, each bound in turn, since
+    row-level security shows a tenant's rows only then. Nothing about the fleet: no row is counted."""
+    if tenant_ids is None:
+        async with unscoped_session() as db:
+            tenant_ids = tuple((await db.execute(select(Tenant.id))).scalars())
+    reached = 0
+    for tenant_id in tenant_ids:
+        async with session_for_tenant(tenant_id) as db:
+            account, connection, collected = (await db.execute(_SETUP, {"since": now - timedelta(days=7)})).one()
+        reached = max(reached, 3 if collected else 2 if connection else int(account))
+    return _STAGES[reached]
+
+
+async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateReason | None]:
+    """One POST, answered by a 200 whose body is a JSON object with an integer `day` of zero or more; else the reason.
+    No redirect is followed and the client lives for this request: the body goes nowhere else and no cookie is kept."""
+    headers = {"User-Agent": f"LoonSecIO/{RELEASE} update-check"}  # the release, not the build stamp or its setting
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=headers, follow_redirects=False) as client:
+            response = await client.post(address, json=body)
+        answer = response.json() if response.status_code == 200 else None
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        logger.debug("update check could not reach the provider: %s", exc)
+        return None, REASON_UNREACHABLE
+    day = answer.get("day") if isinstance(answer, dict) else None
+    if type(day) is int and 0 <= day < 2**31:  # the ceiling is the column's; the service's days are far below it
+        return answer, None
+    if response.status_code == 429:
+        logger.info("update check refused (429) by LoonSec's update service, its limit shared by all; asks again in an hour")
+        return None, REASON_REFUSED
+    logger.debug("update check got %s from %s", response.status_code, address)
+    return None, REASON_UNREACHABLE
+
+
+def _judged(tag: str | None, release_url: str | None) -> _Answer:
+    """LoonSec's answer as the running build reads it: a higher vMAJOR.MINOR.PATCH than RELEASE, by number. No tag is
+    `no_release`; one of another form, which the service never sends, is no notice and reads `unreachable`."""
+    latest, ours = (_RELEASE_TAG.fullmatch(value or "") for value in (tag, RELEASE))
+    names = {"latest_tag": tag, "release_url": release_url}
+    if latest is None:
+        return _Answer(update_available=None, reason=REASON_UNREACHABLE if tag else REASON_NO_RELEASE, **names)
+    return _Answer(update_available=[*map(int, latest.groups())] > [*map(int, ours.groups())], **names)
 
 
 def _https_or_none(value: object) -> str | None:
@@ -166,7 +228,7 @@ def _unanswered(response: httpx.Response, *, not_found: UpdateReason, **names: s
 
 
 async def _ask(current_sha: str) -> _Answer:
-    base = _provider_base()
+    _, base = provider()
     headers = {"Accept": "application/vnd.github+json", "User-Agent": build_user_agent("update-check")}
     try:
         # Redirects followed: GitHub answers a renamed repository with a 301 to its new
@@ -220,8 +282,7 @@ def _unasked(version: str) -> UpdateStatus | None:  # the check is off, or the b
             checked_at=None,
             reason=REASON_DISABLED,
         )
-    current_sha = _current_sha()
-    if current_sha is None:
+    if (version == _DEV_VERSION) if provider()[0] == "loonsec" else (_current_sha() is None):  # LoonSec's needs no sha
         return UpdateStatus(
             enabled=True,
             current_version=version,
@@ -242,14 +303,21 @@ async def get_update_status(now: datetime | None = None) -> UpdateStatus:
 
 
 async def read_update_status(db: AsyncSession) -> UpdateStatus:
-    """What the route serves, never asking: the answer stored for this build, or `not_checked`."""
-    version = get_app_version()
+    """What the route serves, never asking: the answer stored, judged for this build, or `not_checked`."""
+    version, (shape, _) = get_app_version(), provider()
     if (unasked := _unasked(version)) is not None:
         return unasked
     state = await db.get(UpdateCheckState, 1)
-    if state is None or state.checked_at is None or state.checked_version != version:
+    if state is None or state.checked_at is None or (shape == "github" and state.checked_version != version):
         return _status_from(version, None, _Answer(update_available=None, reason=REASON_NOT_CHECKED))
-    return _status_from(version, state.checked_at, state)  # the row's columns carry an answer's names
+    if shape == "github" or state.reason in _RETRIED:  # GitHub's is about one commit; an unanswered one names why
+        return _status_from(version, state.checked_at, state)  # the row's columns carry an answer's names
+    return _status_from(version, state.checked_at, _judged(state.latest_tag, state.release_url))  # against RELEASE
+
+
+def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
+    host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's address"
+    return None if _unasked(get_app_version()) else f"update check on: it asks {host} once a day; UPDATE_CHECK=false turns it off"
 
 
 def _status_from(version: str, checked_at: datetime | None, answer: _Answer | UpdateCheckState) -> UpdateStatus:
@@ -275,6 +343,23 @@ def due(state: UpdateCheckState, now: datetime) -> bool:
     return now >= state.next_check_at or state.next_check_at - now > _AHEAD
 
 
+async def _check(now: datetime, last: int | None) -> tuple[dict, bool]:
+    """Ask once: the columns to store, and whether the check was answered."""
+    shape, address = provider()
+    if shape == "github":  # v1.1.0's answer, about this build's commit; nothing is sent in a body
+        status = await get_update_status(now)
+        stored = {name: getattr(status, name) for name in _STORED} | {"checked_version": status.current_version}
+        return stored | {"last_sent": None}, status.reason not in _RETRIED
+    body = request_body(await stage(now), last)
+    answer, reason = await _ask_service(address, body)
+    stored = {"checked_at": now, "reason": reason, "last_sent": body, "checked_version": None, "latest_sha": None}
+    if answer is None:  # unanswered: the day and the release last given are kept
+        return stored | {"update_available": None}, False
+    latest = answer["latest"] if isinstance(answer.get("latest"), dict) else {}
+    judged = _judged(latest["tag"] if isinstance(latest.get("tag"), str) else None, _https_or_none(latest.get("url")))
+    return stored | vars(judged) | {"reason": None, "last_day": answer["day"]}, True  # judged again when read
+
+
 async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelta] = _draw) -> bool:
     """The scheduler's look, True when it asked. One UPDATE claims the attempt (`attempted_at` as read) and owes
     the retry an hour on, so of two processes one asks and one dying mid-check is asked again in an hour."""
@@ -290,16 +375,15 @@ async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelt
             return False
         unchanged = _STATE.c.attempted_at.is_not_distinct_from(state.attempted_at)
         claim = update(_STATE).where(_STATE.c.id == 1, unchanged).values(attempted_at=now, next_check_at=now + _RETRY)
-        claimed = await db.execute(claim)
+        won = (await db.execute(claim.returning(_STATE.c.last_day))).first()  # `last` as the claim won it; a retry's too
         await db.commit()
-        if claimed.rowcount != 1:
+        if won is None:
             return False
-        status = await get_update_status(now)
-        stored = {name: getattr(status, name) for name in _STORED} | {"checked_version": status.current_version}
-        if answered := status.reason not in _RETRIED:
+        stored, answered = await _check(now, won.last_day)
+        if answered:
             stored["next_check_at"] = now + _NEXT + draw(_SPREAD)
         await db.execute(update(_STATE).where(_STATE.c.id == 1, _STATE.c.attempted_at == now).values(**stored))
         await db.commit()
     if answered:
-        logger.info("update check answered", extra={"update_available": status.update_available, "latest_tag": status.latest_tag})
+        logger.info("update check answered", extra={name: stored[name] for name in ("update_available", "latest_tag")})
     return True
