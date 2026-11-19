@@ -75,7 +75,10 @@ that commit to `ghcr.io/loonsecio/looninspect` and `looninspect-db` under the ta
 builds images only for a commit that changes what an image is made from (`Dockerfile`,
 `backend/`, `frontend/`, `ops/postgres/`), so when the release commit changed none of those,
 run `Publish images` from `main` before publishing; it does nothing for a commit whose
-images exist. Do not create a future release tag for planning or move a published tag.
+images exist. The draft run ends by saying what the draft still owes: each line of its notes
+still marked `*(filled in at the tag)*` (it writes the commit on the `Release commit:` line
+itself), and whether a `Publish images` run for that commit has succeeded.
+Do not create a future release tag for planning or move a published tag.
 Only the repository admin role can create, move or delete a `v*` tag (the `release-tags`
 ruleset, §8.1), because the role that pushes images trusts a workflow run on one (#672).
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
