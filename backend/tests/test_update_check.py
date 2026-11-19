@@ -345,7 +345,14 @@ async def test_the_route_passes_every_field_through(monkeypatch) -> None:
             reason=None,
         )
 
+    sent, owed = {"contract": "v1", "stage": "claimed"}, {"contract": "v1", "stage": "claimed", "last": 20776}
+
+    async def disclosed(db, now) -> dict:  # what the check sends (#819), as `app.core.update_check.disclosed` names it
+        names = ("provider", "provider_host", "kind", "last_body", "next_body", "next_check_at", "notice_pending")
+        return dict(zip(names, ("loonsec", "api.next.loonsec.io", "mac-app", sent, owed, checked, True), strict=True))
+
     monkeypatch.setattr(system, "read_update_status", status)
+    monkeypatch.setattr(system, "disclosed", disclosed)
     body = (await system.update_status(db=None)).model_dump(mode="json", by_alias=True)
 
     assert body == {
@@ -357,4 +364,11 @@ async def test_the_route_passes_every_field_through(monkeypatch) -> None:
         "latestTag": TAG,
         "releaseUrl": RELEASE_PAGE,
         "reason": None,
+        "provider": "loonsec",
+        "providerHost": "api.next.loonsec.io",
+        "kind": "mac-app",
+        "lastBody": sent,
+        "nextBody": owed,
+        "nextCheckAt": "2026-09-18T09:00:00Z",
+        "noticePending": True,
     }
