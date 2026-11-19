@@ -47,21 +47,22 @@ def _sent(service, index: int = -1) -> dict:
 
 async def test_the_request_is_five_keys_and_last_is_the_day_it_was_given(service, monkeypatch) -> None:
     from app.core.config import settings
-    from app.core.update_check import provider, stage, tick
+    from app.core.update_check import provider, tick
 
-    first = {"contract": "v1", "release": "v1.2.0", "kind": "container", "stage": await stage(DUE)}
     assert await tick(DUE) is True  # UPDATE_CHECK_URL unset: LoonSec's update service
     request = service.requests[0]
     assert (request.method, str(request.url), request.headers["content-type"]) == ("POST", SERVICE, "application/json")
     assert request.headers["user-agent"] == "LoonSecIO/v1.2.0 update-check"  # the release: not the stamp, not the setting
-    assert _sent(service) == (await _row()).last_sent == first  # no `last` before the first answer, and never null
+    assert _sent(service) == (await _row()).last_sent  # the body as sent, stored
 
     service.handler = lambda request: _answer(day=20770)  # lower than the day held, and stored as given
     assert await tick((await _row()).next_check_at) is True
     monkeypatch.setattr(settings, "instance_kind", "mac-app")
     monkeypatch.setattr(settings, "update_check_url", "https://updates.example.test/v1/update/")  # sent without the slash
     assert await tick((await _row()).next_check_at) is True
-    assert [_sent(service, 1), _sent(service, 2)] == [first | {"last": 20776}, first | {"kind": "mac-app", "last": 20770}]
+    bodies, first = [_sent(service, index) for index in range(3)], {"contract": "v1", "release": "v1.2.0", "kind": "container"}
+    assert {body.pop("stage") for body in bodies} <= {"unclaimed", "claimed", "connected", "collecting"}  # tested below
+    assert bodies == [first, first | {"last": 20776}, first | {"kind": "mac-app", "last": 20770}]  # `last` absent, never null
     assert str(service.requests[2].url) == "https://updates.example.test/v1/update"
     monkeypatch.setattr(settings, "update_check_url", "https://mirror.example/v1/update/x")  # anything else: GitHub-shaped
     assert provider() == ("github", "https://mirror.example/v1/update/x")
