@@ -2333,6 +2333,12 @@ the Mac checks in but does not submit inventory, which is its Jamf inventory-upd
 not this pod. The Changes page dates rows by the report time (its *Observed* column); this page
 dates them by collection. The same change carries both, and its row's tooltip names the other.
 
+**A value's detail says “The previous value could not be read.”** Its read of earlier states failed:
+the sign-in expired, the pod did not answer, or that state left this device's history. Use its Retry,
+then reload the page; a card that then says “Device history could not be loaded” is the Retry step below.
+“No different value in the 200 recorded states before this one” is that read's bound, not the start of
+history: page back with *← Older* and open the detail on an older state to read further back.
+
 “Not recorded” for historical findings means no assessment evidence was retained at that point.
 It does not mean zero findings. New ingestion records it automatically; the optional retained-event
 import in [Device history](device-history.md) can recover receipts still held by the pod.

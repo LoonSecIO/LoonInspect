@@ -2,6 +2,7 @@
 """History source correlation, real ingestion, preferences and RLS on Postgres (#605)."""
 
 import os
+import uuid
 from datetime import timedelta
 
 import pytest
@@ -119,6 +120,54 @@ async def test_legacy_states_and_pagination_do_not_invent_assessments(admin, db,
     assert next(v for v in point["values"] if v["key"] == "findings.total")["state"] == "not_recorded"
 
 
+async def test_previous_different_value_walks_back_past_equal_states_and_pages(admin, db, connection, jamf, monkeypatch):
+    """#617: from the selected state, never Latest; equal states skipped; missing evidence is its own state."""
+    from app.api import device_history
+    from app.models.schema import Device, ObservationSection
+    from app.models.schema import DeviceHistoryPoint as Point
+    from app.models.schema import ObservationSpan as Span
+
+    device = await ingest(db, connection, jamf)
+    real = await db.scalar(select(Span).where(Span.mdm_connection_id == connection.id, Span.subject_id == device.external_id))
+    copied = {c.key: getattr(real, c.key) for c in Span.__table__.c if c.key not in ("id", "section_digests", "is_current")}
+    spans, tag = {}, uuid.uuid4().hex
+    for on in (True, False):  # FileVault from its own section content, so the lookup reads sections, not only points.
+        digest = f"v0:617-{on}-{tag}"
+        spans[on] = Span(**copied, section_digests={**real.section_digests, "disk_encryption": digest}, is_current=False)
+        db.add_all([ObservationSection(digest=digest, section="disk_encryption", body={"fileVault2Enabled": on}), spans[on]])
+    await db.flush()
+    keys = []  # Newest first, all older than the ingested state: 13 equal states, then a change across the page edge.
+    for age, (on, total) in enumerate([(True, 7)] * 13 + [(False, 4), (False, None), (True, 4)], 1):
+        at = real.first_observed_at - timedelta(days=age)
+        point = Point(device_id=device.id, span_id=spans[on].id, observed_at=at, collected_at=at + timedelta(hours=1))
+        point.assessment = {} if total is None else {"total": total}  # {}: no assessment was retained at this point
+        db.add(point)
+        await db.flush()
+        keys.append(f"p:{point.id}")
+    await db.commit()
+    url = f"/api/devices/{device.id}/history"
+
+    async def previous(point, slot="disk_encryption.fileVault2Enabled"):
+        response = await admin.get(url + "/previous", params={"point": point, "slot": slot})
+        return response.json() if response.status_code == 200 else response.status_code
+
+    found = (await previous(keys[0]))["previous"]  # Past the first page of twelve, by its observed clock.
+    assert (found["id"], found["value"], found["page"]) == (keys[13], False, 2)
+    page = (await admin.get(url, params={"page": 2})).json()["items"]
+    assert next(p for p in page if p["id"] == keys[13])["observedAt"] == found["observedAt"] != found["collectedAt"]
+    assert [(await previous(k, "findings.total"))["previous"]["value"] for k in (keys[0], keys[14])] == [4, 4]
+    assert (await previous(keys[13]))["previous"]["id"] == keys[15]
+    missing = (await previous(keys[13], "findings.total"))["previous"]
+    assert (missing["id"], missing["state"], missing["value"]) == (keys[14], "not_recorded", None)
+    assert await previous(keys[15]) == {"previous": None, "searched": 0, "complete": True}
+    monkeypatch.setattr(device_history, "SCAN", 5)
+    assert await previous(keys[0]) == {"previous": None, "searched": 5, "complete": False}
+    # Another device's observation, and a value no state records, answer as absent ones do.
+    other = select(Device.id).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.synthetic["id"])
+    foreign = f"p:{await db.scalar(select(Point.id).where(Point.device_id == other.scalar_subquery()))}"
+    assert [await previous(foreign), await previous(keys[0], "invented.value")] == [404, 404]
+
+
 async def test_same_user_has_separate_tenant_layout_and_foreign_points_are_404(admin, db, connection, jamf, second_tenant):
     from app.core.database import session_for_tenant
     from app.core.tenancy import OPERATIONAL_TENANT_ID
@@ -137,6 +186,7 @@ async def test_same_user_has_separate_tenant_layout_and_foreign_points_are_404(a
         admin.headers["X-CSRF-Token"] = admin.cookies.get("loon_csrf", "")
         assert (await admin.get(url)).status_code == 404
         assert (await admin.get(url + "/point", params={"point": point})).status_code == 404
+        assert (await admin.get(url + "/previous", params={"point": point, "slot": "applications.count"})).status_code == 404
         account_id = response.json()["id"]
         async with session_for_tenant(second_tenant) as other:
             assert await other.scalar(select(Point).where(Point.device_id == device.id)) is None

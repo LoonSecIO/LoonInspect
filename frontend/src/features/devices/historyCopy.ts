@@ -35,6 +35,15 @@ export const historyEnglish = {
   empty: "No observations have been recorded for this device yet.",
   error: "Device history could not be loaded.",
   retry: "Retry",
+  previous: {
+    hint: "Show the last different earlier value",
+    failed: "The previous value could not be read. Retry; if it fails again, reload the page.",
+    label: "Previously",
+    missing: "Missing evidence at that observation, not a recorded value.",
+    none: "No earlier different value in retained history.",
+    notRead: (count: number) => `No different value in the ${count} recorded states before this one; older states were not read.`,
+    select: "Select this observation",
+  },
   saveError:
     "Layout could not be saved. Check the Change Log policy and try again.",
   personal: "Your layout · shared across devices in this tenant.",
@@ -124,6 +133,15 @@ export const historyGerman: typeof historyEnglish = {
   empty: "Für dieses Gerät wurden noch keine Beobachtungen erfasst.",
   error: "Der Geräteverlauf konnte nicht geladen werden.",
   retry: "Erneut versuchen",
+  previous: {
+    hint: "Letzten abweichenden früheren Wert anzeigen",
+    failed: "Der vorherige Wert konnte nicht gelesen werden. Erneut versuchen; schlägt es wieder fehl, die Seite neu laden.",
+    label: "Zuvor",
+    missing: "An dieser Beobachtung fehlen Daten; das ist kein erfasster Wert.",
+    none: "Kein früherer abweichender Wert im gespeicherten Verlauf.",
+    notRead: (count) => `Kein abweichender Wert in den ${count} erfassten Zuständen davor; ältere Zustände wurden nicht gelesen.`,
+    select: "Diese Beobachtung auswählen",
+  },
   saveError:
     "Ansicht konnte nicht gespeichert werden. Änderungsprotokoll-Einstellungen prüfen und erneut versuchen.",
   personal: "Ihre Ansicht · für alle Geräte dieses Mandanten.",
