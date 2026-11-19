@@ -1389,7 +1389,7 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
    - *This build carries no commit to compare* → a development build, or an image built
      without `GIT_SHA`. Build it with the commit stamped:
      `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
-   - *No check of this build has run yet* → a fresh install, or an update asking a GitHub-shaped provider, waiting for a
+   - *No check of this build has run yet* → a fresh install, an update from a release before v1.2.0, or any update or rebuild asking a GitHub-shaped provider, waiting for a
      moment drawn at random less than a day away. Longer: a container must run the scheduler
      (`scheduler_enabled` is `true` on its `starting` line), and its log's
      `update check could not run` says why.
@@ -1398,7 +1398,7 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.next.loonsec.io/v1/update', timeout=5).status)"`
      prints a status, or ends `HTTP Error` with one, when it does; any other error is the
      network's answer, not the app's. Reached, the answer was not one the check reads: a proxy's
-     page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour.
+     page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour; when only the release it named could not be read, at the next daily check.
    - *The provider refused the check* → the container log says which, once per attempt.
      `update check refused (429) by LoonSec's update service` is that service's limit, shared
      by every instance: the check asks again in an hour, and there is nothing to change here.
@@ -1409,9 +1409,8 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
    - *No release has been published yet* → true until the first release. Nothing to do.
    - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
      was never pushed. Build from a release tag and it is compared again.
-2. **The notice names a release you believe you have.** From LoonSec's update service it means
-   the release this build was made from is lower: build from the release's tag. From a GitHub-shaped
-   `UPDATE_CHECK_URL`: *This build* ends in the commit it
+2. **The notice names a release you believe you have.** From LoonSec's update service, this build's release
+   is lower: build from the release's tag. From a GitHub-shaped `UPDATE_CHECK_URL`: *This build* ends in the commit it
    was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
    release's. From the checkout the image was built from, fetch the tag first, then ask git:
 
@@ -3243,7 +3242,7 @@ nothing here is a permissions problem in Jamf.
    within the hour. By how the sentence opens:
    - *api.github.com refused the request* → GitHub's limit for requests without a sign-in, 60
      an hour for each address, shared by every instance and every other tool behind the same
-     address; the update check draws on it too (§10). One refusal needs nothing. Refused every
+     address; an update check draws on it only when `UPDATE_CHECK_URL` names GitHub (§10). One refusal needs nothing. Refused every
      hour means many things share this address: leave the flag on only where the tab is used.
    - *raw.githubusercontent.com refused the request* → GitHub slowed file reads from this
      address part-way through. The sentence says how many manifests were read and kept; the
