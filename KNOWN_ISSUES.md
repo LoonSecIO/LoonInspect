@@ -388,10 +388,11 @@ do not infer fleet data expiry from payment expiry or corpus retention.
 
 **The limit.** `LoonInspect.app` ([docs/macos-app.md](docs/macos-app.md)) is the container's
 backend, frontend and PostgreSQL as child processes of a window. Quit it and the scheduler,
-the nightly sweep, webhook ingestion and SIEM delivery stop with it; close the lid and they
+the nightly sweep, the daily update check, webhook ingestion and SIEM delivery stop with it; close the lid and they
 pause until the Mac wakes (the shell asks macOS not to nap it, and sleep still wins). Nothing
 catches up a missed sweep except the next scheduled one. The container has none of this,
-because nothing closes it.
+because nothing closes it. In the app the update check asks only on the days it is open, and
+nothing wakes it to check: an app seldom opened learns of a release late.
 
 **Backups.** The bundle carries `initdb`, `pg_ctl` and `postgres`, and no `pg_dump`, `psql`
 or `pg_isready` (the upstream build ships none), so [docs/operations.md](docs/operations.md)
