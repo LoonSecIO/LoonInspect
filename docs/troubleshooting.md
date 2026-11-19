@@ -3168,7 +3168,7 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    INSTANCE_KIND=mac-app and UPDATE_CHECK=…, from …*.
    - No check mark → choose it. The window reads *Restarting LoonInspect* and reloads; the check
      is then owed as §10 says, and asked only while the app is open and the Mac awake.
-   - The item is dimmed, or the line ends *from the app's environment, over Check for Updates
+   - The item is dimmed, or the line says *from the app's environment, over Check for Updates
      Daily* → the app was started with `UPDATE_CHECK` in its environment, as a test starts it.
      Quit, and open it from Finder or the Dock; `launchctl getenv UPDATE_CHECK` prints a value
      set for every app, which `launchctl unsetenv UPDATE_CHECK` removes.

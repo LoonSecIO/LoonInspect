@@ -227,8 +227,8 @@ are in
 (`troubleshooting.md` §10), whether a newer release exists: one `POST` to
 `https://api.next.loonsec.io/v1/update` of five keys, the contract word (`v1`), the release, the
 kind (`mac-app`, from the `INSTANCE_KIND` the shell sets), how far setup has got (`unclaimed`,
-`claimed`, `connected` or `collecting`) and the day number LoonSec gave its last answered check.
-No instance identifier, no inventory. The banner and **Settings › Support › Updates** say when a
+`claimed`, `connected` or `collecting`) and the day number LoonSec gave its last answered check,
+once there is one. No instance identifier, no inventory. The banner and **Settings › Support › Updates** say when a
 newer release exists; the steps the block prints are still the container's, and the app's are
 below. It asks only while the app is open and the Mac awake, so on the days the app is used;
 nothing wakes it to check, and a check owed meanwhile is asked once the app runs again.
