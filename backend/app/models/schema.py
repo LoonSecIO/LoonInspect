@@ -12,14 +12,13 @@ these ones serialized.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
-    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -745,17 +744,13 @@ class FleetCatalogState(Base):
 
 
 class UpdateCheckState(Base):
-    """The update check's kept minute, days and last answer: one row (#819; its migration, e819a4c2f6b3, names each column)."""
+    """The update check's next moment and last answer: one row (#819; its migration, e819a4c2f6b3, names each column)."""
 
     __tablename__ = "update_check_state"
-    __table_args__ = (
-        CheckConstraint("id = 1", name="ck_update_check_state_single_row"),
-        CheckConstraint("check_minute BETWEEN 0 AND 1439", name="ck_update_check_state_minute"),
-    )
+    __table_args__ = (CheckConstraint("id = 1", name="ck_update_check_state_single_row"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
-    check_minute: Mapped[int] = mapped_column(Integer)
-    answered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     checked_version: Mapped[str | None] = mapped_column(Text, nullable=True)

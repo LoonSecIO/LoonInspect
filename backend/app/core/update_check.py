@@ -35,8 +35,9 @@ from __future__ import annotations
 import logging
 import re
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from urllib.parse import quote
 
@@ -61,6 +62,10 @@ _GITHUB_REPO_API = "https://api.github.com/repos/LoonSecIO/LoonInspect"
 # Retry sooner after a failure, but not so soon that an air-gapped instance is
 # hammering a wall. A rate-limit refusal resets within the hour too.
 _RETRY = timedelta(hours=1)
+# No time of day belongs to an instance (#819): each moment is drawn afresh, from nothing else it holds.
+_FIRST = timedelta(hours=24)  # a new instance's first check falls in its first day
+_NEXT, _SPREAD = timedelta(hours=20), timedelta(hours=3)  # an answer owes the next 20 to 23 hours on
+_AHEAD = timedelta(days=1)  # a moment further ahead than this means the clock went back: owed at once
 _STATE = UpdateCheckState.__table__
 _STORED = ("update_available", "latest_sha", "checked_at", "latest_tag", "release_url", "reason")
 
@@ -78,8 +83,8 @@ REASON_REFUSED: UpdateReason = "refused"  # 403 or 429: the shared rate limit, u
 REASON_NO_RELEASE: UpdateReason = "no_release"  # releases/latest answered 404
 REASON_UNKNOWN_COMMIT: UpdateReason = "unknown_commit"  # compare answered 404
 
-# The two reasons that are a failure to get an answer, retried within the hour. The
-# others are answers — GitHub said "no release" or "no such commit" — and end the day.
+# The two reasons that are a failure to get an answer, asked again an hour on. The others
+# are answers — GitHub said "no release" or "no such commit" — and owe the next check.
 _RETRIED = frozenset({REASON_UNREACHABLE, REASON_REFUSED})
 
 _CURRENT = frozenset({"ahead", "identical"})
@@ -152,7 +157,7 @@ def _unanswered(response: httpx.Response, *, not_found: UpdateReason, **names: s
     if response.status_code in (403, 429) and _rate_limited(response):
         logger.info(
             "update check refused by the provider (%s); unauthenticated api.github.com allows 60 requests an hour "
-            "per address, shared by every instance behind it — the check asks again within the hour",
+            "per address, shared by every instance behind it — the check asks again in an hour",
             response.status_code,
         )
         return _Answer(update_available=None, reason=REASON_REFUSED, **names)
@@ -260,36 +265,39 @@ def _status_from(version: str, checked_at: datetime | None, answer: _Answer | Up
     )
 
 
+def _draw(span: timedelta) -> timedelta:
+    """An offset at random within `span`, to the microsecond, from the OS's generator: drawn afresh each time."""
+    return timedelta(microseconds=secrets.randbelow(span // timedelta(microseconds=1)))
+
+
 def due(state: UpdateCheckState, now: datetime) -> bool:
-    """Once a UTC day, never before its kept minute, and an hour after that day's unanswered attempt."""
-    slot = datetime.combine(now.date(), time(tzinfo=UTC)) + timedelta(minutes=state.check_minute)
-    if now < slot or state.answered_on == now.date():
-        return False
-    return state.attempted_at is None or state.attempted_at < slot or now - state.attempted_at >= _RETRY
+    """Owed from the stored moment on until a check is answered, and at once when that moment is over a day ahead."""
+    return now >= state.next_check_at or state.next_check_at - now > _AHEAD
 
 
-async def tick(now: datetime | None = None) -> bool:
-    """The scheduler's look, True when it asked. One UPDATE claims the attempt (`attempted_at` as read),
-    so of two processes one asks; one dying mid-check leaves an unanswered attempt, retried in an hour."""
+async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelta] = _draw) -> bool:
+    """The scheduler's look, True when it asked. One UPDATE claims the attempt (`attempted_at` as read) and owes
+    the retry an hour on, so of two processes one asks and one dying mid-check is asked again in an hour."""
     if _unasked(get_app_version()) is not None:
         return False
     now = (now or datetime.now(UTC)).astimezone(UTC)
     async with unscoped_session() as db:
         if (state := await db.get(UpdateCheckState, 1)) is None:  # its migration made it; something removed it
-            await db.execute(insert(_STATE).values(id=1, check_minute=secrets.randbelow(1440)).on_conflict_do_nothing())
+            await db.execute(insert(_STATE).values(id=1, next_check_at=now + draw(_FIRST)).on_conflict_do_nothing())
             await db.commit()
             state = await db.get(UpdateCheckState, 1)
         if not due(state, now):
             return False
         unchanged = _STATE.c.attempted_at.is_not_distinct_from(state.attempted_at)
-        claimed = await db.execute(update(_STATE).where(_STATE.c.id == 1, unchanged).values(attempted_at=now))
+        claim = update(_STATE).where(_STATE.c.id == 1, unchanged).values(attempted_at=now, next_check_at=now + _RETRY)
+        claimed = await db.execute(claim)
         await db.commit()
         if claimed.rowcount != 1:
             return False
         status = await get_update_status(now)
         stored = {name: getattr(status, name) for name in _STORED} | {"checked_version": status.current_version}
         if answered := status.reason not in _RETRIED:
-            stored["answered_on"] = now.date()
+            stored["next_check_at"] = now + _NEXT + draw(_SPREAD)
         await db.execute(update(_STATE).where(_STATE.c.id == 1, _STATE.c.attempted_at == now).values(**stored))
         await db.commit()
     if answered:
