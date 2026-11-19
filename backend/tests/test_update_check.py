@@ -68,11 +68,11 @@ def _compare_body(status: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
-    """The check on, and the default provider, for every test."""
+    """The check on, and GitHub itself as a GitHub-shaped `UPDATE_CHECK_URL` (#819), for every test."""
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "update_check", True)
-    monkeypatch.setattr(settings, "update_check_url", "")
+    monkeypatch.setattr(settings, "update_check_url", API)
 
 
 def _serve(monkeypatch, handler) -> list[httpx.Request]:
@@ -149,6 +149,7 @@ async def test_it_asks_the_release_then_the_compare_and_identifies_itself(monkey
 
     assert [str(request.url) for request in seen] == [f"{API}/releases/latest", f"{API}/compare/{TAG}...{BUILD_SHA[:7]}"]
     for request in seen:
+        assert (request.method, request.content) == ("GET", b"")  # v1.1.0's two calls, and no body (#819)
         assert request.headers["accept"] == "application/vnd.github+json"
         # 60 requests an hour per address, shared by every instance behind it: the
         # User-Agent is what makes a rate-limited fleet attributable.

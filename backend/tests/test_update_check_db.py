@@ -17,7 +17,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, text, update
 
-from tests.test_update_check import SHORT, TAG, _github, _serve, _stamp
+from tests.test_update_check import API, SHORT, TAG, _github, _serve, _stamp
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -40,7 +40,7 @@ async def github(db, monkeypatch):
     db.add(UpdateCheckState(id=1, next_check_at=DUE))
     await db.commit()
     monkeypatch.setattr(settings, "update_check", True)
-    monkeypatch.setattr(settings, "update_check_url", "")
+    monkeypatch.setattr(settings, "update_check_url", API)  # GitHub-shaped; tests/test_update_check_service_db.py has LoonSec's
     _stamp(monkeypatch, SHORT)
     github = SimpleNamespace(handler=_github())
     github.requests = _serve(monkeypatch, lambda request: github.handler(request))
