@@ -48,11 +48,12 @@ class UpdateStatusOut(BaseModel):
         "`UPDATE_CHECK_URL` names none. Named while the check is off too: `enabled` and `reason` say whether it asks."
     )
     kind: Literal["container", "mac-app"] = Field(
-        description="This instance's `kind` in the body: `container`, or `mac-app` when LoonInspect.app sets `INSTANCE_KIND`."
+        description="This instance's `kind`, which the `loonsec` shape sends: `container`, or `mac-app` when "
+        "LoonInspect.app sets `INSTANCE_KIND`."
     )
     last_body: dict | None = Field(
-        description="The body the last check sent, answered or not, its keys in the order sent; null before the first, "
-        "and on the `github` shape, which sends none."
+        description="The body the last check sent, answered or not, its keys in the order sent, and kept once the check "
+        "is turned off; null before the first, and on the `github` shape, which sends none."
     )
     next_body: dict | None = Field(
         description="The body the next check would carry, built now: this instance's `stage`, and as `last` the `day` the "

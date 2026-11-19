@@ -10070,7 +10070,7 @@
             "type": "boolean"
           },
           "kind": {
-            "description": "This instance's `kind` in the body: `container`, or `mac-app` when LoonInspect.app sets `INSTANCE_KIND`.",
+            "description": "This instance's `kind`, which the `loonsec` shape sends: `container`, or `mac-app` when LoonInspect.app sets `INSTANCE_KIND`.",
             "enum": [
               "container",
               "mac-app"
@@ -10088,7 +10088,7 @@
                 "type": "null"
               }
             ],
-            "description": "The body the last check sent, answered or not, its keys in the order sent; null before the first, and on the `github` shape, which sends none.",
+            "description": "The body the last check sent, answered or not, its keys in the order sent, and kept once the check is turned off; null before the first, and on the `github` shape, which sends none.",
             "title": "Lastbody"
           },
           "latestSha": {
