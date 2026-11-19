@@ -313,11 +313,15 @@ async def read_update_status(db: AsyncSession) -> UpdateStatus:
     return _status_from(version, state.checked_at, _judged(state.latest_tag, state.release_url))  # against RELEASE
 
 
-def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
-    try:  # a bracketed host urlsplit cannot read never stops startup, check on or off; the check fails at its tick instead
-        host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's unreadable address"
+def _host(address: str) -> str | None:
+    try:  # a bracketed host urlsplit cannot read stops neither startup nor the status route; the check fails at its tick
+        return urlsplit(address).hostname
     except ValueError:
-        host = "UPDATE_CHECK_URL's unreadable address"
+        return None
+
+
+def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
+    host = _host(provider()[1]) or "UPDATE_CHECK_URL's unreadable address"
     return None if _unasked(get_app_version()) else f"update check on: it asks {host} once a day; UPDATE_CHECK=false turns it off"
 
 
@@ -386,3 +390,33 @@ async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelt
     if answered:
         logger.info("update check answered", extra={name: stored[name] for name in ("update_available", "latest_tag")})
     return True
+
+
+async def disclosed(db: AsyncSession, now: datetime) -> dict:
+    """What the check sends and to whom, for the status route, read and never asked (#819): the host and shape asked,
+    the body the last check sent and, while the check asks LoonSec, the one the next would carry, built now. Then when
+    that is owed, and whether the once-only notice is pending."""
+    shape, address = provider()
+    state, asks = await db.get(UpdateCheckState, 1), _unasked(get_app_version()) is None
+    sent = state.last_sent if state is not None and shape == "loonsec" else None  # a GitHub-shaped base takes no body
+    if sent:  # in the order sent, which JSONB does not keep; a key of another version's stays, last
+        sent = {key: sent[key] for key in request_body("", 0) if key in sent} | sent
+    owed = state.next_check_at if state is not None and asks else None
+    return {
+        "provider": shape,
+        "provider_host": _host(address),
+        "kind": settings.instance_kind,
+        "last_body": sent,
+        "next_body": request_body(await stage(now), getattr(state, "last_day", None)) if asks and shape == "loonsec" else None,
+        "next_check_at": min(owed, now) if owed and due(state, now) else owed,  # over a day ahead, the clock went back: now
+        "notice_pending": state is not None and state.notice_pending,
+    }
+
+
+async def dismiss_notice(db: AsyncSession) -> bool:
+    """The once-only notice that the check now asks LoonSec, cleared for good (only its migration sets it); True when
+    this call cleared it."""
+    pending = update(UpdateCheckState).where(UpdateCheckState.id == 1, UpdateCheckState.notice_pending.is_(True))
+    cleared = (await db.execute(pending.values(notice_pending=False))).rowcount == 1
+    await db.commit()
+    return cleared
