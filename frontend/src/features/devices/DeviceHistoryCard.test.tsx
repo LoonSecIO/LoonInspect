@@ -39,11 +39,13 @@ async function open(answer: PreviousRead | Error) {
 }
 const shown = (value: HTMLElement) => document.getElementById(value.getAttribute("aria-controls") ?? "")?.textContent ?? null;
 const action = () => screen.queryByRole("button", { name: copy.previous.select });
+// A press as WebKit (Safari, iOS) makes it: it focuses no button, so unless the mousedown is prevented it clears focus first.
+const press = async (el: HTMLElement) => { if (fireEvent.mouseDown(el)) act(() => (document.activeElement as HTMLElement).blur()); fireEvent.click(el); await settle(); };
 afterEach(cleanup);
 afterEach(() => vi.clearAllMocks());
 
 describe("the previous different value of a Device history value (#617)", () => {
-  it("opens on hover, stays open while the pointer travels onto its action, and the action selects that state on its page", async () => {
+  it("opens on hover, stays open while the pointer travels onto its action, and the action selects that state on its page and focuses its dot", async () => {
     const value = await open(FOUND);
     fireEvent.pointerEnter(value, mouse);
     await settle();
@@ -53,14 +55,13 @@ describe("the previous different value of a Device history value (#617)", () => 
     expect(action()).toBeNull();
     fireEvent.pointerEnter(value, mouse);
     fireEvent.pointerLeave(value, { ...mouse, relatedTarget: action() }); // out of the value, into its own detail
-    fireEvent.click(action()!);
-    await settle();
+    await press(action()!);
     expect([api.loadPreviousValue.mock.calls.length, api.loadHistory.mock.lastCall, api.loadHistoryPoint.mock.lastCall]).toEqual([1, [7, 2], [7, "p:old"]]);
-    expect(screen.getByRole("button", { pressed: true }).getAttribute("aria-label")).toContain(OBSERVED);
+    expect(["pressed", "label"].map((a) => document.activeElement?.getAttribute(`aria-${a}`))).toEqual(["true", expect.stringContaining(OBSERVED)]);
     expect([screen.getByText(copy.historical), screen.getByRole("button", { name: /^FileVault: Disabled\./ })]).toHaveLength(2);
   });
 
-  it("opens on focus and keeps it inside until Escape, toggles on a tap, says missing evidence is missing, and selects on its page", async () => {
+  it("opens on focus and keeps it inside until Escape, toggles on a tap, says missing evidence is missing, and selects on its page; Retry drops a lost state", async () => {
     const value = await open({ previous: { ...at("p:mid", 13), state: "not_recorded", value: null, page: 1 }, searched: 1, complete: true });
     act(() => value.focus());
     await settle();
@@ -68,19 +69,22 @@ describe("the previous different value of a Device history value (#617)", () => 
     act(() => action()!.focus());
     fireEvent.keyDown(document.activeElement!, { key: "Escape" }); // from inside the detail: closed, focus back on the value
     expect([action(), document.activeElement]).toEqual([null, value]);
-    // A browser's order for a tap: the touch enters, presses and leaves, then the click lands.
-    const tap = () => [fireEvent.pointerEnter, fireEvent.pointerDown, fireEvent.pointerLeave, fireEvent.click].map((fire) => fire(value, { pointerType: "touch" }));
-    tap();
+    // A browser's order for a tap: the touch enters, presses and leaves, then its mouse press and click land.
+    const tap = () => { [fireEvent.pointerEnter, fireEvent.pointerDown, fireEvent.pointerLeave].forEach((fire) => fire(value, { pointerType: "touch" })); return press(value); };
+    await tap();
     expect(action()).not.toBeNull();
-    tap();
+    await tap();
     expect(action()).toBeNull();
-    tap();
-    fireEvent.click(action()!);
-    await settle();
+    await tap();
+    api.loadHistoryPoint.mockRejectedValueOnce(new Error("gone")); // That state leaves the history before the jump reads it,
+    await press(action()!);
     expect([api.loadHistory.mock.calls.length, api.loadHistoryPoint.mock.lastCall]).toEqual([1, [7, "p:mid"]]);
+    api.loadHistory.mockResolvedValue({ items: [at("p:new", 14)], hasMore: false, page: 1 }); // and the reloaded page lacks it:
+    await press(screen.getByRole("button", { name: copy.retry })); // the card's Retry selects that page's newest state.
+    expect(api.loadHistoryPoint.mock.lastCall).toEqual([7, "p:new"]);
   });
 
-  it("offers no action when nothing earlier differs, says how far a cut-off read went, and retries a failed read", async () => {
+  it("offers no action when nothing earlier differs, says how far a cut-off read went, retries a failed read, and keeps a target a page off", async () => {
     for (const [answer, says] of [[{ previous: null, searched: 3, complete: true }, copy.previous.none],
       [{ previous: null, searched: 200, complete: false }, copy.previous.notRead(200)]] as const) {
       fireEvent.pointerEnter(await open(answer), mouse);
@@ -90,12 +94,11 @@ describe("the previous different value of a Device history value (#617)", () => 
     }
     const value = await open(new Error("offline"));
     expect(screen.queryByRole("button", { name: /^Firewall:/ })).toBeNull(); // disabled in the Change Log: nothing to open
-    fireEvent.pointerEnter(value, mouse);
-    await settle();
+    await press(value); // A click: the value holds focus while Retry is pressed.
     expect(shown(value)).toContain(copy.previous.failed);
-    api.loadPreviousValue.mockResolvedValue(FOUND);
-    fireEvent.click(screen.getByRole("button", { name: copy.retry }));
-    await settle();
-    expect(action()).not.toBeNull();
+    api.loadPreviousValue.mockResolvedValue({ ...FOUND, previous: { ...FOUND.previous!, page: 1 } }); // Counted before a newer state pushed it on,
+    await press(screen.getByRole("button", { name: copy.retry }));
+    await press(action()!); // so the jump lands a page early: page 1 has no p:old dot, yet the card still selects p:old.
+    expect(api.loadHistoryPoint.mock.lastCall).toEqual([7, "p:old"]);
   });
 });

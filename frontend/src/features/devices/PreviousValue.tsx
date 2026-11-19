@@ -25,8 +25,10 @@ export function PreviousValue(props: {
   };
   const found = read?.value?.previous;
   return (
-    // One box holds the value and its detail, so the pointer can travel onto the detail's action.
-    <div className="relative inline-block" onPointerEnter={(e) => e.pointerType === "mouse" && show(true)}
+    // One box holds the value, its detail and, while open, a bridge left of the value, so the pointer can go straight to
+    // the action. A press in it keeps focus: WebKit (Safari, iOS) would clear it and close the detail before the click.
+    <div className={`relative inline-block ${open ? "before:absolute before:right-full before:top-0 before:h-full before:w-72" : ""}`}
+      onMouseDown={(e) => e.preventDefault()} onPointerEnter={(e) => e.pointerType === "mouse" && show(true)}
       onPointerLeave={(e) => e.pointerType === "mouse" && show(false)} onFocus={() => pressed.current || show(true)}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { pressed.current = ""; show(false); } }}
       onKeyDown={(e) => { if (e.key === "Escape") { pressed.current = "key"; trigger.current?.focus(); show(false); } }}>
@@ -37,7 +39,7 @@ export function PreviousValue(props: {
         {text}
       </button>
       {open && (
-        <div id={id} className="absolute right-0 top-full z-20 w-72 max-w-[80vw] pt-1 text-left text-xs font-normal">
+        <div id={id} className="absolute right-0 top-full z-20 w-72 min-w-full max-w-[80vw] pt-1 text-left text-xs font-normal">
           <div className="space-y-1 rounded border bg-card p-3 shadow-md" aria-live="polite">
             {!read ? <p>{copy.loading}</p>
               : read.error ? <p role="alert">{copy.previous.failed} <button type="button" className="underline" onClick={() => { setRead(null); void ask(); }}>{copy.retry}</button></p>

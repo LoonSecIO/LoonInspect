@@ -28,6 +28,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const sectionLabels = t.changes.sections;
   const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<string | null>(null);
+  const [jumped, setJumped] = useState(""); // A previous value's target until its dot shows (#617).
   const [revision, setRevision] = useState(0);
   const [timeline, setTimeline] = useState<{
     page: number;
@@ -61,8 +62,11 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     };
   }, [deviceId, page, retry]);
   const list = timeline?.page === page ? timeline : null;
-  // A chosen state stays chosen even if a newer state pushed it off the page a jump counted for it (#617).
-  const selected = selection ?? list?.value?.items[0]?.id ?? null;
+  // A jump's target stays chosen off the loaded page, where a newer state can push it, until its dot shows (#617).
+  const selected =
+    selection && (selection === jumped || list?.value?.items.some((p) => p.id === selection))
+      ? selection
+      : (list?.value?.items[0]?.id ?? null);
   const requestKey = `${selected}:${revision}:${retry}`;
   useEffect(() => {
     if (!selected) return;
@@ -145,6 +149,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const jump = (target: { id: string; page: number }) => {
     setPage(target.page); // Reads the timeline again only when that is another page.
     choose(target.id);
+    setJumped(target.id);
   };
 
   return (
@@ -254,6 +259,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                     disabled={saving}
                     className="relative flex w-full flex-col items-center gap-2 px-2 text-xs"
                     aria-pressed={selected === p.id}
+                    ref={(el) => { if (el && p.id === jumped) { el.focus(); setJumped(""); } }}
                     aria-label={`${copy.observed}: ${date(p.observedAt)} · ${p.kind === "assessment" ? copy.evaluated : copy.collected}: ${date(p.collectedAt)}`}
                     title={`${copy.observed}: ${date(p.observedAt)} · ${p.kind === "assessment" ? copy.evaluated : copy.collected}: ${date(p.collectedAt)}`}
                     onClick={() => choose(p.id)}
