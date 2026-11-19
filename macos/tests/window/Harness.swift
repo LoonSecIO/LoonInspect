@@ -27,8 +27,9 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
             do {
                 try await exerciseWindowRecovery()
                 try await exerciseLateStartup()
+                try await exerciseUpdateCheckSwitch()
                 windows.forEach { $0.orderOut(nil) }
-                print("PASS: 5 real-AppDelegate window/lifecycle regression checks")
+                print("PASS: 6 real-AppDelegate window/lifecycle regression checks")
                 fflush(stdout)
                 exit(0)
             } catch {
@@ -141,6 +142,26 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
         try check(web.url == nil && !status.isHidden && heading(status) == "LoonInspect could not start", "Late startup callback overwrote failed state")
         try check(supervisor.stopCount == 1 && !delegate.validateMenuItem(menuItem("reload")), "Late startup reenabled actions or repeated stop")
         print("PASS: late successful startup callback cannot replace the failure")
+    }
+
+    private func exerciseUpdateCheckSwitch() async throws {
+        let supervisor = Supervisor(port: port, directory: directory)
+        let (delegate, web, status) = try launch(supervisor)
+        try await eventually("initial dummy page loads") { web.url != nil && !web.isLoading && !web.isHidden && status.isHidden }
+        guard let item = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "Check for Updates Daily" }),
+              let action = item.action else { throw HarnessFailure.failed("Check for Updates Daily is not in the app menu") }
+        try check(delegate.validateMenuItem(item) && item.state == .on, "Check for Updates Daily should start enabled and on")
+        let before = try await requestMarker(web)
+        NSApp.sendAction(action, to: delegate, from: item)
+        try await eventually("the change restarts the server, then reloads the page") {
+            supervisor.restartCount == 1 && !web.isLoading && !web.isHidden && status.isHidden
+        }
+        let after = try await requestMarker(web)
+        try check(after != before && !supervisor.checksForUpdatesDaily && delegate.validateMenuItem(item) && item.state == .off,
+                  "The choice should be stored off, the item read off, and the page be loaded again")
+        supervisor.updateCheckSetByEnvironment = true
+        try check(!delegate.validateMenuItem(item), "An UPDATE_CHECK in the app's environment should dim the item")
+        print("PASS: Check for Updates Daily stores the choice, restarts the server once, and reloads the page")
     }
 }
 

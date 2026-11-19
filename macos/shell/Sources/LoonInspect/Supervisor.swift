@@ -48,6 +48,9 @@ final class Supervisor: @unchecked Sendable {
     private(set) var port: Int?
     private var backendLogStart: UInt64 = 0
     private let launched = Date()
+    private var secrets: Secrets?  // for restartBackend
+    private var backendUpdateCheck: [String: String] = [:]  // what the running backend was told (updateCheckChanged)
+    private var choiceObservation: NSKeyValueObservation?
 
     init() {
         resources = Bundle.main.resourceURL!
@@ -70,8 +73,9 @@ final class Supervisor: @unchecked Sendable {
 
     /// A clean environment for every child: nothing from the launching shell (a stray PGDATA,
     /// PYTHONPATH or DATABASE_URL) reaches Postgres or the backend.
-    private var baseEnvironment: [String: String] {
-        let inherited = ProcessInfo.processInfo.environment
+    private var baseEnvironment: [String: String] { Self.baseEnvironment(ProcessInfo.processInfo.environment) }
+
+    static func baseEnvironment(_ inherited: [String: String]) -> [String: String] {
         var env = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8"]
         for key in ["HOME", "USER", "LOGNAME", "TMPDIR"] { env[key] = inherited[key] }
         return env
@@ -369,12 +373,10 @@ final class Supervisor: @unchecked Sendable {
     /// socket directory from `host=`; the path is literal, because a %-escape would trip
     /// Alembic's ConfigParser), cookies without Secure (the server is reachable only on
     /// 127.0.0.1, and WebKit's handling of Secure cookies over http://127.0.0.1 is not one to
-    /// lean on), and no update check (its banner tells an operator to pull an image).
-    private func startBackend(port: Int, secrets: Secrets) throws {
-        let logURL = logDir.appendingPathComponent("backend.log")
-        let handle = try appendHandle(logURL)
-        backendLogStart = (try? handle.seekToEnd()) ?? 0
-        var env = baseEnvironment
+    /// lean on), and the update check as updateCheck says. All but the watchdog's LOON_SHELL_* names.
+    static func backendEnvironment(inherited: [String: String], resources: URL, port: Int, socketDir: URL,
+                                   secrets: Secrets, checksDaily: Bool) -> [String: String] {
+        var env = baseEnvironment(inherited)
         env["PYTHONPATH"] = resources.appendingPathComponent("backend").path
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -383,13 +385,27 @@ final class Supervisor: @unchecked Sendable {
         env["PORT"] = "\(port)"
         env["TLS_MODE"] = "off"
         env["DATABASE_MODE"] = "bundled"
-        env["DATABASE_URL"] = "postgresql+asyncpg://\(Self.appRole):\(secrets.appPassword)@/\(Self.database)?host=\(socketDir.path)"
+        env["DATABASE_URL"] = "postgresql+asyncpg://\(appRole):\(secrets.appPassword)@/\(database)?host=\(socketDir.path)"
         env["ENCRYPTION_KEY"] = secrets.encryptionKey
         env["SECURE_COOKIES"] = "false"
-        env["UPDATE_CHECK"] = "false"
+        return env.merging(updateCheck(checksDaily: checksDaily, inherited: inherited)) { $1 }
+    }
+
+    private func startBackend(port: Int, secrets: Secrets) throws {
+        let logURL = logDir.appendingPathComponent("backend.log")
+        let handle = try appendHandle(logURL)
+        backendLogStart = (try? handle.seekToEnd()) ?? 0
+        let inherited = ProcessInfo.processInfo.environment, checksDaily = checksForUpdatesDaily
+        var env = Self.backendEnvironment(inherited: inherited, resources: resources, port: port, socketDir: socketDir,
+                                          secrets: secrets, checksDaily: checksDaily)
+        let from = inherited["UPDATE_CHECK"] == nil ? "Check for Updates Daily" : "the app's environment, over Check for Updates Daily"
+        log.info("update check: the backend is told INSTANCE_KIND=mac-app and UPDATE_CHECK=\(env["UPDATE_CHECK"] ?? ""), from \(from)"
+            + (inherited["UPDATE_CHECK_URL"] == nil ? "" : "; UPDATE_CHECK_URL is passed from the app's environment"))
         // Not settings: what the launcher's watchdog needs to stop this Postgres if the shell dies.
         lock.lock()
         let postgresPID = postgres?.processIdentifier
+        self.secrets = secrets
+        backendUpdateCheck = Self.updateCheck(checksDaily: checksDaily, inherited: inherited)
         lock.unlock()
         env["LOON_SHELL_PGDATA"] = pgdata.path
         // Capture the shell before spawning Python, which may first run after the shell has died.
@@ -440,7 +456,8 @@ final class Supervisor: @unchecked Sendable {
 
     private func launch(_ process: Process, name: String, store: (Supervisor, Process) -> Void) throws {
         process.terminationHandler = { [weak self] ended in
-            guard let self, !self.isStopping else { return }
+            // A backend that restartBackend let go is no longer held, and its exit was asked for.
+            guard let self, !self.isStopping, self.holds(ended) else { return }
             let message = "\(name) exited unexpectedly (status \(ended.terminationStatus)). Its log is "
                 + "\(self.logDir.path)/\(name).log. Quit and reopen LoonInspect to start it again."
             self.log.error(message)
@@ -452,6 +469,70 @@ final class Supervisor: @unchecked Sendable {
         try process.run()
         store(self, process)
         log.info("started \(name), PID \(process.processIdentifier)")
+    }
+
+    private func holds(_ process: Process) -> Bool { lock.lock(); defer { lock.unlock() }; return process === postgres || process === backend }
+
+    // MARK: - the update check (#820)
+
+    /// LoonInspect › Check for Updates Daily, in the app's preferences (io.loonsec.looninspect).
+    static let updateCheckKey = "CheckForUpdatesDaily"
+
+    /// The stored choice: on until it is first turned off.
+    static func checksForUpdatesDaily(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: updateCheckKey) == nil || defaults.bool(forKey: updateCheckKey)
+    }
+
+    var checksForUpdatesDaily: Bool {
+        get { Self.checksForUpdatesDaily(in: .standard) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.updateCheckKey) }
+    }
+
+    /// What the backend is told about the update check: INSTANCE_KIND=mac-app, so the request's `kind` names the
+    /// app, and UPDATE_CHECK as the menu item says. An UPDATE_CHECK or UPDATE_CHECK_URL in the app's own environment
+    /// passes through and wins, so a test, a validation or a walk can start the app counted nowhere.
+    static func updateCheck(checksDaily: Bool, inherited: [String: String]) -> [String: String] {
+        var env = ["INSTANCE_KIND": "mac-app", "UPDATE_CHECK": checksDaily ? "true" : "false"]
+        for name in ["UPDATE_CHECK", "UPDATE_CHECK_URL"] where inherited[name] != nil { env[name] = inherited[name] }
+        return env
+    }
+
+    /// The app's own environment decides, and the menu item cannot change what the backend is told.
+    var updateCheckSetByEnvironment: Bool { ProcessInfo.processInfo.environment["UPDATE_CHECK"] != nil }
+
+    /// The running backend was told otherwise than it would be now: restartBackend applies the choice.
+    var updateCheckChanged: Bool {
+        let now = Self.updateCheck(checksDaily: checksForUpdatesDaily, inherited: ProcessInfo.processInfo.environment)
+        lock.lock(); defer { lock.unlock() }
+        return backend != nil && now != backendUpdateCheck
+    }
+
+    /// Calls `changed` when the choice changes, from the menu or a `defaults write`. KVO delivers another
+    /// process's change only to a running run loop, the window's; `--headless` reads the choice at start.
+    func observeUpdateCheckChoice(_ changed: @escaping @Sendable () -> Void) {
+        choiceObservation = UserDefaults.standard.observe(\.CheckForUpdatesDaily) { _, _ in changed() }
+    }
+
+    /// Stops the backend and starts it again on its port, told what the choice now says. Postgres keeps
+    /// running. For a change to Check for Updates Daily while the app runs, so off asks nothing from then on.
+    func restartBackend() throws {
+        lock.lock()
+        let old = backend, secrets = self.secrets, port = self.port
+        backend = nil
+        lock.unlock()
+        guard let secrets, let port else { throw ShellFailure("The backend never started, so it cannot be restarted.") }
+        if let old, old.isRunning {
+            log.info("restarting the backend (PID \(old.processIdentifier)) for Check for Updates Daily")
+            old.terminate()
+            if !waitForExit(old, seconds: 15) {
+                log.error("the backend did not stop within 15 s; killing it")
+                kill(old.processIdentifier, SIGKILL)
+                _ = waitForExit(old, seconds: 5)
+            }
+        }
+        try startBackend(port: port, secrets: secrets)
+        try waitUntilHealthy(port: port)
+        log.info("backend restarted, healthy at http://127.0.0.1:\(port)/")
     }
 
     // MARK: - stop
@@ -546,4 +627,9 @@ final class Supervisor: @unchecked Sendable {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return "(no log yet)" }
         return text.split(separator: "\n", omittingEmptySubsequences: false).suffix(lines).joined(separator: "\n")
     }
+}
+
+extension UserDefaults {
+    /// Supervisor.updateCheckKey as a key path KVO observes: the property's name is the key.
+    @objc dynamic var CheckForUpdatesDaily: Bool { bool(forKey: Supervisor.updateCheckKey) }
 }

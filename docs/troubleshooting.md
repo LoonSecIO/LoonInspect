@@ -2980,8 +2980,8 @@ PostgreSQL running as child processes of a small shell, on one Mac. Its database
 are under `~/Library/Application Support/LoonInspect`: the database in `pgdata`, and in `logs` the four
 files every sentence below names. **LoonInspect › Show Logs in Finder** opens that folder, and
 **LoonInspect › About LoonInspect** shows the version and build number a report needs.
-**Help › Using LoonInspect on This Mac** explains the local instance, network connections and
-manual updates. The startup screen names its current phase; a failure offers **Show Logs** and
+**Help › Using LoonInspect on This Mac** explains the local instance, network connections, the
+daily update check and manual updates. The startup screen names its current phase; a failure offers **Show Logs** and
 **Quit**. Read the failure before quitting, correct its cause, then reopen the app.
 
 **Maintainer: build or notarization fails.** In Actions, open **macOS release** and the failed
@@ -3162,6 +3162,25 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
    reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
    reads and configured SIEM delivery still work while the Mac app is running and awake.
+9. **The update notice never appears, or Settings › Support › Updates reads *Checking is off*.**
+   The app's switch is **LoonInspect › Check for Updates Daily**; a check mark is on. At every
+   start `logs/shell.log` says what the backend was told: *update check: the backend is told
+   INSTANCE_KIND=mac-app and UPDATE_CHECK=…, from …*.
+   - No check mark → choose it. The window reads *Restarting LoonInspect* and reloads; the check
+     is then owed as §10 says, and asked only while the app is open and the Mac awake.
+   - The item is dimmed, or the line ends *from the app's environment, over Check for Updates
+     Daily* → the app was started with `UPDATE_CHECK` in its environment, as a test starts it.
+     Quit, and open it from Finder or the Dock; `launchctl getenv UPDATE_CHECK` prints a value
+     set for every app, which `launchctl unsetenv UPDATE_CHECK` removes.
+   - *The local service stopped* and *Check for Updates Daily changed, and the local server did
+     not come back:* → the rest of the sentence is one of step 2's. Quit and open the app: it
+     starts with the new choice.
+   - Any other sentence → §10 step 1, with `logs/backend.log` for the container log
+     (`grep 'update check' ~/Library/Application\ Support/LoonInspect/logs/backend.log`) and
+     `curl -sS -o /dev/null -w '%{http_code}\n' https://api.next.loonsec.io/v1/update` in
+     Terminal, which prints a status when this Mac reaches the host. *No check of this build has
+     run yet* lasts longer on a Mac seldom open: the first check waits for its moment, then for
+     the app to be open.
 
 ## 26. "A promoted application is not being sent, or Promote is refused"
 

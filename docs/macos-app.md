@@ -43,8 +43,9 @@ reachable only from this Mac. Jamf cannot send webhooks to its loopback address;
 server deployment for incoming webhooks and continuous operation.
 
 Local storage does not mean no outbound traffic. LoonInspect contacts Jamf and the destinations
-you configure; community sharing and configured AI have their own controls, and the Fleet
-catalog, while its flag is on, reads Fleet's repository on GitHub once a day. Setup preselects
+you configure; community sharing and configured AI have their own controls, the Fleet catalog,
+while its flag is on, reads Fleet's repository on GitHub once a day, and the update check asks
+LoonSec once a day whether a newer release exists ([Updates](#updates)). Setup preselects
 the community-sharing choice. Review it there and under **Settings › Data Sharing** before
 collecting production inventory. Connection secrets are encrypted in the database with a key
 in login Keychain; the database itself is not encrypted by LoonInspect.
@@ -84,7 +85,7 @@ The app's own files are all in `~/Library/Application Support/LoonInspect`, mode
 The window adds the paths macOS and WebKit name after the bundle identifier for any app with a
 web view: `~/Library/WebKit/io.loonsec.looninspect` (the page's site data),
 `~/Library/Caches/io.loonsec.looninspect` (WebKit's HTTP cache),
-`~/Library/Preferences/io.loonsec.looninspect.plist` (the window's frame), and the per-user
+`~/Library/Preferences/io.loonsec.looninspect.plist` (the window's frame and Check for Updates Daily), and the per-user
 temporary and cache entries under `/var/folders` that WebKit's own processes make.
 
 **The socket path.** `sockaddr_un.sun_path` is 104 bytes on macOS, terminator included, and
@@ -138,7 +139,8 @@ completion or failure; cancelling the save dialog cancels that download.
 | `DATABASE_MODE` | `bundled` | `bundled` | The same promise: the role was made right at first boot. |
 | `ENCRYPTION_KEY` | `.env` | login keychain | Never in a file. |
 | `SECURE_COOKIES` | `true` | `false` | Plain HTTP on 127.0.0.1 only, so no cookie crosses a network; WebKit's handling of Secure cookies over `http://127.0.0.1` is not one to lean on. |
-| `UPDATE_CHECK` | `true` | `false` | Its notice tells an operator to pull an image. How the app updates is below. |
+| `UPDATE_CHECK` | `true` | **Check for Updates Daily**: `true` until it is turned off | The app's user has no `.env`; the menu item is the switch ([Updates](#updates)). |
+| `INSTANCE_KIND` | `container` | `mac-app` | The update check's `kind`, which says the request comes from the app. |
 | Everything else | compose's defaults, which equal `config.py`'s | `config.py`'s defaults | pydantic-settings reads a `.env` from the working directory, which here is the support directory. |
 
 ### The first administrator
@@ -221,9 +223,29 @@ are in
 
 ### Updates
 
-There is no update mechanism, and `UPDATE_CHECK` is off because its notice tells an operator to
-pull an image: the app does not say that a newer release exists. An update is the newer disk
-image from the release page, taken by hand.
+**The check.** About once a day the app asks LoonSec's update service, as the container does
+(`troubleshooting.md` §10), whether a newer release exists: one `POST` to
+`https://api.next.loonsec.io/v1/update` of five keys, the contract word (`v1`), the release, the
+kind (`mac-app`, from the `INSTANCE_KIND` the shell sets), how far setup has got (`unclaimed`,
+`claimed`, `connected` or `collecting`) and the day number LoonSec gave its last answered check.
+No instance identifier, no inventory. The banner and **Settings › Support › Updates** say when a
+newer release exists; the steps the block prints are still the container's, and the app's are
+below. It asks only while the app is open and the Mac awake, so on the days the app is used;
+nothing wakes it to check, and a check owed meanwhile is asked once the app runs again.
+
+**The switch** is **LoonInspect › Check for Updates Daily**, on until it is turned off, which
+sets `UPDATE_CHECK`. The choice is kept in the app's preferences (`CheckForUpdatesDaily` in
+`io.loonsec.looninspect`), outside the bundle, so an update keeps it. Off, the backend asks
+nothing. A change while the app runs restarts the backend at once on the same port: the window
+reads *Restarting LoonInspect*, then reloads its page, and a collection run in progress stops as
+at Quit. `defaults write io.loonsec.looninspect CheckForUpdatesDaily -bool false` is the same
+switch, applied the same way by a running window and at start by `--headless`. An
+`UPDATE_CHECK` or `UPDATE_CHECK_URL` in the app's own environment is passed to the backend and
+wins over the menu item, which is then dimmed: that is how a test starts the app counted
+nowhere ([`macos/README.md`](../macos/README.md#build-and-run)). `shell.log` says at every
+start what the backend was told and from where (*update check: the backend is told …*).
+
+**Taking an update** is by hand, with the newer disk image from the release page.
 
 1. **Quit LoonInspect**, from the menu or with ⌘Q. Closing the window is not quitting: the
    backend and Postgres keep running, and the app must not be replaced under them.
@@ -232,19 +254,21 @@ image from the release page, taken by hand.
    does, before the window loads.
 
 What an update keeps: everything outside the bundle. The data directory, the three keychain
-items and `preferred-port` are the ones the older app made, so accounts, connections with their
-credentials, settings, inventory and the port all carry over, and a browser session opened with
+items, `preferred-port` and the preferences are the ones the older app made, so accounts, connections with their
+credentials, settings, inventory, the port and Check for Updates Daily all carry over, and a browser session opened with
 **Open in Browser** stays signed in because the origin did not move. What it replaces: the
 bundle, and so the backend, the frontend, the runtimes and the shell.
 
 **Stepping back** is the same three steps with the older disk image, and it obeys the image's
 rule (`operations.md` §5): a build that finds a schema revision it does not carry reads the
 database's release record, starts without migrating when its own `RELEASE` is at or above the
-record, and refuses with a sentence naming both when it is below. The 1.0.0 app carries that
-reader, and the record still reads `v1.0.0`, so 1.0.0 starts on a database 1.1.0 migrated and
-`backend.log` says *…which recorded that v1.0.0 or later can read it; this image is v1.0.0 (build
-…), so it starts without migrating*. The two tables 1.1.0 added stay, unread, and going forward
-again migrates nothing. `troubleshooting.md` §25 step 5 is the refusal's step-through.
+record, and refuses with a sentence naming both when it is below. 1.2.0's migration records that
+v1.1.0 reads its schema, so 1.1.0 starts on a database 1.2.0 migrated and `backend.log` says *…which recorded
+that v1.1.0 or later can read it; this image is v1.1.0 (build …), so it starts without
+migrating*. The table 1.2.0 added stays, unread, and going forward again migrates nothing. 1.0.0
+is below the record and refuses (*…so it will not start on it*); `troubleshooting.md` §25 step 5
+is the refusal's step-through. An older app has no menu item and starts its backend with the
+check off whatever the item said; the choice stays in the preferences, unread, for 1.2.0.
 
 A Postgres major (17 to 18) would need `pg_upgrade` or a dump and restore, the same question the
 container's database volume has. The backup before any of this is [Backup](#backup): a copy of
@@ -280,10 +304,9 @@ audit and diagnostic history is needed.
   **Quit** means.
 - **The setup claim exchange** stays, shell-held, by Kyle's ruling of 2026-10-06; gutting it is a
   backend change and a ruling, owed before a public release.
-- **No update mechanism, and no notice that an update exists.** Sparkle 2 (an EdDSA-signed
-  appcast and a URL to host it), the existing GitHub release check with words for an app, or a
-  Homebrew cask. Undecided. Until one is chosen an update is [by hand](#updates), and a user
-  learns of a newer release from the releases page.
+- **No update mechanism.** The app says that a newer release exists, and taking it is
+  [by hand](#updates). Sparkle 2 (an EdDSA-signed appcast and a URL to host it) or a Homebrew
+  cask would take it. Undecided.
 - **No `pg_dump`.** EnterpriseDB's client binaries (zonky's own upstream) with a Back Up command
   in the app menu would give `operations.md` §2 to the app.
 - **The keychain items trust `/usr/bin/security`**, so any process of the same user reads them

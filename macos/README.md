@@ -21,7 +21,7 @@ it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md)
 For an already-built release, open the DMG and drag **LoonInspect** to **Applications**.
 The receiving Apple-silicon Mac needs no development tools or separate runtime. The native
 **Help › Using LoonInspect on This Mac** explains the local instance, data location, network
-connections and manual updates. Closing the window leaves the app running; **Quit** stops its
+connections, the daily update check and its switch, and manual updates. Closing the window leaves the app running; **Quit** stops its
 services and sleep pauses them. The UI is local to this Mac, while Jamf, configured destinations
 and enabled sharing or AI can make outbound connections. Review the setup sharing choice and
 **Settings › Data Sharing** before collecting production inventory.
@@ -40,9 +40,15 @@ The exporter runs offline with `--frozen`; wheel installation verifies the lockf
 
 ```sh
 macos/scripts/build-app.sh
-open macos/build/LoonInspect.app
-macos/build/LoonInspect.app/Contents/MacOS/LoonInspect --headless   # everything but the window
+open --env UPDATE_CHECK=false macos/build/LoonInspect.app
+UPDATE_CHECK=false macos/build/LoonInspect.app/Contents/MacOS/LoonInspect --headless   # everything but the window
 ```
+
+A build from this tree asks LoonSec's update service once a day, as a release does, and is
+counted. A test starts it counted nowhere, as above: an `UPDATE_CHECK`, or an `UPDATE_CHECK_URL`
+naming a stand-in of your own whose path ends `/v1/update`, in the app's environment is passed
+to the backend and wins over **Check for Updates Daily**, which is then dimmed (`shell.log`
+says which decided). `open` passes the terminal's environment only through `--env`.
 
 The build signs with the one "Developer ID Application" identity in the login keychain, or
 ad-hoc when there is none (`SIGN_IDENTITY=-` forces that). An ad-hoc build runs on the Mac that
@@ -165,22 +171,24 @@ check, against a fake `gh`; it needs `jq`, which macOS and the runners ship.
 ## Native regression checks
 
 `bash macos/tests/run-shell-tests.sh` checks saved-port recovery, failed log/input pipes,
-watchdog behavior, and export replacement using temporary files and mocked signals.
+watchdog behavior, export replacement and the backend's environment for each state of Check for
+Updates Daily and of the app's own environment, using temporary files and mocked signals.
 It never starts the real app or reads its Keychain items. These checks also run in macOS CI.
 
 For window recovery, run `python3 macos/tests/window/run.py --source-dir .` from the repository
 on a Mac with a logged-in graphical session. It compiles the actual delegate and views against
 fake services, serves a disposable loopback page, uses nonpersistent WebKit storage, and disables
-frame autosaving. It checks cancellation, reload, failed service cleanup, and late startup
-callbacks without accessing an existing installation's data. This GUI harness is separate from
+frame autosaving. It checks cancellation, reload, failed service cleanup, late startup
+callbacks, and that Check for Updates Daily restarts the server once and reloads the page,
+without accessing an existing installation's data. This GUI harness is separate from
 the headless checks; running it briefly creates test windows.
 
 ## Where it keeps things, and how to start over
 
 The app keeps its database and logs in `~/Library/Application Support/LoonInspect`, its three
 secrets in the login keychain under the service `LoonInspect`, and the port it chose in
-`run/port` there. The window's web view data, cache and frame are kept under the bundle
-identifier, `io.loonsec.looninspect`. To start over, quit it and remove them all:
+`run/port` there. The window's web view data, cache, frame and Check for Updates Daily choice are
+kept under the bundle identifier, `io.loonsec.looninspect`. To start over, quit it and remove them all:
 
 ```sh
 rm -rf ~/Library/Application\ Support/LoonInspect \

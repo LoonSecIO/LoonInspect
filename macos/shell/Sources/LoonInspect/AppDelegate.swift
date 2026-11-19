@@ -2,7 +2,7 @@ import AppKit
 import WebKit
 
 /// The window: one WKWebView on the backend's own UI, native startup and recovery views,
-/// a readable failure with direct access to logs, and the app menu's
+/// a readable failure with direct access to logs, and the app menu's Check for Updates Daily,
 /// Open in Browser, Show Logs in Finder and Quit. On a first launch the window's page is handed
 /// this session's setup claim token. Quitting (the menu, ⌘Q, `osascript -e 'quit app
 /// "LoonInspect"'`, logout, SIGTERM) stops the children first.
@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var serviceFailed = false
     private var stoppingServices = false
     private var servicesStopped = false
+    private var restarting = false
     private var afterStop: [() -> Void] = []
     private var downloads: [ObjectIdentifier: ExportDestination] = [:]
     private var reportedFirstPage = false
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             }
         }
         supervisor.onUnexpectedExit = { message in Task { @MainActor in self.failService(message) } }
+        supervisor.observeUpdateCheckChoice { Task { @MainActor in self.applyUpdateCheckChoice() } }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let port = try supervisor.start()
@@ -91,6 +93,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                                                          reason: "The LoonInspect server is running")
         handClaimTokenToWindow(port: port)
         reload()
+        applyUpdateCheckChoice()  // one changed while it started
+    }
+
+    /// A change to Check for Updates Daily, from the menu or a `defaults write`, restarts the backend at once,
+    /// so off asks nothing from then on. One made while it starts waits for `started`; after a failure, for the next launch.
+    private func applyUpdateCheckChoice() {
+        guard port != nil, !quitting, !serviceFailed, !restarting, supervisor.updateCheckChanged else { return }
+        restarting = true
+        show("Restarting LoonInspect", "Check for Updates Daily is \(supervisor.checksForUpdatesDaily ? "on" : "off"). "
+            + "The local server restarts with it, then this page reloads.", spinner: true)
+        let supervisor = self.supervisor
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try supervisor.restartBackend()
+                Task { @MainActor in
+                    self.restarting = false
+                    guard let port = self.port else { return }
+                    self.handClaimTokenToWindow(port: port)
+                    self.reload()
+                    self.applyUpdateCheckChoice()  // changed again meanwhile
+                }
+            } catch {
+                guard !supervisor.isStopping else { return }
+                supervisor.log.error("\(error)")
+                Task { @MainActor in
+                    self.restarting = false
+                    self.failService("Check for Updates Daily changed, and the local server did not come back: \(error)")
+                }
+            }
+        }
     }
 
     /// The setup claim token, to this window's page and nowhere else. A container-era control, held
@@ -100,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     /// the setup page then draws no claim field. The shell puts the token in no URL, file, pasteboard
     /// or log line, and a browser opened with Open in Browser gets none: its setup page asks for it.
     private func handClaimTokenToWindow(port: Int) {
+        // A restarted backend minted another token, if it minted one: the earlier script would define the stale one first.
+        webView.configuration.userContentController.removeAllUserScripts()
         guard let token = supervisor.claimToken(),
               token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
             supervisor.log.info("no usable setup claim token in this session's backend log; none handed to the window")
@@ -205,6 +239,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         _ = submenu("LoonInspect", [
             item("About LoonInspect", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
+            item("Check for Updates Daily", #selector(toggleUpdateCheck)),
+            .separator(),
             item("Open in Browser", #selector(openInBrowser), "b"),
             item("Show Logs in Finder", #selector(showLogs)),
             .separator(),
@@ -240,10 +276,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
-        case #selector(openInBrowser), #selector(reload): return port != nil && !quitting
+        case #selector(openInBrowser), #selector(reload): return port != nil && !quitting && !restarting
+        case #selector(toggleUpdateCheck):
+            menuItem.state = supervisor.checksForUpdatesDaily ? .on : .off
+            return !quitting && !restarting && !supervisor.updateCheckSetByEnvironment
         default: return true
         }
     }
+
+    /// The choice goes to the app's preferences; the observer set at launch applies it.
+    @objc private func toggleUpdateCheck() { supervisor.checksForUpdatesDaily.toggle() }
 
     @objc private func openInBrowser() {
         if let port { NSWorkspace.shared.open(URL(string: "http://127.0.0.1:\(port)/")!) }
@@ -253,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc private func showData() { NSWorkspace.shared.open(supervisor.support) }
     @objc private func showGuide() { guide.show() }
     @objc private func reload() {
-        guard let port, !quitting, !serviceFailed else { return }
+        guard let port, !quitting, !serviceFailed, !restarting else { return }
         let url = lastLocalURL ?? URL(string: "http://127.0.0.1:\(port)/")!
         show("Opening your workspace", "Connecting to LoonInspect on this Mac.", spinner: true)
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
@@ -378,7 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     private func reportNavigationFailure(_ error: Error) {
         let failure = error as NSError
-        guard !quitting, !serviceFailed, port != nil,
+        guard !quitting, !serviceFailed, !restarting, port != nil,
               !(failure.domain == NSURLErrorDomain && failure.code == NSURLErrorCancelled),
               let url = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL, isOurs(url) else { return }
         supervisor.log.error("window could not load local page: \(error.localizedDescription)")
@@ -387,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard !quitting, !serviceFailed, let url = webView.url, isOurs(url) else { return }
+        guard !quitting, !serviceFailed, !restarting, let url = webView.url, isOurs(url) else { return }
         webView.isHidden = false
         statusView.isHidden = true
         guard !reportedFirstPage else { return }
