@@ -346,11 +346,12 @@ failed exchange's reason names its host ([`troubleshooting.md`](troubleshooting.
 step 6).
 
 The product token is `LoonSecIO`, not `LoonInspect`: every outbound call this
-container makes — the exchange, the update check, Jamf, the patch catalogue — is
+container makes — the exchange, Jamf, the patch catalogue, an update check that asks GitHub — is
 built by `app.core.user_agent.build_user_agent` from one setting
 (`user_agent_product_name`), and the trailing word is the per-caller comment. A
 server matching on the token should match that one, and treat the comment as the
-thing that distinguishes an exchange from an update check.
+thing that distinguishes an exchange from an update check. The exception is an update check that
+asks LoonSec's update service: always `LoonSecIO/<release> update-check`, with no build stamp (#819).
 
 ```jsonc
 // request

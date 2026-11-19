@@ -177,12 +177,15 @@ class Settings(BaseSettings):
     # when one is available (#407). UPDATE_CHECK=false turns the outbound call off
     # entirely (see issue #43), and Settings > Support then says so.
     update_check: bool = True
-    # Where that check asks: the base of a GitHub-shaped repository API. Empty means
-    # this repository's (`https://api.github.com/repos/LoonSecIO/LoonInspect`). The check
+    # Where that check asks (#819). Empty is LoonSec's update service, `https://api.next.loonsec.io/v1/update`,
+    # sent one POST of five keys (app.core.update_check), as is any value ending `/v1/update`. Any other is the
+    # base of a GitHub-shaped repository API (GitHub's own, which keeps the notice and is not counted, is
+    # `https://api.github.com/repos/LoonSecIO/LoonInspect`), asked as v1.1.0 asks it, with no body: the check
     # asks `<base>/releases/latest` for `tag_name` and `html_url`, then
-    # `<base>/compare/<tag>...<build sha>` for `status` and `base_commit.sha` — so a mock,
-    # or api.loonsec.io after the flip (#43), answers those two paths.
+    # `<base>/compare/<tag>...<build sha>` for `status` and `base_commit.sha`.
     update_check_url: str = ""
+    # Sent as that check's `kind`: `mac-app` once LoonInspect.app's shell sets it (#820), else `container`. An identity.
+    instance_kind: Literal["container", "mac-app"] = "container"
 
     # Every timed loop in `app.main`, on or off for this process. False is how a second
     # container is made web-only: it still serves the UI, the API and the work a request

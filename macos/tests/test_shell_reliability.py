@@ -1,4 +1,5 @@
-"""Check shell recovery helpers without launching the app or accessing the Keychain.
+"""Check shell recovery helpers, and the environment the shell gives the backend, without
+launching the app, accessing the Keychain or writing the app's preferences.
 
 Run with python3 macos/tests/test_shell_reliability.py. Swift checks require macOS and
 Xcode's compiler. They compile the real shell sources into an isolated test executable;
@@ -6,6 +7,7 @@ all files live in a temporary directory, and Supervisor is never instantiated.
 """
 
 import importlib.util
+import json
 import os
 import shutil
 import signal
@@ -59,6 +61,21 @@ case "closed-input":
     } catch {
         print("reported closed input")
     }
+case "backend-env":
+    // The menu item's stored choice goes in the registration domain, which lives in this process only.
+    let defaults = UserDefaults(suiteName: "io.loonsec.looninspect.shell-tests")!
+    if let stored = ["on": true, "off": false][CommandLine.arguments[2]] {
+        defaults.register(defaults: [Supervisor.updateCheckKey: stored])
+    }
+    let inherited = Dictionary(uniqueKeysWithValues: CommandLine.arguments.dropFirst(3).map {
+        let parts = $0.split(separator: "=", maxSplits: 1).map(String.init); return (parts[0], parts[1])
+    })
+    let env = Supervisor.backendEnvironment(
+        inherited: inherited, resources: URL(fileURLWithPath: "/Resources"), port: 49152,
+        socketDir: URL(fileURLWithPath: "/socket"),
+        secrets: Supervisor.Secrets(encryptionKey: "key", appPassword: "password", superuserPassword: ""),
+        checksDaily: Supervisor.checksForUpdatesDaily(in: defaults))
+    print(String(decoding: try JSONSerialization.data(withJSONObject: env, options: .sortedKeys), as: UTF8.self))
 default:
     fatalError("Unknown harness operation")
 }
@@ -185,6 +202,63 @@ class ShellReliabilityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "reported closed input")
+
+    def test_backend_environment_for_each_choice_and_app_environment(self):
+        # Whole, so no later line can undo the choice unseen. Never chosen is on (#820); the app's own
+        # UPDATE_CHECK and UPDATE_CHECK_URL pass as they are and win; nothing else of its environment does.
+        url = "http://127.0.0.1:9/v1/update"
+        cases = [
+            ("unset", [], {}),
+            ("on", [], {}),
+            ("off", [], {"UPDATE_CHECK": "false"}),
+            ("on", ["UPDATE_CHECK=false"], {"UPDATE_CHECK": "false"}),
+            ("off", ["UPDATE_CHECK=true"], {}),
+            ("off", [f"UPDATE_CHECK_URL={url}"], {"UPDATE_CHECK": "false", "UPDATE_CHECK_URL": url}),
+            ("unset", [f"UPDATE_CHECK_URL={url}"], {"UPDATE_CHECK_URL": url}),
+            ("on", ["UPDATE_CHECK=0", f"UPDATE_CHECK_URL={url}"], {"UPDATE_CHECK": "0", "UPDATE_CHECK_URL": url}),
+            (
+                "off",
+                ["INSTANCE_KIND=container", "DATABASE_URL=elsewhere", "PYTHONPATH=/x", "PGDATA=/x", "HOME=/Users/t"],
+                {"UPDATE_CHECK": "false", "HOME": "/Users/t"},
+            ),
+        ]
+        for choice, inherited, told in cases:
+            with self.subTest(choice=choice, inherited=inherited):
+                result = subprocess.run(
+                    [str(self.executable), "backend-env", choice, *inherited],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), BACKEND_ENVIRONMENT | told)
+
+    def test_start_backend_adds_only_the_watchdog_names(self):
+        body = (MACOS / "shell/Sources/LoonInspect/Supervisor.swift").read_text().split("func startBackend(")[1]
+        added = [line.split('"')[1] for line in body.split("\n    }\n")[0].splitlines() if '"] = ' in line]
+        watchdog = ["LOON_SHELL_PGDATA", "LOON_SHELL_PID", "LOON_SHELL_POSTGRES_PID"]
+        self.assertEqual(added, watchdog, "set it in backendEnvironment, which the environment test reads")
+
+
+# What the backend is told with the choice on, for the harness's port, paths and secrets.
+BACKEND_ENVIRONMENT = {
+    "DATABASE_MODE": "bundled",
+    "DATABASE_URL": "postgresql+asyncpg://looninspect_app:password@/looninspect?host=/socket",
+    "ENCRYPTION_KEY": "key",
+    "HOST": "127.0.0.1",
+    "INSTANCE_KIND": "mac-app",
+    "LANG": "en_US.UTF-8",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "PORT": "49152",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONPATH": "/Resources/backend",
+    "PYTHONUNBUFFERED": "1",
+    "SECURE_COOKIES": "false",
+    "TLS_MODE": "off",
+    "UPDATE_CHECK": "true",
+}
 
 
 class WatchdogTests(unittest.TestCase):

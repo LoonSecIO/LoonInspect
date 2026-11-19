@@ -13,7 +13,7 @@
 # CI use node 22), uv 0.9.30, and the network for the pinned downloads and
 # the signature timestamps.
 #
-#   macos/scripts/build-app.sh                       # then: open macos/build/LoonInspect.app
+#   macos/scripts/build-app.sh                       # then: open --env UPDATE_CHECK=false macos/build/LoonInspect.app
 #   SIGN_IDENTITY=- macos/scripts/build-app.sh       # ad-hoc on purpose, with a Developer ID in the keychain
 #   BUILD_NUMBER=42 macos/scripts/build-app.sh       # CFBundleVersion; default is the UTC build minute
 set -euo pipefail
