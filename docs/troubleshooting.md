@@ -1424,19 +1424,21 @@ is not the check to make here.
      tag is spelled the way the Releases page spells it, `v` included; and a release's images
      arrive a few minutes after it is published. Correct `LOONINSPECT_VERSION` and pull again.
    - It stops at `unauthorized` (some Docker versions say `denied`) → the registry will not
-     show this host the image. The two images are private, as the repository is, so a pull
-     needs Docker signed in to `ghcr.io` as a GitHub account that can read the repository
-     (README step 4). Without a sign-in the registry gives this answer for every tag, one that
-     does not exist included, so it says nothing yet about `LOONINSPECT_VERSION`. In order:
+     show this host the image. The two images are private, though the repository is public, so
+     a pull needs Docker signed in to `ghcr.io` as a GitHub account the project has given read
+     access to them (README step 4). Without a sign-in the registry gives this answer for
+     every tag, one that does not exist included, so it says nothing yet about
+     `LOONINSPECT_VERSION`. In order:
      - **Sign in on this host**: `docker login ghcr.io -u <your GitHub username>`, and at
        `Password:` a personal access token (classic) that carries `read:packages`, not the
        account's password. `Login Succeeded` is the answer to wait for; then pull again. A
        sign-in that worked before stops when its token expires or is revoked: make a new token
        and sign in again.
      - **Signed in, and still refused** → the account or the token cannot read the package. The
-       account reads it when it can open this repository on github.com; if it cannot, ask the
-       project for read access. The token has to be a classic one with `read:packages`; this
-       registry takes no other kind.
+       account reads it only when the project has given it read access: the repository is
+       public, so being able to open it on github.com shows nothing about the images. If the
+       account has no such access, ask the project for it, or build from source as below. The
+       token has to be a classic one with `read:packages`; this registry takes no other kind.
      - **Both hold** → check the names. `docker compose config --images` prints what it
        pulls: `ghcr.io/loonsecio/looninspect`, and with the bundled database
        `ghcr.io/loonsecio/looninspect-db` too (with the external one, the app alone), the tag
