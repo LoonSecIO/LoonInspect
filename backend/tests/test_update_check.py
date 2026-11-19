@@ -20,7 +20,7 @@ each request so the order and the URLs are asserted, not assumed.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -68,16 +68,11 @@ def _compare_body(status: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
-    """A cold cache, the check on, and the default provider for every test — the module
-    caches across calls, so without this a test would assert another test's answer."""
-    from app.core import update_check
+    """The check on, and the default provider, for every test."""
     from app.core.config import settings
 
-    monkeypatch.setattr(update_check, "_cache", None)
     monkeypatch.setattr(settings, "update_check", True)
     monkeypatch.setattr(settings, "update_check_url", "")
-    yield
-    monkeypatch.setattr(update_check, "_cache", None)
 
 
 def _serve(monkeypatch, handler) -> list[httpx.Request]:
@@ -303,40 +298,6 @@ async def test_disabled_is_named_and_never_calls_out(monkeypatch) -> None:
     assert seen == []
 
 
-async def test_one_check_is_two_calls_and_the_answer_is_cached(monkeypatch) -> None:
-    """Every signed-in page load asks `/system/update-status`; without the cache that is
-    two api.github.com calls per request and a 403 within the hour."""
-    from app.core.update_check import get_update_status
-
-    _stamp(monkeypatch, SHORT)
-    seen = _serve(monkeypatch, _github())
-
-    first = await get_update_status()
-    second = await get_update_status()
-
-    assert len(seen) == 2
-    assert first.checked_at == second.checked_at and second.update_available is False
-
-
-@pytest.mark.parametrize(("reason", "asks_again"), [("refused", True), ("unreachable", True), ("no_release", False)])
-async def test_a_failure_is_retried_within_the_hour_and_an_answer_is_kept_for_the_day(monkeypatch, reason, asks_again) -> None:
-    """`no_release` is GitHub's answer, not a failure to get one, so it keeps the day's
-    cache; a refusal or no answer at all is asked again after an hour."""
-    from app.core import update_check
-
-    two_hours_ago = datetime.now(UTC) - timedelta(hours=2)
-    update_check._cache = update_check._CacheEntry(
-        checked_at=two_hours_ago, answer=update_check._Answer(update_available=None, reason=reason)
-    )
-    _stamp(monkeypatch, SHORT)
-    seen = _serve(monkeypatch, _github())
-
-    result = await update_check.get_update_status()
-
-    assert bool(seen) is asks_again
-    assert result.reason == (None if asks_again else reason)
-
-
 async def test_the_release_page_is_only_ever_an_https_link(monkeypatch) -> None:
     """`release_url` is rendered as an `href`, and the provider is whatever UPDATE_CHECK_URL
     names; anything but https is dropped and the rest of the answer stands."""
@@ -371,7 +332,7 @@ async def test_the_route_passes_every_field_through(monkeypatch) -> None:
 
     checked = datetime(2026, 9, 18, 9, 0, tzinfo=UTC)
 
-    async def status() -> UpdateStatus:
+    async def status(db) -> UpdateStatus:
         return UpdateStatus(
             enabled=True,
             current_version=SHORT,
@@ -383,8 +344,8 @@ async def test_the_route_passes_every_field_through(monkeypatch) -> None:
             reason=None,
         )
 
-    monkeypatch.setattr(system, "get_update_status", status)
-    body = (await system.update_status()).model_dump(mode="json", by_alias=True)
+    monkeypatch.setattr(system, "read_update_status", status)
+    body = (await system.update_status(db=None)).model_dump(mode="json", by_alias=True)
 
     assert body == {
         "enabled": True,

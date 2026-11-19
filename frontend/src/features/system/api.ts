@@ -1,7 +1,7 @@
 import { apiRequest } from "@/config/api";
 
-/** Why the check could not answer (#407) — one of six, never a blank. */
-export type UpdateReason = "disabled" | "dev_build" | "unreachable" | "refused" | "no_release" | "unknown_commit";
+/** Why the check could not answer (#407, #819) — one of seven, never a blank. */
+export type UpdateReason = "disabled" | "dev_build" | "not_checked" | "unreachable" | "refused" | "no_release" | "unknown_commit";
 
 export interface UpdateStatusResponse {
   enabled: boolean;

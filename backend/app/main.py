@@ -88,6 +88,7 @@ from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_ex
 from app.core.submissions import forget_closed
 from app.core.tenancy import OPERATIONAL_TENANT_ID
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
+from app.core.update_check import tick as update_check
 from app.core.vuln_library import refresh_from_db
 from app.mdm.collections import tick_tenant
 from app.mdm.concurrency import IngestBusy
@@ -272,6 +273,17 @@ async def fleet_catalog_tick() -> None:
         logger.exception(
             "Fleet catalog check could not run; the titles already held stay and the next hour tries again. "
             "Check the database container is healthy (docker compose ps db)"
+        )
+
+
+async def update_check_tick() -> None:
+    """The update check (#819): looks every minute; `app.core.update_check.due` decides from its row."""
+    try:
+        await update_check()
+    except Exception:
+        logger.exception(
+            "update check could not run; Settings › Support › Updates keeps the last answer stored and a later "
+            "minute tries again. Check the database container is healthy (docker compose ps db)"
         )
 
 
@@ -628,6 +640,7 @@ async def lifespan(app: FastAPI):
             id="fleet_catalog_tick",
             replace_existing=True,
         )
+        scheduler.add_job(update_check_tick, IntervalTrigger(minutes=1), id="update_check_tick", replace_existing=True)
         scheduler.add_job(
             sharing_exchange_tick,
             IntervalTrigger(minutes=5),

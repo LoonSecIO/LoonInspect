@@ -634,6 +634,8 @@ export const en = {
           "Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.",
         dev_build:
           "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
+        not_checked:
+          "No check of this build has run yet. The first runs within a day, at a minute this instance drew for itself, from a container with the scheduler on; a container started with SCHEDULER_ENABLED=false never asks.",
         unreachable:
           "GitHub could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again within the hour; check that this container can reach api.github.com over HTTPS.",
         refused:
