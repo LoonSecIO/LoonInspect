@@ -12,7 +12,8 @@ body, and that the lines marked `*(filled in at the tag)*` are filled in then. A
 `release.yml` appends the upgrade notes beneath the body.
 
 **The marker** is `*(filled in at the tag)*`, written whole on one line. Any `*(filled in …)*`
-is read as the marker, so the `*(filled in then)*` of older files is caught as well.
+is read as the marker, so the `*(filled in then)*` of older files is caught as well, and the
+notes use that form for nothing else.
 
 - On `Release commit: *(filled in at the tag)*` the draft run writes the commit it built.
 - Every other marked line is a person's to fill, on the draft. The draft run's notice and summary
