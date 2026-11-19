@@ -38,6 +38,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: .github/scripts/check-action-pins.sh
 
+  # Nothing CI or a script here starts may be counted as an install (#821); what it reads heads the
+  # script. The runner's python3 has PyYAML, as policy.yml relies on; the backend job's tests run it too.
+  test-stacks:
+    name: Test stacks uncounted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: .github/scripts/check_test_stacks.py
+
   frontend:
     name: Frontend (typecheck + lint)
     runs-on: ubuntu-latest
@@ -179,6 +188,8 @@ jobs:
         if: ${{ !cancelled() }}  # like the step above (docs/BRANCHING.md §1.1)
         run: ../.github/scripts/check_requirement_rereads.py
 
+  # Every container of looninspect:ci here starts with UPDATE_CHECK=false, one-line commands too:
+  # from v1.2.0 one started with the check on is counted as an install, and none is (#821).
   image:
     name: Docker image
     runs-on: ubuntu-latest
@@ -211,7 +222,7 @@ jobs:
       # GET /api/evidence/report 503s in the shipped image on a green build.
       - name: Assert the image carries the baseline rule catalogue
         run: |
-          docker run --rm looninspect:ci uv run --frozen --no-dev --no-sync python -c \
+          docker run --rm -e UPDATE_CHECK=false looninspect:ci uv run --frozen --no-dev --no-sync python -c \
             "from app.baseline.catalogue import catalogue; c = catalogue(); print('catalogue v%s, %d rules' % (c.version, len(c.rules)))" \
             || { echo "::error::the shipped image cannot read docs/baseline-rules.yml — check the Dockerfile COPY, the .dockerignore exception, and pyyaml in [project].dependencies"; exit 1; }
 
@@ -254,9 +265,10 @@ jobs:
           docker exec smoke-db pg_isready -U looninspect -d looninspect || {
             echo "::error::database never became ready"; docker logs smoke-db; exit 1; }
 
-          KEY=$(docker run --rm looninspect:ci uv run --frozen --no-dev \
+          KEY=$(docker run --rm -e UPDATE_CHECK=false looninspect:ci uv run --frozen --no-dev \
                   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
           docker run -d --name smoke --network smoke-net \
+            -e UPDATE_CHECK=false \
             -e ENCRYPTION_KEY="$KEY" \
             -e DATABASE_URL="postgresql+asyncpg://looninspect_app:${PG_APP_PASSWORD}@smoke-db:5432/looninspect" \
             -p 8001:8001 looninspect:ci
@@ -293,10 +305,10 @@ jobs:
             -e PGHOST=smoke-tls -e PGDATABASE=looninspect -e PGUSER=master -e PGPASSWORD="$PG_SUPERUSER_PASSWORD" \
             -e APP_USER=looninspect_app -e APP_PASSWORD="$PG_APP_PASSWORD" \
             looninspect-db:ci /usr/local/bin/looninspect-db-init
-          KEY=$(docker run --rm looninspect:ci uv run --frozen --no-dev \
+          KEY=$(docker run --rm -e UPDATE_CHECK=false looninspect:ci uv run --frozen --no-dev \
                   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
           docker run -d --name smoke-external --network smoke-net \
-            -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
+            -e UPDATE_CHECK=false -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
             -e DATABASE_URL="postgresql+asyncpg://looninspect_app:${PG_APP_PASSWORD}@smoke-tls:5432/looninspect?ssl=require" \
             looninspect:ci
           for i in $(seq 1 30); do
@@ -311,7 +323,7 @@ jobs:
             "SELECT ssl FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) WHERE a.usename = 'looninspect_app' LIMIT 1" \
             | grep -qx t || { echo "::error::the app's connection to the external database is not over TLS"; exit 1; }
           # The superuser is refused in a sentence, before any migration runs.
-          if docker run --rm --network smoke-net -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
+          if docker run --rm --network smoke-net -e UPDATE_CHECK=false -e ENCRYPTION_KEY="$KEY" -e DATABASE_MODE=external \
                -e DATABASE_URL="postgresql+asyncpg://master:${PG_SUPERUSER_PASSWORD}@smoke-tls:5432/looninspect?ssl=require" \
                looninspect:ci > superuser.log 2>&1; then
             echo "::error::the superuser was not refused"; cat superuser.log; exit 1

@@ -328,7 +328,8 @@ sessions can build, run, and edit simultaneously without colliding.
 Three things do **not** come along with a worktree, because they are gitignored,
 and each session needs its own:
 
-- `.env` — copy from the primary checkout and adjust.
+- `.env` — copy from the primary checkout and adjust, and give it `UPDATE_CHECK=false`: a stack
+  a session starts is nobody's install, and from v1.2.0 one that checks is counted as one (#821).
 - **A distinct compose project name and database volume.** The database is a
   container now, not a file, so two worktrees running `docker compose up` from
   the same project name attach to the same volume — producing migration and
