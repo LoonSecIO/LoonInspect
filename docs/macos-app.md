@@ -240,10 +240,12 @@ nothing. A change while the app runs restarts the backend at once on the same po
 reads *Restarting LoonInspect*, then reloads its page, and a collection run in progress stops as
 at Quit. `defaults write io.loonsec.looninspect CheckForUpdatesDaily -bool false` is the same
 switch, applied the same way by a running window and at start by `--headless`. An
-`UPDATE_CHECK` or `UPDATE_CHECK_URL` in the app's own environment is passed to the backend and
-wins over the menu item, which is then dimmed: that is how a test starts the app counted
-nowhere ([`macos/README.md`](../macos/README.md#build-and-run)). `shell.log` says at every
-start what the backend was told and from where (*update check: the backend is told …*).
+`UPDATE_CHECK_URL` in the app's own environment is passed as it is and names only where the
+check asks: the menu item still decides whether it asks. An `UPDATE_CHECK` there is passed too
+and wins; the item is then dimmed and shows the stored choice, the one a launch without it uses.
+With `UPDATE_CHECK=false`, or a URL naming a stand-in of your own, a test starts the app counted
+nowhere ([`macos/README.md`](../macos/README.md#build-and-run)). `shell.log` says at every start
+what the backend was told and from where (*update check: the backend is told …*).
 
 **Taking an update** is by hand, with the newer disk image from the release page.
 
@@ -352,13 +354,15 @@ tag (`21521d89`, build `20261119.0328`, `backend_release: v1.1.0`), 1.2.0 from t
 candidate (`3bb09dba`'s `backend`, `frontend` and `macos/`, build `20261119.0523`,
 `backend_release: v1.2.0`). Each was copied over the one in an
 Applications folder of the walk's own.
+That candidate predates #823's migration and the app's update check (#820), so this walk
+exercised neither; a walk of the release candidate is owed.
 
 - **A 1.1.0 instance, from nothing.** Healthy 1.9 s after launch. Set up through the API with
   the session's claim token: an administrator, the `jamf_patch` flag on, an exclusion pattern, a
   destination with a stored secret, and a patching rule confirmed from the Cyber Essentials
   entry. Quit: nothing left running in 0.35 s.
 - **The update.** The 1.2.0 app over the 1.1.0 app, same data directory and keychain items.
-  Healthy 1.0 s after launch on the same port. v1.2.0 adds no migration, and `backend.log` shows
+  Healthy 1.0 s after launch on the same port. That candidate had no migration; `backend.log` shows
   none run. The session cookie minted under 1.1.0 still answered `/api/auth/me`. Of 50 answers
   read under each, 46 were the same; the other four were two clocks and the catalogue entry's
   link and read date, which the release moved, in the catalogue and under the confirmed rule.

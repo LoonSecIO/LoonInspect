@@ -45,10 +45,12 @@ UPDATE_CHECK=false macos/build/LoonInspect.app/Contents/MacOS/LoonInspect --head
 ```
 
 A build from this tree asks LoonSec's update service once a day, as a release does, and is
-counted. A test starts it counted nowhere, as above: an `UPDATE_CHECK`, or an `UPDATE_CHECK_URL`
-naming a stand-in of your own whose path ends `/v1/update`, in the app's environment is passed
-to the backend and wins over **Check for Updates Daily**, which is then dimmed (`shell.log`
-says which decided). `open` passes the terminal's environment only through `--env`.
+counted. A test starts it counted nowhere, as above. An `UPDATE_CHECK_URL` in the app's
+environment, naming a stand-in of your own whose path ends `/v1/update`, is passed as it is and
+moves only where the check asks. **Check for Updates Daily** still decides whether it does: off,
+the stand-in receives nothing. An `UPDATE_CHECK` there is passed too and wins over the item,
+which is then dimmed. `shell.log` says what the backend was told and from where. `open` passes
+the terminal's environment only through `--env`.
 
 The build signs with the one "Developer ID Application" identity in the login keychain, or
 ad-hoc when there is none (`SIGN_IDENTITY=-` forces that). An ad-hoc build runs on the Mac that

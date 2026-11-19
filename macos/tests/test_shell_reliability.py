@@ -234,6 +234,12 @@ class ShellReliabilityTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout), BACKEND_ENVIRONMENT | told)
 
+    def test_start_backend_adds_only_the_watchdog_names(self):
+        body = (MACOS / "shell/Sources/LoonInspect/Supervisor.swift").read_text().split("func startBackend(")[1]
+        added = [line.split('"')[1] for line in body.split("\n    }\n")[0].splitlines() if '"] = ' in line]
+        watchdog = ["LOON_SHELL_PGDATA", "LOON_SHELL_PID", "LOON_SHELL_POSTGRES_PID"]
+        self.assertEqual(added, watchdog, "set it in backendEnvironment, which the environment test reads")
+
 
 # What the backend is told with the choice on, for the harness's port, paths and secrets.
 BACKEND_ENVIRONMENT = {

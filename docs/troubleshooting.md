@@ -1378,6 +1378,7 @@ opening the block nor `docker compose restart app` brings a check forward, and a
 started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
 It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_URL` names another provider
 (the container log's `update check on` line at startup names the host), and compares releases by number.
+LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and its log.
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
@@ -3169,9 +3170,9 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    - No check mark → choose it. The window reads *Restarting LoonInspect* and reloads; the check
      is then owed as §10 says, and asked only while the app is open and the Mac awake.
    - The item is dimmed, or the line says *from the app's environment, over Check for Updates
-     Daily* → the app was started with `UPDATE_CHECK` in its environment, as a test starts it.
-     Quit, and open it from Finder or the Dock; `launchctl getenv UPDATE_CHECK` prints a value
-     set for every app, which `launchctl unsetenv UPDATE_CHECK` removes.
+     Daily* → the app was started with `UPDATE_CHECK` in its environment, which wins over the
+     check mark. Quit, and open it from Finder or the Dock; `launchctl getenv UPDATE_CHECK`
+     prints a value set for every app, which `launchctl unsetenv UPDATE_CHECK` removes.
    - *The local service stopped* and *Check for Updates Daily changed, and the local server did
      not come back:* → the rest of the sentence is one of step 2's. Quit and open the app: it
      starts with the new choice.
