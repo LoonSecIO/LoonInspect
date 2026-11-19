@@ -770,7 +770,7 @@ ten jobs in `app/main.py`: collections coming due, the outbox's fan-out and deli
 the purges (sessions hourly; the outbox, the run log and, with `CHANGE_LOG_RETENTION_DAYS`
 set, the change log nightly), the hourly Jamf Patch
 catalog sync, the sign-in cache renewals, the daily data-sharing exchange, the update check
-(less than a day apart, at moments drawn afresh: [`troubleshooting.md`](troubleshooting.md)
+at moments drawn afresh less than a day apart ([`troubleshooting.md`](troubleshooting.md)
 §10), and the daily check of Fleet's
 catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
 **Check now** on that tab still works in a web-only process). So what a
