@@ -1,5 +1,7 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
+import type { UpdateReason } from "@/features/system/api";
+import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
@@ -615,14 +617,14 @@ export const en = {
     // when it could not answer, and the upgrade for a compose install, dump first.
     updates: {
       heading: "Updates",
-      help: "Once a day this instance asks GitHub for the latest published release, and whether this build contains it. Nothing else is sent. Updating happens on the host; nothing here runs anything.",
+      help: "About once a day this instance asks LoonSec's update service whether a newer release exists. The request carries the keys shown below, five at most, and nothing else: no instance identifier and no inventory. LoonSec keeps tallies by release, kind and stage, with no record of a single check and no address. UPDATE_CHECK=false asks nothing, and an UPDATE_CHECK_URL naming a GitHub-shaped address keeps the notice and is not counted. Updating happens on the host; nothing here runs anything.",
       loading: "Reading the update check…",
       errorLoading: "Could not read the update check from this instance.",
       thisBuild: "This build",
       latestRelease: "Latest release",
       lastChecked: "Last checked",
       notChecked: "Not checked",
-      noneYet: "None published yet",
+      noneYet: "None named yet",
       available: (tag: string) => `${tag} is available, and this build does not contain it.`,
       availableUntagged: "A newer release is available, and this build does not contain it.",
       current: (tag: string) => `Up to date: this build contains ${tag}.`,
@@ -633,18 +635,40 @@ export const en = {
         disabled:
           "Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.",
         dev_build:
-          "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
+          "This build asks nothing. It is a development build, with no build stamp; or it is an image built without GIT_SHA, and UPDATE_CHECK_URL names a GitHub-shaped address, which compares commits where LoonSec's update service needs none. The steps below build with the commit stamped.",
         not_checked:
           "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
         unreachable:
-          "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again an hour later; check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names.",
+          "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Asks, below, then names UPDATE_CHECK_URL's unreadable address, as the container's update check on line does at startup.",
         refused:
           "The provider refused the check: LoonSec's update service at its limit, or GitHub, whose unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again an hour later.",
         no_release:
-          "No release has been published yet. main is staging, and only a published release is compared against, so there is nothing to be behind.",
+          "No release named yet: LoonSec's update service has read no published release yet, or, from a GitHub-shaped address, none has been published. main is staging, and only a published release is compared against, so there is nothing to be behind. The next daily check asks again.",
         unknown_commit:
           "GitHub does not know this build's commit, so whether it contains the latest release cannot be said. A local or forked build is never compared; build from a release tag to be compared."
-      } as Record<string, string>,
+      } satisfies Record<UpdateReason, string>,
+      // What the check sends, to whom and when (#819), read from this instance: opening the block asks no one.
+      sends: {
+        heading: "What the check sends",
+        asks: "Asks",
+        unreadableHost: "UPDATE_CHECK_URL's unreadable address",
+        shape: {
+          loonsec: "In the shape of LoonSec's update service: one POST, carrying the body below.",
+          github: "A GitHub-shaped address: two GETs and no body, as v1.1.0 asks. Not counted."
+        },
+        nextCheck: "Next check",
+        owedNow: "Owed now: the scheduler asks it within a minute. If this stays in the past, no process runs the scheduler, or the container log says update check could not run.",
+        lastSent: "The last check sent",
+        nextSends: "The next check would send",
+        none: {
+          not_sent: "Nothing yet: no check has been sent.",
+          sent_none: "No body: the last check asked a GitHub-shaped address, which takes none.",
+          github: "No body: a GitHub-shaped address takes none.",
+          off: "Nothing: the check is off (UPDATE_CHECK=false).",
+          dev_build: "Nothing: this build asks nothing.",
+          not_drawn: "Not drawn yet: the scheduler draws it at its next look, within a minute. A container started with SCHEDULER_ENABLED=false never asks."
+        } satisfies Record<Unsent, string>
+      },
       stepsHeading: "Updating a Docker Compose install",
       stepsIntro:
         "On the host, in the directory with docker-compose.yml. The first line is the backup: if the older image cannot start on the upgraded database, this dump is a way back.",

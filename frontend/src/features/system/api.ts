@@ -1,7 +1,12 @@
 import { apiRequest } from "@/config/api";
 
-/** Why the check could not answer (#407, #819) — one of seven, never a blank. */
-export type UpdateReason = "disabled" | "dev_build" | "not_checked" | "unreachable" | "refused" | "no_release" | "unknown_commit";
+/** Why the check could not answer (#407, #819) — one of seven, never a blank. The one list that
+ *  enumerates them, so a reason added here is one every test that walks them meets. */
+export const UPDATE_REASONS = ["disabled", "dev_build", "not_checked", "unreachable", "refused", "no_release", "unknown_commit"] as const;
+export type UpdateReason = (typeof UPDATE_REASONS)[number];
+
+/** A body the update check sends LoonSec's update service (#819), its keys in the order sent. */
+export type UpdateCheckBody = Record<string, unknown>;
 
 export interface UpdateStatusResponse {
   enabled: boolean;
@@ -17,10 +22,34 @@ export interface UpdateStatusResponse {
   /** The release's page on GitHub: "what changed". Only ever an https link. */
   releaseUrl: string | null;
   reason: UpdateReason | null;
+  /** The shape the check asks (#819): `loonsec`, one POST of five keys (UPDATE_CHECK_URL unset, or
+   *  ending `/v1/update`); `github`, any other UPDATE_CHECK_URL, two GETs and no body, as v1.1.0 asks. */
+  provider: "loonsec" | "github";
+  /** The host it asks, as the `update check on` line names it, while off too; null: none can be read. */
+  providerHost: string | null;
+  /** The `kind` the `loonsec` shape sends: `mac-app` from LoonInspect.app, else `container`. */
+  kind: "container" | "mac-app";
+  /** The body the last check sent, answered or not, kept once the check is off; null before the first,
+   *  and on the `github` shape. It may have gone to another host than `providerHost` names now. */
+  lastBody: UpdateCheckBody | null;
+  /** The body the next check would carry, built now: no `last` before the first answered check. null
+   *  while the check is off, on a development build, and on the `github` shape. */
+  nextBody: UpdateCheckBody | null;
+  /** When the next check is owed; one in the past is asked at the scheduler's next look. null while
+   *  nothing is asked (`disabled`, `dev_build`), or before the scheduler has made its row. */
+  nextCheckAt: string | null;
+  /** An administrator is still to be told, once, that the check now asks LoonSec and is counted. */
+  noticePending: boolean;
 }
 
 export function getUpdateStatus(): Promise<UpdateStatusResponse> {
   return apiRequest<UpdateStatusResponse>("/system/update-status");
+}
+
+/** Clears that once-only notice for every administrator (SYSTEM_WRITE, audited), and answers
+ *  with the status as it then reads. A second call changes nothing. */
+export function dismissUpdateNotice(): Promise<UpdateStatusResponse> {
+  return apiRequest<UpdateStatusResponse>("/system/update-status/dismiss-notice", { method: "POST" });
 }
 
 export interface VersionResponse {

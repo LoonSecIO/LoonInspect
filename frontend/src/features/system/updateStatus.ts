@@ -1,15 +1,19 @@
-import type { UpdateReason, UpdateStatusResponse } from "@/features/system/api";
+import type { UpdateCheckBody, UpdateReason, UpdateStatusResponse } from "@/features/system/api";
 
 /**
- * What the update check's answer means on a page (#407) — pure, so the decision each
- * surface paints by is table-tested in the node lane (`updateStatus.test.ts`) rather than
- * checked by eye.
+ * What the update check's answer means on a page (#407), and what the check sends (#819) —
+ * pure, so the decision each surface paints by is table-tested in the node lane
+ * (`updateStatus.test.ts`) rather than checked by eye.
  *
  * Kyle, 2026-09-11: `main` is staging, and publishing a GitHub Release is the release. An
- * update is available when this build does not contain the latest published release's
- * commit. Three surfaces read the one answer: the banner and the Needs Attention row say
- * it only when it is `true`, and the Updates block on Settings › Support says every state,
- * including the reason when the check could not answer (`docs/diagnosability.md` rule 1).
+ * update is available when this build does not contain the latest published release: from
+ * LoonSec's update service, a higher release number than this build's; from a GitHub-shaped
+ * UPDATE_CHECK_URL, a commit this build lacks. Three surfaces read the one answer: the banner
+ * and the Needs Attention row say it only when it is `true`, and the Updates block on
+ * Settings › Support says every state, including the reason when the check could not answer
+ * (`docs/diagnosability.md` rule 1), which is one of the seven in `UPDATE_REASONS`:
+ * `disabled`, `dev_build`, `not_checked`, `unreachable`, `refused`, `no_release` and
+ * `unknown_commit`.
  */
 
 /** The Updates block's anchor, and where the banner and the Needs Attention row send a
@@ -29,6 +33,42 @@ export function describeUpdate(status: UpdateStatusResponse): UpdateView {
   if (status.updateAvailable === true) return { kind: "available", ...names };
   if (status.updateAvailable === false) return { kind: "current", ...names };
   return { kind: "unknown", reason: status.reason, ...names };
+}
+
+/** Why the Updates block prints no body, or no next check, in a slot (#819): each has its one
+ *  sentence. `sent_none`: the last check asked a GitHub-shaped address, which takes no body,
+ *  and UPDATE_CHECK_URL has named LoonSec's shape since. `not_drawn`: no row yet. */
+export type Unsent = "not_sent" | "sent_none" | "github" | "off" | "dev_build" | "not_drawn";
+export type BodyView = { json: string } | { none: Unsent };
+
+export interface SendsView {
+  provider: UpdateStatusResponse["provider"];
+  /** null: UPDATE_CHECK_URL names no host that can be read. */
+  host: string | null;
+  last: BodyView;
+  next: BodyView;
+  /** `due`: owed at a moment already past when the status was read, so asked at the next look. */
+  owed: { at: string; due: boolean } | { none: Unsent };
+}
+
+/** A body as the JSON text a person can copy: its keys in the order the API gave, the order sent. */
+export const bodyText = (body: UpdateCheckBody): string => JSON.stringify(body, null, 2);
+
+/** What the check sends and when (#819). The last body is labelled as what the last check sent and
+ *  no more: UPDATE_CHECK_URL may have named another host since. `now` is when the status was read. */
+export function describeSends(status: UpdateStatusResponse, now: number): SendsView {
+  const github = status.provider === "github";
+  const asksNothing = status.reason === "disabled" ? "off" : status.reason === "dev_build" ? "dev_build" : null;
+  const view = (body: UpdateCheckBody | null, none: Unsent): BodyView => (body ? { json: bodyText(body) } : { none });
+  return {
+    provider: status.provider,
+    host: status.providerHost,
+    last: view(status.lastBody, github ? "github" : status.checkedAt ? "sent_none" : "not_sent"),
+    next: view(status.nextBody, asksNothing === "off" ? "off" : github ? "github" : "dev_build"),
+    owed: status.nextCheckAt
+      ? { at: status.nextCheckAt, due: Date.parse(status.nextCheckAt) <= now }
+      : { none: asksNothing ?? "not_drawn" }
+  };
 }
 
 /** What the banner names, or null when it renders nothing. `true` only: an unknown must

@@ -572,14 +572,14 @@ export const de: Translations = {
       "Diese Seite sendet nichts nach außen. Sie liest den Build-String und die Antwort der Update-Prüfung aus Ihrer eigenen Instanz und zeigt Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben.",
     updates: {
       heading: "Updates",
-      help: "Einmal am Tag fragt diese Instanz GitHub nach dem neuesten veröffentlichten Release und ob dieser Build es enthält. Sonst wird nichts gesendet. Aktualisiert wird auf dem Host; hier wird nichts ausgeführt.",
+      help: "Etwa einmal am Tag fragt diese Instanz den Update-Dienst von LoonSec, ob es ein neueres Release gibt. Die Anfrage trägt die unten gezeigten Schlüssel, höchstens fünf, und sonst nichts: keine Kennung der Instanz und kein Inventar. LoonSec führt Zählungen nach release, kind und stage, ohne Aufzeichnung einer einzelnen Prüfung und ohne Adresse. UPDATE_CHECK=false fragt nichts, und eine UPDATE_CHECK_URL, die eine GitHub-artige Adresse nennt, behält den Hinweis und wird nicht gezählt. Aktualisiert wird auf dem Host; hier wird nichts ausgeführt.",
       loading: "Update-Prüfung wird gelesen…",
       errorLoading: "Die Update-Prüfung konnte von dieser Instanz nicht gelesen werden.",
       thisBuild: "Dieser Build",
       latestRelease: "Neuestes Release",
       lastChecked: "Zuletzt geprüft",
       notChecked: "Nicht geprüft",
-      noneYet: "Noch keines veröffentlicht",
+      noneYet: "Noch keines genannt",
       available: (tag: string) => `${tag} ist verfügbar, und dieser Build enthält es nicht.`,
       availableUntagged: "Ein neueres Release ist verfügbar, und dieser Build enthält es nicht.",
       current: (tag: string) => `Aktuell: Dieser Build enthält ${tag}.`,
@@ -589,18 +589,39 @@ export const de: Translations = {
         disabled:
           "Die Prüfung ist aus: UPDATE_CHECK=false ist für diesen Container gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten die Zeile aus der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen.",
         dev_build:
-          "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
+          "Dieser Build fragt nichts. Er ist ein Entwicklungs-Build ohne Build-Stempel; oder er ist ein ohne GIT_SHA gebautes Image, und UPDATE_CHECK_URL nennt eine GitHub-artige Adresse, die Commits vergleicht, wo der Update-Dienst von LoonSec keinen braucht. Die Schritte unten bauen mit gestempeltem Commit.",
         not_checked:
           "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
         unreachable:
-          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es eine Stunde später erneut; prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt.",
+          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Fragt, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on beim Start des Containers UPDATE_CHECK_URL's unreadable address.",
         refused:
           "Der Anbieter hat die Prüfung abgelehnt: der Update-Dienst von LoonSec an seiner Grenze, oder GitHub, dessen Anfragen ohne Anmeldung auf 60 pro Stunde und Adresse begrenzt sind, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
         no_release:
-          "Es wurde noch kein Release veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte.",
+          "Noch kein Release genannt: Der Update-Dienst von LoonSec hat noch kein veröffentlichtes Release gelesen, oder, bei einer GitHub-artigen Adresse, es wurde noch keines veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte. Die nächste tägliche Prüfung fragt erneut.",
         unknown_commit:
           "GitHub kennt den Commit dieses Builds nicht, also lässt sich nicht sagen, ob er das neueste Release enthält. Ein lokaler oder geforkter Build wird nie verglichen; bauen Sie von einem Release-Tag, um verglichen zu werden."
-      } as Record<string, string>,
+      },
+      sends: {
+        heading: "Was die Prüfung sendet",
+        asks: "Fragt",
+        unreadableHost: "eine nicht lesbare Adresse (UPDATE_CHECK_URL)",
+        shape: {
+          loonsec: "Im Format des Update-Dienstes von LoonSec: ein POST mit dem Inhalt unten.",
+          github: "Eine GitHub-artige Adresse: zwei GETs ohne Inhalt, wie v1.1.0 fragt. Wird nicht gezählt."
+        },
+        nextCheck: "Nächste Prüfung",
+        owedNow: "Jetzt fällig: Der Scheduler fragt innerhalb einer Minute. Bleibt dies in der Vergangenheit, läuft kein Prozess mit Scheduler, oder das Container-Log sagt update check could not run.",
+        lastSent: "Die letzte Prüfung hat gesendet",
+        nextSends: "Die nächste Prüfung würde senden",
+        none: {
+          not_sent: "Noch nichts: Es wurde noch keine Prüfung gesendet.",
+          sent_none: "Kein Inhalt: Die letzte Prüfung fragte eine GitHub-artige Adresse, die keinen nimmt.",
+          github: "Kein Inhalt: Eine GitHub-artige Adresse nimmt keinen.",
+          off: "Nichts: Die Prüfung ist aus (UPDATE_CHECK=false).",
+          dev_build: "Nichts: Dieser Build fragt nichts.",
+          not_drawn: "Noch nicht gezogen: Der Scheduler zieht den Zeitpunkt bei seinem nächsten Blick, innerhalb einer Minute. Ein mit SCHEDULER_ENABLED=false gestarteter Container fragt nie."
+        }
+      },
       stepsHeading: "Eine Docker-Compose-Installation aktualisieren",
       stepsIntro:
         "Auf dem Host, im Verzeichnis mit docker-compose.yml. Die erste Zeile ist die Sicherung: Startet das ältere Image nicht auf der aktualisierten Datenbank, ist dieser Dump ein Weg zurück.",
