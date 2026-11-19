@@ -151,24 +151,21 @@ async def test_previous_different_value_walks_back_past_equal_states_and_pages(a
         response = await admin.get(url + "/previous", params={"point": point, "slot": slot})
         return response.json() if response.status_code == 200 else response.status_code
 
-    found = await previous(keys[0])
-    assert (found["previous"]["id"], found["previous"]["value"], found["searched"]) == (keys[13], False, 13)
-    page = (await admin.get(url, params={"point": keys[13]})).json()  # Beyond the first page: the jump reads its page.
-    held = next(p for p in page["items"] if p["id"] == keys[13])
-    assert page["page"] == 2 and found["previous"]["observedAt"] == held["observedAt"] != held["collectedAt"]
-    assert (await previous(keys[0], "findings.total"))["previous"]["value"] == 4
+    found = (await previous(keys[0]))["previous"]  # Past the first page of twelve, by its observed clock.
+    assert (found["id"], found["value"], found["page"]) == (keys[13], False, 2)
+    page = (await admin.get(url, params={"page": 2})).json()["items"]
+    assert next(p for p in page if p["id"] == keys[13])["observedAt"] == found["observedAt"] != found["collectedAt"]
+    assert [(await previous(k, "findings.total"))["previous"]["value"] for k in (keys[0], keys[14])] == [4, 4]
     assert (await previous(keys[13]))["previous"]["id"] == keys[15]
     missing = (await previous(keys[13], "findings.total"))["previous"]
     assert (missing["id"], missing["state"], missing["value"]) == (keys[14], "not_recorded", None)
-    assert (await previous(keys[14], "findings.total"))["previous"]["value"] == 4
     assert await previous(keys[15]) == {"previous": None, "searched": 0, "complete": True}
     monkeypatch.setattr(device_history, "SCAN", 5)
     assert await previous(keys[0]) == {"previous": None, "searched": 5, "complete": False}
     # Another device's observation, and a value no state records, answer as absent ones do.
     other = select(Device.id).where(Device.mdm_connection_id == connection.id, Device.external_id == jamf.synthetic["id"])
     foreign = f"p:{await db.scalar(select(Point.id).where(Point.device_id == other.scalar_subquery()))}"
-    assert await previous(foreign) == 404 and (await admin.get(url, params={"point": foreign})).status_code == 404
-    assert await previous(keys[0], "invented.value") == 404
+    assert [await previous(foreign), await previous(keys[0], "invented.value")] == [404, 404]
 
 
 async def test_same_user_has_separate_tenant_layout_and_foreign_points_are_404(admin, db, connection, jamf, second_tenant):

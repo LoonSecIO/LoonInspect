@@ -4,7 +4,6 @@ import {
   changedValue,
   dotLabel,
   formatHistoryValue,
-  loadHistory,
   loadHistoryPoint,
   loadPreviousValue,
   recordedSectionLabels,
@@ -36,6 +35,8 @@ it("preserves unknown, zero and false and compares only comparable values", () =
 it("keys reads and writes to the selected point, not a date guess", async () => {
   await loadHistoryPoint(7, "p:abc");
   await saveHistorySlots(7, "p:abc", ["security.firewallEnabled"]);
+  await loadPreviousValue(7, "p:abc", "entry:v0 x"); // #617: the selected state and the value's slot
+  expect(apiRequest).toHaveBeenCalledWith("/devices/7/history/previous?point=p%3Aabc&slot=entry%3Av0+x");
   expect(apiRequest).toHaveBeenCalledWith(
     "/devices/7/history/point?point=p%3Aabc",
   );
@@ -43,11 +44,6 @@ it("keys reads and writes to the selected point, not a date guess", async () => 
     method: "PUT",
     json: { point: "p:abc", slots: ["security.firewallEnabled"] },
   });
-});
-it("reads a page by number or by the state it holds, and a previous value by state and slot (#617)", async () => {
-  await Promise.all([loadHistory(7, 2), loadHistory(7, "p:abc"), loadPreviousValue(7, "p:abc", "entry:v0 x")]);
-  expect(vi.mocked(apiRequest).mock.calls.map(([path]) => path)).toEqual(["/devices/7/history?page=2",
-    "/devices/7/history?point=p%3Aabc", "/devices/7/history/previous?point=p%3Aabc&slot=entry%3Av0+x"]);
 });
 describe("localized history states", () => {
   it("covers every state in both languages", () => {

@@ -2,7 +2,6 @@
 
 import json
 import uuid
-from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -68,11 +67,6 @@ def points_query(device):
         case((Point.source_id.is_(None), "assessment"), else_="inventory").label("kind"),
     ).where(Point.device_id == device.id)
     return union_all(legacy, recorded).subquery()
-
-
-def place(query, row, key):
-    """A state's place in the timeline's one total order: (the columns, this state's values)."""
-    return tuple_(query.c.observed_at, query.c.collected_at, query.c.key), tuple_(row["observed_at"], row["collected_at"], key)
 
 
 async def point_for(db, device, key):
@@ -208,14 +202,9 @@ def value_for(choice, docs, aperture, assessment, connection_id):
 
 
 @router.get("/{device_id}/history")
-async def history(
-    device_id: int, page: int = Query(1, ge=1), point: Annotated[str | None, Query(max_length=40)] = None, db=Depends(get_db)
-):
+async def history(device_id: int, page: int = Query(1, ge=1), db=Depends(get_db)):
     device = await device_for(db, device_id)
     query = points_query(device)
-    if point:  # The page holding this state, counted as it is read, so a jump to it selects exactly it (#617).
-        columns, values = place(query, (await point_for(db, device, point))[0], point)
-        page = await db.scalar(select(func.count()).select_from(query).where(columns > values)) // 12 + 1
     rows = (
         (
             await db.execute(
@@ -362,11 +351,6 @@ async def save_preferences(
     return {"slots": [s["key"] for s in chosen]}
 
 
-def as_recorded(value):
-    """A value's identity: its state and its JSON, so 0, false and missing evidence never compare equal."""
-    return value["state"], json.dumps(value["value"], sort_keys=True, default=str)
-
-
 @router.get("/{device_id}/history/previous")
 async def previous_value(
     device_id: int,
@@ -375,9 +359,8 @@ async def previous_value(
     db=Depends(get_db),
     principal: Principal = Depends(current_principal),
 ):
-    """The newest state before `point` whose recorded value for `slot` differs from the value at `point` (#617):
-    recorded content and retained assessments only, never today's corpus; at most SCAN earlier states, newest
-    first, reading each section's content once however many of them share it."""
+    """The newest state before `point` recording a different value for `slot` than `point` does (#617), from recorded
+    content and retained assessments only; at most SCAN earlier states, each section's content read once."""
     device = await device_for(db, device_id)
     row, span, recorded, docs, options, slots = await context(db, device, point, principal)
     choice = next((c for c in slots if c["key"] == slot), None) or options.get(slot)
@@ -393,22 +376,24 @@ async def previous_value(
             contents[digest] = ({section: []} if digest else {}) if own else await documents(db, then, section, entries)
         if then.aperture_digest not in apertures:
             apertures[then.aperture_digest] = await aperture_sections(db, then.aperture_digest)
-        return value_for(choice, contents[digest], apertures[then.aperture_digest], assessment, device.mdm_connection_id)
+        value = value_for(choice, contents[digest], apertures[then.aperture_digest], assessment, device.mdm_connection_id)
+        return value, (value["state"], json.dumps(value["value"], sort_keys=True, default=str))
 
-    selected = as_recorded(await value_at(span, recorded.assessment if recorded else None))
+    selected = (await value_at(span, recorded.assessment if recorded else None))[1]  # State and JSON: 0, false, missing differ.
     query = points_query(device)
-    columns, values = place(query, row, point)
-    newest_first = query.c.observed_at.desc(), query.c.collected_at.desc(), query.c.key.desc()  # The timeline's order.
-    statement = select(query).where(columns < values).order_by(*newest_first).limit(SCAN + 1)
-    rows = (await db.execute(statement)).mappings().all()
+    order = query.c.observed_at, query.c.collected_at, query.c.key  # The timeline's one total order, newest first.
+    earlier = select(query).where(tuple_(*order) < tuple_(row["observed_at"], row["collected_at"], point))
+    rows = (await db.execute(earlier.order_by(*(c.desc() for c in order)).limit(SCAN + 1))).mappings().all()
     spans = {s.id: s for s in await db.scalars(select(Span).where(Span.id.in_({r["span_id"] for r in rows})))}
     fields = (choice["field"], "lastCheckIn")  # All value_for reads of an assessment; never its evidence body.
     ids = [uuid.UUID(r["key"][2:]) for r in rows if r["key"].startswith("p:")]
     found = await db.execute(select(Point.id, *(Point.assessment[f] for f in fields)).where(Point.id.in_(ids)))
     held = {f"p:{i}": dict(zip(fields, v, strict=True)) for i, *v in found}
     for searched, r in enumerate(rows[:SCAN], 1):
-        value = await value_at(spans[r["span_id"]], held.get(r["key"]))
-        if as_recorded(value) != selected:
+        value, compared = await value_at(spans[r["span_id"]], held.get(r["key"]))
+        if compared != selected:  # Its page: the states before it in that order, twelve a page.
+            newer = tuple_(*order) > tuple_(r["observed_at"], r["collected_at"], r["key"])
+            page = await db.scalar(select(func.count()).select_from(query).where(newer)) // 12 + 1
             state = {"id": r["key"], "kind": r["kind"], "observedAt": r["observed_at"], "collectedAt": r["collected_at"]}
-            return {"previous": {**state, **value}, "searched": searched, "complete": True}
+            return {"previous": {**state, **value, "page": page}, "searched": searched, "complete": True}
     return {"previous": None, "searched": min(len(rows), SCAN), "complete": len(rows) <= SCAN}

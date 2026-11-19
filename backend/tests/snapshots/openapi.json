@@ -13326,6 +13326,67 @@
         ]
       }
     },
+    "/api/devices/{device_id}/history/previous": {
+      "get": {
+        "description": "The newest state before `point` recording a different value for `slot` than `point` does (#617), from recorded\ncontent and retained assessments only; at most SCAN earlier states, each section's content read once.",
+        "operationId": "previous_value_api_devices__device_id__history_previous_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "point",
+            "required": true,
+            "schema": {
+              "maxLength": 40,
+              "title": "Point",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "title": "Slot",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Previous Value",
+        "tags": [
+          "device history"
+        ]
+      }
+    },
     "/api/devices/{device_id}/observation": {
       "get": {
         "description": "What the ledger currently holds for one Mac, by section, with the four-state\nabsence vocabulary explicit (#368): present, empty, not observed, outside the\naperture. Groups ride beside the sections, named from their own spans and marked when\ndeparted. Its own endpoint rather than a bigger device payload: the detail read stays\ntwo cheap selects and flat in fleet size, and this read \u2014 up to fourteen digest\nlookups and their bodies \u2014 is lazy on the page. Gated like the device.",

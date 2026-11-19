@@ -26,12 +26,11 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   const { t, locale } = useLocale();
   const copy = t.deviceHistory;
   const sectionLabels = t.changes.sections;
-  // A page number, or a recorded state's id while the page holding it loads (#617).
-  const [page, setPage] = useState<number | string>(1);
+  const [page, setPage] = useState(1);
   const [selection, setSelection] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [timeline, setTimeline] = useState<{
-    page: number | string;
+    page: number;
     value?: HistoryPage;
     error?: boolean;
   } | null>(null);
@@ -62,11 +61,8 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     };
   }, [deviceId, page, retry]);
   const list = timeline?.page === page ? timeline : null;
-  const at = list?.value?.page ?? 1;
-  const selected =
-    selection && list?.value?.items.some((p) => p.id === selection)
-      ? selection
-      : (list?.value?.items[0]?.id ?? null);
+  // A chosen state stays chosen even if a newer state pushed it off the page a jump counted for it (#617).
+  const selected = selection ?? list?.value?.items[0]?.id ?? null;
   const requestKey = `${selected}:${revision}:${retry}`;
   useEffect(() => {
     if (!selected) return;
@@ -84,7 +80,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
   }, [deviceId, selected, requestKey]);
   const result = loaded?.key === requestKey ? loaded : null;
   const detail = result?.value;
-  const latest = at === 1 && selected === list?.value?.items[0]?.id;
+  const latest = page === 1 && selected === list?.value?.items[0]?.id;
   const date = (value: string) => new Date(value).toLocaleString(locale);
   const valueText = (v: { state: string; value: unknown; key?: string }) =>
     v.key === "observation.lastCheckIn" &&
@@ -145,13 +141,10 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
     setRevision((r) => r + 1);
     setEditing(false);
   };
-  /** A previous value's action: that state, on whichever page holds it, through the normal selection (#617). */
-  const jump = (id: string) => {
-    if (!list?.value?.items.some((p) => p.id === id)) {
-      setTimeline(null);
-      setPage(id); // The server counts that state's page as it reads it, so a newer state cannot shift it away.
-    }
-    choose(id);
+  /** A previous value's action: that state, on the page holding it, through the normal selection (#617). */
+  const jump = (target: { id: string; page: number }) => {
+    setPage(target.page); // Reads the timeline again only when that is another page.
+    choose(target.id);
   };
 
   return (
@@ -224,7 +217,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
                 onClick={() => {
                   setTimeline(null);
                   setRevision((r) => r + 1);
-                  setPage(at + 1);
+                  setPage((p) => p + 1);
                   setSelection(null);
                   setEditing(false);
                 }}
@@ -234,12 +227,12 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
               <span>{copy.recordedStates}</span>
               <button
                 type="button"
-                disabled={at === 1 || saving}
+                disabled={page === 1 || saving}
                 className="underline disabled:opacity-40"
                 onClick={() => {
                   setTimeline(null);
                   setRevision((r) => r + 1);
-                  setPage(at - 1);
+                  setPage((p) => p - 1);
                   setSelection(null);
                   setEditing(false);
                 }}

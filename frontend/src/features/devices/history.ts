@@ -63,12 +63,11 @@ export interface HistoryDetail extends HistoryPoint {
     reason: string | null;
   };
 }
-/** The newest earlier state whose recorded value differs; `complete` is false when the bounded read stopped
- *  after `searched` states without one (#617). */
-export interface PreviousRead { previous: (HistoryPoint & HistoryValue) | null; searched: number; complete: boolean }
-/** A page by number, or by a recorded state's id: the page holding that state (#617). */
-export const loadHistory = (device: number, page: number | string) =>
-  apiRequest<HistoryPage>(`/devices/${device}/history?${new URLSearchParams(typeof page === "number" ? { page: String(page) } : { point: page })}`);
+/** The newest earlier state recording a different value, and the timeline page holding it; `complete` is false
+ *  when the bounded read stopped after `searched` states without one (#617). */
+export interface PreviousRead { previous: (HistoryPoint & HistoryValue & { page: number }) | null; searched: number; complete: boolean }
+export const loadHistory = (device: number, page: number) =>
+  apiRequest<HistoryPage>(`/devices/${device}/history?page=${page}`);
 export const loadHistoryPoint = (device: number, point: string) =>
   apiRequest<HistoryDetail>(
     `/devices/${device}/history/point?${new URLSearchParams({ point })}`,

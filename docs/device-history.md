@@ -94,12 +94,11 @@ sections the observation itself recorded changes in, read off the span chain (#6
 outside that scope never reads as nothing having changed.
 
 **Previous different value (#617).** Hovering, focusing or tapping a value (not one disabled in the
-Change Log) opens the newest earlier state recording a different value than the *selected* state, not
-Latest: that value, its *Observed* clock, and an action selecting that state through the normal selection,
-on whichever page holds it (`/history?point=`). Equal states between are skipped; missing evidence is a
-different state shown as missing, never zero. `/history/previous?point=&slot=` compares recorded content
-and retained assessments only, never today's corpus, reading at most 200 earlier states; it says when none
-differs, or when that bound stopped it first.
+Change Log) shows the newest earlier state recording a different value than the *selected* state: that
+value, its *Observed* clock, and an action selecting it on its page. Equal states are skipped; missing
+evidence is its own state, never zero. `/history/previous?point=&slot=` uses recorded content and retained
+assessments only, reads at most 200 earlier states, and says when none differs or the bound stopped it. A
+state recorded after the detail opened can push the target to the next page; the values still follow it.
 
 ## Retention and upgrading
 

@@ -37,7 +37,6 @@ export const historyEnglish = {
   retry: "Retry",
   previous: {
     hint: "Show the last different earlier value",
-    reading: "Reading earlier recorded states…",
     failed: "The previous value could not be read. Retry; if it fails again, reload the page.",
     label: "Previously",
     missing: "Missing evidence at that observation, not a recorded value.",
@@ -136,7 +135,6 @@ export const historyGerman: typeof historyEnglish = {
   retry: "Erneut versuchen",
   previous: {
     hint: "Letzten abweichenden früheren Wert anzeigen",
-    reading: "Frühere erfasste Zustände werden gelesen…",
     failed: "Der vorherige Wert konnte nicht gelesen werden. Erneut versuchen; schlägt es wieder fehl, die Seite neu laden.",
     label: "Zuvor",
     missing: "An dieser Beobachtung fehlen Daten; das ist kein erfasster Wert.",
