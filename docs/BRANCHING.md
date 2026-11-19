@@ -128,6 +128,17 @@ switch such as `SCHEDULER_ENABLED` are configuration, not flags: the gate lists 
 the inventory is complete, and their verdict is always keep. The first gate ruled was the
 v2.0.0 one, #652; the first run at a tag is v1.1.0's, which carries those verdicts forward.
 
+**Every release re-reads the published requirements** (#809), the way it rules every flag.
+A patching rule can start from an entry of the catalogue in
+`backend/app/mdm/patch/policy_presets.py`, whose numbers were read from the publisher's own
+text on the day its `verified_on` records. Before a release is tagged, every entry is read
+again as [`jamf-patch-matching.md`](jamf-patch-matching.md) §8c sets out, its `verified_on`
+moves to that day, and the release notes say which entries were re-read and when. CI holds
+it in the backend job (`.github/scripts/check_requirement_rereads.py`, with the migration
+contract's tag lookup): a pull request that sets `RELEASE` past the newest
+`vMAJOR.MINOR.PATCH` tag fails while an entry was read on or before the day of that tag's
+commit, or on a day still to come, and any other pull request passes.
+
 The [v2.0.0 milestone](https://github.com/LoonSecIO/LoonInspect/milestone/1) tracks
 contribute-or-pay vulnerability access, bounded MFA, supported external PostgreSQL,
 and the update lifecycle. Scrubber #617 and #618 are independent v1.x work, not v2
