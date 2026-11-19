@@ -1409,9 +1409,8 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
    - *No release has been published yet* → true until the first release. Nothing to do.
    - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
      was never pushed. Build from a release tag and it is compared again.
-2. **The notice names a release you believe you have.** From LoonSec's update service it means
-   the release this build was made from is lower: build from the release's tag. From a GitHub-shaped
-   `UPDATE_CHECK_URL`: *This build* ends in the commit it
+2. **The notice names a release you believe you have.** From LoonSec's update service, this build's release
+   is lower: build from the release's tag. From a GitHub-shaped `UPDATE_CHECK_URL`: *This build* ends in the commit it
    was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
    release's. From the checkout the image was built from, fetch the tag first, then ask git:
 
@@ -3243,7 +3242,7 @@ nothing here is a permissions problem in Jamf.
    within the hour. By how the sentence opens:
    - *api.github.com refused the request* → GitHub's limit for requests without a sign-in, 60
      an hour for each address, shared by every instance and every other tool behind the same
-     address; the update check draws on it too (§10). One refusal needs nothing. Refused every
+     address; an update check draws on it only when `UPDATE_CHECK_URL` names GitHub (§10). One refusal needs nothing. Refused every
      hour means many things share this address: leave the flag on only where the tab is used.
    - *raw.githubusercontent.com refused the request* → GitHub slowed file reads from this
      address part-way through. The sentence says how many manifests were read and kept; the

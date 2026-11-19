@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, call
 
 import httpx
 import pytest
@@ -46,26 +47,27 @@ def _sent(service, index: int = -1) -> dict:
 
 
 async def test_the_request_is_five_keys_and_last_is_the_day_it_was_given(service, monkeypatch) -> None:
+    from app.core import update_check
     from app.core.config import settings
-    from app.core.update_check import provider, tick
 
-    assert await tick(DUE) is True  # UPDATE_CHECK_URL unset: LoonSec's update service
+    monkeypatch.setattr(update_check, "stage", stage := AsyncMock(side_effect=["claimed", "connected", "collecting"]))
+    assert await update_check.tick(DUE) is True  # UPDATE_CHECK_URL unset: LoonSec's update service
     request = service.requests[0]
     assert (request.method, str(request.url), request.headers["content-type"]) == ("POST", SERVICE, "application/json")
     assert request.headers["user-agent"] == "LoonSecIO/v1.2.0 update-check"  # the release: not the stamp, not the setting
     assert _sent(service) == (await _row()).last_sent  # the body as sent, stored
-
     service.handler = lambda request: _answer(day=20770)  # lower than the day held, and stored as given
-    assert await tick((await _row()).next_check_at) is True
+    assert await update_check.tick(second := (await _row()).next_check_at) is True
     monkeypatch.setattr(settings, "instance_kind", "mac-app")
     monkeypatch.setattr(settings, "update_check_url", "https://updates.example.test/v1/update/")  # sent without the slash
-    assert await tick((await _row()).next_check_at) is True
+    assert await update_check.tick(third := (await _row()).next_check_at) is True
     bodies, first = [_sent(service, index) for index in range(3)], {"contract": "v1", "release": "v1.2.0", "kind": "container"}
-    assert {body.pop("stage") for body in bodies} <= {"unclaimed", "claimed", "connected", "collecting"}  # tested below
+    assert [body.pop("stage") for body in bodies] == ["claimed", "connected", "collecting"]  # the word each tick was given
     assert bodies == [first, first | {"last": 20776}, first | {"kind": "mac-app", "last": 20770}]  # `last` absent, never null
+    assert stage.await_args_list == [call(DUE), call(second), call(third)]  # and `stage` asked at each tick's own moment
     assert str(service.requests[2].url) == "https://updates.example.test/v1/update"
     monkeypatch.setattr(settings, "update_check_url", "https://mirror.example/v1/update/x")  # anything else: GitHub-shaped
-    assert provider() == ("github", "https://mirror.example/v1/update/x")
+    assert update_check.provider() == ("github", "https://mirror.example/v1/update/x")
 
 
 @pytest.mark.parametrize(
@@ -109,8 +111,8 @@ async def test_an_unanswered_check_keeps_what_it_held_and_retries_with_the_same_
         pytest.param("v1.9.0", {"tag": "v1.10.0", "url": PAGE}, (True, None, PAGE), id="v1.10.0 is higher than v1.9.0"),
         pytest.param("v1.10.0", {"tag": "v1.9.0", "url": PAGE}, (False, None, PAGE), id="v1.9.0 is not"),
         pytest.param("v1.2.0", None, (None, "no_release", None), id="no latest"),
-        pytest.param("v1.2.0", {"tag": "v1.3", "url": PAGE}, (None, "unreachable", PAGE), id="a tag of another form"),
-        pytest.param("v1.2.0", {"tag": "v1.3.0-rc.1", "url": PAGE}, (None, "unreachable", PAGE), id="a prerelease tag"),
+        pytest.param("v1.2.0", {"tag": "v1.3.0" + "0" * 4400, "url": PAGE}, (None, "unreachable", PAGE), id="a tag too long"),
+        pytest.param("v1.2.0", {"tag": "v1.3.0-rc.1", "url": PAGE}, (None, "unreachable", PAGE), id="a tag of another form"),
         pytest.param("v1.2.0", {"tag": "v1.2.1", "url": "http://github.com/x"}, (True, None, None), id="a url not https"),
     ],
 )
@@ -139,6 +141,9 @@ async def test_what_asks_and_what_says_so_at_startup(service, monkeypatch, on, s
     assert (await tick(DUE), len(service.requests)) == (asks, int(asks))
     said = "update check on: it asks api.next.loonsec.io once a day; UPDATE_CHECK=false turns it off"
     assert startup_line() == (said if asks else None)
+    monkeypatch.setattr(settings, "update_check_url", "https://[fe80::1/v1/update")  # urlsplit raises; startup goes on
+    assert startup_line() == (said.replace("api.next.loonsec.io", "UPDATE_CHECK_URL's address") if asks else None)
+    assert (await tick((await _row()).next_check_at), (await _row()).reason) == (asks, "unreachable" if asks else None)
 
 
 async def test_each_stage_from_a_database_in_that_state(tenant_ready, monkeypatch) -> None:
