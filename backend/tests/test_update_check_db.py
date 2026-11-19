@@ -205,15 +205,21 @@ async def test_the_status_route_serves_the_stored_answer_and_dials_nothing(githu
 
 
 @pytest.mark.skipif(not os.environ.get("ADMIN_DATABASE_URL"), reason="set ADMIN_DATABASE_URL to a role that may create databases")
-async def test_the_migration_owes_a_fresh_install_its_first_check_within_a_day() -> None:
+async def test_the_migration_owes_a_fresh_install_its_first_check_within_a_day(monkeypatch) -> None:
+    import secrets
+
     from tests.test_migration_round_trip_db import _alembic, _database
 
+    bounds = []
+    monkeypatch.setattr(secrets, "randbelow", lambda bound: bounds.append(bound) or bound - 1)  # its latest moment
     async with _database() as (url, engine):
         before = datetime.now(UTC)
         await _alembic(url, "upgrade", "e819a4c2f6b3")
+        after = datetime.now(UTC)
         async with engine.connect() as connection:
             row = (await connection.execute(text("SELECT next_check_at, notice_pending FROM update_check_state"))).one()
-    assert before <= row.next_check_at < datetime.now(UTC) + DAY and row.notice_pending is False
+    assert bounds == [DAY // TICK] and before + DAY - TICK <= row.next_check_at <= after + DAY - TICK
+    assert row.notice_pending is False
 
 
 async def test_deciding_the_notice_leaves_no_tenant_bound(db) -> None:
