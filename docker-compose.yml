@@ -174,6 +174,7 @@ services:
       #   DATABASE_MODE            docker-compose.external.yml sets it; here it is bundled
       #   DEBUG                    developer mode: it writes every SQL statement to the log
       #   HOST, PORT               where the app listens in the container; `ports:` publishes it
+      #   INSTANCE_KIND            the update check's `kind`: LoonInspect.app's shell sets mac-app (#820)
       #   USER_AGENT_PRODUCT_NAME  LoonSec's services match on it; a Jamf connection sets its own
     # The host as seen from inside the container, for the AI test box (#319): Docker
     # Desktop resolves `host.docker.internal` on its own; Docker Engine on Linux only
