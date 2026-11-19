@@ -184,7 +184,7 @@ class Settings(BaseSettings):
     # asks `<base>/releases/latest` for `tag_name` and `html_url`, then
     # `<base>/compare/<tag>...<build sha>` for `status` and `base_commit.sha`.
     update_check_url: str = ""
-    # Sent as that check's `kind`: `mac-app` from LoonInspect.app's shell (#820), else `container`. An identity.
+    # Sent as that check's `kind`: `mac-app` once LoonInspect.app's shell sets it (#820), else `container`. An identity.
     instance_kind: Literal["container", "mac-app"] = "container"
 
     # Every timed loop in `app.main`, on or off for this process. False is how a second

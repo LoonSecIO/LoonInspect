@@ -48,7 +48,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import session_for_tenant, unscoped_session
+from app.core.database import release_key, session_for_tenant, unscoped_session
 from app.core.user_agent import build_user_agent
 from app.core.version import _DEV_VERSION, RELEASE, get_app_version
 from app.models.schema import Tenant, UpdateCheckState
@@ -124,17 +124,14 @@ def _current_sha() -> str | None:
 # LoonSec's update service (#819): who is asked, what is sent and how the answer is read, all of it in this
 # block so that a change to that wire is one edit. A v1.2.0 build asks this interim name for as long as it runs.
 _LOONSEC_UPDATE = "https://api.next.loonsec.io/v1/update"
-_RELEASE_TAG = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
-_STAGES = ("unclaimed", "claimed", "connected", "collecting")
 # One tenant's account, MDM connection, and collection run completed since :since (`last_success_at` outlives runs).
 _SETUP = text(
     "SELECT EXISTS (SELECT FROM accounts), EXISTS (SELECT FROM mdm_connections), "
     "EXISTS (SELECT FROM collections WHERE last_success_at >= :since)"
 )
-Provider = Literal["loonsec", "github"]
 
 
-def provider() -> tuple[Provider, str]:
+def provider() -> tuple[Literal["loonsec", "github"], str]:
     """Who is asked: ending /v1/update, less any trailing slash, the five keys; else a GitHub-shaped base, as v1.1.0."""
     address = (settings.update_check_url or _LOONSEC_UPDATE).rstrip("/")
     return ("loonsec" if address.endswith("/v1/update") else "github"), address
@@ -157,11 +154,11 @@ async def stage(now: datetime, tenant_ids: tuple | None = None) -> str:
         async with session_for_tenant(tenant_id) as db:
             account, connection, collected = (await db.execute(_SETUP, {"since": now - timedelta(days=7)})).one()
         reached = max(reached, 3 if collected else 2 if connection else int(account))
-    return _STAGES[reached]
+    return ("unclaimed", "claimed", "connected", "collecting")[reached]
 
 
 async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateReason | None]:
-    """One POST, answered by a 200 whose body is a JSON object with an integer `day` of zero or more; else the reason.
+    """One POST, answered by a 200 whose body is a JSON object with an integer `day` of zero or more: its columns, or the reason.
     No redirect is followed and the client lives for this request: the body goes nowhere else and no cookie is kept."""
     headers = {"User-Agent": f"LoonSecIO/{RELEASE} update-check"}  # the release, not the build stamp or its setting
     try:
@@ -173,7 +170,9 @@ async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateRea
         return None, REASON_UNREACHABLE
     day = answer.get("day") if isinstance(answer, dict) else None
     if type(day) is int and 0 <= day < 2**31:  # the ceiling is the column's; the service's days are far below it
-        return answer, None
+        latest = answer["latest"] if isinstance(answer.get("latest"), dict) else {}
+        tag = latest["tag"] if isinstance(latest.get("tag"), str) else None
+        return {"last_day": day} | vars(_judged(tag, _https_or_none(latest.get("url")))) | {"reason": None}, None
     if response.status_code == 429:
         logger.info("update check refused (429) by LoonSec's update service, its limit shared by all; asks again in an hour")
         return None, REASON_REFUSED
@@ -183,12 +182,11 @@ async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateRea
 
 def _judged(tag: str | None, release_url: str | None) -> _Answer:
     """LoonSec's answer as the running build reads it: a higher vMAJOR.MINOR.PATCH than RELEASE, by number. No tag is
-    `no_release`; one of another form, which the service never sends, is no notice and reads `unreachable`."""
-    latest, ours = (_RELEASE_TAG.fullmatch(value or "") for value in (tag, RELEASE))
-    names = {"latest_tag": tag, "release_url": release_url}
+    `no_release`; one of another form or over 64 characters, which the service never sends, is no notice: `unreachable`."""
+    latest, names = release_key(tag) if len(tag or "") <= 64 else None, {"latest_tag": tag, "release_url": release_url}
     if latest is None:
         return _Answer(update_available=None, reason=REASON_UNREACHABLE if tag else REASON_NO_RELEASE, **names)
-    return _Answer(update_available=[*map(int, latest.groups())] > [*map(int, ours.groups())], **names)
+    return _Answer(update_available=latest > release_key(RELEASE), **names)
 
 
 def _https_or_none(value: object) -> str | None:
@@ -316,7 +314,10 @@ async def read_update_status(db: AsyncSession) -> UpdateStatus:
 
 
 def startup_line() -> str | None:  # while the check is on: the host it asks, and the switch that turns it off
-    host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's address"
+    try:  # a bracketed host urlsplit cannot read never stops startup, check on or off; the check fails at its tick instead
+        host = urlsplit(provider()[1]).hostname or "UPDATE_CHECK_URL's unreadable address"
+    except ValueError:
+        host = "UPDATE_CHECK_URL's unreadable address"
     return None if _unasked(get_app_version()) else f"update check on: it asks {host} once a day; UPDATE_CHECK=false turns it off"
 
 
@@ -355,9 +356,7 @@ async def _check(now: datetime, last: int | None) -> tuple[dict, bool]:
     stored = {"checked_at": now, "reason": reason, "last_sent": body, "checked_version": None, "latest_sha": None}
     if answer is None:  # unanswered: the day and the release last given are kept
         return stored | {"update_available": None}, False
-    latest = answer["latest"] if isinstance(answer.get("latest"), dict) else {}
-    judged = _judged(latest["tag"] if isinstance(latest.get("tag"), str) else None, _https_or_none(latest.get("url")))
-    return stored | vars(judged) | {"reason": None, "last_day": answer["day"]}, True  # judged again when read
+    return stored | answer, True  # the verdict is judged again when read
 
 
 async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelta] = _draw) -> bool:
@@ -387,3 +386,33 @@ async def tick(now: datetime | None = None, draw: Callable[[timedelta], timedelt
     if answered:
         logger.info("update check answered", extra={name: stored[name] for name in ("update_available", "latest_tag")})
     return True
+
+
+async def disclosed(db: AsyncSession, now: datetime) -> dict:
+    """What the check sends and to whom, for the status route, read and never asked (#819): the host and shape asked,
+    the body the last check sent and, while the check asks LoonSec, the one the next would carry, built now. Then when
+    that is owed, and whether the once-only notice is pending."""
+    shape, address = provider()
+    state, asks = await db.get(UpdateCheckState, 1), _unasked(get_app_version()) is None
+    sent = state.last_sent if state is not None and shape == "loonsec" else None  # a GitHub-shaped base takes no body
+    if sent:  # in the order sent, which JSONB does not keep; a key of another version's stays, last
+        sent = {key: sent[key] for key in request_body("", 0) if key in sent} | sent
+    owed = state.next_check_at if state is not None and asks else None
+    return {
+        "provider": shape,
+        "provider_host": urlsplit(address).hostname,
+        "kind": settings.instance_kind,
+        "last_body": sent,
+        "next_body": request_body(await stage(now), getattr(state, "last_day", None)) if asks and shape == "loonsec" else None,
+        "next_check_at": min(owed, now) if owed and due(state, now) else owed,  # over a day ahead, the clock went back: now
+        "notice_pending": state is not None and state.notice_pending,
+    }
+
+
+async def dismiss_notice(db: AsyncSession) -> bool:
+    """The once-only notice that the check now asks LoonSec, cleared for good (only its migration sets it); True when
+    this call cleared it."""
+    pending = update(UpdateCheckState).where(UpdateCheckState.id == 1, UpdateCheckState.notice_pending.is_(True))
+    cleared = (await db.execute(pending.values(notice_pending=False))).rowcount == 1
+    await db.commit()
+    return cleared

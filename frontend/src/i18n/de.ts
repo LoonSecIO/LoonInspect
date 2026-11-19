@@ -591,7 +591,7 @@ export const de: Translations = {
         dev_build:
           "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
         not_checked:
-          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz ist zu einem zufällig gezogenen Zeitpunkt innerhalb ihrer ersten 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet auch ein aktualisierter Build auf seine nächste, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
+          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
         unreachable:
           "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es eine Stunde später erneut; prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt.",
         refused:

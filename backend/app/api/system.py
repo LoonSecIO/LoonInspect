@@ -26,7 +26,7 @@ from app.core.sharing import (
     send_exchange_now,
 )
 from app.core.storage import measure_storage
-from app.core.update_check import read_update_status
+from app.core.update_check import disclosed, dismiss_notice, read_update_status
 from app.core.version import get_app_version
 from app.models.schema import ShareLog
 from app.schemas.system import (
@@ -63,7 +63,10 @@ async def update_status(db: AsyncSession = Depends(get_db)) -> UpdateStatusOut:
     """Whether this build lacks the latest published release (#407) — a release, not
     `main`, which is staging. Authenticated on purpose: the sign-in page must not
     advertise that an instance is behind. When the check cannot answer, `reason` says
-    why, for the Updates block on Settings > Support."""
+    why, for the Updates block on Settings > Support. It also says what the check sends
+    and to whom (#819): who is asked, the body the last check sent and the one the next
+    would carry, when that is owed, and whether the once-only notice is pending. All of
+    it is read from the stored check and the database: this route asks no one."""
     status = await read_update_status(db)
     return UpdateStatusOut(
         enabled=status.enabled,
@@ -74,7 +77,23 @@ async def update_status(db: AsyncSession = Depends(get_db)) -> UpdateStatusOut:
         latest_tag=status.latest_tag,
         release_url=status.release_url,
         reason=status.reason,
+        **await disclosed(db, datetime.now(UTC)),
     )
+
+
+@router.post(
+    "/update-status/dismiss-notice",
+    response_model=UpdateStatusOut,
+    dependencies=[Depends(require(Permission.SYSTEM_WRITE))],
+)
+async def dismiss_update_notice(db: AsyncSession = Depends(get_db)) -> UpdateStatusOut:
+    """Dismiss, for good, the once-only notice that the update check now asks LoonSec
+    and is counted (#819; `noticePending`). The notice is the instance's, so this is for
+    every administrator. SYSTEM_WRITE, like the sharing choices beside it, and audited
+    with whether this call cleared it: a second call changes nothing and answers the same."""
+    cleared = await dismiss_notice(db)
+    audit(AuditAction.UPDATE_NOTICE_DISMISSED, target_type="update_check", cleared=cleared)
+    return await update_status(db)
 
 
 async def _sharing_out(db: AsyncSession, row) -> DataSharingOut:
