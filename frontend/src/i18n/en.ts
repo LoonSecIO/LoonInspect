@@ -320,6 +320,30 @@ export const en = {
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
   },
+  // The update check said before it is sent (#819): on the setup page, beside the sharing choice, as a statement and
+  // not a choice; and once to an administrator of an instance updated to it, until one dismisses it for everyone.
+  updateCheckNotice: {
+    setup:
+      "This instance asks LoonSec's update service about once a day whether a newer release exists, which counts it as a running instance by release, kind and setup stage, with no identifier and no inventory; Settings › Support › Updates shows exactly what is sent and how to turn it off.",
+    label: "The update check now asks LoonSec",
+    asks: "About once a day this instance now asks LoonSec's update service whether a newer release exists, sending its release, the kind of install, how far setup has got and the day number of its last answered check, with no instance identifier and no inventory; LoonSec counts running instances from it.",
+    updates: "Settings › Support › Updates",
+    // After the link, by `kind`: the request shown there, and the switch that turns the check off.
+    shows: {
+      container:
+        " shows that request word for word, and UPDATE_CHECK=false in .env, applied with docker compose up -d, turns the check off (an UPDATE_CHECK_URL naming GitHub keeps the notice of new releases and is not counted).",
+      "mac-app": " shows that request word for word, and LoonInspect › Check for Updates Daily turns the check off."
+    },
+    dismiss: "Dismiss for everyone",
+    dismissing: "Dismissing…",
+    // A dismissal that did not land, and the notice stays: what failed, why, and what to check.
+    refused:
+      "Not dismissed: this instance refused it, because this account no longer holds the permission to change system settings. Reload the page to see what it holds now; an administrator who holds it can dismiss this notice.",
+    failed: (status: number) =>
+      `Not dismissed: this instance answered with an error (HTTP ${status}). Try again; if it fails again, the container log says why (docker compose logs app, or logs/backend.log in LoonInspect.app).`,
+    unreachable:
+      "Not dismissed: no answer this page could read came back from this instance. Check that LoonInspect is running and that this browser still reaches it, then try again."
+  },
   // The flag guard on a route (#402), a sibling of the permission guard above: an area
   // being checked, an area switched off, and an area whose switch could not be read —
   // never reported as "off" (#150). One `areas` entry per route-gating flag, by its key.
