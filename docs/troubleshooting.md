@@ -1380,16 +1380,24 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
 (the container log's `update check on` line at startup names the host), and compares releases by number.
 LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and its log.
 
-1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
+Under the block's sentence, *What the check sends* is read from the instance too: *Host*, the host
+asked and its shape (LoonSec's update service's, one `POST` carrying a body; or a GitHub-shaped
+address's, two `GET`s and no body); *Next check*, when one is owed; *The last check sent*, that
+check's literal body, answered or not, which went wherever `UPDATE_CHECK_URL` pointed then; and *The
+next check would send*, the body built now, with no `last` before the first answered check. An empty
+slot says why.
+
+1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*, then *What the check sends*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
      since *Last checked* appears at the next check.
    - *… is available, and this build does not contain it* → the notice is right; the
      steps are under it, dump first.
    - *Checking is off* → `UPDATE_CHECK=false` is set for this container. Remove the line
      from `.env` beside `docker-compose.yml` and run `docker compose up -d`.
-   - *This build carries no commit to compare* → a development build, or an image built
-     without `GIT_SHA`. Build it with the commit stamped:
-     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
+   - *This build asks nothing* → a development build, run from a tree with no build stamp; or an
+     image built without `GIT_SHA` while `UPDATE_CHECK_URL` names a GitHub-shaped address, which
+     compares commits (LoonSec's update service needs none, and asks such an image like any other).
+     Build it with the commit stamped: `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
    - *No check of this build has run yet* → a fresh install, an update from a release before v1.2.0, or any update or rebuild asking a GitHub-shaped provider, waiting for a
      moment drawn at random less than a day away. Longer: a container must run the scheduler
      (`scheduler_enabled` is `true` on its `starting` line), and its log's
@@ -1400,6 +1408,13 @@ LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and
      prints a status, or ends `HTTP Error` with one, when it does; any other error is the
      network's answer, not the app's. Reached, the answer was not one the check reads: a proxy's
      page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour; when only the release it named could not be read, at the next daily check.
+   - *Host* reads *UPDATE_CHECK_URL's unreadable address* → `UPDATE_CHECK_URL` in `.env` holds a
+     value the check cannot read as an address, and the `update check on` line names it the same
+     way. Correct it to a whole address, scheme and host included, or remove the line to ask
+     LoonSec's update service, then run `docker compose up -d`.
+   - *Owed now* under *Next check*, still there a minute later → no process runs the scheduler
+     (`scheduler_enabled` is `true` on a container's `starting` line), or that container's log
+     says `update check could not run` and why.
    - *The provider refused the check* → the container log says which, once per attempt.
      `update check refused (429) by LoonSec's update service` is that service's limit, shared
      by every instance: the check asks again in an hour, and there is nothing to change here.
@@ -1407,7 +1422,9 @@ LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and
      address, shared by everything behind this instance's egress address. Several
      instances behind one address use the budget up together; `UPDATE_CHECK=false` on all
      but one is the fix available today.
-   - *No release has been published yet* → true until the first release. Nothing to do.
+   - *No release named yet* → LoonSec's update service has read no published release yet, or a
+     GitHub-shaped address has none published. The next daily check asks again; nothing to do.
+     Still there a day after the Releases page lists one, from LoonSec's service: report it (§8).
    - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
      was never pushed. Build from a release tag and it is compared again.
 2. **The notice names a release you believe you have.** From LoonSec's update service, this build's release

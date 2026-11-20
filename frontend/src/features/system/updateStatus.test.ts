@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { UpdateReason, UpdateStatusResponse } from "@/features/system/api";
-import { bannerRelease, describeUpdate, shellSafeTag, TAG_PLACEHOLDER, UPDATES_HREF, upgradeCommands } from "./updateStatus";
+import { UPDATE_REASONS, type UpdateStatusResponse } from "@/features/system/api";
+import { de } from "@/i18n/de";
+import { en } from "@/i18n/en";
+import { bannerRelease, bodyText, describeSends, describeUpdate, shellSafeTag, TAG_PLACEHOLDER, UPDATES_HREF, upgradeCommands } from "./updateStatus";
 
 function status(over: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse {
   return {
@@ -12,11 +14,13 @@ function status(over: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse 
     latestTag: "v2026.09.17",
     releaseUrl: "https://github.com/LoonSecIO/LoonInspect/releases/tag/v2026.09.17",
     reason: null,
+    provider: "loonsec", providerHost: "api.next.loonsec.io", kind: "container", lastBody: null, nextBody: null,
+    nextCheckAt: null, noticePending: false,
     ...over
   };
 }
 
-const REASONS: UpdateReason[] = ["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"];
+const REASONS = UPDATE_REASONS; // all seven, `not_checked` included
 
 describe("describeUpdate", () => {
   it.each([
@@ -91,5 +95,53 @@ describe("the upgrade steps", () => {
 
   it("the banner and the attention row both point at the block", () => {
     expect(UPDATES_HREF).toBe("/settings/support#updates");
+  });
+});
+
+// After a check made on day 20776 by an instance last answered on day 20775 (`UpdatesBlock.test.tsx` renders it whole).
+const BODY = { contract: "v1", release: "v1.2.0", kind: "container", stage: "collecting", last: 20775 };
+const READ = Date.parse("2026-11-19T10:00:30Z");
+const OFF = { reason: "disabled", updateAvailable: null, checkedAt: null, nextBody: null, nextCheckAt: null } as const;
+const sends = (over: Partial<UpdateStatusResponse>) =>
+  describeSends(status({ lastBody: BODY, nextBody: { ...BODY, last: 20776 }, nextCheckAt: "2026-11-20T07:41:00Z", ...over }), READ);
+
+describe("what the check sends (#819)", () => {
+  it("prints each body as JSON text with its keys in the order given, and when the next check is owed", () => {
+    expect(sends({})).toEqual({
+      provider: "loonsec",
+      host: "api.next.loonsec.io",
+      last: { json: '{\n  "contract": "v1",\n  "release": "v1.2.0",\n  "kind": "container",\n  "stage": "collecting",\n  "last": 20775\n}' },
+      next: { json: bodyText({ ...BODY, last: 20776 }) },
+      owed: { at: "2026-11-20T07:41:00Z", due: false }
+    });
+  });
+
+  it.each([
+    ["nothing sent yet", { lastBody: null, checkedAt: null }, "last", "not_sent"],
+    ["the last check asked a GitHub-shaped address", { lastBody: null }, "last", "sent_none"],
+    ["a GitHub-shaped address takes no body", { provider: "github", lastBody: null, nextBody: null }, "last", "github"],
+    ["nor will it next", { provider: "github", lastBody: null, nextBody: null }, "next", "github"],
+    ["the check off", OFF, "next", "off"],
+    ["the check off, whatever the shape", { ...OFF, provider: "github" }, "next", "off"],
+    ["the check off owes nothing", OFF, "owed", "off"],
+    ["a development build", { ...OFF, reason: "dev_build" }, "next", "dev_build"],
+    ["a development build owes nothing", { ...OFF, reason: "dev_build" }, "owed", "dev_build"],
+    ["no row drawn yet", { nextCheckAt: null }, "owed", "not_drawn"]
+  ] as const)("names why a slot is empty: %s", (_, over, slot, none) => {
+    expect(sends(over)[slot]).toEqual({ none });
+  });
+
+  it("keeps the last body with the check off, owes a moment already past now, and names no unreadable host", () => {
+    expect(sends(OFF).last).toEqual({ json: bodyText(BODY) });
+    expect(sends({ nextCheckAt: "2026-11-19T09:59:00Z" }).owed).toEqual({ at: "2026-11-19T09:59:00Z", due: true });
+    expect(sends({ providerHost: null }).host).toBeNull();
+  });
+
+  it("every reason and every empty slot has its sentence, in both languages", () => {
+    for (const t of [en, de]) {
+      for (const reason of UPDATE_REASONS) expect(t.support.updates.reasons[reason]).toMatch(/\S/);
+      expect(Object.keys(t.support.updates.sends.none)).toEqual(["not_sent", "sent_none", "github", "off", "dev_build", "not_drawn"]);
+      for (const sentence of Object.values(t.support.updates.sends.none)) expect(sentence).toMatch(/\S/);
+    }
   });
 });
