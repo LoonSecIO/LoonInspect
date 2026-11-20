@@ -639,7 +639,7 @@ export const en = {
         not_checked:
           "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
         unreachable:
-          "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Asks, below, then names UPDATE_CHECK_URL's unreadable address, as the container's update check on line does at startup.",
+          "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Host, below, then names UPDATE_CHECK_URL's unreadable address, as the container's update check on line does at startup.",
         refused:
           "The provider refused the check: LoonSec's update service at its limit, or GitHub, whose unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again an hour later.",
         no_release:
@@ -650,7 +650,7 @@ export const en = {
       // What the check sends, to whom and when (#819), read from this instance: opening the block asks no one.
       sends: {
         heading: "What the check sends",
-        asks: "Asks",
+        host: "Host",
         unreadableHost: "UPDATE_CHECK_URL's unreadable address",
         shape: {
           loonsec: "In the shape of LoonSec's update service: one POST, carrying the body below.",

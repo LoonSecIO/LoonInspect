@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink } from "@/components/ui/external-link";
 import { SUPPORT_LINKS } from "@/features/support/links";
 import { getUpdateStatus, type UpdateStatusResponse } from "@/features/system/api";
-import { type BodyView, describeSends, describeUpdate, shellSafeTag, type Unsent } from "@/features/system/updateStatus";
-import { UPDATES_ANCHOR, upgradeCommands } from "@/features/system/updateStatus";
+import { type BodyView, describeSends, describeUpdate, shellSafeTag, type Unsent, UPDATES_ANCHOR, upgradeCommands } from "@/features/system/updateStatus";
 import { useLocale } from "@/i18n/LocaleContext";
 
 /** `readAt`: when the status arrived, which a next check already past is judged against. */
@@ -117,8 +116,8 @@ export function UpdatesBlock() {
           <h3 className="text-sm font-semibold">{ts.heading}</h3>
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-muted-foreground">{ts.asks}</dt>
-              <dd className="font-mono text-xs">{sends.host ?? ts.unreadableHost}</dd>
+              <dt className="text-xs text-muted-foreground">{ts.host}</dt>
+              <dd className="font-mono text-xs wrap-anywhere">{sends.host ?? ts.unreadableHost}</dd>
               <dd className="text-muted-foreground">{ts.shape[sends.provider]}</dd>
             </div>
             <div>

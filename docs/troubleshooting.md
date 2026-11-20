@@ -1380,11 +1380,12 @@ It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_UR
 (the container log's `update check on` line at startup names the host), and compares releases by number.
 LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and its log.
 
-Under the block's sentence, *What the check sends* is read from the instance too: *Asks*, the host
-and its shape (LoonSec's update service's, one `POST` carrying a body; or a GitHub-shaped address's,
-two `GET`s and no body); *Next check*, when one is owed; *The last check sent*, that check's literal
-body, answered or not, which went wherever `UPDATE_CHECK_URL` pointed then; and *The next check would
-send*, the body built now, with no `last` before the first answered check. An empty slot says why.
+Under the block's sentence, *What the check sends* is read from the instance too: *Host*, the host
+asked and its shape (LoonSec's update service's, one `POST` carrying a body; or a GitHub-shaped
+address's, two `GET`s and no body); *Next check*, when one is owed; *The last check sent*, that
+check's literal body, answered or not, which went wherever `UPDATE_CHECK_URL` pointed then; and *The
+next check would send*, the body built now, with no `last` before the first answered check. An empty
+slot says why.
 
 1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*, then *What the check sends*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
@@ -1407,7 +1408,7 @@ send*, the body built now, with no `last` before the first answered check. An em
      prints a status, or ends `HTTP Error` with one, when it does; any other error is the
      network's answer, not the app's. Reached, the answer was not one the check reads: a proxy's
      page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour; when only the release it named could not be read, at the next daily check.
-   - *Asks* reads *UPDATE_CHECK_URL's unreadable address* → `UPDATE_CHECK_URL` in `.env` holds a
+   - *Host* reads *UPDATE_CHECK_URL's unreadable address* → `UPDATE_CHECK_URL` in `.env` holds a
      value the check cannot read as an address, and the `update check on` line names it the same
      way. Correct it to a whole address, scheme and host included, or remove the line to ask
      LoonSec's update service, then run `docker compose up -d`.

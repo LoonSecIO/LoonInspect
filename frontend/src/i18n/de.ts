@@ -593,7 +593,7 @@ export const de: Translations = {
         not_checked:
           "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
         unreachable:
-          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Fragt, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on beim Start des Containers UPDATE_CHECK_URL's unreadable address.",
+          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Host, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on beim Start des Containers UPDATE_CHECK_URL's unreadable address.",
         refused:
           "Der Anbieter hat die Prüfung abgelehnt: der Update-Dienst von LoonSec an seiner Grenze, oder GitHub, dessen Anfragen ohne Anmeldung auf 60 pro Stunde und Adresse begrenzt sind, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
         no_release:
@@ -603,7 +603,7 @@ export const de: Translations = {
       },
       sends: {
         heading: "Was die Prüfung sendet",
-        asks: "Fragt",
+        host: "Host",
         unreadableHost: "eine nicht lesbare Adresse (UPDATE_CHECK_URL)",
         shape: {
           loonsec: "Im Format des Update-Dienstes von LoonSec: ein POST mit dem Inhalt unten.",
