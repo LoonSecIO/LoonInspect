@@ -597,7 +597,7 @@ export const de: Translations = {
         refused:
           "Der Anbieter hat die Prüfung abgelehnt: der Update-Dienst von LoonSec an seiner Grenze, oder GitHub, dessen Anfragen ohne Anmeldung auf 60 pro Stunde und Adresse begrenzt sind, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
         no_release:
-          "Noch kein Release genannt: Der Update-Dienst von LoonSec hat noch kein veröffentlichtes Release gelesen, oder, bei einer GitHub-artigen Adresse, es wurde noch keines veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte. Die nächste tägliche Prüfung fragt erneut.",
+          "Noch kein Release genannt: Der Update-Dienst von LoonSec hat noch kein veröffentlichtes Release gelesen, oder bei einer GitHub-artigen Adresse wurde noch keines veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte. Die nächste tägliche Prüfung fragt erneut.",
         unknown_commit:
           "GitHub kennt den Commit dieses Builds nicht, also lässt sich nicht sagen, ob er das neueste Release enthält. Ein lokaler oder geforkter Build wird nie verglichen; bauen Sie von einem Release-Tag, um verglichen zu werden."
       },
