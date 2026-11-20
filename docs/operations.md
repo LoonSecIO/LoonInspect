@@ -302,8 +302,10 @@ gunzip -t looninspect-*.sql.gz && echo "gzip stream intact"
 That checks the compression, not the SQL. The only test of a backup is a restore, which
 is §3 — run it once against a throwaway project (`docker compose -p looninspect-drill …`)
 and you will know, before you need to know. Start that project with `UPDATE_CHECK=false` in
-its environment: a drill is not an install, and from v1.2.0 an instance that starts with the
-update check on is counted as one (README, *Update notifications*).
+its environment: a drill is not an install. From v1.2.0 an instance whose update check is
+answered is counted as one (README, *Update notifications*), and a database restored from a
+dump carries the source's update-check row with it, so the drill would ask as soon as that row
+says a check is owed.
 
 ### Backing up the volume instead
 

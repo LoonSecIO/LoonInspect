@@ -368,7 +368,7 @@ it slept in stretches; a figure a sleep fell across is not quoted.
   secret, and a patching rule confirmed from the Cyber Essentials entry. Its update status read
   `disabled`, as 1.1.0's shell makes it, and the stand-in saw nothing from it. Quit:
   nothing left running in 0.46 s. (Its first launch is not timed here; the same app was healthy
-  1.9 s after launch the evening before.)
+  1.9 s after launch in a dry run earlier the same day.)
 - **The update.** The 1.2.0 app over the 1.1.0 app, same data directory and keychain items.
   Healthy 1.2 s after launch on the same port. `backend.log` shows the one migration 1.2.0 adds:
   `f794a1c3d5e7 -> e819a4c2f6b3` (the update check's row). `shell.log` said *update check: the
@@ -382,8 +382,9 @@ it slept in stretches; a figure a sleep fell across is not quoted.
 - **The check.** Before any check the status read `kind: mac-app`, the once-only notice
   pending, and a next body of `{"contract":"v1","release":"v1.2.0","kind":"mac-app",
   "stage":"claimed"}`: an account, and no MDM connection. With `update_check_state.next_check_at`
-  moved back in the app's own database, the stand-in received `POST /v1/update` with
-  `User-Agent: LoonSecIO/v1.2.0 update-check` and exactly that body. The notice was then
+  moved back in the app's own database, nothing arrived within 100 seconds the first time; made
+  due again, the stand-in received exactly that body. (On a fresh launch of the same build a
+  due check arrived after a minute both times it was tried, below.) The notice was then
   dismissed through its route.
 - **The choice, across a relaunch.** `defaults write io.loonsec.looninspect
   CheckForUpdatesDaily -bool false`, which is what the menu item writes, then quit and open:
