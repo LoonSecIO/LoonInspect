@@ -82,8 +82,12 @@ mkdir -p "$src/backend/docs" "$res" "$app/Contents/MacOS"
 shell_source="$macos/shell"
 launcher_source="$macos/launcher"
 if [ "${REQUIRE_CLEAN_TREE:-0}" = 1 ]; then
-  # Release inputs come from Git, so ignored local files cannot enter the signed bundle.
-  git -C "$repo" archive HEAD backend frontend docs/baseline-rules.yml macos | tar -xf - -C "$src"
+  # Release inputs come from Git, so ignored local files cannot enter the signed bundle. Through a file, not a
+  # pipe: tar stops reading at the archive's end marker, git archive is still writing the padding after it, and
+  # now and then it is killed by SIGPIPE, which pipefail turns into a failed build (exit 141) with no words.
+  git -C "$repo" archive -o "$build/source.tar" HEAD backend frontend docs/baseline-rules.yml macos
+  tar -xf "$build/source.tar" -C "$src"
+  rm -f "$build/source.tar"
   cp "$src/docs/baseline-rules.yml" "$src/backend/docs/"
   shell_source="$src/macos/shell"
   launcher_source="$src/macos/launcher"
