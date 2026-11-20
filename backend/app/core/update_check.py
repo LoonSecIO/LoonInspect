@@ -139,6 +139,21 @@ def provider() -> tuple[Literal["loonsec", "github"], str]:
     return ("loonsec" if address.endswith("/v1/update") else "github"), address
 
 
+_UNREADABLE = (
+    "update check: UPDATE_CHECK_URL cannot be asked as an address (%s), so nothing was sent. Correct the value, or "
+    "remove it to ask LoonSec's update service, and restart; until then the check is tried again every hour"
+)
+
+
+def _unreadable(address: str) -> str | None:
+    """Why `address` cannot be asked at all, or None: a value httpx refuses to read, or a port no host has."""
+    try:
+        port = httpx.URL(address).port
+    except (httpx.InvalidURL, ValueError) as exc:  # ValueError: an xn-- host that does not decode
+        return str(exc)
+    return None if port is None or 0 <= port <= 65535 else f"port {port} is not one a host has"
+
+
 def request_body(stage: str, last: int | None) -> dict:
     """Five keys and no others; `last`, the `day` the last answered check was given, is absent before one, never null."""
     body = {"contract": "v1", "release": RELEASE, "kind": settings.instance_kind, "stage": stage}
@@ -163,6 +178,9 @@ async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateRea
     """One POST, answered by a 200 whose body is a JSON object with an integer `day` of zero or more: its columns, or the reason.
     No redirect is followed and the client lives for this request: the body goes nowhere else and no cookie is kept."""
     headers = {"User-Agent": f"LoonSecIO/{RELEASE} update-check"}  # the release, not the build stamp or its setting
+    if (fault := _unreadable(address)) is not None:
+        logger.warning(_UNREADABLE, fault)
+        return None, REASON_UNREACHABLE
     try:
         async with httpx.AsyncClient(timeout=5.0, headers=headers, follow_redirects=False) as client:
             response = await client.post(address, json=body)
@@ -230,6 +248,9 @@ def _unanswered(response: httpx.Response, *, not_found: UpdateReason, **names: s
 async def _ask(current_sha: str) -> _Answer:
     _, base = provider()
     headers = {"Accept": "application/vnd.github+json", "User-Agent": build_user_agent("update-check")}
+    if (fault := _unreadable(base)) is not None:
+        logger.warning(_UNREADABLE, fault)
+        return _Answer(update_available=None, reason=REASON_UNREACHABLE)
     try:
         # Redirects followed: GitHub answers a renamed repository with a 301 to its new
         # name, and the rename should not read as "unreachable" for a year.

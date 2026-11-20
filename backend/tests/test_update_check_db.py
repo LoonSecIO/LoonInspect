@@ -137,15 +137,30 @@ async def test_a_check_with_no_answer_is_asked_again_an_hour_on_across_midnight(
     assert len(github.requests) == (1 + CHECK if retried else 1)
 
 
-async def test_a_github_shaped_address_httpx_cannot_read_is_unreachable_and_retried(github, monkeypatch) -> None:
+UNREADABLE = [
+    "https://[fe80::1/repos/LoonSecIO/LoonInspect",  # httpx.InvalidURL, which is neither an HTTPError nor a ValueError
+    "https://api.github.com:abc/repos/LoonSecIO/LoonInspect",
+    "https://127.0.0.1:99999/repos/LoonSecIO/LoonInspect",  # read, and no host has the port: an OverflowError at connect
+    "https://[fe80::1/v1/update",  # the same three in the shape of LoonSec's update service
+    "https://127.0.0.1:abc/v1/update",
+    "https://127.0.0.1:99999/v1/update",
+]
+
+
+@pytest.mark.parametrize("address", UNREADABLE)
+async def test_an_address_that_cannot_be_asked_is_unreachable_says_so_and_is_owed_an_hour_on(
+    github, monkeypatch, caplog, address
+) -> None:
     from app.core.config import settings
     from app.core.update_check import tick
 
-    monkeypatch.setattr(settings, "update_check_url", "https://[fe80::1/repos/LoonSecIO/LoonInspect")  # httpx.InvalidURL
-    assert await tick(DUE) is True  # asked, not raised: the scheduler's "could not run" line would name the database
+    monkeypatch.setattr(settings, "update_check_url", address)
+    with caplog.at_level("WARNING", logger="app.core.update_check"):
+        assert await tick(DUE) is True  # asked, not raised: the scheduler's "could not run" line would name the database
     row = await _row()
     assert (row.reason, row.next_check_at, github.requests) == ("unreachable", DUE + HOUR, [])
     assert (await _served()).reason == "unreachable"
+    assert [record.levelname for record in caplog.records] == ["WARNING"] and "UPDATE_CHECK_URL cannot be asked" in caplog.text
 
 
 async def test_a_next_moment_more_than_a_day_ahead_is_owed_at_once(github) -> None:
