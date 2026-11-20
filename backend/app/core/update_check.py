@@ -264,7 +264,7 @@ async def _ask(current_sha: str) -> _Answer:
                 return _Answer(update_available=True, latest_sha=latest_sha, **names)
             logger.debug("update check: the compare answer carried status %r", status)
             return _Answer(update_available=None, reason=REASON_UNREACHABLE, **names)
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:  # InvalidURL: an address httpx cannot read
         # Debug, not warning: an offline or air-gapped deployment hits this on every hourly
         # retry forever, and that is a configuration, not a fault. The Updates block on
         # Settings > Support says `unreachable` to the operator who goes looking.

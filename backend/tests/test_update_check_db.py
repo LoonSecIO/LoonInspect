@@ -137,6 +137,17 @@ async def test_a_check_with_no_answer_is_asked_again_an_hour_on_across_midnight(
     assert len(github.requests) == (1 + CHECK if retried else 1)
 
 
+async def test_a_github_shaped_address_httpx_cannot_read_is_unreachable_and_retried(github, monkeypatch) -> None:
+    from app.core.config import settings
+    from app.core.update_check import tick
+
+    monkeypatch.setattr(settings, "update_check_url", "https://[fe80::1/repos/LoonSecIO/LoonInspect")  # httpx.InvalidURL
+    assert await tick(DUE) is True  # asked, not raised: the scheduler's "could not run" line would name the database
+    row = await _row()
+    assert (row.reason, row.next_check_at, github.requests) == ("unreachable", DUE + HOUR, [])
+    assert (await _served()).reason == "unreachable"
+
+
 async def test_a_next_moment_more_than_a_day_ahead_is_owed_at_once(github) -> None:
     from app.core.update_check import tick
 
