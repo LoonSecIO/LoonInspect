@@ -77,6 +77,9 @@ class AuditAction(StrEnum):
     # A person's check of Fleet's maintained-apps catalogue (#794), with what it found. The
     # daily check is the scheduler's and is in the container log, not here.
     FLEET_CATALOG_CHECKED = "fleet-catalog.checked"
+    # The once-only notice that the update check now asks LoonSec (#819), dismissed for every
+    # administrator; `cleared` is false when it already was.
+    UPDATE_NOTICE_DISMISSED = "update-check.notice.dismissed"
 
     INTELLIGENCE_ACTIVATED = "intelligence.activated"
     INTELLIGENCE_ROTATED = "intelligence.credential.rotated"

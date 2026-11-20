@@ -1,5 +1,7 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
+import type { UpdateReason } from "@/features/system/api";
+import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
@@ -78,6 +80,9 @@ export const en = {
     updateAvailableUntagged: "A newer release of LoonInspect is available",
     updateWhatChanged: "what changed",
     updateHowTo: "how to update",
+    // #820: LoonInspect.app's own steps (docs/macos-app.md › Updates) and its release page, where the disk image is.
+    updateAppRelease: "disk image and what changed",
+    updateAppSteps: "quit LoonInspect, open the newer disk image, drag LoonInspect onto Applications, then open it",
     dismissUpdate: "Dismiss update notice",
     sharing: {
       // Sharing describes uploads; paid intelligence is a separate opt-in surface (#622).
@@ -317,6 +322,30 @@ export const en = {
     noAccessTitle: "You don't have access to this page",
     noAccessDescription:
       "Your account's role doesn't include permission for this area. Ask an administrator if you need it."
+  },
+  // The update check said before it is sent (#819): on the setup page, beside the sharing choice, as a statement and
+  // not a choice; and once to an administrator of an instance updated to it, until one dismisses it for everyone.
+  updateCheckNotice: {
+    setup:
+      "This instance asks LoonSec's update service about once a day whether a newer release exists, which counts it as a running instance by release, kind and setup stage, with no identifier and no inventory; Settings › Support › Updates shows exactly what is sent and how to turn it off.",
+    label: "The update check now asks LoonSec",
+    asks: "About once a day this instance now asks LoonSec's update service whether a newer release exists, sending its release, the kind of install, how far setup has got and the day number of its last answered check, with no instance identifier and no inventory; LoonSec counts running instances from it.",
+    updates: "Settings › Support › Updates",
+    // After the link, by `kind`: the request shown there, and the switch that turns the check off.
+    shows: {
+      container:
+        " shows that request word for word, and UPDATE_CHECK=false in .env, applied with docker compose up -d, turns the check off (an UPDATE_CHECK_URL naming GitHub keeps the notice of new releases and is not counted).",
+      "mac-app": " shows that request word for word, and LoonInspect › Check for Updates Daily turns the check off."
+    },
+    dismiss: "Dismiss for everyone",
+    dismissing: "Dismissing…",
+    // A dismissal that did not land, and the notice stays: what failed, why, and what to check.
+    refused:
+      "Not dismissed: this instance refused it, because this account no longer holds the permission to change system settings. Reload the page to see what it holds now; an administrator who holds it can dismiss this notice.",
+    failed: (status: number) =>
+      `Not dismissed: this instance answered with an error (HTTP ${status}). Try again; if it fails again, the container log says why (docker compose logs app, or logs/backend.log in LoonInspect.app).`,
+    unreachable:
+      "Not dismissed: no answer this page could read came back from this instance. Check that LoonInspect is running and that this browser still reaches it, then try again."
   },
   // The flag guard on a route (#402), a sibling of the permission guard above: an area
   // being checked, an area switched off, and an area whose switch could not be read —
@@ -615,14 +644,14 @@ export const en = {
     // when it could not answer, and the upgrade for a compose install, dump first.
     updates: {
       heading: "Updates",
-      help: "Once a day this instance asks GitHub for the latest published release, and whether this build contains it. Nothing else is sent. Updating happens on the host; nothing here runs anything.",
+      help: "About once a day this instance asks LoonSec's update service whether a newer release exists. The request carries the keys shown below, five at most, and nothing else: no instance identifier and no inventory. LoonSec keeps tallies by release, kind and stage, with no record of a single check and no address. UPDATE_CHECK=false asks nothing, and an UPDATE_CHECK_URL naming a GitHub-shaped address keeps the notice and is not counted. Updating happens on the host; nothing here runs anything.",
       loading: "Reading the update check…",
       errorLoading: "Could not read the update check from this instance.",
       thisBuild: "This build",
       latestRelease: "Latest release",
       lastChecked: "Last checked",
       notChecked: "Not checked",
-      noneYet: "None published yet",
+      noneYet: "None named yet",
       available: (tag: string) => `${tag} is available, and this build does not contain it.`,
       availableUntagged: "A newer release is available, and this build does not contain it.",
       current: (tag: string) => `Up to date: this build contains ${tag}.`,
@@ -633,27 +662,81 @@ export const en = {
         disabled:
           "Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.",
         dev_build:
-          "This build carries no commit to compare: it is a development build, or the image was built without GIT_SHA. The steps below build with the commit stamped.",
+          "This build asks nothing. It is a development build, with no build stamp; or it is an image built without GIT_SHA, and UPDATE_CHECK_URL names a GitHub-shaped address, which compares commits where LoonSec's update service needs none. The steps below build with the commit stamped.",
         not_checked:
-          "No check of this build has run yet. A new instance's first check is owed at a moment drawn at random within its first 24 hours, and an updated one waits for its next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
+          "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. Only a container with the scheduler on asks; one started with SCHEDULER_ENABLED=false never does.",
         unreachable:
-          "GitHub could not be reached, or something else answered in its place, such as a proxy or a sign-in page. The check tries again an hour later; check that this container can reach api.github.com over HTTPS.",
+          "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this container can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Host, below, then names UPDATE_CHECK_URL's unreadable address, as the container's update check on line does at startup.",
         refused:
-          "GitHub refused the check. Unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again an hour later.",
+          "The provider refused the check: LoonSec's update service at its limit, or GitHub, whose unauthenticated requests are limited to 60 an hour per address, shared by every instance behind it. The check tries again an hour later.",
         no_release:
-          "No release has been published yet. main is staging, and only a published release is compared against, so there is nothing to be behind.",
+          "No release named yet: LoonSec's update service has read no published release yet, or, from a GitHub-shaped address, none has been published. main is staging, and only a published release is compared against, so there is nothing to be behind. The next daily check asks again.",
         unknown_commit:
           "GitHub does not know this build's commit, so whether it contains the latest release cannot be said. A local or forked build is never compared; build from a release tag to be compared."
-      } as Record<string, string>,
+      } satisfies Record<UpdateReason, string>,
+      // What the check sends, to whom and when (#819), read from this instance: opening the block asks no one.
+      sends: {
+        heading: "What the check sends",
+        host: "Host",
+        unreadableHost: "UPDATE_CHECK_URL's unreadable address",
+        shape: {
+          loonsec: "In the shape of LoonSec's update service: one POST, carrying the next body below.",
+          github: "A GitHub-shaped address: two GETs and no body, as v1.1.0 asks. Not counted."
+        },
+        nextCheck: "Next check",
+        owedNow: "Owed now: the scheduler asks it within a minute. If this stays in the past, no process runs the scheduler, or the container log says update check could not run.",
+        lastSent: "The last check sent",
+        nextSends: "The next check would send",
+        none: {
+          not_sent: "Nothing yet: no check has been sent.",
+          sent_none: "No body: the last check asked a GitHub-shaped address, which takes none.",
+          github: "No body: a GitHub-shaped address takes none.",
+          off: "Nothing: the check is off (UPDATE_CHECK=false).",
+          dev_build: "Nothing: this build asks nothing.",
+          not_drawn: "Not drawn yet: the scheduler draws it at its next look, within a minute. A container started with SCHEDULER_ENABLED=false never asks."
+        } satisfies Record<Unsent, string>
+      },
       stepsHeading: "Updating a Docker Compose install",
       stepsIntro:
         "On the host, in the directory with docker-compose.yml. The first line is the backup: if the older image cannot start on the upgraded database, this dump is a way back.",
       tagPlaceholder: "Replace <tag> with the release to install, from the list of releases.",
       releasesPage: "Releases",
       rollback:
-        "From v2.0.0 on, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.x, needs the downgrade, run from the newer image first.",
+        "Back to v1.1.0 or any later release, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.0.0, needs the downgrade, run from the newer image first.",
       rollbackLink: "Rollback, step by step",
-      selfHostedOnly: "These steps are for an install you run yourself with Docker Compose."
+      selfHostedOnly: "These steps are for an install you run yourself with Docker Compose.",
+      // LoonInspect.app, whose `kind` is mac-app (#820): its own steps, docs/macos-app.md › Updates, and its own words
+      // wherever the container's above are false for it ("this container", .env, docker compose). The rest hold as they are.
+      app: {
+        help: "About once a day this instance asks LoonSec's update service whether a newer release exists. The request carries the keys shown below, five at most, and nothing else: no instance identifier and no inventory. LoonSec keeps tallies by release, kind and stage, with no record of a single check and no address. LoonInspect › Check for Updates Daily turns it off, and the app asks only while it is open and this Mac is awake. Updating is by hand, with the release's disk image; nothing here runs anything.",
+        reasons: {
+          disabled:
+            "Checking is off: LoonInspect › Check for Updates Daily has no check mark, or UPDATE_CHECK is set in the app's environment, so nothing is asked and no notice appears. To turn it on, choose Check for Updates Daily in the LoonInspect menu; while it is dimmed, the environment decides. logs/shell.log says which at every start (troubleshooting.md §25 step 9).",
+          dev_build:
+            "This build asks nothing: it is a development build, with no build stamp. macos/scripts/build-app.sh stamps every app it builds; the release's disk image, in the steps below, carries one.",
+          not_checked:
+            "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. The app asks only while it is open and this Mac is awake: a check that came due while it was quit or asleep is asked once it runs again.",
+          unreachable:
+            "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this Mac can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Host, below, then names UPDATE_CHECK_URL's unreadable address, as the update check on line in logs/backend.log does at startup."
+        } satisfies Partial<Record<UpdateReason, string>>,
+        sends: {
+          owedNow: "Owed now: the scheduler asks it within a minute. If this stays in the past, no process runs the scheduler, or logs/backend.log says update check could not run.",
+          none: { not_drawn: "Not drawn yet: the scheduler draws it at its next look, within a minute." } satisfies Partial<Record<Unsent, string>>
+        },
+        stepsHeading: "Updating LoonInspect.app",
+        stepsIntro:
+          "By hand, on this Mac, with the newer release's disk image. The backup is a copy of ~/Library/Application Support/LoonInspect/pgdata, made after step 1 while LoonInspect is quit: if the older app cannot start on the updated database, that copy is a way back.",
+        steps: [
+          "Quit LoonInspect, from the menu or with ⌘Q. Closing the window is not quitting: the local server keeps running, and the app must not be replaced under it.",
+          "Open the newer disk image and drag LoonInspect onto Applications, replacing the old app.",
+          "Open it. Its first launch runs the newer release's migrations before the window loads."
+        ],
+        releasePage: "The release's page, with its disk image",
+        rollback:
+          "Stepping back is the same steps with the older disk image. An older app that finds a database a newer one migrated starts when the newer release recorded that the older can read it, and otherwise refuses, naming both releases: then put the newer app back, or restore the copy of pgdata.",
+        rollbackLink: "Updates and stepping back, in the app's guide",
+        selfHostedOnly: "These steps are for LoonInspect.app on this Mac, which does not update itself. Replacing the app keeps its data, its keychain items and its settings, which live outside it."
+      }
     },
     storage: {
       heading: "Storage",

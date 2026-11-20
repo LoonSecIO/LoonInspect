@@ -35,7 +35,7 @@ pull request lands.
 | `VULN_TENANT_SELECTION` | v2 preview, serving path | #621 | off | 21 reads in 12 modules | **promote** at the tag; **delete** the legacy singleton-epoch path in v2.1 | v2.1 |
 | `VULN_RELEASE_RETENTION` | v2 preview, storage | #621 | off | `core/intelligence.py`, `core/participation.py`, `core/vuln_library.py` | **promote** with the one above; fold the two into one in v2.1 | v2.1 |
 | `COMMUNITY_SHARING` | kill switch | data-sharing.md | on | `core/sharing.py`, `core/participation.py`, `api/system.py` | keep, permanent: the air-gapped operator's hard stop | never |
-| `UPDATE_CHECK` | operator switch | #43 | on | `core/update_check.py` | keep, permanent: the one outbound call an air-gapped instance can refuse | never |
+| `UPDATE_CHECK` | operator switch that also decides whether the instance is counted | #43 | on | `core/update_check.py` (on, the check asks LoonSec's update service, and running instances are counted through it by default, as Kyle ruled on 2026-11-19 in #819; an `UPDATE_CHECK_URL` naming a GitHub-shaped base keeps the notice and is not counted; off, nothing is asked or counted) | keep, permanent: the one outbound call an air-gapped instance can refuse | never |
 | `SCHEDULER_ENABLED` | topology switch | operations.md §7 | on | `main.py` | keep, permanent: how a second container is made web-only | never |
 | `DEBUG` | developer | baseline | off | `main.py`, `core/database.py` | keep, permanent | never |
 | `SECURE_COOKIES` | hazard knob | README | on | `serve.py`, `core/auth.py` | keep, permanent | never |
@@ -95,6 +95,16 @@ tag. **The count does not fall at this release**: twenty switches at v1.1.0, twe
 The register says the number is meant to fall, and the first removals already ruled are the
 v2.1 ones in the v2.0.0 gate above.
 
+**Added after the ruling, and not ruled.** Two more came in with v1.2.0's own work on
+2026-11-19, after this gate was ruled, a setting and an app preference; neither is among the
+twenty above. Each verdict below is a recommendation awaiting Kyle's ruling; the rows above
+are unchanged.
+
+| Switch | Kind | Born in | Default at v1.2.0 | Recommended verdict for v1.2.0 | Kill release |
+| --- | --- | --- | --- | --- | --- |
+| `INSTANCE_KIND` | identity, a setting in `core/config.py` | #819 | `container` | recommended **keep, permanent**: it says which shell runs the backend and is sent as the update check's `kind`, so it is an identity the shell sets, not something an operator switches. LoonInspect.app's shell sets `mac-app` (#820), and `docker-compose.yml` does not pass it, so a container started from that file is `container`. It turns nothing on or off, so there is nothing to promote or delete. Awaiting Kyle's ruling | never, as recommended |
+| **Check for Updates Daily** (LoonInspect.app's menu; `CheckForUpdatesDaily` in the app's preferences) | operator switch, owned by the app's user | #820 | on | recommended **keep, permanent**: the app's user has no `.env`, so this is how they set `UPDATE_CHECK` for the backend the app runs. It decides what that switch decides, whether the check asks and so whether the app is counted, and the reason that switch is kept for good holds for it. Awaiting Kyle's ruling | never, as recommended |
+
 ## How a gate runs
 
 1. Before the release is tagged, list every switch (`grep -n ': bool = ' backend/app/core/config.py`
@@ -120,3 +130,5 @@ v2.1 ones in the v2.0.0 gate above.
 | 2026-11-15 | The v1.1.0 verdicts as ruled ("accept all", #797): every recommendation became its row's verdict. `patch_policy` is kept, `app_promotion` and `fleet_maintained_apps` are kept off, and the seventeen earlier rulings stand. No default flipped. |
 | 2026-11-18 | The v1.2.0 gate, as recommendations (#813): the inventory is unchanged since v1.1.0, every switch is recommended keep or keep off, and `fleet_maintained_apps`, which the v1.1.0 gate deferred to this one, is recommended keep off with a verdict due at the v2.0.0 gate. Not ruled until the maintainer rules it. |
 | 2026-11-19 | The v1.2.0 verdicts as ruled ("accept all", #813): every recommendation became its row's verdict. All twenty switches are kept as they are, `fleet_maintained_apps` is kept off with a verdict due at the v2.0.0 gate, and the earlier rulings stand. No default flipped. |
+| 2026-11-19 | `UPDATE_CHECK`'s row says what #819 added to it: Kyle ruled that running instances are counted by default through the update check, so the switch that stops the check also keeps the instance out of LoonSec's count. Its verdict is unchanged. |
+| 2026-11-19 | `INSTANCE_KIND` (#819) and LoonInspect.app's **Check for Updates Daily** (#820) added after the v1.2.0 ruling, each recommended keep, permanent. Not ruled until the maintainer rules them. |

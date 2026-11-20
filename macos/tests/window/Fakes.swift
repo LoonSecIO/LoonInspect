@@ -47,4 +47,17 @@ final class Supervisor: @unchecked Sendable {
     }
     func stop() { locked { stops += 1; stopping = true } }
     func claimToken() -> String? { nil }
+
+    // Check for Updates Daily, held in memory: no preferences are read or written.
+    var updateCheckSetByEnvironment = false
+    private var choice = true, toldBackend = true, restarts = 0
+    private var choiceChanged: (@Sendable () -> Void)?
+    var checksForUpdatesDaily: Bool {
+        get { locked { choice } }
+        set { locked { choice = newValue }; choiceChanged?() }
+    }
+    var updateCheckChanged: Bool { locked { choice != toldBackend } }
+    var restartCount: Int { locked { restarts } }
+    func observeUpdateCheckChoice(_ changed: @escaping @Sendable () -> Void) { choiceChanged = changed }
+    func restartBackend() throws { locked { restarts += 1; toldBackend = choice } }
 }

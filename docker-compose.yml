@@ -93,11 +93,13 @@ services:
       ALLOW_INSECURE_DESTINATION_URL: ${ALLOW_INSECURE_DESTINATION_URL:-false}
       # JSON exact-host allowlist; *.internal, localhost, 127.0.0.1 and ::1 stay allowed.
       DESTINATION_ALLOWED_HOSTS: ${DESTINATION_ALLOWED_HOSTS:-[]}
-      # Daily check against GitHub for a newer published release, surfaced as a banner
-      # to signed-in operators. Set false to disable the outbound call entirely
-      # (air-gapped instances can also just leave it on — the banner stays silent, and
-      # Settings › Support says why the check could not answer). README "Update
-      # notifications" has this and UPDATE_CHECK_URL below.
+      # The update check: about once a day the scheduler POSTs five keys (the contract word,
+      # this release, kind, how far setup has got, and the day number its last answer gave)
+      # to LoonSec's update service at api.next.loonsec.io, which counts running instances
+      # with no identifier; a newer release becomes a banner for signed-in operators. false
+      # asks nothing, so nothing is counted (air-gapped instances can also just leave it on —
+      # the banner stays silent, and Settings › Support says why the check could not answer).
+      # README "Update notifications" has the request whole, and UPDATE_CHECK_URL below.
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # Hard kill switch for community data sharing — false wins over any tier chosen
       # in the UI. See docs/data-sharing.md and the README's "Community data sharing".
@@ -127,10 +129,12 @@ services:
       # included. HSTS goes out only while HSTS_MAX_AGE, in seconds, is above 0.
       SECURITY_HEADERS: ${SECURITY_HEADERS:-true}
       HSTS_MAX_AGE: ${HSTS_MAX_AGE:-0}
-      # Alternate provider for the update check: the base of a GitHub-shaped repository
-      # API answering /releases/latest and /compare/<tag>...<sha>; empty uses this
-      # repository's on GitHub. Exists for the future api.loonsec.io endpoint and for
-      # testing against a mock.
+      # Where the update check asks. Empty is LoonSec's update service,
+      # https://api.next.loonsec.io/v1/update, and any value ending /v1/update is sent the same
+      # five keys. Any other value is the base of a GitHub-shaped repository API, asked as
+      # v1.1.0 asked GitHub (/releases/latest, then /compare/<tag>...<sha>) with no body: the
+      # notice is kept and the instance is not counted. GitHub's own base is
+      # https://api.github.com/repos/LoonSecIO/LoonInspect.
       UPDATE_CHECK_URL: ${UPDATE_CHECK_URL:-}
       # SCHEDULER_ENABLED=false makes this container web-only: it serves the pages and the
       # API and runs nothing on a clock (docs/operations.md §7). SYNC_* is when a new Jamf
@@ -174,6 +178,7 @@ services:
       #   DATABASE_MODE            docker-compose.external.yml sets it; here it is bundled
       #   DEBUG                    developer mode: it writes every SQL statement to the log
       #   HOST, PORT               where the app listens in the container; `ports:` publishes it
+      #   INSTANCE_KIND            the update check's `kind`, an identity: container here, mac-app from LoonInspect.app (#820)
       #   USER_AGENT_PRODUCT_NAME  LoonSec's services match on it; a Jamf connection sets its own
     # The host as seen from inside the container, for the AI test box (#319): Docker
     # Desktop resolves `host.docker.internal` on its own; Docker Engine on Linux only

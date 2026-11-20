@@ -83,7 +83,8 @@ Only the repository admin role can create, move or delete a `v*` tag (the `relea
 ruleset, §8.1), because the role that pushes images trusts a workflow run on one (#672).
 `v1.0.0` is the first stable release. Runtime date-plus-SHA build stamps identify the
 image and its source; they are not release assignments. The current update checker
-compares commit ancestry against the latest published stable release, not against the
+compares the build's release by number (or, asking a GitHub-shaped provider, its commit's ancestry)
+against the latest published stable release (#819), not against the
 build date or every merge to `main`.
 
 Milestones do not change the trunk-based model. Work for v2 enters `main` through

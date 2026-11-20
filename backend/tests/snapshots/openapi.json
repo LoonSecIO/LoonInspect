@@ -10069,6 +10069,28 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "kind": {
+            "description": "This instance's `kind`, which the `loonsec` shape sends: `container`, or `mac-app` when LoonInspect.app sets `INSTANCE_KIND`.",
+            "enum": [
+              "container",
+              "mac-app"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lastBody": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body the last check sent, answered or not, its keys in the order sent, and kept once the check is turned off; null before the first, and on the `github` shape, which sends none.",
+            "title": "Lastbody"
+          },
           "latestSha": {
             "anyOf": [
               {
@@ -10090,6 +10112,58 @@
               }
             ],
             "title": "Latesttag"
+          },
+          "nextBody": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body the next check would carry, built now: this instance's `stage`, and as `last` the `day` the last answered check was given, absent before the first. Null when `reason` is `disabled` or `dev_build`, and on the `github` shape.",
+            "title": "Nextbody"
+          },
+          "nextCheckAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the next check is owed. One in the past is owed now and is asked at the scheduler's next look, within a minute; one that stays in the past means no process runs the scheduler (`SCHEDULER_ENABLED`). Null when `reason` is `disabled` or `dev_build`, which ask nothing, or before the scheduler has made its row.",
+            "title": "Nextcheckat"
+          },
+          "noticePending": {
+            "description": "An administrator is still to be told, once, that the check now asks LoonSec and is counted: true on an instance that held an account when it was updated to this release, until one dismisses it with `POST /api/system/update-status/dismiss-notice`. The instance's, whatever `enabled` and `provider` say.",
+            "title": "Noticepending",
+            "type": "boolean"
+          },
+          "provider": {
+            "description": "Which shape the check asks: `loonsec`, LoonSec's update service, sent one POST of five keys (`UPDATE_CHECK_URL` unset, or ending `/v1/update`); `github`, any other `UPDATE_CHECK_URL`, a GitHub-shaped base asked as v1.1.0 asks it, with two GETs and no body.",
+            "enum": [
+              "loonsec",
+              "github"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "providerHost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The host the check asks, as the `update check on` line at startup names it; null when `UPDATE_CHECK_URL` names none it can read. Named while the check is off too: `enabled` and `reason` say whether it asks.",
+            "title": "Providerhost"
           },
           "reason": {
             "anyOf": [
@@ -10138,7 +10212,14 @@
           "checkedAt",
           "currentVersion",
           "enabled",
+          "kind",
+          "lastBody",
           "latestSha",
+          "nextBody",
+          "nextCheckAt",
+          "noticePending",
+          "provider",
+          "providerHost",
           "updateAvailable"
         ],
         "title": "UpdateStatusOut",
@@ -16581,7 +16662,7 @@
     },
     "/api/system/update-status": {
       "get": {
-        "description": "Whether this build lacks the latest published release (#407) \u2014 a release, not\n`main`, which is staging. Authenticated on purpose: the sign-in page must not\nadvertise that an instance is behind. When the check cannot answer, `reason` says\nwhy, for the Updates block on Settings > Support.",
+        "description": "Whether this build lacks the latest published release (#407) \u2014 a release, not\n`main`, which is staging. Authenticated on purpose: the sign-in page must not\nadvertise that an instance is behind. When the check cannot answer, `reason` says\nwhy, for the Updates block on Settings > Support. It also says what the check sends\nand to whom (#819): who is asked, the body the last check sent and the one the next\nwould carry, when that is owed, and whether the once-only notice is pending. All of\nit is read from the stored check and the database: this route asks no one.",
         "operationId": "update_status_api_system_update_status_get",
         "responses": {
           "200": {
@@ -16596,6 +16677,28 @@
           }
         },
         "summary": "Update Status",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/system/update-status/dismiss-notice": {
+      "post": {
+        "description": "Dismiss, for good, the once-only notice that the update check now asks LoonSec\nand is counted (#819; `noticePending`). The notice is the instance's, so this is for\nevery administrator. SYSTEM_WRITE, like the sharing choices beside it, and audited\nwith whether this call cleared it: a second call changes nothing and answers the same.",
+        "operationId": "dismiss_update_notice_api_system_update_status_dismiss_notice_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dismiss Update Notice",
         "tags": [
           "system"
         ]

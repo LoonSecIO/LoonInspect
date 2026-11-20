@@ -388,14 +388,18 @@ do not infer fleet data expiry from payment expiry or corpus retention.
 
 **The limit.** `LoonInspect.app` ([docs/macos-app.md](docs/macos-app.md)) is the container's
 backend, frontend and PostgreSQL as child processes of a window. Quit it and the scheduler,
-the nightly sweep, webhook ingestion and SIEM delivery stop with it; close the lid and they
+the nightly sweep, the daily update check, webhook ingestion and SIEM delivery stop with it; close the lid and they
 pause until the Mac wakes (the shell asks macOS not to nap it, and sleep still wins). Nothing
 catches up a missed sweep except the next scheduled one. The container has none of this,
-because nothing closes it.
+because nothing closes it. In the app the update check asks only on the days it is open, and
+nothing wakes it to check: an app seldom opened learns of a release late. Taking a release is by
+hand: the notice and Settings › Support › Updates print the app's steps and link the release's
+disk image, and nothing downloads or installs it.
 
 **Backups.** The bundle carries `initdb`, `pg_ctl` and `postgres`, and no `pg_dump`, `psql`
 or `pg_isready` (the upstream build ships none), so [docs/operations.md](docs/operations.md)
-§2 cannot be run against it. The backup that exists is a copy of
+§2 cannot be run against it, nor can the dump the container's update steps begin with. The
+backup that exists, and the one the app's update steps name, is a copy of
 `~/Library/Application Support/LoonInspect/pgdata` taken **while the app is quit**, together
 with the `ENCRYPTION_KEY` item from the login keychain, without which the credentials in that
 copy are unreadable (§5 applies to the app exactly as to the container). `pgdata` is marked
@@ -416,7 +420,8 @@ a backup and copy `pgdata` by hand.
 
 **What retires it.** A login-item or LaunchAgent mode (`SMAppService`), which reopens what
 **Quit** means; `pg_dump` in the bundle, from EnterpriseDB's client binaries, with a Back Up
-command in the app menu; log rotation while running. None is built.
+command in the app menu; log rotation while running; an updater (Sparkle 2, or a Homebrew cask).
+None is built.
 
 ## Checked, and not an issue
 

@@ -1376,34 +1376,63 @@ check that got no answer is asked again an hour later. One that came due while t
 was off is asked once it runs again. A page only reads the answer it stored, so neither
 opening the block nor `docker compose restart app` brings a check forward, and a container
 started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
+It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_URL` names another provider
+(the container log's `update check on` line at startup names the host), and compares releases by number.
+LoonInspect.app has no `.env` and no container: its banner and block print the app's own steps and
+sentences, and §25 step 9 names its switch, its log and where their step-through differs.
 
-1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*:
+Under the block's sentence, *What the check sends* is read from the instance too: *Host*, the host
+asked and its shape (LoonSec's update service's, one `POST` carrying a body; or a GitHub-shaped
+address's, two `GET`s and no body); *Next check*, when one is owed; *The last check sent*, that
+check's literal body, answered or not, which went wherever `UPDATE_CHECK_URL` pointed then; and *The
+next check would send*, the body built now, with no `last` before the first answered check. An empty
+slot says why.
+
+1. **Read the Updates block's sentence**, under *This build*, *Latest release* and *Last checked*, then *What the check sends*:
    - *Up to date: this build contains …* → there is nothing to take. A release published
      since *Last checked* appears at the next check.
    - *… is available, and this build does not contain it* → the notice is right; the
      steps are under it, dump first.
    - *Checking is off* → `UPDATE_CHECK=false` is set for this container. Remove the line
      from `.env` beside `docker-compose.yml` and run `docker compose up -d`.
-   - *This build carries no commit to compare* → a development build, or an image built
-     without `GIT_SHA`. Build it with the commit stamped:
-     `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
-   - *No check of this build has run yet* → a fresh install or an update, waiting for a
+   - *This build asks nothing* → a development build, run from a tree with no build stamp; or an
+     image built without `GIT_SHA` while `UPDATE_CHECK_URL` names a GitHub-shaped address, which
+     compares commits (LoonSec's update service needs none, and asks such an image like any other).
+     Build it with the commit stamped: `GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build`.
+   - *No check of this build has run yet* → a fresh install, an update from a release before v1.2.0, or any update or rebuild asking a GitHub-shaped provider, waiting for a
      moment drawn at random less than a day away. Longer: a container must run the scheduler
      (`scheduler_enabled` is `true` on its `starting` line), and its log's
      `update check could not run` says why.
-   - *GitHub could not be reached, or something else answered in its place* → from the
-     host, check that the container reaches GitHub at all:
-     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.github.com', timeout=5).status)"`
-     prints `200` when it does. An error here is the network's answer, not the app's.
-   - *GitHub refused the check* → its unauthenticated limit, 60 requests an hour per
-     address, is shared by everything behind this instance's egress address. The container
-     log carries `update check refused by the provider` once per attempt. Several
+   - *The update check got no answer it could read* → first read the container log for
+     `UPDATE_CHECK_URL cannot be asked as an address`. That line names what is wrong with the
+     value (a port no host has, a character an address cannot hold), nothing was sent, and the
+     correction is the next bullet's. Without that line, from the host, check that the
+     container reaches the host its `update check on` line names, here the default:
+     `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.next.loonsec.io/v1/update', timeout=5).status)"`
+     prints a status, or ends `HTTP Error` with one, when it does; any other error is the
+     network's answer, not the app's. Reached, the answer was not one the check reads: a proxy's
+     page, a redirect (never followed), or a provider that is not LoonSec's. It asks again in an hour; when only the release it named could not be read, at the next daily check.
+   - *Host* reads *UPDATE_CHECK_URL's unreadable address* → `UPDATE_CHECK_URL` in `.env` holds a
+     value the check cannot read as an address, and the `update check on` line names it the same
+     way. Correct it to a whole address, scheme and host included, or remove the line to ask
+     LoonSec's update service, then run `docker compose up -d`.
+   - *Owed now* under *Next check*, still there a minute later → no process runs the scheduler
+     (`scheduler_enabled` is `true` on a container's `starting` line), or that container's log
+     says `update check could not run` and why.
+   - *The provider refused the check* → the container log says which, once per attempt.
+     `update check refused (429) by LoonSec's update service` is that service's limit, shared
+     by every instance: the check asks again in an hour, and there is nothing to change here.
+     `update check refused by the provider` is GitHub's unauthenticated limit, 60 requests an hour per
+     address, shared by everything behind this instance's egress address. Several
      instances behind one address use the budget up together; `UPDATE_CHECK=false` on all
      but one is the fix available today.
-   - *No release has been published yet* → true until the first release. Nothing to do.
+   - *No release named yet* → LoonSec's update service has read no published release yet, or a
+     GitHub-shaped address has none published. The next daily check asks again; nothing to do.
+     Still there a day after the Releases page lists one, from LoonSec's service: report it (§8).
    - *GitHub does not know this build's commit* → a local commit, a fork, or a branch that
      was never pushed. Build from a release tag and it is compared again.
-2. **The notice names a release you believe you have.** *This build* ends in the commit it
+2. **The notice names a release you believe you have.** From LoonSec's update service, this build's release
+   is lower: build from the release's tag. From a GitHub-shaped `UPDATE_CHECK_URL`: *This build* ends in the commit it
    was built from (`+<sha>`). The notice means GitHub said that commit does not contain the
    release's. From the checkout the image was built from, fetch the tag first, then ask git:
 
@@ -1485,9 +1514,26 @@ started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.
      grant on the named repository, that the run's region is where the repositories live,
      and whether ECR is throttling (wait a few minutes and re-run). A genuine miss never
      reaches this sentence: it reads as not-yet-published and the build or the tag proceeds.
+6. **A notice at the top of every page says the update check now asks LoonSec, or *Dismiss for
+   everyone* leaves it up.** An instance that held an account when it was updated to v1.2.0 tells
+   accounts that can change system settings, once, what the check now sends; a fresh install says it
+   on the setup page instead and never shows this notice. It waits while the check is off or
+   `UPDATE_CHECK_URL` names a GitHub-shaped address, and appears once the check asks LoonSec's update
+   service. *Dismiss for everyone* clears it for every administrator, for good.
+   - *Not dismissed: this instance refused it…* → this account lost the permission to change system
+     settings after the page loaded. Reload: the notice is gone for this account, and an administrator
+     who holds the permission dismisses it.
+   - *Not dismissed: this instance answered with an error (HTTP …)* → try again; if it fails again,
+     `docker compose logs app` (LoonInspect.app: `logs/backend.log`) at that minute says why.
+   - *Not dismissed: no answer this page could read came back…* → the browser did not reach the
+     instance, or something else answered for it, such as a proxy's page. Check that it runs
+     (`docker compose ps`, or LoonInspect.app open) and that this browser reaches its address, then try again.
+   - Dismissed, and back → the database went back to before the dismissal: a dump restored, or a
+     downgrade below v1.2.0 and the update again. Dismiss it again.
 
 **N.** The Updates block says a release is available while `git merge-base --is-ancestor`
-says this build contains it; or its sentence names a state this instance is not in.
+says this build contains it, or, from LoonSec's update service, for a build of that release's
+tag; or its sentence names a state this instance is not in.
 Report the block's four lines (build, latest release, last checked, the sentence), the
 `git merge-base` command and its output, whether `UPDATE_CHECK_URL` is set, and the
 `update check` lines from `docker compose logs app --since 24h`.
@@ -2971,8 +3017,8 @@ PostgreSQL running as child processes of a small shell, on one Mac. Its database
 are under `~/Library/Application Support/LoonInspect`: the database in `pgdata`, and in `logs` the four
 files every sentence below names. **LoonInspect › Show Logs in Finder** opens that folder, and
 **LoonInspect › About LoonInspect** shows the version and build number a report needs.
-**Help › Using LoonInspect on This Mac** explains the local instance, network connections and
-manual updates. The startup screen names its current phase; a failure offers **Show Logs** and
+**Help › Using LoonInspect on This Mac** explains the local instance, network connections, the
+daily update check and manual updates. The startup screen names its current phase; a failure offers **Show Logs** and
 **Quit**. Read the failure before quitting, correct its cause, then reopen the app.
 
 **Maintainer: build or notarization fails.** In Actions, open **macOS release** and the failed
@@ -3153,6 +3199,37 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    The native app serves its UI on this Mac's loopback address, which Jamf cannot reach. Use a
    reachable server deployment for incoming webhooks and continuous collection. Outbound Jamf
    reads and configured SIEM delivery still work while the Mac app is running and awake.
+9. **The update notice never appears, or Settings › Support › Updates reads *Checking is off*.**
+   The app's switch is **LoonInspect › Check for Updates Daily**; a check mark is on. At every
+   start `logs/shell.log` says what the backend was told: *update check: the backend is told
+   INSTANCE_KIND=mac-app and UPDATE_CHECK=…, from …*. The banner and the block print the app's own
+   steps, those of [`macos-app.md` › Updates](macos-app.md#updates), and the app's own sentences,
+   which open as the container's do; where their step-through differs from §10's, it is here.
+   - No check mark → choose it. The window reads *Restarting LoonInspect* and reloads; the check
+     is then owed as §10 says, and asked only while the app is open and the Mac awake.
+   - The item is dimmed, or the line says *from the app's environment, over Check for Updates
+     Daily* → the app was started with `UPDATE_CHECK` in its environment, which wins over the
+     check mark. Quit, and open it from Finder or the Dock; `launchctl getenv UPDATE_CHECK`
+     prints a value set for every app, which `launchctl unsetenv UPDATE_CHECK` removes.
+   - *The local service stopped* and *Check for Updates Daily changed, and the local server did
+     not come back:* → the rest of the sentence is one of step 2's. Quit and open the app: it
+     starts with the new choice.
+   - *This build asks nothing* → the bundle carries no build stamp, which `macos/scripts/build-app.sh`
+     gives every app it builds, so it was put together another way. Install the release's disk image.
+   - *Host* reads *UPDATE_CHECK_URL's unreadable address* → the app was started with that
+     `UPDATE_CHECK_URL` in its environment. Quit, and open it from Finder or the Dock;
+     `launchctl getenv UPDATE_CHECK_URL` prints one set for every app, which
+     `launchctl unsetenv UPDATE_CHECK_URL` removes.
+   - *… is available, and this build does not contain it* → nothing is wrong. The steps under it
+     are the app's: quit, open the newer disk image, drag LoonInspect onto Applications, open it.
+     §10's compose steps and its dump are the container's and do not apply here; the app's
+     backup is the copy [`macos-app.md` › Backup](macos-app.md#backup) gives.
+   - Any other sentence → §10 step 1, with `logs/backend.log` for the container log
+     (`grep 'update check' ~/Library/Application\ Support/LoonInspect/logs/backend.log`) and
+     `curl -sS -o /dev/null -w '%{http_code}\n' https://api.next.loonsec.io/v1/update` in
+     Terminal, which prints a status when this Mac reaches the host. *No check of this build has
+     run yet* lasts longer on a Mac seldom open: the first check waits for its moment, then for
+     the app to be open.
 
 ## 26. "A promoted application is not being sent, or Promote is refused"
 
@@ -3234,7 +3311,7 @@ nothing here is a permissions problem in Jamf.
    within the hour. By how the sentence opens:
    - *api.github.com refused the request* → GitHub's limit for requests without a sign-in, 60
      an hour for each address, shared by every instance and every other tool behind the same
-     address; the update check draws on it too (§10). One refusal needs nothing. Refused every
+     address; an update check draws on it only when `UPDATE_CHECK_URL` names GitHub (§10). One refusal needs nothing. Refused every
      hour means many things share this address: leave the flag on only where the tab is used.
    - *raw.githubusercontent.com refused the request* → GitHub slowed file reads from this
      address part-way through. The sentence says how many manifests were read and kept; the

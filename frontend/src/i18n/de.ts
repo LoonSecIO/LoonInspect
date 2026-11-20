@@ -75,6 +75,8 @@ export const de: Translations = {
     updateAvailableUntagged: "Ein neueres Release von LoonInspect ist verfügbar",
     updateWhatChanged: "was sich geändert hat",
     updateHowTo: "so aktualisieren Sie",
+    updateAppRelease: "Disk-Image und Änderungen",
+    updateAppSteps: "LoonInspect beenden, das neuere Disk-Image öffnen, LoonInspect auf Applications ziehen und dann öffnen",
     dismissUpdate: "Update-Hinweis ausblenden",
     sharing: {
       pageDescription:
@@ -292,6 +294,26 @@ export const de: Translations = {
     noAccessTitle: "Sie haben keinen Zugriff auf diese Seite",
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
+  },
+  updateCheckNotice: {
+    setup:
+      "Diese Instanz fragt etwa einmal am Tag den Update-Dienst von LoonSec, ob es ein neueres Release gibt, und wird dadurch als laufende Instanz gezählt, nach Release, Art und Einrichtungsstand, ohne Kennung und ohne Inventar; unter Einstellungen › Support › Updates steht genau, was gesendet wird und wie man es abschaltet.",
+    label: "Die Update-Prüfung fragt jetzt LoonSec",
+    asks: "Etwa einmal am Tag fragt diese Instanz jetzt den Update-Dienst von LoonSec, ob es ein neueres Release gibt, und sendet dabei ihr Release, die Art der Installation, wie weit die Einrichtung ist, und die Tagesnummer ihrer letzten beantworteten Prüfung, ohne Kennung der Instanz und ohne Inventar; LoonSec zählt daraus die laufenden Instanzen.",
+    updates: "Einstellungen › Support › Updates",
+    shows: {
+      container:
+        " zeigt diese Anfrage im Wortlaut, und UPDATE_CHECK=false in .env, mit docker compose up -d übernommen, schaltet die Prüfung ab (eine UPDATE_CHECK_URL, die GitHub nennt, behält den Hinweis auf neue Releases und wird nicht gezählt).",
+      "mac-app": " zeigt diese Anfrage im Wortlaut, und LoonInspect › Check for Updates Daily schaltet die Prüfung ab."
+    },
+    dismiss: "Für alle ausblenden",
+    dismissing: "Wird ausgeblendet…",
+    refused:
+      "Nicht ausgeblendet: Diese Instanz hat es abgelehnt, weil dieses Konto die Berechtigung, Systemeinstellungen zu ändern, nicht mehr hat. Laden Sie die Seite neu, um zu sehen, was es jetzt hat; eine Administratorin oder ein Administrator mit dieser Berechtigung kann den Hinweis ausblenden.",
+    failed: (status: number) =>
+      `Nicht ausgeblendet: Diese Instanz hat mit einem Fehler geantwortet (HTTP ${status}). Versuchen Sie es erneut; schlägt es wieder fehl, steht der Grund im Container-Log (docker compose logs app, in LoonInspect.app logs/backend.log).`,
+    unreachable:
+      "Nicht ausgeblendet: Von dieser Instanz kam keine Antwort, die diese Seite lesen konnte. Prüfen Sie, ob LoonInspect läuft und dieser Browser es noch erreicht, und versuchen Sie es dann erneut."
   },
   flagGate: {
     checking: "Es wird geprüft, welche Funktionen aktiv sind…",
@@ -572,14 +594,14 @@ export const de: Translations = {
       "Diese Seite sendet nichts nach außen. Sie liest den Build-String und die Antwort der Update-Prüfung aus Ihrer eigenen Instanz und zeigt Links nach außen; es gibt keine Telemetrie darauf, und kein Bericht verlässt diesen Browser, sofern Sie ihn nicht selbst schreiben.",
     updates: {
       heading: "Updates",
-      help: "Einmal am Tag fragt diese Instanz GitHub nach dem neuesten veröffentlichten Release und ob dieser Build es enthält. Sonst wird nichts gesendet. Aktualisiert wird auf dem Host; hier wird nichts ausgeführt.",
+      help: "Etwa einmal am Tag fragt diese Instanz den Update-Dienst von LoonSec, ob es ein neueres Release gibt. Die Anfrage trägt die unten gezeigten Schlüssel, höchstens fünf, und sonst nichts: keine Kennung der Instanz und kein Inventar. LoonSec führt Zählungen nach release, kind und stage, ohne Aufzeichnung einer einzelnen Prüfung und ohne Adresse. UPDATE_CHECK=false fragt nichts, und eine UPDATE_CHECK_URL, die eine GitHub-artige Adresse nennt, behält den Hinweis und wird nicht gezählt. Aktualisiert wird auf dem Host; hier wird nichts ausgeführt.",
       loading: "Update-Prüfung wird gelesen…",
       errorLoading: "Die Update-Prüfung konnte von dieser Instanz nicht gelesen werden.",
       thisBuild: "Dieser Build",
       latestRelease: "Neuestes Release",
       lastChecked: "Zuletzt geprüft",
       notChecked: "Nicht geprüft",
-      noneYet: "Noch keines veröffentlicht",
+      noneYet: "Noch keines genannt",
       available: (tag: string) => `${tag} ist verfügbar, und dieser Build enthält es nicht.`,
       availableUntagged: "Ein neueres Release ist verfügbar, und dieser Build enthält es nicht.",
       current: (tag: string) => `Aktuell: Dieser Build enthält ${tag}.`,
@@ -589,27 +611,78 @@ export const de: Translations = {
         disabled:
           "Die Prüfung ist aus: UPDATE_CHECK=false ist für diesen Container gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten die Zeile aus der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen.",
         dev_build:
-          "Dieser Build trägt keinen Commit zum Vergleichen: Es ist ein Entwicklungs-Build, oder das Image wurde ohne GIT_SHA gebaut. Die Schritte unten bauen mit gestempeltem Commit.",
+          "Dieser Build fragt nichts. Er ist ein Entwicklungs-Build ohne Build-Stempel; oder er ist ein ohne GIT_SHA gebautes Image, und UPDATE_CHECK_URL nennt eine GitHub-artige Adresse, die Commits vergleicht, wo der Update-Dienst von LoonSec keinen braucht. Die Schritte unten bauen mit gestempeltem Commit.",
         not_checked:
-          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz ist zu einem zufällig gezogenen Zeitpunkt innerhalb ihrer ersten 24 Stunden fällig, und eine aktualisierte wartet auf ihre nächste, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
+          "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Nur ein Container mit eingeschaltetem Scheduler fragt; ein mit SCHEDULER_ENABLED=false gestarteter fragt nie.",
         unreachable:
-          "GitHub war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite. Die Prüfung versucht es eine Stunde später erneut; prüfen Sie, ob dieser Container api.github.com über HTTPS erreicht.",
+          "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Container api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Host, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on beim Start des Containers UPDATE_CHECK_URL's unreadable address.",
         refused:
-          "GitHub hat die Prüfung abgelehnt. Anfragen ohne Anmeldung sind auf 60 pro Stunde und Adresse begrenzt, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
+          "Der Anbieter hat die Prüfung abgelehnt: der Update-Dienst von LoonSec an seiner Grenze, oder GitHub, dessen Anfragen ohne Anmeldung auf 60 pro Stunde und Adresse begrenzt sind, geteilt von jeder Instanz dahinter. Die Prüfung versucht es eine Stunde später erneut.",
         no_release:
-          "Es wurde noch kein Release veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte.",
+          "Noch kein Release genannt: Der Update-Dienst von LoonSec hat noch kein veröffentlichtes Release gelesen, oder bei einer GitHub-artigen Adresse wurde noch keines veröffentlicht. main ist Staging, und verglichen wird nur mit einem veröffentlichten Release, also gibt es nichts, wohinter man zurückliegen könnte. Die nächste tägliche Prüfung fragt erneut.",
         unknown_commit:
           "GitHub kennt den Commit dieses Builds nicht, also lässt sich nicht sagen, ob er das neueste Release enthält. Ein lokaler oder geforkter Build wird nie verglichen; bauen Sie von einem Release-Tag, um verglichen zu werden."
-      } as Record<string, string>,
+      },
+      sends: {
+        heading: "Was die Prüfung sendet",
+        host: "Host",
+        unreadableHost: "eine nicht lesbare Adresse (UPDATE_CHECK_URL)",
+        shape: {
+          loonsec: "Im Format des Update-Dienstes von LoonSec: ein POST mit dem nächsten Inhalt unten.",
+          github: "Eine GitHub-artige Adresse: zwei GETs ohne Inhalt, wie v1.1.0 fragt. Wird nicht gezählt."
+        },
+        nextCheck: "Nächste Prüfung",
+        owedNow: "Jetzt fällig: Der Scheduler fragt innerhalb einer Minute. Bleibt dies in der Vergangenheit, läuft kein Prozess mit Scheduler, oder das Container-Log sagt update check could not run.",
+        lastSent: "Die letzte Prüfung hat gesendet",
+        nextSends: "Die nächste Prüfung würde senden",
+        none: {
+          not_sent: "Noch nichts: Es wurde noch keine Prüfung gesendet.",
+          sent_none: "Kein Inhalt: Die letzte Prüfung fragte eine GitHub-artige Adresse, die keinen nimmt.",
+          github: "Kein Inhalt: Eine GitHub-artige Adresse nimmt keinen.",
+          off: "Nichts: Die Prüfung ist aus (UPDATE_CHECK=false).",
+          dev_build: "Nichts: Dieser Build fragt nichts.",
+          not_drawn: "Noch nicht gezogen: Der Scheduler zieht den Zeitpunkt bei seinem nächsten Blick, innerhalb einer Minute. Ein mit SCHEDULER_ENABLED=false gestarteter Container fragt nie."
+        }
+      },
       stepsHeading: "Eine Docker-Compose-Installation aktualisieren",
       stepsIntro:
         "Auf dem Host, im Verzeichnis mit docker-compose.yml. Die erste Zeile ist die Sicherung: Startet das ältere Image nicht auf der aktualisierten Datenbank, ist dieser Dump ein Weg zurück.",
       tagPlaceholder: "Ersetzen Sie <tag> durch das zu installierende Release aus der Liste der Releases.",
       releasesPage: "Releases",
       rollback:
-        "Ab v2.0.0 ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.x, führt zuerst das Downgrade aus dem neueren Image aus.",
+        "Zurück zu v1.1.0 oder einem späteren Release ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.0.0, führt zuerst das Downgrade aus dem neueren Image aus.",
       rollbackLink: "Rollback, Schritt für Schritt",
-      selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben."
+      selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben.",
+      app: {
+        help: "Etwa einmal am Tag fragt diese Instanz den Update-Dienst von LoonSec, ob es ein neueres Release gibt. Die Anfrage trägt die unten gezeigten Schlüssel, höchstens fünf, und sonst nichts: keine Kennung der Instanz und kein Inventar. LoonSec führt Zählungen nach release, kind und stage, ohne Aufzeichnung einer einzelnen Prüfung und ohne Adresse. LoonInspect › Check for Updates Daily schaltet die Prüfung aus, und die App fragt nur, solange sie geöffnet und dieser Mac wach ist. Aktualisiert wird von Hand, mit dem Disk-Image des Releases; hier wird nichts ausgeführt.",
+        reasons: {
+          disabled:
+            "Die Prüfung ist aus: LoonInspect › Check for Updates Daily hat kein Häkchen, oder UPDATE_CHECK ist in der Umgebung der App gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten im Menü LoonInspect den Eintrag Check for Updates Daily wählen; ist der Eintrag abgeblendet, entscheidet die Umgebung. logs/shell.log sagt bei jedem Start, was gilt (troubleshooting.md §25 Schritt 9).",
+          dev_build:
+            "Dieser Build fragt nichts: Er ist ein Entwicklungs-Build ohne Build-Stempel. macos/scripts/build-app.sh stempelt jede App, die es baut; das Disk-Image des Releases, in den Schritten unten, trägt einen.",
+          not_checked:
+            "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Die App fragt nur, solange sie geöffnet und dieser Mac wach ist: Eine Prüfung, die fällig wurde, während sie beendet war oder der Mac schlief, wird gefragt, sobald sie wieder läuft.",
+          unreachable:
+            "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Mac api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Host, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on in logs/backend.log beim Start UPDATE_CHECK_URL's unreadable address."
+        },
+        sends: {
+          owedNow: "Jetzt fällig: Der Scheduler fragt innerhalb einer Minute. Bleibt dies in der Vergangenheit, läuft kein Prozess mit Scheduler, oder logs/backend.log sagt update check could not run.",
+          none: { not_drawn: "Noch nicht gezogen: Der Scheduler zieht den Zeitpunkt bei seinem nächsten Blick, innerhalb einer Minute." }
+        },
+        stepsHeading: "LoonInspect.app aktualisieren",
+        stepsIntro:
+          "Von Hand, auf diesem Mac, mit dem Disk-Image des neueren Releases. Die Sicherung ist eine Kopie von ~/Library/Application Support/LoonInspect/pgdata, angelegt nach Schritt 1, während LoonInspect beendet ist: Startet die ältere App nicht auf der aktualisierten Datenbank, ist diese Kopie ein Weg zurück.",
+        steps: [
+          "LoonInspect beenden, über das Menü oder mit ⌘Q. Das Fenster zu schließen beendet nichts: Der lokale Server läuft weiter, und die App darf nicht unter ihm ersetzt werden.",
+          "Das neuere Disk-Image öffnen und LoonInspect auf Applications ziehen; das ersetzt die alte App.",
+          "Die App öffnen. Ihr erster Start führt die Migrationen des neueren Releases aus, bevor das Fenster lädt."
+        ],
+        releasePage: "Die Seite des Releases, mit seinem Disk-Image",
+        rollback:
+          "Der Weg zurück sind dieselben Schritte mit dem älteren Disk-Image. Eine ältere App, die eine von einer neueren migrierte Datenbank findet, startet, wenn das neuere Release festgehalten hat, dass die ältere sie lesen kann, und verweigert sonst den Start und nennt beide Releases: dann die neuere App zurücklegen oder die Kopie von pgdata wiederherstellen.",
+        rollbackLink: "Updates und der Weg zurück, im Leitfaden der App",
+        selfHostedOnly: "Diese Schritte gelten für LoonInspect.app auf diesem Mac, die sich nicht von selbst aktualisiert. Die App zu ersetzen behält ihre Daten, ihre Schlüsselbund-Einträge und ihre Einstellungen, die alle außerhalb von ihr liegen."
+      }
     },
     storage: {
       heading: "Speicher",

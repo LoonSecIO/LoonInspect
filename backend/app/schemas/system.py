@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from app.core.update_check import UpdateReason
@@ -37,6 +37,39 @@ class UpdateStatusOut(BaseModel):
     # this build's commit), `not_checked` (no check of this build stored yet, #819). Null
     # whenever the check answered.
     reason: UpdateReason | None = None
+    # What the check sends and to whom (#819), so that nobody learns it from a traffic capture.
+    provider: Literal["loonsec", "github"] = Field(
+        description="Which shape the check asks: `loonsec`, LoonSec's update service, sent one POST of five keys "
+        "(`UPDATE_CHECK_URL` unset, or ending `/v1/update`); `github`, any other `UPDATE_CHECK_URL`, a GitHub-shaped "
+        "base asked as v1.1.0 asks it, with two GETs and no body."
+    )
+    provider_host: str | None = Field(
+        description="The host the check asks, as the `update check on` line at startup names it; null when "
+        "`UPDATE_CHECK_URL` names none it can read. Named while the check is off too: `enabled` and `reason` say whether it asks."
+    )
+    kind: Literal["container", "mac-app"] = Field(
+        description="This instance's `kind`, which the `loonsec` shape sends: `container`, or `mac-app` when "
+        "LoonInspect.app sets `INSTANCE_KIND`."
+    )
+    last_body: dict | None = Field(
+        description="The body the last check sent, answered or not, its keys in the order sent, and kept once the check "
+        "is turned off; null before the first, and on the `github` shape, which sends none."
+    )
+    next_body: dict | None = Field(
+        description="The body the next check would carry, built now: this instance's `stage`, and as `last` the `day` the "
+        "last answered check was given, absent before the first. Null when `reason` is `disabled` or `dev_build`, and on "
+        "the `github` shape."
+    )
+    next_check_at: datetime | None = Field(
+        description="When the next check is owed. One in the past is owed now and is asked at the scheduler's next look, "
+        "within a minute; one that stays in the past means no process runs the scheduler (`SCHEDULER_ENABLED`). Null "
+        "when `reason` is `disabled` or `dev_build`, which ask nothing, or before the scheduler has made its row."
+    )
+    notice_pending: bool = Field(
+        description="An administrator is still to be told, once, that the check now asks LoonSec and is counted: true on "
+        "an instance that held an account when it was updated to this release, until one dismisses it with "
+        "`POST /api/system/update-status/dismiss-notice`. The instance's, whatever `enabled` and `provider` say."
+    )
 
 
 class SharingTier(StrEnum):

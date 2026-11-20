@@ -77,9 +77,11 @@ its checksums, its install and uninstall scripts (`refs`), its osquery queries a
 categories. Windows manifests are not read at all.
 
 **Sent:** nothing of the instance or its organizations. Every request is a GET naming one of
-Fleet's files, under the user agent `LoonSecIO/<build> fleet-catalog` (every outbound call
-names itself this way). No inventory, count, identifier, token or cookie goes with it. GitHub
-sees the address the request came from, as it does for the update check.
+Fleet's files, under the user agent `LoonSecIO/<build> fleet-catalog`, the form the container's
+outbound calls take; the update check's request to LoonSec's update service is the exception,
+and names only the release (`LoonSecIO/<release> update-check`, #819). No inventory, count,
+identifier, token or cookie goes with it. GitHub sees the address the request came from, as it
+does for the update check when `UPDATE_CHECK_URL` points it at GitHub.
 
 ## The check
 

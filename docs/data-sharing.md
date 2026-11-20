@@ -346,11 +346,15 @@ failed exchange's reason names its host ([`troubleshooting.md`](troubleshooting.
 step 6).
 
 The product token is `LoonSecIO`, not `LoonInspect`: every outbound call this
-container makes — the exchange, the update check, Jamf, the patch catalogue — is
+container makes — the exchange, Jamf, the patch catalogue, and the update check only when
+`UPDATE_CHECK_URL` points it at a GitHub-shaped base — is
 built by `app.core.user_agent.build_user_agent` from one setting
 (`user_agent_product_name`), and the trailing word is the per-caller comment. A
 server matching on the token should match that one, and treat the comment as the
-thing that distinguishes an exchange from an update check.
+thing that distinguishes an exchange from an update check. The exception is the update check's
+default, the one that asks LoonSec's update service: its `User-Agent` is always the literal
+`LoonSecIO/<release> update-check`, the release and never the build stamp, and `LoonSecIO`
+whatever that setting says (#819).
 
 ```jsonc
 // request
@@ -619,7 +623,8 @@ and the hot-partition file (trigger: first CVE/patch rules keyed to the corpus �
 **corpus channel** above landed ahead of them, 2026-09-10, because a complete published
 epoch needs no per-key protocol at all) ·
 rate budgets and mirror detection (trigger: feeds carrying licensed value) · the
-api.loonsec.io consolidation of the update check (#43's seam) · EU-region ingest
+api.loonsec.io consolidation of the update check (#43's seam; since #819 the check asks
+LoonSec's update service, on its interim name `api.next.loonsec.io`) · EU-region ingest
 (trigger: a customer asks; per-tenant UUIDs make it clean).
 
 Priority note: this ships in V0 **only alongside** the cross-tenant sweep (#37) — a

@@ -156,15 +156,19 @@ export function SetupPage() {
             <p className="text-xs text-muted-foreground">{t.auth.passwordHelp}</p>
           </div>
 
-          <label className="flex items-start gap-2 rounded-md border border-input p-3">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={share}
-              onChange={(event) => setShare(event.target.checked)}
-            />
-            <span className="text-xs text-muted-foreground">{t.auth.sharingChoice}</span>
-          </label>
+          <div className="space-y-2">
+            <label className="flex items-start gap-2 rounded-md border border-input p-3">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={share}
+                onChange={(event) => setShare(event.target.checked)}
+              />
+              <span className="text-xs text-muted-foreground">{t.auth.sharingChoice}</span>
+            </label>
+            {/* The update check (#819), said beside the sharing choice: a statement, not a choice, so outside its label. */}
+            <p className="px-1 text-xs text-muted-foreground">{t.updateCheckNotice.setup}</p>
+          </div>
 
           {error && (
             <p role="alert" className="text-sm text-destructive">
