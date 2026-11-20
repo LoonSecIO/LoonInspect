@@ -19,7 +19,7 @@ import {
   type AttentionInputs,
   type Fetched
 } from "@/features/overview/needsAttention";
-import type { UpdateStatusResponse } from "@/features/system/api";
+import { UPDATE_REASONS, type UpdateStatusResponse } from "@/features/system/api";
 
 const NOW = new Date("2026-09-08T12:00:00.000Z");
 const MINUTE = 60_000;
@@ -81,6 +81,8 @@ const update = (over: Partial<UpdateStatusResponse> = {}): UpdateStatusResponse 
   updateAvailable: false,
   latestSha: null,
   checkedAt: ago(HOUR),
+  provider: "loonsec", providerHost: "api.next.loonsec.io", kind: "container", noticePending: false, nextCheckAt: null,
+  lastBody: { contract: "v1", release: "v1.2.0", kind: "container", stage: "collecting" }, nextBody: null,
   ...over
 });
 
@@ -293,7 +295,7 @@ describe("update available — true only", () => {
   });
 
   it("null is unknown and raises no row, whatever the reason; false is current", () => {
-    for (const reason of ["disabled", "dev_build", "unreachable", "refused", "no_release", "unknown_commit"] as const) {
+    for (const reason of UPDATE_REASONS) {
       expect(composeAttention(inputs({ update: ok(update({ updateAvailable: null, reason })) })).rows).toEqual([]);
     }
     expect(composeAttention(inputs({ update: ok(update({ updateAvailable: false })) })).rows).toEqual([]);
