@@ -653,7 +653,7 @@ export const en = {
         host: "Host",
         unreadableHost: "UPDATE_CHECK_URL's unreadable address",
         shape: {
-          loonsec: "In the shape of LoonSec's update service: one POST, carrying the body below.",
+          loonsec: "In the shape of LoonSec's update service: one POST, carrying the next body below.",
           github: "A GitHub-shaped address: two GETs and no body, as v1.1.0 asks. Not counted."
         },
         nextCheck: "Next check",

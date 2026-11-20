@@ -606,7 +606,7 @@ export const de: Translations = {
         host: "Host",
         unreadableHost: "eine nicht lesbare Adresse (UPDATE_CHECK_URL)",
         shape: {
-          loonsec: "Im Format des Update-Dienstes von LoonSec: ein POST mit dem Inhalt unten.",
+          loonsec: "Im Format des Update-Dienstes von LoonSec: ein POST mit dem nächsten Inhalt unten.",
           github: "Eine GitHub-artige Adresse: zwei GETs ohne Inhalt, wie v1.1.0 fragt. Wird nicht gezählt."
         },
         nextCheck: "Nächste Prüfung",
