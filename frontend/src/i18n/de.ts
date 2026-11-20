@@ -293,6 +293,26 @@ export const de: Translations = {
     noAccessDescription:
       "Die Rolle Ihres Kontos umfasst keine Berechtigung für diesen Bereich. Wenden Sie sich an eine Administratorin oder einen Administrator, falls Sie ihn benötigen."
   },
+  updateCheckNotice: {
+    setup:
+      "Diese Instanz fragt etwa einmal am Tag den Update-Dienst von LoonSec, ob es ein neueres Release gibt, und wird dadurch als laufende Instanz gezählt, nach Release, Art und Einrichtungsstand, ohne Kennung und ohne Inventar; unter Einstellungen › Support › Updates steht genau, was gesendet wird und wie man es abschaltet.",
+    label: "Die Update-Prüfung fragt jetzt LoonSec",
+    asks: "Etwa einmal am Tag fragt diese Instanz jetzt den Update-Dienst von LoonSec, ob es ein neueres Release gibt, und sendet dabei ihr Release, die Art der Installation, wie weit die Einrichtung ist, und die Tagesnummer ihrer letzten beantworteten Prüfung, ohne Kennung der Instanz und ohne Inventar; LoonSec zählt daraus die laufenden Instanzen.",
+    updates: "Einstellungen › Support › Updates",
+    shows: {
+      container:
+        " zeigt diese Anfrage im Wortlaut, und UPDATE_CHECK=false in .env, mit docker compose up -d übernommen, schaltet die Prüfung ab (eine UPDATE_CHECK_URL, die GitHub nennt, behält den Hinweis auf neue Releases und wird nicht gezählt).",
+      "mac-app": " zeigt diese Anfrage im Wortlaut, und LoonInspect › Check for Updates Daily schaltet die Prüfung ab."
+    },
+    dismiss: "Für alle ausblenden",
+    dismissing: "Wird ausgeblendet…",
+    refused:
+      "Nicht ausgeblendet: Diese Instanz hat es abgelehnt, weil dieses Konto die Berechtigung, Systemeinstellungen zu ändern, nicht mehr hat. Laden Sie die Seite neu, um zu sehen, was es jetzt hat; eine Administratorin oder ein Administrator mit dieser Berechtigung kann den Hinweis ausblenden.",
+    failed: (status: number) =>
+      `Nicht ausgeblendet: Diese Instanz hat mit einem Fehler geantwortet (HTTP ${status}). Versuchen Sie es erneut; schlägt es wieder fehl, steht der Grund im Container-Log (docker compose logs app, in LoonInspect.app logs/backend.log).`,
+    unreachable:
+      "Nicht ausgeblendet: Von dieser Instanz kam keine Antwort, die diese Seite lesen konnte. Prüfen Sie, ob LoonInspect läuft und dieser Browser es noch erreicht, und versuchen Sie es dann erneut."
+  },
   flagGate: {
     checking: "Es wird geprüft, welche Funktionen aktiv sind…",
     unreadableTitle: "Dieser Bereich konnte nicht geprüft werden",

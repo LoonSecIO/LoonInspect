@@ -1510,6 +1510,22 @@ slot says why.
      grant on the named repository, that the run's region is where the repositories live,
      and whether ECR is throttling (wait a few minutes and re-run). A genuine miss never
      reaches this sentence: it reads as not-yet-published and the build or the tag proceeds.
+6. **A notice at the top of every page says the update check now asks LoonSec, or *Dismiss for
+   everyone* leaves it up.** An instance that held an account when it was updated to v1.2.0 tells
+   accounts that can change system settings, once, what the check now sends; a fresh install says it
+   on the setup page instead and never shows this notice. It waits while the check is off or
+   `UPDATE_CHECK_URL` names a GitHub-shaped address, and appears once the check asks LoonSec's update
+   service. *Dismiss for everyone* clears it for every administrator, for good.
+   - *Not dismissed: this instance refused it…* → this account lost the permission to change system
+     settings after the page loaded. Reload: the notice is gone for this account, and an administrator
+     who holds the permission dismisses it.
+   - *Not dismissed: this instance answered with an error (HTTP …)* → try again; if it fails again,
+     `docker compose logs app` (LoonInspect.app: `logs/backend.log`) at that minute says why.
+   - *Not dismissed: no answer this page could read came back…* → the browser did not reach the
+     instance, or something else answered for it, such as a proxy's page. Check that it runs
+     (`docker compose ps`, or LoonInspect.app open) and that this browser reaches its address, then try again.
+   - Dismissed, and back → the database went back to before the dismissal: a dump restored, or a
+     downgrade below v1.2.0 and the update again. Dismiss it again.
 
 **N.** The Updates block says a release is available while `git merge-base --is-ancestor`
 says this build contains it, or, from LoonSec's update service, for a build of that release's
