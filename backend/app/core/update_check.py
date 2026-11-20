@@ -141,8 +141,8 @@ def provider() -> tuple[Literal["loonsec", "github"], str]:
 
 _UNREADABLE = (
     "update check: UPDATE_CHECK_URL cannot be asked as an address (%s), so nothing was sent. Correct the value, or "
-    "remove it to ask LoonSec's update service, then run docker compose up -d (a restart does not re-read .env); "
-    "until then the check is tried again every hour"
+    "remove it to ask LoonSec's update service, and start this instance again with it (a container: docker compose "
+    "up -d, since a restart does not re-read .env); until then the check is tried again every hour"
 )
 
 
@@ -151,7 +151,7 @@ def _unreadable(address: str) -> str | None:
     a port no host has. The words never quote the value: a password can sit where a port was looked for."""
     try:
         url = httpx.URL(address)
-        scheme, port, _ = url.scheme, url.port, url.host  # .host decodes an xn-- name, as the client would
+        scheme, port, host = url.scheme, url.port, url.host  # .host decodes an xn-- name, as the client would
     except httpx.InvalidURL as exc:  # httpx's words up to what it quotes: "Invalid port", "Invalid IPv6 address"
         said = re.split(r"[:,]", str(exc), maxsplit=1)[0]
         return said if re.fullmatch(r"[A-Za-z0-9 -]{1,60}", said) else "it cannot be read as an address"
@@ -159,6 +159,8 @@ def _unreadable(address: str) -> str | None:
         return "its host name or a character in it cannot be encoded"
     if scheme not in ("http", "https"):
         return "its scheme is not http or https"
+    if not host:
+        return "it names no host"
     return None if port is None or 0 <= port <= 65535 else "its port is not one a host has"
 
 

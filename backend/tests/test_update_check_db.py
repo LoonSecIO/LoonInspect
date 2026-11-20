@@ -148,6 +148,7 @@ UNREADABLE = [
     "https://127.0.0.1:99999/v1/update",
     "https://xn--.test/v1/update",
     "https://user:SECRET/tail@127.0.0.1/v1/update",  # httpx takes the password for a port and quotes it
+    "https:///v1/update",  # no host at all
 ]
 
 
@@ -158,7 +159,7 @@ async def test_an_address_that_cannot_be_asked_is_unreachable_says_so_and_is_owe
     from app.core.config import settings
     from app.core.update_check import _unreadable, startup_line, tick
 
-    assert [_unreadable(f"https://127.0.0.1:{port}/v1/update") is None for port in (0, 65535, 65536)] == [True, True, False]
+    assert [_unreadable(f"http://127.0.0.1:{port}/v1/update") is None for port in (0, 65535, 65536)] == [True, True, False]
     monkeypatch.setattr(settings, "update_check_url", address)
     with caplog.at_level("WARNING", logger="app.core.update_check"):
         assert await tick(DUE) is True  # asked, not raised: the scheduler's "could not run" line would name the database
