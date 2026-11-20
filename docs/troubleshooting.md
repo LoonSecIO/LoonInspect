@@ -1378,7 +1378,8 @@ opening the block nor `docker compose restart app` brings a check forward, and a
 started with `SCHEDULER_ENABLED=false` never asks ([`operations.md`](operations.md) §7).
 It asks LoonSec's update service, `api.next.loonsec.io`, unless `UPDATE_CHECK_URL` names another provider
 (the container log's `update check on` line at startup names the host), and compares releases by number.
-LoonInspect.app has no `.env` and no container: §25 step 9 names its switch and its log.
+LoonInspect.app has no `.env` and no container: its banner and block print the app's own steps and
+sentences, and §25 step 9 names its switch, its log and where their step-through differs.
 
 Under the block's sentence, *What the check sends* is read from the instance too: *Host*, the host
 asked and its shape (LoonSec's update service's, one `POST` carrying a body; or a GitHub-shaped
@@ -3182,7 +3183,9 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
 9. **The update notice never appears, or Settings › Support › Updates reads *Checking is off*.**
    The app's switch is **LoonInspect › Check for Updates Daily**; a check mark is on. At every
    start `logs/shell.log` says what the backend was told: *update check: the backend is told
-   INSTANCE_KIND=mac-app and UPDATE_CHECK=…, from …*.
+   INSTANCE_KIND=mac-app and UPDATE_CHECK=…, from …*. The banner and the block print the app's own
+   steps, those of [`macos-app.md` › Updates](macos-app.md#updates), and the app's own sentences,
+   which open as the container's do; where their step-through differs from §10's, it is here.
    - No check mark → choose it. The window reads *Restarting LoonInspect* and reloads; the check
      is then owed as §10 says, and asked only while the app is open and the Mac awake.
    - The item is dimmed, or the line says *from the app's environment, over Check for Updates
@@ -3192,6 +3195,12 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    - *The local service stopped* and *Check for Updates Daily changed, and the local server did
      not come back:* → the rest of the sentence is one of step 2's. Quit and open the app: it
      starts with the new choice.
+   - *This build asks nothing* → the bundle carries no build stamp, which `macos/scripts/build-app.sh`
+     gives every app it builds, so it was put together another way. Install the release's disk image.
+   - *Host* reads *UPDATE_CHECK_URL's unreadable address* → the app was started with that
+     `UPDATE_CHECK_URL` in its environment. Quit, and open it from Finder or the Dock;
+     `launchctl getenv UPDATE_CHECK_URL` prints one set for every app, which
+     `launchctl unsetenv UPDATE_CHECK_URL` removes.
    - Any other sentence → §10 step 1, with `logs/backend.log` for the container log
      (`grep 'update check' ~/Library/Application\ Support/LoonInspect/logs/backend.log`) and
      `curl -sS -o /dev/null -w '%{http_code}\n' https://api.next.loonsec.io/v1/update` in

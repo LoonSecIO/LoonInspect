@@ -229,8 +229,11 @@ are in
 kind (`mac-app`, from the `INSTANCE_KIND` the shell sets), how far setup has got (`unclaimed`,
 `claimed`, `connected` or `collecting`) and the day number LoonSec gave its last answered check,
 once there is one. No instance identifier, no inventory. The banner and **Settings › Support › Updates** say when a
-newer release exists; the steps the block prints are still the container's, and the app's are
-below. It asks only while the app is open and the Mac awake, so on the days the app is used;
+newer release exists, and from the app (`kind` `mac-app`) they print its own steps, the three
+below, with a link to the release's page, where the disk image is: never a compose command. The
+block's sentences are the app's where the container's would be false: *Checking is off* names
+the menu item below, the backup is the copy of `pgdata` in [Backup](#backup), and the step back is
+the one below. It asks only while the app is open and the Mac awake, so on the days the app is used;
 nothing wakes it to check, and a check owed meanwhile is asked once the app runs again.
 
 **The switch** is **LoonInspect › Check for Updates Daily**, on until it is turned off, which
