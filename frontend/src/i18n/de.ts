@@ -634,14 +634,14 @@ export const de: Translations = {
       rollbackLink: "Rollback, Schritt für Schritt",
       selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben.",
       app: {
-        help: "Etwa einmal am Tag fragt diese Instanz den Update-Dienst von LoonSec, ob es ein neueres Release gibt. Die Anfrage trägt die unten gezeigten Schlüssel, höchstens fünf, und sonst nichts: keine Kennung der Instanz und kein Inventar. LoonSec führt Zählungen nach release, kind und stage, ohne Aufzeichnung einer einzelnen Prüfung und ohne Adresse. LoonInspect › Check for Updates Daily schaltet sie aus, und die App fragt nur, solange sie geöffnet ist und dieser Mac wach. Aktualisiert wird von Hand, mit dem Disk-Image des Releases; hier wird nichts ausgeführt.",
+        help: "Etwa einmal am Tag fragt diese Instanz den Update-Dienst von LoonSec, ob es ein neueres Release gibt. Die Anfrage trägt die unten gezeigten Schlüssel, höchstens fünf, und sonst nichts: keine Kennung der Instanz und kein Inventar. LoonSec führt Zählungen nach release, kind und stage, ohne Aufzeichnung einer einzelnen Prüfung und ohne Adresse. LoonInspect › Check for Updates Daily schaltet die Prüfung aus, und die App fragt nur, solange sie geöffnet und dieser Mac wach ist. Aktualisiert wird von Hand, mit dem Disk-Image des Releases; hier wird nichts ausgeführt.",
         reasons: {
           disabled:
-            "Die Prüfung ist aus: LoonInspect › Check for Updates Daily hat kein Häkchen, oder UPDATE_CHECK ist in der Umgebung der App gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten im Menü LoonInspect Check for Updates Daily wählen; ist der Eintrag abgeblendet, entscheidet die Umgebung. logs/shell.log sagt bei jedem Start, was gilt (troubleshooting.md §25 Schritt 9).",
+            "Die Prüfung ist aus: LoonInspect › Check for Updates Daily hat kein Häkchen, oder UPDATE_CHECK ist in der Umgebung der App gesetzt, also wird nichts gefragt und kein Hinweis erscheint. Zum Einschalten im Menü LoonInspect den Eintrag Check for Updates Daily wählen; ist der Eintrag abgeblendet, entscheidet die Umgebung. logs/shell.log sagt bei jedem Start, was gilt (troubleshooting.md §25 Schritt 9).",
           dev_build:
             "Dieser Build fragt nichts: Er ist ein Entwicklungs-Build ohne Build-Stempel. macos/scripts/build-app.sh stempelt jede App, die es baut; das Disk-Image des Releases, in den Schritten unten, trägt einen.",
           not_checked:
-            "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Die App fragt nur, solange sie geöffnet ist und dieser Mac wach: Eine Prüfung, die fällig wurde, während sie beendet war oder der Mac schlief, wird gefragt, sobald sie wieder läuft.",
+            "Für diesen Build lief noch keine Prüfung. Die erste Prüfung einer neuen Instanz, wie auch die erste nach einem Update von einem Release vor v1.2.0, ist zu einem zufällig gezogenen Zeitpunkt innerhalb der folgenden 24 Stunden fällig; nennt UPDATE_CHECK_URL einen GitHub-artigen Anbieter, wartet zudem ein aktualisierter oder neu gebauter Build auf die nächste Prüfung, weniger als einen Tag entfernt. Die App fragt nur, solange sie geöffnet und dieser Mac wach ist: Eine Prüfung, die fällig wurde, während sie beendet war oder der Mac schlief, wird gefragt, sobald sie wieder läuft.",
           unreachable:
             "Die Update-Prüfung bekam keine Antwort, die sie lesen konnte: Ihr Anbieter war nicht erreichbar, oder etwas anderes hat an seiner Stelle geantwortet, etwa ein Proxy oder eine Anmeldeseite, und sie fragt eine Stunde später erneut. Hat der Update-Dienst von LoonSec geantwortet und ließ sich nur das genannte Release nicht lesen, zeigt Neuestes Release diesen Namen, und die nächste tägliche Prüfung fragt erneut. Prüfen Sie, ob dieser Mac api.next.loonsec.io über HTTPS erreicht, oder den Host, den UPDATE_CHECK_URL nennt. Eine Ursache ist eine UPDATE_CHECK_URL, die sich nicht als Adresse lesen lässt: Host, unten, nennt dann eine nicht lesbare Adresse, und die Zeile update check on in logs/backend.log beim Start UPDATE_CHECK_URL's unreadable address."
         },
@@ -655,13 +655,13 @@ export const de: Translations = {
         steps: [
           "LoonInspect beenden, über das Menü oder mit ⌘Q. Das Fenster zu schließen beendet nichts: Der lokale Server läuft weiter, und die App darf nicht unter ihm ersetzt werden.",
           "Das neuere Disk-Image öffnen und LoonInspect auf Applications ziehen; das ersetzt die alte App.",
-          "Sie öffnen. Ihr erster Start führt die Migrationen des neueren Releases aus, bevor das Fenster lädt."
+          "Die App öffnen. Ihr erster Start führt die Migrationen des neueren Releases aus, bevor das Fenster lädt."
         ],
         releasePage: "Die Seite des Releases, mit seinem Disk-Image",
         rollback:
           "Der Weg zurück sind dieselben Schritte mit dem älteren Disk-Image. Eine ältere App, die eine von einer neueren migrierte Datenbank findet, startet, wenn das neuere Release festgehalten hat, dass die ältere sie lesen kann, und verweigert sonst den Start und nennt beide Releases: dann die neuere App zurücklegen oder die Kopie von pgdata wiederherstellen.",
         rollbackLink: "Updates und der Weg zurück, im Leitfaden der App",
-        selfHostedOnly: "Diese Schritte gelten für LoonInspect.app auf diesem Mac, die nichts für Sie aktualisiert. Die App zu ersetzen behält ihre Daten, ihre Schlüsselbund-Einträge und ihre Einstellungen, die alle außerhalb von ihr liegen."
+        selfHostedOnly: "Diese Schritte gelten für LoonInspect.app auf diesem Mac, die sich nicht von selbst aktualisiert. Die App zu ersetzen behält ihre Daten, ihre Schlüsselbund-Einträge und ihre Einstellungen, die alle außerhalb von ihr liegen."
       }
     },
     storage: {

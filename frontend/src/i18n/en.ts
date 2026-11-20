@@ -711,7 +711,7 @@ export const en = {
         rollback:
           "Stepping back is the same steps with the older disk image. An older app that finds a database a newer one migrated starts when the newer release recorded that the older can read it, and otherwise refuses, naming both releases: then put the newer app back, or restore the copy of pgdata.",
         rollbackLink: "Updates and stepping back, in the app's guide",
-        selfHostedOnly: "These steps are for LoonInspect.app on this Mac, which nothing updates for you. Replacing the app keeps its data, its keychain items and its settings, which live outside it."
+        selfHostedOnly: "These steps are for LoonInspect.app on this Mac, which does not update itself. Replacing the app keeps its data, its keychain items and its settings, which live outside it."
       }
     },
     storage: {
