@@ -1402,7 +1402,10 @@ slot says why.
      moment drawn at random less than a day away. Longer: a container must run the scheduler
      (`scheduler_enabled` is `true` on its `starting` line), and its log's
      `update check could not run` says why.
-   - *The update check got no answer it could read* → from the host, check that the
+   - *The update check got no answer it could read* → first read the container log for
+     `UPDATE_CHECK_URL cannot be asked as an address`. That line names what is wrong with the
+     value (a port no host has, a character an address cannot hold), nothing was sent, and the
+     correction is the next bullet's. Without that line, from the host, check that the
      container reaches the host its `update check on` line names, here the default:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('https://api.next.loonsec.io/v1/update', timeout=5).status)"`
      prints a status, or ends `HTTP Error` with one, when it does; any other error is the
