@@ -1,6 +1,7 @@
 /** First-run setup's claim token. A browser, the container's included, is asked for the token the logs print, exactly
  *  as before; the macOS app's window, whose shell defines this session's token before the page runs, is asked
- *  for nothing it already holds (docs/macos-app.md). Node lane: server rendering, the token a stubbed global. */
+ *  for nothing it already holds (docs/macos-app.md). Node lane: server rendering, the token a stubbed global.
+ *  Then the update check's sentence beside the sharing choice (#819), in English and German. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
