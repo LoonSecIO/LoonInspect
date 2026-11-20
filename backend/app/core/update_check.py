@@ -141,8 +141,8 @@ def provider() -> tuple[Literal["loonsec", "github"], str]:
 
 _UNREADABLE = (
     "update check: UPDATE_CHECK_URL cannot be asked as an address (%s), so nothing was sent. Correct the value, or "
-    "remove it to ask LoonSec's update service, and start this instance again with it (a container: docker compose "
-    "up -d, since a restart does not re-read .env); until then the check is tried again every hour"
+    "remove it to ask LoonSec's update service, then start this instance again (a container: docker compose up -d, "
+    "since a restart does not re-read .env); until then the check is tried again every hour"
 )
 
 
