@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "@/components/ui/external-link";
 import { SUPPORT_LINKS } from "@/features/support/links";
-import { getUpdateStatus, type UpdateStatusResponse } from "@/features/system/api";
+import { getUpdateStatus, type UpdateReason, type UpdateStatusResponse } from "@/features/system/api";
 import { type BodyView, describeSends, describeUpdate, shellSafeTag, type Unsent, UPDATES_ANCHOR, upgradeCommands } from "@/features/system/updateStatus";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -32,8 +32,11 @@ function BodySlot({ label, view, none }: { label: string; view: BodyView; none: 
  * (`docs/diagnosability.md` rule 1). Then what the check sends (#819): to whom, when, and the
  * literal bodies of the last check and the next, so nobody learns them from a traffic capture.
  * The banner and the Needs Attention row both link here, because this is where the upgrade
- * steps are: the dump first, then the release tag, then the build. Updating stays a host-side
- * act; nothing here runs anything, and reading the block asks no one.
+ * steps are: for a container, the dump first, then the release tag, then the build; for
+ * LoonInspect.app (#820), its own, the newer disk image onto Applications, and never a compose
+ * command. The read's `kind` says which, and which sentences are true, so the help and the
+ * steps wait for it. Updating stays outside the page: nothing here runs anything, and reading
+ * the block asks no one.
  *
  * Rendered only for readers who hold SYSTEM_READ, like the banner: whether an instance is
  * behind is the sensitive half of the version question (`backend/app/api/system.py`).
@@ -60,13 +63,17 @@ export function UpdatesBlock() {
   const status = loaded?.state === "ready" ? loaded.status : null;
   const view = status ? describeUpdate(status) : null;
   const sends = loaded?.state === "ready" ? describeSends(loaded.status, loaded.readAt) : null;
-  const ts = tu.sends;
+  // From LoonInspect.app, its own words wherever the container's are false for it; the rest are the container's.
+  const app = status?.kind === "mac-app";
+  const ta = tu.app;
+  const own: Partial<Record<UpdateReason, string>> = app ? ta.reasons : {};
+  const ts = app ? { ...tu.sends, ...ta.sends, none: { ...tu.sends.none, ...ta.sends.none } } : tu.sends;
   const tag = view?.tag ?? null;
 
   return (
     <div id={UPDATES_ANCHOR} className="scroll-mt-20 space-y-3 rounded-lg border bg-card p-4">
       <h2 className="text-lg font-semibold">{tu.heading}</h2>
-      <p className="max-w-3xl text-sm text-muted-foreground">{tu.help}</p>
+      {status && <p className="max-w-3xl text-sm text-muted-foreground">{app ? ta.help : tu.help}</p>}
 
       {loaded === null && <p className="text-sm text-muted-foreground">{tu.loading}</p>}
       {loaded?.state === "failed" && <p className="text-sm text-destructive">{tu.errorLoading}</p>}
@@ -105,7 +112,7 @@ export function UpdatesBlock() {
                   ? tu.current(tag)
                   : tu.currentUntagged
                 : view.reason
-                  ? tu.reasons[view.reason]
+                  ? (own[view.reason] ?? tu.reasons[view.reason])
                   : tu.unknownNoReason}
           </p>
         </>
@@ -139,23 +146,45 @@ export function UpdatesBlock() {
         </div>
       )}
 
-      <div className="space-y-2 pt-1">
-        <h3 className="text-sm font-semibold">{tu.stepsHeading}</h3>
-        <p className="max-w-3xl text-sm text-muted-foreground">{tu.stepsIntro}</p>
-        <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs leading-relaxed">
-          {upgradeCommands(tag).join("\n")}
-        </pre>
-        {shellSafeTag(tag) === null && (
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            {tu.tagPlaceholder}{" "}
-            <ExternalLink href={SUPPORT_LINKS.releases}>{tu.releasesPage}</ExternalLink>
+      {status && app && (
+        <div className="space-y-2 pt-1">
+          <h3 className="text-sm font-semibold">{ta.stepsHeading}</h3>
+          <p className="max-w-3xl text-sm text-muted-foreground">{ta.stepsIntro}</p>
+          <ol className="max-w-3xl list-decimal space-y-1 pl-5 text-sm">
+            {ta.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          {/* The release's page, where the disk image is; the list of releases when the answer named none. */}
+          <p className="max-w-3xl text-sm">
+            <ExternalLink href={status.releaseUrl ?? SUPPORT_LINKS.releases}>{status.releaseUrl ? ta.releasePage : tu.releasesPage}</ExternalLink>
           </p>
-        )}
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          {tu.rollback} <ExternalLink href={SUPPORT_LINKS.rollbackDocs}>{tu.rollbackLink}</ExternalLink>
-        </p>
-        <p className="max-w-3xl text-xs text-muted-foreground">{tu.selfHostedOnly}</p>
-      </div>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            {ta.rollback} <ExternalLink href={SUPPORT_LINKS.macAppUpdates}>{ta.rollbackLink}</ExternalLink>
+          </p>
+          <p className="max-w-3xl text-xs text-muted-foreground">{ta.selfHostedOnly}</p>
+        </div>
+      )}
+
+      {status && !app && (
+        <div className="space-y-2 pt-1">
+          <h3 className="text-sm font-semibold">{tu.stepsHeading}</h3>
+          <p className="max-w-3xl text-sm text-muted-foreground">{tu.stepsIntro}</p>
+          <pre className="overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-xs leading-relaxed">
+            {upgradeCommands(tag).join("\n")}
+          </pre>
+          {shellSafeTag(tag) === null && (
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              {tu.tagPlaceholder}{" "}
+              <ExternalLink href={SUPPORT_LINKS.releases}>{tu.releasesPage}</ExternalLink>
+            </p>
+          )}
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            {tu.rollback} <ExternalLink href={SUPPORT_LINKS.rollbackDocs}>{tu.rollbackLink}</ExternalLink>
+          </p>
+          <p className="max-w-3xl text-xs text-muted-foreground">{tu.selfHostedOnly}</p>
+        </div>
+      )}
     </div>
   );
 }
