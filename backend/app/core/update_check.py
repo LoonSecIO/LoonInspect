@@ -141,17 +141,25 @@ def provider() -> tuple[Literal["loonsec", "github"], str]:
 
 _UNREADABLE = (
     "update check: UPDATE_CHECK_URL cannot be asked as an address (%s), so nothing was sent. Correct the value, or "
-    "remove it to ask LoonSec's update service, and restart; until then the check is tried again every hour"
+    "remove it to ask LoonSec's update service, then run docker compose up -d (a restart does not re-read .env); "
+    "until then the check is tried again every hour"
 )
 
 
 def _unreadable(address: str) -> str | None:
-    """Why `address` cannot be asked at all, or None: a value httpx refuses to read, or a port no host has."""
+    """Why `address` cannot be asked at all, or None: a value httpx refuses to read, a scheme it does not speak, or
+    a port no host has. The words never quote the value: a password can sit where a port was looked for."""
     try:
-        port = httpx.URL(address).port
-    except (httpx.InvalidURL, ValueError) as exc:  # ValueError: an xn-- host that does not decode
-        return str(exc)
-    return None if port is None or 0 <= port <= 65535 else f"port {port} is not one a host has"
+        url = httpx.URL(address)
+        scheme, port, _ = url.scheme, url.port, url.host  # .host decodes an xn-- name, as the client would
+    except httpx.InvalidURL as exc:  # httpx's words up to what it quotes: "Invalid port", "Invalid IPv6 address"
+        said = re.split(r"[:,]", str(exc), maxsplit=1)[0]
+        return said if re.fullmatch(r"[A-Za-z0-9 -]{1,60}", said) else "it cannot be read as an address"
+    except ValueError:  # an xn-- name that does not decode, or an undecodable byte (read as a lone surrogate)
+        return "its host name or a character in it cannot be encoded"
+    if scheme not in ("http", "https"):
+        return "its scheme is not http or https"
+    return None if port is None or 0 <= port <= 65535 else "its port is not one a host has"
 
 
 def request_body(stage: str, last: int | None) -> dict:
@@ -338,7 +346,7 @@ async def read_update_status(db: AsyncSession) -> UpdateStatus:
 
 def _host(address: str) -> str | None:
     try:  # a bracketed host urlsplit cannot read stops neither startup nor the status route; the check fails at its tick
-        return urlsplit(address).hostname
+        return None if _unreadable(address) else urlsplit(address).hostname  # one the check will not ask names none
     except ValueError:
         return None
 
