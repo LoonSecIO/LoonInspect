@@ -9,6 +9,7 @@ import { UpdatesBlock } from "@/features/support/UpdatesBlock";
 import { SUPPORT_LINKS } from "@/features/support/links";
 import { UPDATE_REASONS, type UpdateStatusResponse } from "@/features/system/api";
 import { upgradeCommands } from "@/features/system/updateStatus";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 vi.mock("@/i18n/LocaleContext", async () => {
@@ -120,11 +121,15 @@ describe("from LoonInspect.app, the block says how the app is updated (#820)", (
     expect(drawn()).not.toMatch(CONTAINERS);
   });
 
-  it("says the check is off by the menu item, or the app's environment, and that shell.log says which", async () => {
-    await open({ ...APP, updateAvailable: null, reason: "disabled", nextBody: null, nextCheckAt: null });
+  it.each(Object.keys(words.app.reasons) as (keyof typeof words.app.reasons)[])("says the app's own sentence for %s", async (reason) => {
+    await open({ ...APP, updateAvailable: null, reason });
 
-    expect(screen.getByText(words.app.reasons.disabled)).toBeTruthy();
-    expect(words.app.reasons.disabled).toMatch(/LoonInspect › Check for Updates Daily .*the app's environment.*shell\.log/);
+    expect(screen.getByText(words.app.reasons[reason])).toBeTruthy();
+  });
+
+  it("says the check is off by the menu item, or the app's environment, and that shell.log says which", () => {
+    // Its opening is the container's, which troubleshooting.md §10 and §25 step 9 both quote.
+    expect(words.app.reasons.disabled).toMatch(/^Checking is off: LoonInspect › Check for Updates Daily .*the app's environment.*shell\.log/);
   });
 
   it("with no release page named, links the list of releases", async () => {
@@ -132,6 +137,21 @@ describe("from LoonInspect.app, the block says how the app is updated (#820)", (
 
     expect(linked(words.releasesPage)).toBe(SUPPORT_LINKS.releases);
   });
+
+  it("has every one of its words in both languages, as many steps in each, and none of the container's", () => {
+    for (const t of [en, de]) expect(JSON.stringify([t.support.updates.app, t.system.updateAppSteps, t.system.updateAppRelease])).not.toMatch(CONTAINERS);
+    expect(de.support.updates.app.steps).toHaveLength(words.app.steps.length);
+  });
+});
+
+it("draws neither kind's steps when the read fails, since only the read says which kind this is", async () => {
+  api.getUpdateStatus.mockRejectedValue(new Error("unreachable"));
+  await act(async () => {
+    render(<UpdatesBlock />);
+  });
+
+  expect(screen.getByText(words.errorLoading)).toBeTruthy();
+  expect(screen.queryByText(words.stepsHeading) ?? screen.queryByText(words.app.stepsHeading)).toBeNull();
 });
 
 describe("from a container, the block reads as it did before (#820)", () => {
@@ -156,15 +176,5 @@ describe("from a container, the block reads as it did before (#820)", () => {
 
     expect(screen.getByText("Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice " +
       "appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.")).toBeTruthy();
-  });
-
-  it("draws no steps before the read says which kind this is, nor after it fails", async () => {
-    api.getUpdateStatus.mockRejectedValue(new Error("unreachable"));
-    await act(async () => {
-      render(<UpdatesBlock />);
-    });
-
-    expect(screen.getByText(words.errorLoading)).toBeTruthy();
-    expect(screen.queryByText(words.stepsHeading) ?? screen.queryByText(words.app.stepsHeading)).toBeNull();
   });
 });
