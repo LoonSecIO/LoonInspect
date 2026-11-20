@@ -351,36 +351,62 @@ support directory and no keychain items.
 
 ## Validation (1.2.0)
 
-The update from 1.1.0, walked on the Mac above on 2026-11-18, headless (#812). Both apps were
+The update from 1.1.0, walked on the Mac above on 2026-11-20 UTC, headless (#821). Both apps were
 built by `macos/scripts/build-app.sh` and signed with the Developer ID: 1.1.0 from the `v1.1.0`
-tag (`21521d89`, build `20261119.0328`, `backend_release: v1.1.0`), 1.2.0 from the v1.2.0
-candidate (`3bb09dba`'s `backend`, `frontend` and `macos/`, build `20261119.0523`,
-`backend_release: v1.2.0`). Each was copied over the one in an
-Applications folder of the walk's own.
-That candidate predates #823's migration and the app's update check (#820), so this walk
-exercised neither; a walk of the release candidate is owed.
+tag (`21521d89`, build `20261119.0328`, `backend_release: v1.1.0`), 1.2.0 from `main` at
+`1048293a` (build `20261120.0339`, `backend_release: v1.2.0`). Each was copied over the one in
+an Applications folder of the walk's own. It replaces the walk of 2026-11-18 (#812), whose
+candidate had neither the migration nor the update check.
 
-- **A 1.1.0 instance, from nothing.** Healthy 1.9 s after launch. Set up through the API with
-  the session's claim token: an administrator, the `jamf_patch` flag on, an exclusion pattern, a
-  destination with a stored secret, and a patching rule confirmed from the Cyber Essentials
-  entry. Quit: nothing left running in 0.35 s.
+Every launch had `UPDATE_CHECK_URL` in the app's environment, naming a stand-in on `127.0.0.1`
+that records each request and answers in the shape #819 gives. No development service answers
+the update check yet, and nothing was sent to the production one. The Mac's lid was closed and
+it slept in stretches; a figure a sleep fell across is not quoted.
+
+- **A 1.1.0 instance, from nothing.** Set up through the API with the session's claim token: an
+  administrator, the `jamf_patch` flag on, an exclusion pattern, a destination with a stored
+  secret, and a patching rule confirmed from the Cyber Essentials entry. Its update status read
+  `disabled`, as 1.1.0's shell makes it, and the stand-in saw nothing from it. Quit:
+  nothing left running in 0.46 s. (Its first launch is not timed here; the same app was healthy
+  1.9 s after launch the evening before.)
 - **The update.** The 1.2.0 app over the 1.1.0 app, same data directory and keychain items.
-  Healthy 1.0 s after launch on the same port. That candidate had no migration; `backend.log` shows
-  none run. The session cookie minted under 1.1.0 still answered `/api/auth/me`. Of 50 answers
-  read under each, 46 were the same; the other four were two clocks and the catalogue entry's
-  link and read date, which the release moved, in the catalogue and under the confirmed rule.
-  The stored secret was read and used (the destination test reached name resolution, which is
-  past the decrypt). The three keychain items were the same values (compared by digest).
-- **The step back.** The 1.1.0 app over the 1.2.0 app: healthy 1.0 s after launch, the session
-  still signed in, and every answer as it read before the update, the two clocks aside. With no
-  migration between them the 1.1.0 app found its own head, so the *starts without migrating*
-  path was not exercised here; the release notes record it exercised on the container.
-- Afterwards the support directory and the three keychain items were removed; this walk had
-  made them all.
+  Healthy 1.2 s after launch on the same port. `backend.log` shows the one migration 1.2.0 adds:
+  `f794a1c3d5e7 -> e819a4c2f6b3` (the update check's row). `shell.log` said *update check: the
+  backend is told INSTANCE_KIND=mac-app and UPDATE_CHECK=true, from Check for Updates Daily;
+  UPDATE_CHECK_URL is passed from the app's environment*. The session cookie minted under 1.1.0
+  still answered `/api/auth/me`. Of 50 answers read under each, 45 were the same; the other five
+  were two clocks, the catalogue entry's link and read date in the catalogue and under the
+  confirmed rule, and the update status, which now has something to say. The stored secret was
+  read and used (the destination test reached name resolution, which is past the decrypt). The
+  three keychain items were the same values (compared by digest).
+- **The check.** Before any check the status read `kind: mac-app`, the once-only notice
+  pending, and a next body of `{"contract":"v1","release":"v1.2.0","kind":"mac-app",
+  "stage":"claimed"}`: an account, and no MDM connection. With `update_check_state.next_check_at`
+  moved back in the app's own database, the stand-in received `POST /v1/update` with
+  `User-Agent: LoonSecIO/v1.2.0 update-check` and exactly that body. The notice was then
+  dismissed through its route.
+- **The choice, across a relaunch.** `defaults write io.loonsec.looninspect
+  CheckForUpdatesDaily -bool false`, which is what the menu item writes, then quit and open:
+  `shell.log` said *UPDATE_CHECK=false, from Check for Updates Daily*, and the status read
+  `disabled`, with the body the last check sent still shown and no next body.
+  The same build, launched again from nothing with its waits counted in time the Mac was awake:
+  a due check arrived after a minute (`"stage":"unclaimed"`); with the choice off, across a
+  relaunch, a check was due for 201 seconds and the stand-in received nothing; with the choice
+  on again, across another relaunch, the next due check arrived after a minute and carried
+  `"last":20777`, the day the first had been given.
+- **The step back.** The 1.1.0 app over the 1.2.0 app: healthy 1.0 s after launch, with
+  *…its schema is at revision e819a4c2f6b3, which this image does not carry… so it starts
+  without migrating* and `database ready, at a newer release's schema, nothing migrated`. The
+  session was still signed in, and every answer read as it had before the update, the two
+  clocks aside. This is the path the walk of 2026-11-18 could not reach.
+- Afterwards the support directory, the three keychain items and the preference were removed;
+  this walk had made them all.
 
-**Not run:** the window, notarization of 1.2.0 and a launch from a quarantined download (the
-release workflow does the last two at publication), the update on an instance with inventory
-(the container's walk is in [the release notes](releases/v1.2.0.md)), and a second Mac.
+**Not run:** the window and a click on the menu item (the preference was written directly),
+notarization of 1.2.0 and a launch from a quarantined download (the release workflow does the
+last two at publication), the check against LoonSec's own update service, the update on an
+instance with inventory (the container's walk is in [the release notes](releases/v1.2.0.md)),
+and a second Mac.
 
 ## Validation (1.1.0)
 

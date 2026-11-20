@@ -650,7 +650,7 @@ export const de: Translations = {
       tagPlaceholder: "Ersetzen Sie <tag> durch das zu installierende Release aus der Liste der Releases.",
       releasesPage: "Releases",
       rollback:
-        "Ab v2.0.0 ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.x, führt zuerst das Downgrade aus dem neueren Image aus.",
+        "Zurück zu v1.1.0 oder einem späteren Release ist der Weg ein Release zurück ein Image-Tausch: das ältere Release auf demselben Volume starten, ohne Downgrade. Wer weiter zurück will, als das neuere Release zulässt, oder zurück zu v1.0.0, führt zuerst das Downgrade aus dem neueren Image aus.",
       rollbackLink: "Rollback, Schritt für Schritt",
       selfHostedOnly: "Diese Schritte gelten für eine Installation, die Sie selbst mit Docker Compose betreiben.",
       app: {

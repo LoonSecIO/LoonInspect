@@ -702,7 +702,7 @@ export const en = {
       tagPlaceholder: "Replace <tag> with the release to install, from the list of releases.",
       releasesPage: "Releases",
       rollback:
-        "From v2.0.0 on, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.x, needs the downgrade, run from the newer image first.",
+        "Back to v1.1.0 or any later release, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.0.0, needs the downgrade, run from the newer image first.",
       rollbackLink: "Rollback, step by step",
       selfHostedOnly: "These steps are for an install you run yourself with Docker Compose.",
       // LoonInspect.app, whose `kind` is mac-app (#820): its own steps, docs/macos-app.md › Updates, and its own words
