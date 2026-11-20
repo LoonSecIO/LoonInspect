@@ -95,15 +95,17 @@ tag. **The count does not fall at this release**: twenty switches at v1.1.0, twe
 The register says the number is meant to fall, and the first removals already ruled are the
 v2.1 ones in the v2.0.0 gate above.
 
-**Added after the ruling, and not ruled.** Two more came in with v1.2.0's own work on
-2026-11-19, after this gate was ruled, a setting and an app preference; neither is among the
-twenty above. Each verdict below is a recommendation awaiting Kyle's ruling; the rows above
-are unchanged.
+**Added after the ruling, and ruled on 2026-11-20.** Two more came in with v1.2.0's own work
+on 2026-11-19, after this gate was ruled, a setting and an app preference; neither is among
+the twenty above. Kyle ruled both on 2026-11-20 ("keep both"), so each verdict below is the
+one recommended on 2026-11-19; the rows above are unchanged. With these two the register
+holds twenty-two at v1.2.0: the count rises by two at this release, where the paragraph
+above, written at the first ruling, says twenty.
 
-| Switch | Kind | Born in | Default at v1.2.0 | Recommended verdict for v1.2.0 | Kill release |
+| Switch | Kind | Born in | Default at v1.2.0 | Verdict for v1.2.0 | Kill release |
 | --- | --- | --- | --- | --- | --- |
-| `INSTANCE_KIND` | identity, a setting in `core/config.py` | #819 | `container` | recommended **keep, permanent**: it says which shell runs the backend and is sent as the update check's `kind`, so it is an identity the shell sets, not something an operator switches. LoonInspect.app's shell sets `mac-app` (#820), and `docker-compose.yml` does not pass it, so a container started from that file is `container`. It turns nothing on or off, so there is nothing to promote or delete. Awaiting Kyle's ruling | never, as recommended |
-| **Check for Updates Daily** (LoonInspect.app's menu; `CheckForUpdatesDaily` in the app's preferences) | operator switch, owned by the app's user | #820 | on | recommended **keep, permanent**: the app's user has no `.env`, so this is how they set `UPDATE_CHECK` for the backend the app runs. It decides what that switch decides, whether the check asks and so whether the app is counted, and the reason that switch is kept for good holds for it. Awaiting Kyle's ruling | never, as recommended |
+| `INSTANCE_KIND` | identity, a setting in `core/config.py` | #819 | `container` | **keep, permanent**: it says which shell runs the backend and is sent as the update check's `kind`, so it is an identity the shell sets, not something an operator switches. LoonInspect.app's shell sets `mac-app` (#820), and `docker-compose.yml` does not pass it, so a container started from that file is `container`. It turns nothing on or off, so there is nothing to promote or delete | never |
+| **Check for Updates Daily** (LoonInspect.app's menu; `CheckForUpdatesDaily` in the app's preferences) | operator switch, owned by the app's user | #820 | on | **keep, permanent**: the app's user has no `.env`, so this is how they set `UPDATE_CHECK` for the backend the app runs. It decides what that switch decides, whether the check asks and so whether the app is counted, and the reason that switch is kept for good holds for it | never |
 
 ## How a gate runs
 
@@ -132,3 +134,4 @@ are unchanged.
 | 2026-11-19 | The v1.2.0 verdicts as ruled ("accept all", #813): every recommendation became its row's verdict. All twenty switches are kept as they are, `fleet_maintained_apps` is kept off with a verdict due at the v2.0.0 gate, and the earlier rulings stand. No default flipped. |
 | 2026-11-19 | `UPDATE_CHECK`'s row says what #819 added to it: Kyle ruled that running instances are counted by default through the update check, so the switch that stops the check also keeps the instance out of LoonSec's count. Its verdict is unchanged. |
 | 2026-11-19 | `INSTANCE_KIND` (#819) and LoonInspect.app's **Check for Updates Daily** (#820) added after the v1.2.0 ruling, each recommended keep, permanent. Not ruled until the maintainer rules them. |
+| 2026-11-20 | `INSTANCE_KIND` and **Check for Updates Daily** as ruled ("keep both"): each recommendation became its verdict, keep, permanent. The register holds twenty-two at v1.2.0. No default flipped. |
