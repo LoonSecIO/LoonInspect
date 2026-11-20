@@ -24,11 +24,12 @@ commit was made (`Dockerfile`), so an old tag built today would read as current.
 the banner — #43's rule: a check that could not answer must never look like "current" or
 like "behind" — and Settings > Support's Updates block is where the reason is read.
 
-Unauthenticated api.github.com allows 60 requests per hour per source address. Every
-instance behind one egress address — a corporate NAT, one customer's whole fleet — draws
-against that same budget without knowing it. Before #407 a `403` from it was swallowed
-exactly like being offline; now it is `refused`, and it is logged once per retry with the
-next check in it.
+**`refused` is a shared limit, on either provider.** LoonSec's update service answers `429`
+while its throttle, which every instance shares, is full. Unauthenticated api.github.com allows
+60 requests per hour per source address, so every instance behind one egress address — a
+corporate NAT, one customer's whole fleet — draws against that same budget without knowing
+it; before #407 a `403` from it was swallowed exactly like being offline. Either is `refused`
+now, logged once per attempt, and asked again an hour later.
 """
 
 from __future__ import annotations
@@ -72,15 +73,16 @@ _SHA = re.compile(r"[0-9a-f]{7,40}")
 
 UpdateReason = Literal["disabled", "dev_build", "not_checked", "unreachable", "refused", "no_release", "unknown_commit"]
 REASON_DISABLED: UpdateReason = "disabled"  # UPDATE_CHECK=false; nothing is asked
-REASON_DEV_BUILD: UpdateReason = "dev_build"  # the build carries no comparable commit
+REASON_DEV_BUILD: UpdateReason = "dev_build"  # no build_info.json; a GitHub-shaped base also wants a commit stamped
 REASON_NOT_CHECKED: UpdateReason = "not_checked"  # no check of this build is stored yet
 REASON_UNREACHABLE: UpdateReason = "unreachable"  # no answer, or not one the provider gives
-REASON_REFUSED: UpdateReason = "refused"  # 403 or 429: the shared rate limit, usually
-REASON_NO_RELEASE: UpdateReason = "no_release"  # releases/latest answered 404
+REASON_REFUSED: UpdateReason = "refused"  # a shared limit: LoonSec's 429, or GitHub's rate limit on a 403 or 429
+REASON_NO_RELEASE: UpdateReason = "no_release"  # none published: no `latest.tag` from LoonSec, or releases/latest said 404
 REASON_UNKNOWN_COMMIT: UpdateReason = "unknown_commit"  # compare answered 404
 
 # The two reasons that are a failure to get an answer, asked again an hour on. The others
-# are answers — GitHub said "no release" or "no such commit" — and owe the next check.
+# are answers — the provider said "no release", or GitHub "no such commit" — and owe the next
+# check, as does an answer from LoonSec whose tag cannot be read, though it reads `unreachable`.
 _RETRIED = frozenset({REASON_UNREACHABLE, REASON_REFUSED})
 
 _CURRENT = frozenset({"ahead", "identical"})
@@ -263,14 +265,14 @@ async def _ask(current_sha: str) -> _Answer:
             logger.debug("update check: the compare answer carried status %r", status)
             return _Answer(update_available=None, reason=REASON_UNREACHABLE, **names)
     except (httpx.HTTPError, ValueError) as exc:
-        # Debug, not warning: an offline or air-gapped deployment hits this on every TTL
-        # expiry forever, and that is a configuration, not a fault. The Updates block on
+        # Debug, not warning: an offline or air-gapped deployment hits this on every hourly
+        # retry forever, and that is a configuration, not a fault. The Updates block on
         # Settings > Support says `unreachable` to the operator who goes looking.
         logger.debug("update check could not reach the provider: %s", exc)
         return _Answer(update_available=None, reason=REASON_UNREACHABLE)
 
 
-def _unasked(version: str) -> UpdateStatus | None:  # the check is off, or the build has no commit
+def _unasked(version: str) -> UpdateStatus | None:  # the check is off, or a dev build (GitHub-shaped: one with no commit)
     if not settings.update_check:
         return UpdateStatus(
             enabled=False,
