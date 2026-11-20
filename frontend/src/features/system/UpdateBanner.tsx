@@ -4,6 +4,7 @@ import { ArrowUpCircle, X } from "lucide-react";
 import { ExternalLink } from "@/components/ui/external-link";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
+import { SUPPORT_LINKS } from "@/features/support/links";
 import { getUpdateStatus } from "@/features/system/api";
 import { bannerRelease, UPDATES_HREF } from "@/features/system/updateStatus";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -16,11 +17,13 @@ const DISMISSED_KEY = "looninspect.update-banner-dismissed";
  *  published release this build does not contain, never a merge to main. Renders nothing
  *  while unknown — a failed or disabled check must never look like a notice (#43) — and
  *  the Updates block on Settings › Support is where the reason is read. The bare command
- *  it used to print skipped the dump; the steps now live in the block, dump first. */
+ *  it used to print skipped the dump; the steps now live in the block, dump first.
+ *  LoonInspect.app (#820) is updated with a disk image, not a command: its banner links the
+ *  release's page, where the image is, and prints the app's own steps, which are short. */
 export function UpdateBanner() {
   const { t } = useLocale();
   const canSee = useHasPermission(PERMISSIONS.SYSTEM_READ);
-  const [release, setRelease] = useState<{ tag: string | null; releaseUrl: string | null } | null>(null);
+  const [release, setRelease] = useState<{ tag: string | null; releaseUrl: string | null; app: boolean } | null>(null);
   const [dismissed, setDismissed] = useState(
     () => sessionStorage.getItem(DISMISSED_KEY) === "true"
   );
@@ -30,7 +33,8 @@ export function UpdateBanner() {
     let cancelled = false;
     getUpdateStatus()
       .then((status) => {
-        if (!cancelled) setRelease(bannerRelease(status));
+        const named = bannerRelease(status);
+        if (!cancelled) setRelease(named && { ...named, app: status.kind === "mac-app" });
       })
       .catch(() => {
         // Unreachable backend or a 403 from a stale session: show nothing.
@@ -51,11 +55,22 @@ export function UpdateBanner() {
         <ArrowUpCircle aria-hidden="true" className="h-4 w-4 shrink-0 text-primary" />
         <span>{release.tag ? t.system.updateAvailable(release.tag) : t.system.updateAvailableUntagged}</span>
         <span aria-hidden="true">—</span>
-        {release.releaseUrl && (
+        {release.app ? (
           <>
-            <ExternalLink href={release.releaseUrl}>{t.system.updateWhatChanged}</ExternalLink>
+            <ExternalLink href={release.releaseUrl ?? SUPPORT_LINKS.releases}>
+              {release.releaseUrl ? t.system.updateAppRelease : t.support.updates.releasesPage}
+            </ExternalLink>
+            <span aria-hidden="true">·</span>
+            <span>{t.system.updateAppSteps}</span>
             <span aria-hidden="true">·</span>
           </>
+        ) : (
+          release.releaseUrl && (
+            <>
+              <ExternalLink href={release.releaseUrl}>{t.system.updateWhatChanged}</ExternalLink>
+              <span aria-hidden="true">·</span>
+            </>
+          )
         )}
         <Link
           to={UPDATES_HREF}

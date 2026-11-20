@@ -80,6 +80,9 @@ export const en = {
     updateAvailableUntagged: "A newer release of LoonInspect is available",
     updateWhatChanged: "what changed",
     updateHowTo: "how to update",
+    // #820: LoonInspect.app's own steps (docs/macos-app.md › Updates) and its release page, where the disk image is.
+    updateAppRelease: "disk image and what changed",
+    updateAppSteps: "quit LoonInspect, open the newer disk image, drag LoonInspect onto Applications, then open it",
     dismissUpdate: "Dismiss update notice",
     sharing: {
       // Sharing describes uploads; paid intelligence is a separate opt-in surface (#622).
@@ -677,7 +680,39 @@ export const en = {
       rollback:
         "From v2.0.0 on, going back one release is an image swap: start the older release on the same volume, with no downgrade. Going back further than the newer release allows, or to v1.x, needs the downgrade, run from the newer image first.",
       rollbackLink: "Rollback, step by step",
-      selfHostedOnly: "These steps are for an install you run yourself with Docker Compose."
+      selfHostedOnly: "These steps are for an install you run yourself with Docker Compose.",
+      // LoonInspect.app, whose `kind` is mac-app (#820): its own steps, docs/macos-app.md › Updates, and its own words
+      // wherever the container's above are false for it ("this container", .env, docker compose). The rest hold as they are.
+      app: {
+        help: "About once a day this instance asks LoonSec's update service whether a newer release exists. The request carries the keys shown below, five at most, and nothing else: no instance identifier and no inventory. LoonSec keeps tallies by release, kind and stage, with no record of a single check and no address. LoonInspect › Check for Updates Daily turns it off, and the app asks only while it is open and this Mac is awake. Updating is by hand, with the release's disk image; nothing here runs anything.",
+        reasons: {
+          disabled:
+            "Checking is off: LoonInspect › Check for Updates Daily has no check mark, or UPDATE_CHECK is set in the app's environment, so nothing is asked and no notice appears. To turn it on, choose Check for Updates Daily in the LoonInspect menu; while it is dimmed, the environment decides. logs/shell.log says which at every start (troubleshooting.md §25 step 9).",
+          dev_build:
+            "This build asks nothing: it is a development build, with no build stamp. macos/scripts/build-app.sh stamps every app it builds; the release's disk image, in the steps below, carries one.",
+          not_checked:
+            "No check of this build has run yet. A new instance's first check, and the first after updating from a release before v1.2.0, is owed at a moment drawn at random within the 24 hours that follow; with UPDATE_CHECK_URL naming a GitHub-shaped provider, an updated or rebuilt build also waits for the next check, less than a day away. The app asks only while it is open and this Mac is awake: a check that came due while it was quit or asleep is asked once it runs again.",
+          unreachable:
+            "The update check got no answer it could read: its provider could not be reached, or something else answered in its place, such as a proxy or a sign-in page, and it asks again an hour later. When LoonSec's update service answered and only the release it named could not be read, Latest release shows that name and the next daily check asks again. Check that this Mac can reach api.next.loonsec.io over HTTPS, or the host UPDATE_CHECK_URL names. One cause is an UPDATE_CHECK_URL that cannot be read as an address: Host, below, then names UPDATE_CHECK_URL's unreadable address, as the update check on line in logs/backend.log does at startup."
+        } satisfies Partial<Record<UpdateReason, string>>,
+        sends: {
+          owedNow: "Owed now: the scheduler asks it within a minute. If this stays in the past, no process runs the scheduler, or logs/backend.log says update check could not run.",
+          none: { not_drawn: "Not drawn yet: the scheduler draws it at its next look, within a minute." } satisfies Partial<Record<Unsent, string>>
+        },
+        stepsHeading: "Updating LoonInspect.app",
+        stepsIntro:
+          "By hand, on this Mac, with the newer release's disk image. The backup is a copy of ~/Library/Application Support/LoonInspect/pgdata, made after step 1 while LoonInspect is quit: if the older app cannot start on the updated database, that copy is a way back.",
+        steps: [
+          "Quit LoonInspect, from the menu or with ⌘Q. Closing the window is not quitting: the local server keeps running, and the app must not be replaced under it.",
+          "Open the newer disk image and drag LoonInspect onto Applications, replacing the old app.",
+          "Open it. Its first launch runs the newer release's migrations before the window loads."
+        ],
+        releasePage: "The release's page, with its disk image",
+        rollback:
+          "Stepping back is the same steps with the older disk image. An older app that finds a database a newer one migrated starts when the newer release recorded that the older can read it, and otherwise refuses, naming both releases: then put the newer app back, or restore the copy of pgdata.",
+        rollbackLink: "Updates and stepping back, in the app's guide",
+        selfHostedOnly: "These steps are for LoonInspect.app on this Mac, which nothing updates for you. Replacing the app keeps its data, its keychain items and its settings, which live outside it."
+      }
     },
     storage: {
       heading: "Storage",

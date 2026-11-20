@@ -59,7 +59,9 @@ export const SUPPORT_LINKS = {
   releases: `${GITHUB}/releases`,
   /** The rollback, step by step, with real output beside each command. Named by section: which
    *  way back applies, an image swap or the downgrade, is the part that costs something when missed. */
-  rollbackDocs: `${GITHUB}/blob/main/docs/operations.md#5-rollback`
+  rollbackDocs: `${GITHUB}/blob/main/docs/operations.md#5-rollback`,
+  /** LoonInspect.app's update and its step back, which are a disk image's and not the image's (#820). */
+  macAppUpdates: `${GITHUB}/blob/main/docs/macos-app.md#updates`
 } as const;
 
 /** What the copy button puts on the clipboard, or null when there is nothing worth

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 /** Settings › Support › Updates once its read lands (#819): what the last check sent, the answer, and what the next would
- *  send, for statuses as the wire carries them; `updateStatus.test.ts` holds the decisions. Nothing is fetched. */
+ *  send, for statuses as the wire carries them; `updateStatus.test.ts` holds the decisions. Then how the instance is
+ *  updated (#820): LoonInspect.app's steps and words from a `mac-app` read, the container's from any other. Nothing is fetched. */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UpdatesBlock } from "@/features/support/UpdatesBlock";
-import type { UpdateStatusResponse } from "@/features/system/api";
+import { SUPPORT_LINKS } from "@/features/support/links";
+import { UPDATE_REASONS, type UpdateStatusResponse } from "@/features/system/api";
+import { upgradeCommands } from "@/features/system/updateStatus";
 import { en } from "@/i18n/en";
 
 vi.mock("@/i18n/LocaleContext", async () => {
@@ -13,7 +16,7 @@ vi.mock("@/i18n/LocaleContext", async () => {
   return { useLocale: () => ({ t, locale: "en" }) };
 });
 const api = vi.hoisted(() => ({ getUpdateStatus: vi.fn() }));
-vi.mock("@/features/system/api", () => api);
+vi.mock("@/features/system/api", async (actual) => ({ ...(await actual<object>()), ...api }));
 
 const words = en.support.updates;
 const PAGE = "https://github.com/LoonSecIO/LoonInspect/releases/tag/v1.2.1";
@@ -83,5 +86,85 @@ describe("the Updates block says what the check sends", () => {
     expect(keys(words.sends.lastSent)).toEqual(["contract", "release", "kind", "stage", "last"]);
     expect(printed(words.sends.nextSends)).toBeNull();
     expect(screen.getAllByText(words.sends.none.off)).toHaveLength(2); // the next body, and the next check
+  });
+});
+
+// LoonInspect.app's answer (#820): the same check, sent with kind mac-app.
+const APP: UpdateStatusResponse = { ...AFTER, kind: "mac-app", lastBody: { ...AFTER.lastBody, kind: "mac-app" },
+  nextBody: { ...AFTER.nextBody, kind: "mac-app" } };
+const CONTAINERS = /docker|compose|\.env|container/i;
+const drawn = () => document.body.textContent ?? "";
+const linked = (name: string) => screen.getByRole("link", { name: new RegExp(name) }).getAttribute("href");
+
+describe("from LoonInspect.app, the block says how the app is updated (#820)", () => {
+  it("with an update available, prints the app's steps and links the release's page, and nothing of the container's", async () => {
+    await open(APP);
+
+    expect([...document.querySelectorAll("ol > li")].map((step) => step.textContent)).toEqual(words.app.steps);
+    expect(linked(words.app.releasePage)).toBe(PAGE);
+    expect(linked(words.app.rollbackLink)).toBe(SUPPORT_LINKS.macAppUpdates);
+    for (const sentence of [words.app.help, words.app.stepsIntro, words.app.selfHostedOnly]) expect(screen.getByText(sentence)).toBeTruthy();
+    expect(drawn()).not.toMatch(CONTAINERS);
+    expect(document.querySelectorAll("pre")).toHaveLength(2); // the two bodies, and no commands
+  });
+
+  const states: [string, Partial<UpdateStatusResponse>][] = [
+    ...UPDATE_REASONS.map((reason): [string, Partial<UpdateStatusResponse>] => [reason, { updateAvailable: null, reason }]),
+    ["a check owed now", { nextCheckAt: "2026-11-19T09:59:00Z" }],
+    ["no moment drawn yet", { nextCheckAt: null }],
+    ["no release page named", { releaseUrl: null }]
+  ];
+  it.each(states)("reads without docker, compose, .env or container: %s", async (_, over) => {
+    await open({ ...APP, ...over });
+
+    expect(drawn()).not.toMatch(CONTAINERS);
+  });
+
+  it("says the check is off by the menu item, or the app's environment, and that shell.log says which", async () => {
+    await open({ ...APP, updateAvailable: null, reason: "disabled", nextBody: null, nextCheckAt: null });
+
+    expect(screen.getByText(words.app.reasons.disabled)).toBeTruthy();
+    expect(words.app.reasons.disabled).toMatch(/LoonInspect › Check for Updates Daily .*the app's environment.*shell\.log/);
+  });
+
+  it("with no release page named, links the list of releases", async () => {
+    await open({ ...APP, releaseUrl: null });
+
+    expect(linked(words.releasesPage)).toBe(SUPPORT_LINKS.releases);
+  });
+});
+
+describe("from a container, the block reads as it did before (#820)", () => {
+  it("prints the compose steps, dump first, and the container's rollback, and none of the app's words", async () => {
+    await open(AFTER);
+
+    expect([...document.querySelectorAll("pre")].at(-1)?.textContent).toBe(upgradeCommands("v1.2.1").join("\n"));
+    for (const sentence of [words.help, words.stepsHeading, words.stepsIntro, words.selfHostedOnly]) expect(screen.getByText(sentence)).toBeTruthy();
+    expect(linked(words.rollbackLink)).toBe(SUPPORT_LINKS.rollbackDocs);
+    expect(document.querySelector("ol")).toBeNull();
+    expect(drawn()).not.toContain(words.app.stepsHeading);
+  });
+
+  it.each(UPDATE_REASONS)("says the container's own sentence for %s", async (reason) => {
+    await open({ ...AFTER, updateAvailable: null, reason });
+
+    expect(screen.getByText(words.reasons[reason])).toBeTruthy();
+  });
+
+  it("keeps the disabled sentence word for word", async () => {
+    await open({ ...AFTER, updateAvailable: null, reason: "disabled", nextBody: null, nextCheckAt: null });
+
+    expect(screen.getByText("Checking is off: UPDATE_CHECK=false is set for this container, so nothing is asked and no notice " +
+      "appears. To turn it on, remove that line from the .env file beside docker-compose.yml and run docker compose up -d.")).toBeTruthy();
+  });
+
+  it("draws no steps before the read says which kind this is, nor after it fails", async () => {
+    api.getUpdateStatus.mockRejectedValue(new Error("unreachable"));
+    await act(async () => {
+      render(<UpdatesBlock />);
+    });
+
+    expect(screen.getByText(words.errorLoading)).toBeTruthy();
+    expect(screen.queryByText(words.stepsHeading) ?? screen.queryByText(words.app.stepsHeading)).toBeNull();
   });
 });
