@@ -3220,6 +3220,10 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
      `UPDATE_CHECK_URL` in its environment. Quit, and open it from Finder or the Dock;
      `launchctl getenv UPDATE_CHECK_URL` prints one set for every app, which
      `launchctl unsetenv UPDATE_CHECK_URL` removes.
+   - *… is available, and this build does not contain it* → nothing is wrong. The steps under it
+     are the app's: quit, open the newer disk image, drag LoonInspect onto Applications, open it.
+     §10's compose steps and its dump are the container's and do not apply here; the app's
+     backup is the copy [`macos-app.md` › Backup](macos-app.md#backup) gives.
    - Any other sentence → §10 step 1, with `logs/backend.log` for the container log
      (`grep 'update check' ~/Library/Application\ Support/LoonInspect/logs/backend.log`) and
      `curl -sS -o /dev/null -w '%{http_code}\n' https://api.next.loonsec.io/v1/update` in
