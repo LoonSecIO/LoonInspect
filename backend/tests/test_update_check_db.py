@@ -137,6 +137,39 @@ async def test_a_check_with_no_answer_is_asked_again_an_hour_on_across_midnight(
     assert len(github.requests) == (1 + CHECK if retried else 1)
 
 
+UNREADABLE = [
+    "https://[fe80::1/repos/LoonSecIO/LoonInspect",  # httpx.InvalidURL, which is neither an HTTPError nor a ValueError
+    "https://api.github.com:abc/repos/LoonSecIO/LoonInspect",
+    "https://127.0.0.1:65536/repos/LoonSecIO/LoonInspect",  # read, and no host has the port: an OverflowError at connect
+    "https://xn--.test/repos/LoonSecIO/LoonInspect",  # read, and the name does not decode when the client asks
+    "ftp://127.0.0.1/repos/LoonSecIO/LoonInspect",
+    "https://[fe80::1/v1/update",  # the same in the shape of LoonSec's update service
+    "https://127.0.0.1:abc/v1/update",
+    "https://127.0.0.1:99999/v1/update",
+    "https://xn--.test/v1/update",
+    "https://user:SECRET/tail@127.0.0.1/v1/update",  # httpx takes the password for a port and quotes it
+    "https:///v1/update",  # no host at all
+]
+
+
+@pytest.mark.parametrize("address", UNREADABLE)
+async def test_an_address_that_cannot_be_asked_is_unreachable_says_so_and_is_owed_an_hour_on(
+    github, monkeypatch, caplog, address
+) -> None:
+    from app.core.config import settings
+    from app.core.update_check import _unreadable, startup_line, tick
+
+    assert [_unreadable(f"http://127.0.0.1:{port}/v1/update") is None for port in (0, 65535, 65536)] == [True, True, False]
+    monkeypatch.setattr(settings, "update_check_url", address)
+    with caplog.at_level("WARNING", logger="app.core.update_check"):
+        assert await tick(DUE) is True  # asked, not raised: the scheduler's "could not run" line would name the database
+    row, served = await _row(), await _served()
+    assert (row.reason, row.next_check_at, github.requests) == ("unreachable", DUE + HOUR, [])
+    assert (served.reason, served.provider_host) == ("unreachable", None) and "unreadable address" in startup_line()
+    assert [record.levelname for record in caplog.records] == ["WARNING"]
+    assert "UPDATE_CHECK_URL cannot be asked" in caplog.text and "SECRET" not in caplog.text
+
+
 async def test_a_next_moment_more_than_a_day_ahead_is_owed_at_once(github) -> None:
     from app.core.update_check import tick
 

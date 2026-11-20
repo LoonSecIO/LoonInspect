@@ -5,6 +5,7 @@ import { NavigationProvider } from "@/components/layout/NavigationProvider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ErrorBoundary } from "@/features/errors/ErrorBoundary";
 import { UpdateBanner } from "@/features/system/UpdateBanner";
+import { UpdateCheckNotice } from "@/features/system/UpdateCheckNotice";
 
 export function App() {
   const location = useLocation();
@@ -16,6 +17,8 @@ export function App() {
       <NavigationProvider>
         <Navbar />
         <UpdateBanner />
+        {/* The once-only notice that the update check now asks LoonSec (#819): its own strip, under the banner. */}
+        <UpdateCheckNotice />
 
         <div className="flex flex-1">
           <Sidebar />

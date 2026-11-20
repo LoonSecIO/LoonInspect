@@ -1,18 +1,24 @@
 /** First-run setup's claim token. A browser, the container's included, is asked for the token the logs print, exactly
  *  as before; the macOS app's window, whose shell defines this session's token before the page runs, is asked
- *  for nothing it already holds (docs/macos-app.md). Node lane: server rendering, the token a stubbed global. */
+ *  for nothing it already holds (docs/macos-app.md). Node lane: server rendering, the token a stubbed global.
+ *  Then the update check's sentence beside the sharing choice (#819), in English and German. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { SetupPage } from "@/features/auth/SetupPage";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
+const locale = vi.hoisted(() => ({ code: "en" as "en" | "de" }));
 vi.mock("@/i18n/LocaleContext", async () => {
-  const { en: t } = await import("@/i18n/en");
-  return { useLocale: () => ({ t, locale: "en" }) };
+  const dictionaries = { en: (await import("@/i18n/en")).en, de: (await import("@/i18n/de")).de };
+  return { useLocale: () => ({ t: dictionaries[locale.code], locale: locale.code }) };
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  locale.code = "en";
+});
 
 const page = () =>
   renderToStaticMarkup(
@@ -51,5 +57,22 @@ describe("first-run setup's claim token", () => {
       vi.stubGlobal("looninspectSetupClaimToken", odd);
       expect(page()).toContain(CLAIM_BLOCK);
     }
+  });
+});
+
+// As the markup prints text: React escapes these five.
+const escaped = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+
+describe("first-run setup says what the update check sends (#819)", () => {
+  it("in one sentence right after the sharing choice's label, in English and German, with no checkbox of its own", () => {
+    for (const [code, t] of [["en", en], ["de", de]] as const) {
+      locale.code = code;
+      const html = page();
+      const said = `<p class="px-1 text-xs text-muted-foreground">${escaped(t.updateCheckNotice.setup)}</p>`;
+      expect(html).toContain(`${escaped(t.auth.sharingChoice)}</span></label>${said}`);
+      expect(html.match(/type="checkbox"/g)).toHaveLength(1);
+    }
+    expect(de.updateCheckNotice.setup).not.toBe(en.updateCheckNotice.setup);
   });
 });
