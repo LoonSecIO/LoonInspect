@@ -243,6 +243,7 @@ function PromptSession({ providers, provider, onProvider, filters, onApply, onUs
           </label>
           <input
             id={questionId}
+            data-page-ai-search=""
             className={`${inputClasses} w-full`}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}

@@ -221,6 +221,30 @@ publication it checks that the release carries the files. Environment setup and 
 are in
 [`macos/README.md`](../macos/README.md#github-actions).
 
+### Finding text and searching records
+
+**Edit → Find → Find in Page…** (⌘F) opens a native find bar. Type literal text; **Return** or
+**⌘G** moves to the next match, **Shift-Return** or **⇧⌘G** moves back, and the search wraps at
+both ends. **Match case** makes matching case-sensitive. **⌘E** uses selected page text.
+**Escape** or **Done** closes the bar and returns focus to the page. Queries stay in memory
+for this app session; page finding sends nothing to the backend or an AI provider.
+
+Find searches the **loaded page text**, including content below the visible area. It does not
+fetch another result page, expand a collapsed section, or search hidden/password fields.
+**No matches on this page** does not mean there are no matching inventory records. Use
+**Go to page search**, when offered, to focus the page's existing search controls. The handoff
+preserves their text and filters and does not submit them.
+
+**Go to AI search** appears only where the page already offers an available AI search:
+the Changes Prompt bar or the Vulnerabilities AI lever, with its existing flag, consent,
+and saved-provider gates satisfied. It focuses that prompt or explicitly selects the page's
+AI mode. It does not copy the Find query, send page content, or submit a question. Review and
+submit the question using the page's own controls. AI availability never changes what ⌘F does.
+
+A route change rechecks the retained Find query. If loaded content changes after a result,
+the bar says **Page content changed**; press Return to find in the updated content. Find is
+unavailable while the native startup/recovery screen is showing.
+
 ### Updates
 
 **The check.** About once a day the app asks LoonSec's update service, as the container does

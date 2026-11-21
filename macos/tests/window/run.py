@@ -41,6 +41,8 @@ production_names = [
     "StatusView.swift",
     "MacGuideWindow.swift",
     "ExportDestination.swift",
+    "PageFindController.swift",
+    "PageFindBridge.swift",
 ]
 source_hashes = {
     name: hashlib.sha256((sources / name).read_bytes()).hexdigest()
@@ -55,6 +57,7 @@ subprocess.run(
         str(scratch / "module-cache"),
         str(root / "Fakes.swift"),
         str(root / "Harness.swift"),
+        str(root / "FindHarness.swift"),
         *[str(sources / name) for name in production_names],
         "-o",
         str(executable),
@@ -68,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         type(self).sequence += 1
-        body = f'<!doctype html><title>Isolated LoonInspect regression</title><body data-request="{self.sequence}">Disposable local test page.</body>'.encode()
+        body = (root / "find-fixture.html").read_text().replace("__REQUEST__", str(self.sequence)).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

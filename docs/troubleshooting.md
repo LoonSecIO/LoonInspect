@@ -3235,6 +3235,24 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
      run yet* lasts longer on a Mac seldom open: the first check waits for its moment, then for
      the app to be open.
 
+10. **Find has no match, or its page/AI shortcut is unavailable.** Open **Edit → Find → Find in
+    Page…** (⌘F). It reads loaded text only. Check **Match case**, expand the relevant section,
+    or use the page's own search and pagination to load other results. A password field or hidden
+    content is not searchable. **Page content changed** means the previous answer is stale;
+    press Return to search the updated page.
+    - **Go to page search** appears only when this page exposes an available search control.
+      It focuses the existing control and preserves its query; it does not submit it.
+    - **Go to AI search** appears only for a page's existing AI prompt or lever. For missing
+      Changes/Vulnerabilities AI controls, follow §11 and Settings → AI's status: the feature
+      flag, inference consent, and a saved provider still decide availability. Opening Find
+      or typing in it never calls a provider.
+    - **That search control is no longer available** means the page changed or disabled it
+      before the handoff. Wait for loading to finish and reopen Find. If it persists while
+      the control is visible and enabled, report the page and app build; local text finding
+      remains available.
+    - A dimmed Find menu means the app is starting, restarting, or showing recovery. Wait for
+      the page or follow the startup/recovery steps above. After recovery, retry ⌘F.
+
 ## 26. "A promoted application is not being sent, or Promote is refused"
 
 A promotion (#793, [`data-sharing.md`](data-sharing.md#promoted-applications)) is an administrator's

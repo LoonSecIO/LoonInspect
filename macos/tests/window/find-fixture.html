@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Isolated LoonInspect regression</title>
+<style>
+body { font: 16px system-ui; margin: 24px; }
+main { max-width: 800px; }
+.spacer { height: 1000px; }
+</style>
+<body data-request="__REQUEST__">
+<main>
+  <h1>Disposable catalog fixture</h1>
+  <form id="query-form">
+    <label>Search records <input id="page-query" data-page-search value="retained filter"></label>
+    <label><input id="ai-toggle" data-page-ai-toggle type="checkbox">AI filters</label>
+    <button>Search</button>
+  </form>
+  <p id="first">Needle first occurrence</p>
+  <p id="second">needle second occurrence</p>
+  <p id="split">Across <strong>inline</strong> elements</p>
+  <p id="unicode">Café Straße 日本語 🔎</p>
+  <p hidden>invisible-fixture-content</p>
+  <label>Password <input type="password" value="password-fixture-content"></label>
+  <div class="spacer"></div>
+  <p id="last">needle last occurrence</p>
+  <div id="dynamic"></div>
+</main>
+<script>
+window.submissions = 0;
+document.getElementById('query-form').onsubmit = event => { event.preventDefault(); window.submissions++; };
+document.getElementById('ai-toggle').onchange = event => {
+  const input = document.getElementById('page-query');
+  input.toggleAttribute('data-page-ai-search', event.target.checked);
+  input.toggleAttribute('data-page-search', !event.target.checked);
+};
+</script>

@@ -177,12 +177,16 @@ watchdog behavior, export replacement and the backend's environment for each sta
 Updates Daily and of the app's own environment, using temporary files and mocked signals.
 It never starts the real app or reads its Keychain items. These checks also run in macOS CI.
 
-For window recovery, run `python3 macos/tests/window/run.py --source-dir .` from the repository
+For window recovery and native Find in Page, run `python3 macos/tests/window/run.py --source-dir .` from the repository
 on a Mac with a logged-in graphical session. It compiles the actual delegate and views against
 fake services, serves a disposable loopback page, uses nonpersistent WebKit storage, and disables
 frame autosaving. It checks cancellation, reload, failed service cleanup, late startup
 callbacks, and that Check for Updates Daily restarts the server once and reloads the page,
-without accessing an existing installation's data. This GUI harness is separate from
+without accessing an existing installation's data. Find checks use synthetic content to exercise
+next/previous/wrap, case matching, Unicode and inline text, hidden/password exclusion, offscreen
+matches, rapid edits, selection and focus, explicit page/AI handoffs without submission, changing
+content and routes, and minimum-window layout. The actual frontend tests also hold AI target
+availability to the existing flag, consent, and provider gates. This GUI harness is separate from
 the headless checks; running it briefly creates test windows.
 
 ## Where it keeps things, and how to start over

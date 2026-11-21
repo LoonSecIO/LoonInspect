@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusView: StatusView!
+    private var pageFind: PageFindController!
     private lazy var guide = MacGuideWindow()
     private var port: Int?
     private var lastLocalURL: URL?
@@ -134,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private func handClaimTokenToWindow(port: Int) {
         // A restarted backend minted another token, if it minted one: the earlier script would define the stale one first.
         webView.configuration.userContentController.removeAllUserScripts()
+        pageFind.installScript()
         guard let token = supervisor.claimToken(),
               token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
             supervisor.log.info("no usable setup claim token in this session's backend log; none handed to the window")
@@ -191,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         webView = WKWebView(frame: .zero, configuration: configuration)
+        pageFind = PageFindController(webView: webView)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -213,7 +216,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             ])
         }
-        window.contentView = content
+        let layout = NSStackView(views: [pageFind.view, content])
+        layout.orientation = .vertical
+        layout.spacing = 0
+        layout.alignment = .leading
+        pageFind.view.setContentHuggingPriority(.required, for: .vertical)
+        pageFind.view.widthAnchor.constraint(equalTo: layout.widthAnchor).isActive = true
+        content.widthAnchor.constraint(equalTo: layout.widthAnchor).isActive = true
+        window.contentView = layout
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("LoonInspectMain")
@@ -247,6 +257,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("Hide LoonInspect", #selector(NSApplication.hide(_:)), "h"),
             item("Quit LoonInspect", #selector(NSApplication.terminate(_:)), "q"),
         ])
+        let findMenu = NSMenu(title: "Find")
+        [item("Find in Page…", #selector(openFind), "f"),
+         item("Find Next", #selector(findNext), "g"),
+         item("Find Previous", #selector(findPrevious), "g", [.command, .shift]),
+         item("Use Selection for Find", #selector(findSelection), "e"),
+         item("Close Find", #selector(closeFind), "\u{1b}", [])].forEach(findMenu.addItem)
+        let findItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        findItem.submenu = findMenu
         // Without an Edit menu, ⌘C, ⌘V and ⌘A do nothing in the page's fields.
         _ = submenu("Edit", [
             item("Undo", Selector(("undo:")), "z"),
@@ -256,6 +274,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             item("Copy", #selector(NSText.copy(_:)), "c"),
             item("Paste", #selector(NSText.paste(_:)), "v"),
             item("Select All", #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            findItem,
         ])
         _ = submenu("View", [item("Reload Window", #selector(reload), "r"),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])])
@@ -276,6 +296,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(openFind), #selector(findNext), #selector(findPrevious), #selector(findSelection):
+            return port != nil && !quitting && !restarting && webView != nil && !webView.isHidden && !webView.isLoading
+        case #selector(closeFind): return pageFind?.isVisible == true
         case #selector(openInBrowser), #selector(reload): return port != nil && !quitting && !restarting
         case #selector(toggleUpdateCheck):
             menuItem.state = supervisor.checksForUpdatesDaily ? .on : .off
@@ -301,8 +324,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
     @objc private func showWindow() { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    @objc private func openFind() { pageFind.show() }
+    @objc private func findNext() { pageFind.findNext() }
+    @objc private func findPrevious() { pageFind.findPrevious() }
+    @objc private func findSelection() { pageFind.useSelection() }
+    @objc private func closeFind() { pageFind.close() }
 
     private func show(_ title: String, _ body: String, spinner: Bool, canReload: Bool = false) {
+        pageFind?.suspend()
         webView.isHidden = true
         statusView.isHidden = false
         statusView.update(title: title, message: body, busy: spinner, canReload: canReload)
