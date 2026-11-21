@@ -389,6 +389,7 @@ export const en = {
     smartGroupCost: "Group cost",
     // #529. `Posture`, not `Risks`: risk is a judgement this product does not make.
     posture: "Posture",
+    osPosture: "macOS versions",
     vulnerabilities: "Vulnerabilities",
     compliance: "Compliance",
     // #614. A reference replay, listed only while its flag is on; the page says what it is not.

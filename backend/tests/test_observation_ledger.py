@@ -383,3 +383,29 @@ async def test_ledger_rows_are_tenant_scoped(db, connection_id, aperture_digest)
             )
         ).scalar_one()
         assert slack == 0
+
+
+async def test_os_adoption_and_history_reconcile_to_one_mac(db, connection_id, aperture_digest):
+    from app.api.os_posture import adoption, transitions
+    from app.models.schema import Device
+
+    subject = _subject()
+    device = Device(
+        mdm_connection_id=connection_id, external_id=subject, serial_number=subject, hostname=subject, mdm_provider="jamf"
+    )
+    db.add(device)
+    await db.flush()
+    raw = _raw(subject_id=subject)
+    raw["operatingSystem"].update(version="14.99.77", build="A")
+    await _record(db, connection_id, aperture_digest, raw)
+    later = _raw(subject_id=subject, report_at=T0 + timedelta(days=2))
+    later["operatingSystem"].update(version="14.99.77", build="B")
+    await _record(db, connection_id, aperture_digest, later)
+    await _record(db, connection_id, aperture_digest, later)
+    await _record(db, connection_id, aperture_digest, raw)
+    history = await transitions(device.id, db)
+    assert [(row["build"], row["previousObserved"]) for row in history] == [("B", T0), ("A", None)]
+    seen_day = (T0 + timedelta(days=1)).date()
+    report = await adoption(seen_day, None, "14.99.77", None, 0, db)
+    assert report["series"][-1]["counts"]["14.99.77"] == report["total"]
+    assert any(row["id"] == device.id and row["build"] == "A" for row in report["devices"])

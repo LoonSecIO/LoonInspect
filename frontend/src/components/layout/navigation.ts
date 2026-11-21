@@ -102,6 +102,7 @@ export const navigationItems: NavItem[] = [
         end: false,
         permission: PERMISSIONS.AUDIT_READ
       },
+      { labelKey: "osPosture", icon: ShieldHalf, to: "/posture/macos", end: true, permission: PERMISSIONS.DEVICE_READ },
       // Flag-gated and off by default (#614, first slice): a reference replay of a hypothetical Mac,
       // not this organization's posture, so it is not listed beside the two entries that are until
       // someone asks for it. `app:read` is the route's own gate (#301).

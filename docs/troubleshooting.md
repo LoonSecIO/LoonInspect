@@ -3431,3 +3431,9 @@ app build, and backend build separate, and Copy includes all three.
 - A blank build block means Support has not read the running service's identity. Check that
   LoonInspect is running and reopen Support. If it stays blank, include the About values and
   that failed read in the report. For a container, include the deployed image tag instead.
+
+### Missing macOS adoption or eligibility evidence
+
+Open Posture → macOS and select the reporting date in UTC. Counts carry the latest retained inventory forward for each Mac. The device history shows when Jamf reported each version and build. A blank interval before the first observation has no inventory evidence. Check that the collection reads Hardware and Operating System.
+
+The release markers and hardware catalog use the [SOFA macOS feed maintained by Mac Admins Open Source](https://sofa.macadmins.io/). The SOFA timestamp identifies the local compatibility catalog used for the selected day. An administrator can refresh the catalog on the macOS page. Check outbound HTTPS to sofafeed.macadmins.io and write access to SOFA_CACHE_DIR if refresh fails. Historical days before the earliest retained catalog have unknown eligibility.

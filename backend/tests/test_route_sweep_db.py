@@ -162,6 +162,7 @@ STOPS = {
     "no Jamf patch title: titles are global, and the sweep loads none": [
         *("GET /api/jamf-patch/titles/{title_id}", "PUT /api/settings/patching-policy/overrides/{title_id}"),
     ],
+    "the SOFA release feed is unreachable in the offline sweep": ["POST /api/os-posture/refresh"],
     "the patch catalog is unreachable: the sweep opens no connections, and the sync's first read is of it": [
         "POST /api/jamf-patch/sync",
     ],

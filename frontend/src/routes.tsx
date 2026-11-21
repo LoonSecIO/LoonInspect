@@ -10,6 +10,7 @@ import { SetupPage } from "@/features/auth/SetupPage";
 import { PERMISSIONS } from "@/features/auth/types";
 import { OverviewPage } from "@/features/overview/OverviewPage";
 import { DevicesPage } from "@/features/devices/DevicesPage";
+import { OsPosturePage } from "@/features/osPosture/OsPosturePage";
 import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
@@ -159,6 +160,7 @@ export function AppRoutes() {
             login page, which already responds without auth and so adds no new route
             and no new finding. */}
         <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+          <Route path="posture/macos" element={<OsPosturePage />} />
           <Route path="settings/support" element={<SupportPage />} />
         </Route>
         {/* The slot #95 reserved and #251 declined to fill, filled (#529). What it waited
