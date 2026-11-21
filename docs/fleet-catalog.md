@@ -19,6 +19,11 @@ it and how many of those are behind. In the background, slowly, it also reads th
 history of the titles installed here from the same repository's commits: every version Fleet's
 catalog carried, and the day it took each.
 
+Each title also has a **Fleet source** link to its current `darwin.json` manifest on
+GitHub (#840). It is separate from the button that opens version history and works with
+the keyboard. In LoonInspect.app it opens in the default browser; on the web it opens
+in a new tab.
+
 It is a second public list of titles and latest versions, beside Jamf's patch catalog, and it
 needs no Jamf Pro connection. It is a display. Nothing here feeds the vulnerability join, the
 App Catalog's judgements, the wire or the posture tape, and LoonInspect installs nothing.

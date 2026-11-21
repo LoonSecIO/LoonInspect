@@ -1496,6 +1496,8 @@ export const de: Translations = {
       "Wann Fleets Katalog diese Version übernommen hat: das Datum des ersten Commits in Fleets Repository, der sie enthielt. Fleet übernimmt Versionen von Homebrew, daher liegt dies meist Stunden bis einen Tag nach der Veröffentlichung durch den Hersteller, nie davor.",
     notDated: "Ohne Datum",
     historyToggleHint: "Versionsgeschichte dieses Titels ein- oder ausblenden",
+    sourceLink: "Fleet-Quelle ↗",
+    sourceLabel: (name: string) => `Fleet-Quelle von ${name} auf GitHub öffnen (im Browser)`,
     historyProgress: (read: number, installed: number) =>
       `Versionsgeschichte: ${read} von ${installed} hier installierten ${installed === 1 ? "Titel" : "Titeln"} gelesen. Die übrigen werden im Hintergrund gelesen, etwa einer alle zwei Minuten, die am häufigsten installierten zuerst.`,
     historyFailed: (at: string) => `Das letzte Lesen der Versionsgeschichte, ${at}, wurde nicht abgeschlossen.`,

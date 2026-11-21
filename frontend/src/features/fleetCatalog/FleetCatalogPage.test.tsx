@@ -159,7 +159,10 @@ describe("the Fleet catalog tab", () => {
 
     expect(api.getFleetCatalog).toHaveBeenLastCalledWith(false);
     const cells = Array.from(screen.getByText("Gamma").closest("tr")?.querySelectorAll("td") ?? []).map((cell) => cell.textContent);
-    expect(cells).toEqual(["Gamma", "com.example.gamma", "2.0", "0", "-", en.fleetCatalog.notMoved]);
+    expect(cells).toEqual([`Gamma${en.fleetCatalog.sourceLink}`, "com.example.gamma", "2.0", "0", "-", en.fleetCatalog.notMoved]);
+    const source = screen.getByRole("link", { name: en.fleetCatalog.sourceLabel("Gamma") });
+    expect(source.getAttribute("href")).toBe("https://github.com/fleetdm/fleet/blob/main/ee/maintained-apps/outputs/gamma/darwin.json");
+    expect(source.getAttribute("target")).toBe("_blank");
   });
 
   it("tells a search that missed among installed titles from an empty catalog", async () => {
