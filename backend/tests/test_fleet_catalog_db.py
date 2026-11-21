@@ -208,7 +208,8 @@ async def test_the_first_check_reads_every_mac_title_and_keeps_three_facts_of_ea
     # Two requests to the API, whatever the catalogue's size; the index and each manifest from raw.
     assert len(github.asked("api.github.com")) == 2
     assert github.manifests_read() == ["alpha", "beta", "gamma"]
-    # The installer address, the script and the query have no column to be kept in.
+    # The installer address, the script and the query have no column to be kept in. The
+    # history columns are what the version history read reached (#838), not the manifest.
     assert set(FleetMaintainedApp.__table__.columns.keys()) == {
         "slug",
         "name",
@@ -219,6 +220,12 @@ async def test_the_first_check_reads_every_mac_title_and_keeps_three_facts_of_ea
         "first_seen_at",
         "manifest_sha",
         "updated_at",
+        "history_read_at",
+        "history_since",
+        "history_through",
+        "history_last_sha",
+        "history_complete",
+        "history_detail",
     }
 
 

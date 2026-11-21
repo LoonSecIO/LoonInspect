@@ -79,6 +79,7 @@ from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, unscoped_session
 from app.core.fleet_catalog import tick as fleet_catalog_check
+from app.core.fleet_history import run_worker as fleet_history_worker
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
@@ -605,6 +606,7 @@ async def lifespan(app: FastAPI):
     # another process for a dead one.
 
     summary_task = None
+    history_task = None
     if settings.scheduler_enabled:
         scheduler.add_job(
             collections_tick,
@@ -671,6 +673,10 @@ async def lifespan(app: FastAPI):
         )
         scheduler.start()
         summary_task = asyncio.create_task(inventory_summary_worker(), name="inventory_summaries")
+        # Fleet's version history (#838): one title at a time, two minutes apart, only while an
+        # organization has the Fleet catalog flag on and only for titles installed there. A
+        # loop rather than a job, so a slow title is never an overlapping run.
+        history_task = asyncio.create_task(fleet_history_worker(), name="fleet_version_history")
         logger.info(
             "scheduler started",
             extra={
@@ -683,10 +689,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    if summary_task is not None:
-        summary_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await summary_task
+    for task in (summary_task, history_task):
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     if scheduler.running:
         scheduler.shutdown()

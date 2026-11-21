@@ -82,6 +82,7 @@ SHARED = {
     "key": "jamf_patch",
     "provider": "openai_compatible",
     "slot": "security.firewallEnabled",  # a history value every layout can name (#617)
+    "slug": "route-sweep",  # a Fleet catalog title (#838): global, like Jamf's patch titles
     "title_id": "route-sweep",
     "vuln_id": "CVE-2024-3094",
 }
@@ -165,7 +166,9 @@ STOPS = {
         "POST /api/jamf-patch/sync",
     ],
     "the connection holds no Jamf credential": ["POST /api/devices/{device_id}/refresh"],
-    "the Fleet catalog flag is off: the check is refused before anything asks GitHub": ["POST /api/fleet-catalog/refresh"],
+    "the Fleet catalog flag is off: the check and a title's history are refused before anything asks GitHub": [
+        *("POST /api/fleet-catalog/refresh", "GET /api/fleet-catalog/{slug}/history", "POST /api/fleet-catalog/{slug}/history"),
+    ],
 }
 STOPPED = {route: why for why, routes in STOPS.items() for route in routes}
 
