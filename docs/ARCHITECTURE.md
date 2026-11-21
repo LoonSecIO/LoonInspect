@@ -146,6 +146,14 @@ jobs fire in `SYNC_TIMEZONE`, not UTC.
 | `outbox_cleanup` | daily, 02:45 | Purges events past retention, held ones included — age is the candidate test, and a delivery still pending or a dead letter inside its own window is what holds an event back. |
 | `run_cleanup` | daily, 02:50 | Purges finished runs, their log lines and closed alert latches past `run_retention_days`, and clears the URL, text and contact of submission cases 90 days after they close or once they expire; with `CHANGE_LOG_RETENTION_DAYS` set, deletes change-log rows older than it, in batches (#785). |
 
+Beside the ten, two loops start under the same switch and wait after each pass rather than
+fire on a clock, so a slow pass is never an overlapping run: the inventory summaries worker,
+and the Fleet catalog's version history (#838). The history reads one title, then waits two
+minutes: a title installed on a Mac in an organization with `fleet_maintained_apps` on, never
+read or moved since, most-installed first. It makes no API request while GitHub says 20 or fewer
+of the hour's requests are left, and with the flag off everywhere it makes none at all
+([`fleet-catalog.md`](fleet-catalog.md#version-history)).
+
 ## 5. What a pull costs Jamf
 
 The order below is the order the code issues them (`_stream_jamf_fleet`, `app.mdm.jamf.client`).

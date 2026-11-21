@@ -138,6 +138,41 @@ class _Tally:
     skipped: list[str] = field(default_factory=list)
 
 
+class Allowance:
+    """What GitHub last said is left of this address's hourly allowance for requests without a
+    sign-in, from the `x-ratelimit-remaining` and `x-ratelimit-reset` headers on every answer
+    `api.github.com` gives this module, a refusal's included.
+
+    The version history read (`app.core.fleet_history`, #838) reads it to leave a reserve for
+    the daily check, Check now and every other tool behind the same address. Held in memory: a
+    restart forgets it, and the next answer says it again.
+    """
+
+    def __init__(self) -> None:
+        self.remaining: int | None = None
+        self.reset_at: datetime | None = None
+
+    def note(self, headers: httpx.Headers) -> None:
+        try:
+            remaining = int(headers["x-ratelimit-remaining"])
+            reset_at = datetime.fromtimestamp(int(headers["x-ratelimit-reset"]), UTC)
+        except (KeyError, ValueError, OverflowError, OSError):
+            return  # an answer without GitHub's headers says nothing about the allowance
+        self.remaining, self.reset_at = remaining, reset_at
+
+    def left(self, now: datetime) -> int | None:
+        """Requests left before the hour resets, or None when unknown or already reset."""
+        if self.remaining is None or self.reset_at is None or now >= self.reset_at:
+            return None
+        return self.remaining
+
+    def forget(self) -> None:
+        self.remaining = self.reset_at = None
+
+
+ALLOWANCE = Allowance()
+
+
 def _refused(host: str, status: int) -> CheckFailed:
     if host == API_HOST:
         why = (
@@ -163,6 +198,8 @@ async def _get(client: httpx.AsyncClient, url: str, *, ceiling: int, what: str, 
     try:
         async with client.stream("GET", url) as response:
             status = response.status_code
+            if host == API_HOST:
+                ALLOWANCE.note(response.headers)
             if status in (403, 429) and _rate_limited(response):
                 raise _refused(host, status)
             if status == 404:

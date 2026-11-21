@@ -267,10 +267,10 @@ bundle, and so the backend, the frontend, the runtimes and the shell.
 **Stepping back** is the same three steps with the older disk image, and it obeys the image's
 rule (`operations.md` §5): a build that finds a schema revision it does not carry reads the
 database's release record, starts without migrating when its own `RELEASE` is at or above the
-record, and refuses with a sentence naming both when it is below. 1.2.0's migration records that
+record, and refuses with a sentence naming both when it is below. 1.2.0's first migration records that
 v1.1.0 reads its schema, so 1.1.0 starts on a database 1.2.0 migrated and `backend.log` says *…which recorded
 that v1.1.0 or later can read it; this image is v1.1.0 (build …), so it starts without
-migrating*. The table 1.2.0 added stays, unread, and going forward again migrates nothing. 1.0.0
+migrating*. The tables and columns 1.2.0 added stay, unread, and going forward again migrates nothing. 1.0.0
 is below the record and refuses (*…so it will not start on it*); `troubleshooting.md` §25 step 5
 is the refusal's step-through. An older app has no menu item and starts its backend with the
 check off whatever the item said; the choice stays in the preferences, unread, for 1.2.0.

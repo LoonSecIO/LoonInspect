@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 FleetCatalogOutcome = Literal["ok", "unchanged", "refused", "unreachable", "unexpected"]
+# The version history read's words (#838): `waiting` is leaving GitHub's last requests of the
+# hour to the daily check and other tools, and carries on by itself.
+FleetHistoryOutcome = Literal["ok", "waiting", "refused", "unreachable", "unexpected"]
 
 
 class FleetCatalogStateOut(BaseModel):
@@ -26,6 +29,11 @@ class FleetCatalogStateOut(BaseModel):
     # On `ok` it can carry a sentence too: manifests that could not be read and were left.
     detail: str | None
     app_count: int
+    # The last version history read, background or a person's (#838): when, its word, and
+    # its sentence. All null before the first.
+    history_checked_at: datetime | None = None
+    history_outcome: FleetHistoryOutcome | None = None
+    history_detail: str | None = None
 
 
 class FleetCatalogTitleOut(BaseModel):
@@ -47,6 +55,45 @@ class FleetCatalogTitleOut(BaseModel):
     # Shipped as a pair so neither is derived by subtraction on the page.
     devices_behind: int = 0
     devices_current: int = 0
+    # From the version history read from Fleet's commits (#838), when it holds the latest
+    # version: the date Fleet's catalog first carried it, and the version it carried before.
+    # Null until the history is read, and for a latest version the history could not date.
+    in_catalog_since: datetime | None = None
+    version_before: str | None = None
+    # When this instance last read the title's history; null: never.
+    history_read_at: datetime | None = None
+
+
+class FleetVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, alias_generator=to_camel, populate_by_name=True)
+
+    version: str
+    # The date GitHub records for the first commit whose manifest carried this version: when
+    # Fleet's catalog took it, not when the vendor released it.
+    seen_at: datetime
+    commit_sha: str
+    # The version the manifest carried at the change before; null at the title's first change.
+    previous_version: str | None = None
+
+
+class FleetTitleHistoryOut(BaseModel):
+    """One title's version history as this instance holds it (#838)."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    slug: str
+    name: str
+    latest_version: str
+    # When it was last read (null: never), the oldest and newest change the reads reached,
+    # and whether the oldest was the title's first change in Fleet's history.
+    history_read_at: datetime | None
+    history_since: datetime | None
+    history_through: datetime | None
+    history_complete: bool
+    # What the last read left undated or could not read, in the operator's words.
+    history_detail: str | None
+    # Newest first.
+    versions: list[FleetVersionOut] = []
 
 
 class FleetCatalogOut(BaseModel):
@@ -65,3 +112,5 @@ class FleetCatalogOut(BaseModel):
     # Titles with at least one of this organization's Macs, before `q` narrows the list:
     # what tells "nothing Fleet lists is installed here" from "nothing matches the search".
     installed_titles: int = 0
+    # Of those, the titles whose version history this instance has read (#838).
+    installed_titles_with_history: int = 0

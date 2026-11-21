@@ -56,7 +56,8 @@ FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
         "description": (
             "Show Devices › Applications › Fleet catalog: the Mac apps Fleet maintains, with Fleet's latest "
             "version beside what this organization has installed. While this is on, the instance asks GitHub "
-            "once a day for the catalog in Fleet's repository (fleetdm/fleet) and sends nothing about this "
+            "once a day for the catalog in Fleet's repository (fleetdm/fleet), reads the version history of "
+            "the titles installed here from the same repository, slowly, and sends nothing about this "
             "organization. The catalog's files are under the licence in that repository's ee/ folder, which "
             "says production use needs a Fleet subscription."
         ),

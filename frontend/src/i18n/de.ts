@@ -1471,7 +1471,7 @@ export const de: Translations = {
     eyebrow: "Geräte › Anwendungen",
     title: "Fleet-Katalog",
     description:
-      "Die Mac-Apps, die Fleet pflegt, mit Fleets neuester Version neben dem, was diese Organisation installiert hat. Einmal täglich aus Fleets Repository auf GitHub gelesen.",
+      "Die Mac-Apps, die Fleet pflegt, mit Fleets neuester Version neben dem, was diese Organisation installiert hat. Einmal täglich aus Fleets Repository auf GitHub gelesen; die Versionsgeschichte der hier installierten Titel wird langsam im Hintergrund gelesen.",
     checkNow: "Jetzt prüfen",
     checking: "Wird geprüft...",
     checkError: "Die Prüfung wurde nicht abgeschlossen. Versuchen Sie es erneut.",
@@ -1491,6 +1491,36 @@ export const de: Translations = {
     notMovedHint:
       "Fleets Version dieses Titels hat sich nicht geändert, seit diese Instanz ihn zum ersten Mal gelesen hat; es gibt daher keine frühere Version zu zeigen.",
     movedFrom: (at: string, previous: string) => `${at}, von ${previous}`,
+    sinceFirstListed: (at: string) => `${at}, als Fleet ihn erstmals führte`,
+    inCatalogSinceHint:
+      "Wann Fleets Katalog diese Version übernommen hat: das Datum des ersten Commits in Fleets Repository, der sie enthielt. Fleet übernimmt Versionen von Homebrew, daher liegt dies meist Stunden bis einen Tag nach der Veröffentlichung durch den Hersteller, nie davor.",
+    notDated: "Ohne Datum",
+    historyToggleHint: "Versionsgeschichte dieses Titels ein- oder ausblenden",
+    historyProgress: (read: number, installed: number) =>
+      `Versionsgeschichte: ${read} von ${installed} hier installierten ${installed === 1 ? "Titel" : "Titeln"} gelesen. Die übrigen werden im Hintergrund gelesen, etwa einer alle zwei Minuten, die am häufigsten installierten zuerst.`,
+    historyFailed: (at: string) => `Das letzte Lesen der Versionsgeschichte, ${at}, wurde nicht abgeschlossen.`,
+    historyErrorLoading: "Die Versionsgeschichte dieses Titels konnte nicht geladen werden.",
+    historyReadError: "Das Lesen wurde nicht abgeschlossen. Versuchen Sie es erneut.",
+    historyNotRead:
+      "Noch nicht gelesen. Der Hintergrund liest die Geschichte der hier installierten Titel, einen nach dem anderen; „Geschichte lesen“ liest diesen jetzt.",
+    historyReadWhole: (readAt: string, since: string) =>
+      `Gelesen ${readAt}, zurück bis ${since}, als Fleet diesen Titel erstmals führte.`,
+    historyReadFrom: (readAt: string, since: string) =>
+      `Gelesen ${readAt}, zurück bis ${since}. Fleets Geschichte dieses Titels reicht weiter zurück, als dieses Lesen kam.`,
+    historyDatesNote:
+      "Die Daten zeigen, wann Fleets Katalog jede Version übernommen hat, laut Fleets Commits auf GitHub; es sind nicht die Veröffentlichungsdaten des Herstellers. Jedes verweist auf seinen Commit.",
+    historyRead: "Geschichte lesen",
+    historyReadAgain: "Erneut lesen",
+    historyReading: "Wird gelesen...",
+    historyNoVersions: "Das Lesen fand keine Version, die es datieren konnte.",
+    historyVersion: "Version",
+    historyInCatalog: "In Fleets Katalog",
+    historyReplaced: "Ersetzte",
+    historyReplacedNone: "keine",
+    historyReadNothing: (readAt: string) => `Gelesen ${readAt}.`,
+    historyCommitLabel: (at: string, sha: string) => `${at}: Commit ${sha} in Fleets Repository (öffnet in neuem Tab)`,
+    notDatedHint:
+      "Die Versionsgeschichte dieses Titels ist gelesen, konnte die neueste Version aber nicht datieren: Das Lesen hat ihr Eintreffen nicht gesehen. Öffnen Sie den Titel für den Grund.",
     statusNever:
       "Fleets Katalog wurde noch nicht gelesen. Die erste Prüfung läuft innerhalb einer Stunde, nachdem das Flag eingeschaltet wurde.",
     statusRead: (at: string, count: number) =>
@@ -1518,7 +1548,7 @@ export const de: Translations = {
     footer: (shown: number, total: number, installed: number) =>
       `${shown} angezeigt · ${total} in Fleets Katalog · ${installed} hier installiert`,
     licenceNote:
-      "Fleet veröffentlicht diesen Katalog unter der Lizenz im Ordner ee/ seines Repositorys; sie besagt, dass der Produktiveinsatz ein Fleet-Abonnement erfordert. LoonInspect behält von jedem Titel Name, Bundle-ID und Version und sonst nichts.",
+      "Fleet veröffentlicht diesen Katalog unter der Lizenz im Ordner ee/ seines Repositorys; sie besagt, dass der Produktiveinsatz ein Fleet-Abonnement erfordert. LoonInspect behält von jedem Titel Name, Bundle-ID und Versionen, mit Datum und Commit jeder Version, und sonst nichts.",
     licenceLink: "Lizenz lesen"
   },
   jamfPatch: {
