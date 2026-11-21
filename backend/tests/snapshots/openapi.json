@@ -4528,6 +4528,11 @@
             "title": "Installedtitles",
             "type": "integer"
           },
+          "installedTitlesWithHistory": {
+            "default": 0,
+            "title": "Installedtitleswithhistory",
+            "type": "integer"
+          },
           "items": {
             "default": [],
             "items": {
@@ -4615,6 +4620,47 @@
             ],
             "title": "Detail"
           },
+          "historyCheckedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historycheckedat"
+          },
+          "historyDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historydetail"
+          },
+          "historyOutcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "waiting",
+                  "refused",
+                  "unreachable",
+                  "unexpected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historyoutcome"
+          },
           "outcome": {
             "anyOf": [
               {
@@ -4670,6 +4716,30 @@
             "title": "Firstseenat",
             "type": "string"
           },
+          "historyReadAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historyreadat"
+          },
+          "inCatalogSince": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incatalogsince"
+          },
           "latestVersion": {
             "title": "Latestversion",
             "type": "string"
@@ -4692,6 +4762,17 @@
           "slug": {
             "title": "Slug",
             "type": "string"
+          },
+          "versionBefore": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionbefore"
           },
           "versionChangedAt": {
             "anyOf": [
@@ -4716,6 +4797,129 @@
           "versionChangedAt"
         ],
         "title": "FleetCatalogTitleOut",
+        "type": "object"
+      },
+      "FleetTitleHistoryOut": {
+        "description": "One title's version history as this instance holds it (#838).",
+        "properties": {
+          "historyComplete": {
+            "title": "Historycomplete",
+            "type": "boolean"
+          },
+          "historyDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historydetail"
+          },
+          "historyReadAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historyreadat"
+          },
+          "historySince": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historysince"
+          },
+          "historyThrough": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historythrough"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "versions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FleetVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "historyComplete",
+          "historyDetail",
+          "historyReadAt",
+          "historySince",
+          "historyThrough",
+          "latestVersion",
+          "name",
+          "slug"
+        ],
+        "title": "FleetTitleHistoryOut",
+        "type": "object"
+      },
+      "FleetVersionOut": {
+        "properties": {
+          "commitSha": {
+            "title": "Commitsha",
+            "type": "string"
+          },
+          "previousVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousversion"
+          },
+          "seenAt": {
+            "format": "date-time",
+            "title": "Seenat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commitSha",
+          "seenAt",
+          "version"
+        ],
+        "title": "FleetVersionOut",
         "type": "object"
       },
       "Frequency": {
@@ -13921,6 +14125,92 @@
           }
         },
         "summary": "Refresh Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/{slug}/history": {
+      "get": {
+        "description": "One title's version history as this instance holds it (#838), newest first. Asks\nGitHub nothing: a title never read answers `historyReadAt: null` and no versions.",
+        "operationId": "read_title_history_api_fleet_catalog__slug__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetTitleHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title History",
+        "tags": [
+          "fleet-catalog"
+        ]
+      },
+      "post": {
+        "description": "Read one title's whole version history from Fleet's commits now, with a person waiting.\n\nOne request to the GitHub API per hundred changes to the title's manifest, then the\nmanifest at each change, four at a time: a few seconds for most titles. Any title, on a\nMac here or not. A refusal is a 409 whose `detail` is the sentence (docs/diagnosability.md\nrule 3): the flag is off, a history read is already running, GitHub's allowance for this\naddress is down to the reserve the background leaves, or GitHub could not be read.",
+        "operationId": "read_title_history_now_api_fleet_catalog__slug__history_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetTitleHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title History Now",
         "tags": [
           "fleet-catalog"
         ]

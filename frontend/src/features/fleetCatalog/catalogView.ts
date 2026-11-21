@@ -77,16 +77,33 @@ function sortValue(title: FleetCatalogTitle, key: FleetSortKey): string | number
     case "devicesBehind":
       return title.devicesBehind;
     case "versionChangedAt":
-      return title.versionChangedAt ?? "";
+      return movedAt(title) ?? "";
   }
+}
+
+/**
+ * When the title's latest version arrived, as far as this instance can say (#838): the date the
+ * version history gives Fleet's catalog taking it, else the move this instance saw, else null.
+ */
+export function movedAt(title: FleetCatalogTitle): string | null {
+  return title.inCatalogSince ?? title.versionChangedAt;
+}
+
+export type FleetHistoryStatus = "none" | "ok" | "waiting" | "failed";
+
+/** The version history line under the status: nothing read yet, reading, holding back, or a failure. */
+export function historyStatusOf(state: FleetCatalogState | null): FleetHistoryStatus {
+  if (state === null || state.historyOutcome === null || state.historyCheckedAt === null) return "none";
+  if (state.historyOutcome === "ok") return "ok";
+  return state.historyOutcome === "waiting" ? "waiting" : "failed";
 }
 
 /**
  * A new array, sorted; ties fall back to the name so the order is stable across reloads.
  *
  * By the date the version moved, a title with no date goes last in both directions: its
- * version has not moved while this instance was watching, which is neither the oldest
- * move nor the newest.
+ * version has not moved while this instance was watching and its history is not read, which
+ * is neither the oldest move nor the newest.
  */
 export function sortTitles(
   titles: readonly FleetCatalogTitle[],
@@ -95,8 +112,8 @@ export function sortTitles(
 ): FleetCatalogTitle[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...titles].sort((a, b) => {
-    if (key === "versionChangedAt" && (a.versionChangedAt === null) !== (b.versionChangedAt === null)) {
-      return a.versionChangedAt === null ? 1 : -1;
+    if (key === "versionChangedAt" && (movedAt(a) === null) !== (movedAt(b) === null)) {
+      return movedAt(a) === null ? 1 : -1;
     }
     const left = sortValue(a, key);
     const right = sortValue(b, key);

@@ -638,9 +638,11 @@ docker compose logs -f app
 under Settings › Feature Flags (it ships off), the backend also reads Fleet's maintained-apps
 catalog once a day from Fleet's public repository: at most two requests to
 `api.github.com/repos/fleetdm/fleet` and the changed manifests from
-`raw.githubusercontent.com`, which is one request on a day Fleet changed nothing. Those
-requests name Fleet's files and carry nothing of this instance. With the flag off for every
-organization, none of them is made. What is read and kept, and the licence those files sit
+`raw.githubusercontent.com`, which is one request on a day Fleet changed nothing. In the
+background it also reads the version history of the titles installed here from the same
+repository's commits: one title at a time, two minutes apart, never spending GitHub's last 20
+requests of the hour. Those requests name Fleet's files and carry nothing of this instance.
+With the flag off for every organization, none of them is made. What is read and kept, and the licence those files sit
 under, are in [docs/fleet-catalog.md](docs/fleet-catalog.md).
 
 ---

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   checkFailed,
   emptyState,
+  historyStatusOf,
+  movedAt,
   sortTitles,
   statusOf,
   titleMatches
@@ -20,6 +22,9 @@ function title(overrides: Partial<FleetCatalogTitle> = {}): FleetCatalogTitle {
     deviceCount: 3,
     devicesBehind: 1,
     devicesCurrent: 2,
+    inCatalogSince: null,
+    versionBefore: null,
+    historyReadAt: null,
     ...overrides
   };
 }
@@ -31,6 +36,9 @@ function state(overrides: Partial<FleetCatalogState> = {}): FleetCatalogState {
     outcome: "ok",
     detail: null,
     appCount: 500,
+    historyCheckedAt: null,
+    historyOutcome: null,
+    historyDetail: null,
     ...overrides
   };
 }
@@ -44,6 +52,7 @@ function catalog(overrides: Partial<FleetCatalog> = {}): FleetCatalog {
     total: 1,
     page: 1,
     pageSize: 5000,
+    installedTitlesWithHistory: 0,
     installedTitles: 1,
     ...overrides
   };
@@ -158,5 +167,31 @@ describe("sortTitles", () => {
   it("puts a title whose version has not moved last, in both directions", () => {
     expect(slugs(sortTitles([alpha, beta, gamma], "versionChangedAt", "desc"))).toEqual(["beta", "gamma", "alpha"]);
     expect(slugs(sortTitles([alpha, beta, gamma], "versionChangedAt", "asc"))).toEqual(["gamma", "beta", "alpha"]);
+  });
+
+  it("sorts by the history's date where there is one, which can be older than any move seen here (#838)", () => {
+    const dated = { ...alpha, inCatalogSince: "2026-09-01T09:00:00Z", historyReadAt: "2026-11-15T12:00:00Z" };
+    expect(slugs(sortTitles([dated, beta, gamma], "versionChangedAt", "asc"))).toEqual(["alpha", "gamma", "beta"]);
+  });
+});
+
+describe("the version history (#838)", () => {
+  it("dates the latest version by the history first, then by a move seen here, else not at all", () => {
+    expect(movedAt(title({ inCatalogSince: "2026-09-01T09:00:00Z", versionChangedAt: "2026-11-14T09:00:00Z" }))).toBe(
+      "2026-09-01T09:00:00Z"
+    );
+    expect(movedAt(title({ versionChangedAt: "2026-11-14T09:00:00Z" }))).toBe("2026-11-14T09:00:00Z");
+    expect(movedAt(title())).toBeNull();
+  });
+
+  it("tells no read yet, a read, holding back for GitHub's hour, and a failure apart", () => {
+    const at = "2026-11-21T12:00:00Z";
+    expect(historyStatusOf(null)).toBe("none");
+    expect(historyStatusOf(state())).toBe("none");
+    expect(historyStatusOf(state({ historyCheckedAt: at, historyOutcome: "ok" }))).toBe("ok");
+    expect(historyStatusOf(state({ historyCheckedAt: at, historyOutcome: "waiting" }))).toBe("waiting");
+    for (const outcome of ["refused", "unreachable", "unexpected"] as const) {
+      expect(historyStatusOf(state({ historyCheckedAt: at, historyOutcome: outcome }))).toBe("failed");
+    }
   });
 });
