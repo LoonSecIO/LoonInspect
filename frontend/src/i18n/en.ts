@@ -1652,6 +1652,8 @@ export const en = {
       "When Fleet's catalog took this version: the date of the first commit in Fleet's repository that carried it. Fleet takes versions from Homebrew, so this is usually hours to a day after the vendor's release, never before it.",
     notDated: "Not dated",
     historyToggleHint: "Show or hide this title's version history",
+    sourceLink: "Fleet source ↗",
+    sourceLabel: (name: string) => `Open ${name}'s Fleet source on GitHub (opens in browser)`,
     historyProgress: (read: number, installed: number) =>
       `Version history: ${read} of the ${installed} title${installed === 1 ? "" : "s"} installed here read. The rest are read in the background, one every two minutes or so, most-installed first.`,
     historyFailed: (at: string) => `The last version history read, ${at}, did not finish.`,
