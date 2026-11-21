@@ -3447,3 +3447,9 @@ Open **Daily coverage** beside the daily crawl. A covered miss means the crawl f
 ### AI usage gaps or a growing queue
 
 In Settings → AI select a UTC range that includes the first measured date. Review the reporting-call counts next to the token totals. A provider that omits usage can still return a successful answer. Compare arrivals to completed jobs and cache hits, then look for retries, high queue age, and expired jobs. If calls succeed while the counters stay empty, check the server log for “AI usage could not be saved” and verify the database migration.
+
+### Ollama model selection
+
+On the OpenAI-compatible card in Settings → AI, enter the Ollama endpoint ending in /v1. Existing cards use their pinned model. Choose **Prefer a loaded compatible Ollama model**, enter the model tags in preference order, then preview. The installed list comes from /api/tags. The running list comes from /api/ps. LoonInspect checks the completion capability with /api/show and chooses the first compatible preference, then tries remaining loaded names in alphabetical order. Preview shows the model and reason before sending a test. Save the card to apply the same choice to interactive features and background summaries.
+
+If no compatible model is loaded, load a chat-capable model or explicitly set a fallback on the card. A selected fallback may cause Ollama to load that model. If discovery is unavailable, a configured fallback can still be requested on the same endpoint. Check the URL, reverse proxy routing for /api/ps and /api/show, credentials and consent. The usage view records the concrete model requested and the model reported in the reply.

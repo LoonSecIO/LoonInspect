@@ -1,3 +1,4 @@
+import { previewSelection, type Selection } from "./api";
 import { HistoricalUsage } from "./HistoricalUsage";
 import { InventorySummarySettings } from "@/features/ai/InventorySummaries";
 import { useEffect, useRef, useState } from "react";
@@ -66,7 +67,8 @@ const AI_FLAG = "ai_features";
  * which of the flag, the consent or a saved card is missing.
  */
 export function AISettingsPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const de = locale === "de";
   const canWrite = useHasPermission(PERMISSIONS.SYSTEM_WRITE);
 
   // The one flag state the whole session shares (#402). The route guard in front of this
@@ -80,6 +82,21 @@ export function AISettingsPage() {
   const [provider, setProvider] = useState<Provider>("apple_fm");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [preferLoaded, setPreferLoaded] = useState(false);
+  const [preferences, setPreferences] = useState("");
+  const [fallback, setFallback] = useState("");
+  const [preview, setPreview] = useState<{ identity: string; result: Selection }>();
+  const ollamaPolicy =
+    provider === "openai_compatible" && preferLoaded
+      ? {
+          preferences: preferences
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean),
+          fallback: fallback.trim() || null
+        }
+      : null;
+  const previewIdentity = JSON.stringify([provider, baseUrl, model, ollamaPolicy]);
   const [apiKey, setApiKey] = useState("");
   const [reasoningEffort, setReasoningEffort] = useState<string>("");
   const [prompt, setPrompt] = useState(t.ai.promptDefault);
@@ -213,6 +230,10 @@ export function AISettingsPage() {
     setProvider(next);
     setBaseUrl(kept?.baseUrl ?? defaults.baseUrl);
     setModel(kept?.model ?? defaults.model);
+    setPreferLoaded(Boolean(kept?.ollamaPolicy));
+    setPreferences((kept?.ollamaPolicy?.preferences??[]).join(", "));
+    setFallback(kept?.ollamaPolicy?.fallback??"");
+    setPreview(undefined);
     setApiKey("");
     setReasoningEffort(cardEffort(next, kept, entry.reasoningEffort));
     return true;
@@ -257,6 +278,7 @@ export function AISettingsPage() {
     setConfigNotice(null);
     try {
       const config = await saveConfig(provider, {
+        ollamaPolicy,
         hostReach: entry?.usesHostReach ? "docker_desktop" : "custom",
         baseUrl,
         model,
@@ -357,6 +379,8 @@ export function AISettingsPage() {
     setResult(null);
     try {
       const response = await sendTest({
+        expectedModel: ollamaPolicy ? preview?.result.model ?? undefined : undefined,
+        ollamaPolicy,
         provider,
         hostReach: entry?.usesHostReach ? "docker_desktop" : "custom",
         baseUrl,
@@ -394,7 +418,13 @@ export function AISettingsPage() {
   const cardHelp = (candidate: Provider) =>
     candidate === "openai_compatible" && openaiAway === true ? t.ai.openaiHelpNoLocalDefault : t.ai.providerHelp[candidate];
   const switchesOn = canWrite && flagOn && consent === true;
-  const canSend = switchesOn && !sending && baseUrl.trim() !== "" && model.trim() !== "" && prompt.trim() !== "";
+  const canSend =
+    (!ollamaPolicy || (preview?.identity === previewIdentity && !!preview.result.model)) &&
+    switchesOn &&
+    !sending &&
+    baseUrl.trim() !== "" &&
+    model.trim() !== "" &&
+    prompt.trim() !== "";
   const canLoadModels = switchesOn && !loadingModels && baseUrl.trim() !== "";
   // What the endpoint said it serves, once asked; the card's own suggestions until then.
   const suggestions = loaded && !loaded.error ? loaded.models.map((m) => m.id) : (entry?.models ?? []);
@@ -556,11 +586,103 @@ export function AISettingsPage() {
             <label className="font-medium" htmlFor="ai-model">
               {t.ai.model}
             </label>
-            <Button type="button" variant="outline" size="sm" disabled={!canLoadModels} onClick={() => void handleLoadModels()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canLoadModels}
+              onClick={() => void handleLoadModels()}
+            >
               {loadingModels ? t.ai.loadingModels : t.ai.loadModels}
             </Button>
           </div>
-          <Input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} list="ai-models" spellCheck={false} />
+          {provider === "openai_compatible" && (
+            <div className="space-y-2">
+              <label>
+                {de ? "Modellauswahl" : "Model selection"}{" "}
+                <select
+                  value={preferLoaded ? "loaded" : "pinned"}
+                  onChange={(e) => setPreferLoaded(e.target.value === "loaded")}
+                >
+                  <option value="pinned">{de ? "Festes Modell" : "Pinned model"}</option>
+                  <option value="loaded">
+                    {de ? "Geladenes kompatibles Ollama-Modell bevorzugen" : "Prefer a loaded compatible Ollama model"}
+                  </option>
+                </select>
+              </label>
+              {ollamaPolicy && (
+                <>
+                  <label className="block">
+                    {de ? "Reihenfolge (kommagetrennt)" : "Preference order (comma-separated)"}{" "}
+                    <Input value={preferences} onChange={(e) => setPreferences(e.target.value)} />
+                  </label>
+                  <label className="block">
+                    {de ? "Ersatzmodell (optional)" : "Fallback model (optional)"}{" "}
+                    <Input value={fallback} onChange={(e) => setFallback(e.target.value)} />
+                  </label>
+                  <Button
+                    type="button"
+                    disabled={!switchesOn || !model || !baseUrl}
+                    onClick={async () => {
+                      try {
+                        const result = await previewSelection({
+                          provider,
+                          baseUrl,
+                          model,
+                          ollamaPolicy,
+                          apiKey: apiKey.trim() || undefined
+                        });
+                        setPreview({ identity: previewIdentity, result });
+                        setSendError(null);
+                      } catch (e) {
+                        setSendError(e instanceof Error ? e.message : String(e));
+                        setPreview(undefined);
+                      }
+                    }}
+                  >
+                    {de ? "Auswahl prüfen" : "Preview model selection"}
+                  </Button>
+                  {preview?.identity === previewIdentity && (
+                    <div role="status">
+                      <p>
+                        {de ? "Geladen" : "Loaded"} · {preview.result.loaded.join(", ") || "—"}
+                      </p>
+                      <p>
+                        {de ? "Installiert" : "Installed"} · {preview.result.installed.join(", ") || "—"}
+                      </p>
+                      <p>
+                        {preview.result.model || "—"} ·{" "}
+                        {
+                          (
+                            {
+                              loaded: de ? "Kompatibles geladenes Modell" : "Compatible model in memory",
+                              fallback: de ? "Ausgewähltes Ersatzmodell" : "Selected fallback",
+                              discovery_failed_fallback: de
+                                ? "Abfrage fehlgeschlagen, Ersatzmodell gewählt"
+                                : "Discovery failed, using selected fallback",
+                              discovery_failed: de
+                                ? "Abfrage fehlgeschlagen, kein Ersatzmodell"
+                                : "Discovery failed, no fallback selected",
+                              no_compatible_loaded: de
+                                ? "Kein kompatibles geladenes Modell"
+                                : "No compatible loaded model"
+                            } as Record<string, string>
+                          )[preview.result.reason]
+                        }
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          <Input
+            id="ai-model"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            list="ai-models"
+            spellCheck={false}
+          />
           <datalist id="ai-models">
             {suggestions.map((m) => (
               <option key={m} value={m} />
@@ -583,7 +705,15 @@ export function AISettingsPage() {
             <span className="font-medium">
               {t.ai.apiKey} ({entry.key === "required" ? t.ai.apiKeyRequired : t.ai.apiKeyOptional})
             </span>
-            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="off" />
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setPreview(undefined);
+              }}
+              autoComplete="off"
+            />
             {stored?.hasKey && <span className="block text-xs text-muted-foreground">{t.ai.keySaved}</span>}
           </label>
         )}

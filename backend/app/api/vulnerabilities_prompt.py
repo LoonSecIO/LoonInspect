@@ -52,6 +52,7 @@ from app.core.ai_usage import recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
+from app.core.ollama import select_model, selected
 from app.core.permissions import Permission
 from app.core.vuln_library import earned_corpus
 from app.core.vuln_read import NO_ANSWER
@@ -166,6 +167,19 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> VulnProm
     provider, model, api_key = Provider(config.provider), config.model, config.api_key_encrypted
     reach = HostReach(config.host_reach) if config.host_reach else None
     wire, base_url, destination, host_header = await judged_endpoint(provider, reach, config.base_url, carries_key=bool(api_key))
+    model = selected(
+        await select_model(
+            db,
+            provider=provider,
+            pinned=config.model,
+            policy=config.ollama_policy,
+            base=base_url,
+            destination=destination,
+            host=host_header,
+            key=config.api_key_encrypted,
+            transport=transport_override,
+        )
+    )
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:

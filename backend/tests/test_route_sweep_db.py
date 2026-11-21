@@ -114,6 +114,7 @@ BODIES: dict[str, dict] = {
     "POST /api/destinations": {"name": "route sweep", "url": "https://siem.sweep.example/hook"},
     "PUT /api/settings/patching-policy": {"statement": "Patch within thirty days."},
     "PUT /api/settings/mfa-policy": {"mfaRequired": "off"},
+    "POST /api/system/ai/ollama/preview": {**MODEL, "model": "qwen", "ollamaPolicy": {"preferences": ["gemma"]}},
     "POST /api/system/ai/models": MODEL,
     "POST /api/system/ai/test": {**MODEL, "model": "m", "prompt": "hi"},
     "PUT /api/system/ai/configs/{provider}": {"baseUrl": MODEL["baseUrl"], "model": "m"},
@@ -148,6 +149,7 @@ STOPS = {
     ],
     "AI features are off and no provider is saved": [
         "GET /api/system/ai/usage",
+        "POST /api/system/ai/ollama/preview",
         *("GET /api/system/ai/providers", "GET /api/system/ai/host", "POST /api/system/ai/models", "POST /api/system/ai/test"),
         *("PUT /api/system/ai/configs/{provider}", "DELETE /api/system/ai/configs/{provider}"),
         *("POST /api/system/data-sharing/exclusion-ranking", "POST /api/changes/prompt"),

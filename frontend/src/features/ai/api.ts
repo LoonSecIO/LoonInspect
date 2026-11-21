@@ -39,6 +39,8 @@ export interface HostDetection {
 }
 
 export interface TestRequest {
+  expectedModel?: string;
+  ollamaPolicy?: OllamaPolicy | null;
   provider: Provider;
   hostReach?: HostReach;
   baseUrl: string;
@@ -93,6 +95,7 @@ export interface ModelsResponse {
 /** A card's settings as saved on this server — what the Changes Prompt bar dials. The
  *  key never comes back; `hasKey` is the only thing the page learns about it. */
 export interface SavedConfig {
+  ollamaPolicy?: OllamaPolicy | null;
   provider: Provider;
   hostReach: HostReach | null;
   baseUrl: string;
@@ -110,6 +113,7 @@ export interface SavedConfigsResponse {
 
 /** `apiKey` omitted or null keeps the stored key; `clearKey` removes it. */
 export interface SaveConfigRequest {
+  ollamaPolicy?: OllamaPolicy | null;
   hostReach?: HostReach | null;
   baseUrl: string;
   model: string;
@@ -155,4 +159,18 @@ export function saveConfig(provider: Provider, body: SaveConfigRequest): Promise
 
 export function deleteConfig(provider: Provider): Promise<void> {
   return apiRequest<void>(`/system/ai/configs/${provider}`, { method: "DELETE" });
+}
+
+export interface OllamaPolicy {
+  preferences: string[];
+  fallback: string | null;
+}
+export interface Selection {
+  model: string | null;
+  reason: string;
+  loaded: string[];
+  installed: string[];
+}
+export function previewSelection(body: ModelsRequest & { model: string; ollamaPolicy: OllamaPolicy }) {
+  return apiRequest<Selection>("/system/ai/ollama/preview", { method: "POST", json: body });
 }

@@ -657,3 +657,58 @@ async def test_extension_attribute_change_is_briefed_and_follows_the_change_log_
         await db.rollback()
         await db.execute(delete(ChangePolicy))
         await db.commit()
+
+
+async def test_loaded_model_change_partitions_the_summary_cache(summary_db):
+    import json
+
+    from app.models.schema import AIProviderConfig, AIUsageDaily, InventorySummaryJob, InventorySummarySettings
+    from app.summaries.service import collect, now, work_one
+
+    db, tenant = summary_db
+    settings = await db.scalar(select(InventorySummarySettings))
+    settings.provider = "openai_compatible"
+    db.add(
+        AIProviderConfig(
+            provider=settings.provider,
+            base_url="http://127.0.0.1:11434/v1",
+            model="qwen",
+            ollama_policy={"preferences": ["gemma", "qwen"], "fallback": None},
+            updated_at=now(),
+        )
+    )
+    await db.commit()
+    for device in ("1", "2", "3"):
+        await emit(db, snapshot(), device=device)
+    await collect(db)
+    for device in ("1", "2", "3"):
+        await emit(db, snapshot(version="2"), device=device)
+    await collect(db)
+    sent = []
+    loaded = "gemma"
+
+    def reply(req):
+        if req.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": [{"name": loaded, "digest": "digest-" + loaded}]})
+        if req.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["completion"]})
+        assert req.url.path == "/v1/chat/completions"
+        name = json.loads(req.content)["model"]
+        sent.append(name)
+        return httpx.Response(
+            200, json={"model": name + "-reported", "choices": [{"message": {"content": "Chrome updated to version 2."}}]}
+        )
+
+    for next_model in ("gemma", "qwen", "gemma"):
+        loaded = next_model
+        assert await work_one(tenant, transport=httpx.MockTransport(reply))
+    await db.rollback()
+    assert sent == ["gemma", "qwen"]
+    jobs = (await db.scalars(select(InventorySummaryJob).order_by(InventorySummaryJob.created_at))).all()
+    assert [(j.status, j.requested_model, j.reported_model) for j in jobs] == [
+        ("completed", "gemma", "gemma-reported"),
+        ("completed", "qwen", "qwen-reported"),
+        ("cached", "gemma", "gemma-reported"),
+    ]
+    calls = (await db.execute(select(AIUsageDaily.requested, AIUsageDaily.reported).where(AIUsageDaily.kind == "call"))).all()
+    assert set(calls) == {("gemma", "gemma-reported"), ("qwen", "qwen-reported")}

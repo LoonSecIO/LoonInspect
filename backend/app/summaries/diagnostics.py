@@ -6,6 +6,7 @@ from pathlib import Path
 from app.api.ai import APPLE_FM_SYSTEM_ONLY
 
 REASONS = {
+    "ollama_model_unavailable": "Load a compatible chat model in Ollama or choose a fallback in Settings > AI.",
     "expired": "The one-hour deadline elapsed. Check queue age and provider latency on Overview.",
     "capacity": "The summary backlog is full. Check queue age, rate limits and provider capacity.",
     "disabled": "Inventory summaries or the AI master flag were disabled. Check Settings > AI and Feature Flags.",

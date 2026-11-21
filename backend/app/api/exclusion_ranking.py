@@ -23,6 +23,7 @@ from app.core.database import get_db
 from app.core.egress import BlockedBaseUrl, destination_for_log
 from app.core.exclusion_candidates import build_candidates
 from app.core.local_inference import LOCAL_ONLY, pinned_address
+from app.core.ollama import select_model, selected
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
 from app.schemas.system import ExclusionCandidatesOut
@@ -111,8 +112,22 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         prompt = build_prompt([group.model_dump() for group in candidates.groups])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    model = selected(
+        await select_model(
+            db,
+            provider=payload.provider,
+            pinned=config.model,
+            policy=config.ollama_policy,
+            base=base_url,
+            destination=destination,
+            host=host_header,
+            key=config.api_key_encrypted,
+            transport=transport_override,
+            connect_ip=address,
+        )
+    )
     try:
-        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=config.model)
+        await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     started = time.monotonic()
@@ -120,9 +135,9 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         result = await complete(
             wire,
             CompletionRequest(
-                record_usage=recorder(db, FEATURE, payload.provider.value, config.model),
+                record_usage=recorder(db, FEATURE, payload.provider.value, model),
                 base_url=base_url,
-                model=config.model,
+                model=model,
                 prompt=prompt,
                 system=SYSTEM,
                 serial=payload.provider is Provider.apple_fm,
@@ -173,5 +188,5 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         candidates=candidates.model_copy(update={"groups": [group for group, _ in pairs]}),
         assessments=[RankedGroup(prefix=group.prefix, classification=label) for group, label in pairs],
         destination=destination,
-        model=config.model,
+        model=model,
     )

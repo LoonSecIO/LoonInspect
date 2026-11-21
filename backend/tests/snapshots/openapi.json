@@ -42,6 +42,16 @@
             "title": "Model",
             "type": "string"
           },
+          "ollamaPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reasoningEffort": {
             "anyOf": [
               {
@@ -91,6 +101,16 @@
           "model": {
             "title": "Model",
             "type": "string"
+          },
+          "ollamaPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "provider": {
             "$ref": "#/components/schemas/Provider"
@@ -315,6 +335,19 @@
             "title": "Baseurl",
             "type": "string"
           },
+          "expectedModel": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedmodel"
+          },
           "hostReach": {
             "anyOf": [
               {
@@ -337,6 +370,16 @@
             "minLength": 1,
             "title": "Model",
             "type": "string"
+          },
+          "ollamaPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "prompt": {
             "maxLength": 4000,
@@ -6737,6 +6780,92 @@
           "label"
         ],
         "title": "ObservedEntryOut",
+        "type": "object"
+      },
+      "OllamaPolicy": {
+        "properties": {
+          "fallback": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback"
+          },
+          "preferences": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Preferences",
+            "type": "array"
+          }
+        },
+        "title": "OllamaPolicy",
+        "type": "object"
+      },
+      "OllamaPreviewIn": {
+        "properties": {
+          "apiKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "maxLength": 512,
+            "title": "Apikey"
+          },
+          "baseUrl": {
+            "maxLength": 512,
+            "title": "Baseurl",
+            "type": "string"
+          },
+          "hostReach": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostReach"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "ollamaPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          }
+        },
+        "required": [
+          "baseUrl",
+          "model",
+          "provider"
+        ],
+        "title": "OllamaPreviewIn",
         "type": "object"
       },
       "Options": {
@@ -16561,6 +16690,45 @@
           }
         },
         "summary": "List Endpoint Models",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/system/ai/ollama/preview": {
+      "post": {
+        "operationId": "preview_ollama_api_system_ai_ollama_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaPreviewIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Ollama",
         "tags": [
           "ai"
         ]

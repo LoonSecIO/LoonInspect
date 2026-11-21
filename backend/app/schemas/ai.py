@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -17,12 +17,22 @@ ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
 API_KEY_MAX_LENGTH = 512
 
 
+ModelName = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class OllamaPolicy(BaseModel):
+    preferences: list[ModelName] = Field(default_factory=list, max_length=32)
+    fallback: ModelName | None = None
+
+
 class AITestIn(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     provider: Provider
     # Omitted means the card's default: docker_desktop for a host-local entry,
     # custom otherwise. Reserved values are refused by name (400).
+    expected_model: ModelName | None = None
+    ollama_policy: OllamaPolicy | None = None
     host_reach: HostReach | None = None
     base_url: str = Field(max_length=512)
     model: str = Field(min_length=1, max_length=200)
@@ -65,6 +75,11 @@ class AIModelsIn(BaseModel):
     host_reach: HostReach | None = None
     base_url: str = Field(max_length=512)
     api_key: str | None = Field(default=None, json_schema_extra={"maxLength": API_KEY_MAX_LENGTH})
+
+
+class OllamaPreviewIn(AIModelsIn):
+    model: ModelName
+    ollama_policy: OllamaPolicy | None = None
 
 
 class AIModelOut(BaseModel):
@@ -131,6 +146,7 @@ class AIConfigIn(BaseModel):
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
+    ollama_policy: OllamaPolicy | None = None
     host_reach: HostReach | None = None
     base_url: str = Field(max_length=512)
     model: str = Field(min_length=1, max_length=200)
@@ -145,6 +161,7 @@ class AIConfigOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     provider: Provider
+    ollama_policy: OllamaPolicy | None = None
     host_reach: HostReach | None
     base_url: str
     model: str
