@@ -557,11 +557,17 @@ export const de: Translations = {
     title: "Support",
     description:
       "Zwei Stellen, an denen Sie Hilfe zu LoonInspect bekommen — und eine Sache, die an keine von beiden gehört. Nichts hier erstellt ein Ticket für Sie: LoonInspect wird selbst gehostet, und einen Bericht schreiben und senden Sie selbst.",
+    macApp: "LoonInspect.app",
+    appVersion: "App-Version",
+    appBuild: "App-Build",
+    backendBuild: "Backend-Build",
+    notRecorded: "Nicht erfasst",
+    appIdentityUnavailable: "Dieses Paket enthält keine vollständigen App-Buildangaben. Öffnen Sie LoonInspect → Über LoonInspect und fügen Sie Ihrem Bericht App-Version und App-Build sowie den Backend-Build bei.",
     buildHeading: "Beginnen Sie mit dem laufenden Build",
     buildHelp:
       "Der Build-String dieser Instanz. Fügen Sie ihn in alles ein, was Sie schreiben — er ist das Erste, wonach jede Person fragen muss, die einen Bericht liest, und er entscheidet zwischen einer Antwort und einer Rückfrage.",
     buildUnavailable:
-      "Noch nicht gelesen. Bleibt das Feld leer, konnte dieser Browser das Backend nicht erreichen — schreiben Sie das in Ihren Bericht und nennen Sie stattdessen das deployte Image-Tag.",
+      "Noch nicht gelesen. Prüfen Sie, ob LoonInspect läuft, und öffnen Sie Support erneut. Bleibt die Anzeige leer, geben Sie im Bericht die Version aus Über LoonInspect oder den Tag Ihres Container-Images an.",
     copy: "Kopieren",
     copied: "Kopiert",
     siteHeading: "Website und Field Notes",

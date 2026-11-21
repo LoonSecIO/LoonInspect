@@ -538,3 +538,13 @@ socket fallback under `/tmp` (a changed `HOME` does not move Application Support
 path could not be produced; the code is reviewed, not exercised); a file download from the
 window; the first-launch-cut-short cases the spike ran; anything longer than a few minutes of
 running; the backend suite (nothing under `backend/` changed).
+
+## Identifying the app in a support report
+
+The sidebar and My Account show the Mac app release. Settings → Support lists **App version**,
+**App build**, and **Backend build** separately; Copy includes all three. App version and build
+are the values in LoonInspect → About LoonInspect. The backend's date-plus-commit stamp remains
+available for update checks and diagnostics. This information is available after sign-in.
+
+An older package can report **Not recorded** for its app fields. Read those values in About
+LoonInspect and include them with the backend build; a date-plus-commit stamp is not an app release.
