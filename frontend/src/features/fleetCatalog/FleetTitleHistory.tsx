@@ -73,28 +73,29 @@ export function FleetTitleHistory({
   if (history === null) return <p className="text-sm text-muted-foreground">{t.fleetCatalog.loading}</p>;
 
   const read = history.historyReadAt !== null;
+  // Status, then the button under it, at most max-w-2xl wide: the panel is as wide as the
+  // catalog table, which scrolls sideways in a narrow window, and a button at the panel's right
+  // edge sat in the part scrolled out of view.
   return (
-    <div className="space-y-3 text-sm" data-testid={`fleet-history-${slug}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1" aria-live="polite">
-          <p>
-            {!read
-              ? t.fleetCatalog.historyNotRead
-              : history.historySince === null
-                ? t.fleetCatalog.historyReadNothing(day(history.historyReadAt))
-                : history.historyComplete
-                  ? t.fleetCatalog.historyReadWhole(day(history.historyReadAt), day(history.historySince))
-                  : t.fleetCatalog.historyReadFrom(day(history.historyReadAt), day(history.historySince))}
-          </p>
-          {history.historyDetail && <p className="text-muted-foreground">{history.historyDetail}</p>}
-          <p className="text-xs text-muted-foreground">{t.fleetCatalog.historyDatesNote}</p>
-        </div>
-        {canRead && (
-          <Button size="sm" variant="outline" onClick={handleRead} disabled={reading}>
-            {reading ? t.fleetCatalog.historyReading : read ? t.fleetCatalog.historyReadAgain : t.fleetCatalog.historyRead}
-          </Button>
-        )}
+    <div className="max-w-2xl space-y-3 text-sm" data-testid={`fleet-history-${slug}`}>
+      <div className="space-y-1" aria-live="polite">
+        <p>
+          {!read
+            ? t.fleetCatalog.historyNotRead
+            : history.historySince === null
+              ? t.fleetCatalog.historyReadNothing(day(history.historyReadAt))
+              : history.historyComplete
+                ? t.fleetCatalog.historyReadWhole(day(history.historyReadAt), day(history.historySince))
+                : t.fleetCatalog.historyReadFrom(day(history.historyReadAt), day(history.historySince))}
+        </p>
+        {history.historyDetail && <p className="text-muted-foreground">{history.historyDetail}</p>}
+        <p className="text-xs text-muted-foreground">{t.fleetCatalog.historyDatesNote}</p>
       </div>
+      {canRead && (
+        <Button size="sm" variant="outline" onClick={handleRead} disabled={reading}>
+          {reading ? t.fleetCatalog.historyReading : read ? t.fleetCatalog.historyReadAgain : t.fleetCatalog.historyRead}
+        </Button>
+      )}
       {readError && (
         <p role="alert" className="text-destructive">
           {readError}
