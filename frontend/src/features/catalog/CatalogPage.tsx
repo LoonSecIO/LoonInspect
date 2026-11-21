@@ -155,6 +155,7 @@ export function CatalogPage() {
         <input
           className={`${inputClasses} min-w-[240px] flex-1`}
           placeholder={t.catalog.searchPlaceholder}
+          data-page-search=""
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />

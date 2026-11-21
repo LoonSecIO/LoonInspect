@@ -152,6 +152,8 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
           </label>
           <input
             id={boxId}
+            data-page-search={asks ? undefined : ""}
+            data-page-ai-search={asks ? "" : undefined}
             className={`${inputClasses} w-full`}
             placeholder={asks ? copy.aiPlaceholder : copy.searchPlaceholder}
             value={term}
@@ -165,6 +167,7 @@ export function SearchBox({ term, onTerm, onMode, onApply, shown }: SearchBoxPro
           <label className="flex items-center gap-2 pb-2 text-sm">
             <input
               type="checkbox"
+              data-page-ai-toggle=""
               checked={on}
               onChange={(event) => {
                 setOn(event.target.checked);

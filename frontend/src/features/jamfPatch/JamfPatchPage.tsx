@@ -263,6 +263,7 @@ export function JamfPatchPage() {
         <input
           className={`${inputClasses} min-w-[240px] flex-1`}
           placeholder={t.jamfPatch.searchPlaceholder}
+          data-page-search=""
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />

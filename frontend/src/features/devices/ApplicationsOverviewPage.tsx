@@ -75,7 +75,7 @@ export function ApplicationsOverviewPage() {
 
   return (
     <section className="space-y-4">
-      <Input placeholder={t.applications.searchPlaceholder} value={draft} onChange={(event) => setDraft(event.target.value)} className="max-w-sm" />
+      <Input data-page-search="" placeholder={t.applications.searchPlaceholder} value={draft} onChange={(event) => setDraft(event.target.value)} className="max-w-sm" />
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
