@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
@@ -6,13 +7,15 @@ import { PERMISSIONS } from "@/features/auth/types";
 import { getFleetCatalog, refreshFleetCatalog } from "@/features/fleetCatalog/api";
 import {
   emptyState,
+  historyStatusOf,
   sortTitles,
   statusOf,
   titleMatches,
   type FleetSortKey,
   type SortDir
 } from "@/features/fleetCatalog/catalogView";
-import type { FleetCatalog } from "@/features/fleetCatalog/types";
+import { FleetTitleHistory } from "@/features/fleetCatalog/FleetTitleHistory";
+import type { FleetCatalog, FleetCatalogTitle } from "@/features/fleetCatalog/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses =
@@ -30,8 +33,9 @@ function when(value: string | null): string {
  * latest version beside what this organization has installed.
  *
  * The route is behind `RequireFlag`, so this page is only drawn while the flag is on. It
- * reads what the instance holds and never makes the instance ask GitHub; Check now is the
- * one control that does, and only for an account that may sync a catalog.
+ * reads what the instance holds and never makes the instance ask GitHub; Check now and a
+ * title's Read history (#838) are the controls that do, and only for an account that may sync
+ * a catalog. A title's row opens its version history.
  */
 export function FleetCatalogPage() {
   const { t } = useLocale();
@@ -49,6 +53,39 @@ export function FleetCatalogPage() {
   const [installedOnly, setInstalledOnly] = useState(true);
   const [sortKey, setSortKey] = useState<FleetSortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // The titles whose version history is open under their row.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+
+  function toggleHistory(slug: string) {
+    setOpen((was) => {
+      const next = new Set(was);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  }
+
+  /** The last column: when the latest version arrived. The history's date when it has one (when
+   *  Fleet's catalog took it), else the move this instance saw, else that there is neither yet. */
+  function arrived(title: FleetCatalogTitle) {
+    if (title.inCatalogSince !== null) {
+      return (
+        <span title={t.fleetCatalog.inCatalogSinceHint}>
+          {title.versionBefore !== null
+            ? t.fleetCatalog.movedFrom(when(title.inCatalogSince), title.versionBefore)
+            : t.fleetCatalog.sinceFirstListed(when(title.inCatalogSince))}
+        </span>
+      );
+    }
+    if (title.versionChangedAt !== null) {
+      return t.fleetCatalog.movedFrom(when(title.versionChangedAt), title.previousVersion ?? "");
+    }
+    return (
+      <span className="text-muted-foreground" title={t.fleetCatalog.notMovedHint}>
+        {title.historyReadAt === null ? t.fleetCatalog.notMoved : t.fleetCatalog.notDated}
+      </span>
+    );
+  }
 
   /** The one read of the list, held against the toggle (the server filters on it) and the
    *  dictionary (the failure line is written in it), so either one moving re-reads. `live`
@@ -145,6 +182,7 @@ export function FleetCatalogPage() {
 
   const state = catalog?.state ?? null;
   const status = statusOf(state);
+  const historyStatus = historyStatusOf(state);
 
   function sortableHeader(key: FleetSortKey, label: string) {
     const indicator = key !== sortKey ? "" : sortDir === "asc" ? " ▲" : " ▼";
@@ -199,6 +237,22 @@ export function FleetCatalogPage() {
                   : t.fleetCatalog.statusFailedNothingHeld}
               </p>
             </>
+          )}
+          {/* The version history (#838): how many installed titles it has reached, and, when
+              the last read held back or failed, the server's sentence for why. */}
+          {status !== "never" && catalog.installedTitles > 0 && (
+            <p className="mt-2 text-muted-foreground">
+              {t.fleetCatalog.historyProgress(catalog.installedTitlesWithHistory, catalog.installedTitles)}
+            </p>
+          )}
+          {historyStatus === "waiting" && state?.historyDetail && <p className="mt-1">{state.historyDetail}</p>}
+          {historyStatus === "failed" && state !== null && (
+            <p className="mt-1">
+              <span className="font-medium text-destructive">
+                {t.fleetCatalog.historyFailed(when(state.historyCheckedAt))}
+              </span>{" "}
+              {state.historyDetail}
+            </p>
           )}
         </div>
       )}
@@ -255,35 +309,53 @@ export function FleetCatalogPage() {
             {!loading &&
               !error &&
               visible.map((title) => (
-                <tr key={title.slug} className="border-b last:border-0">
-                  <td className="px-4 py-2 font-medium">{title.name}</td>
-                  <td className="px-4 py-2">{title.bundleId}</td>
-                  <td className="px-4 py-2 tabular-nums">{title.latestVersion}</td>
-                  <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
-                    {title.deviceCount}
-                  </td>
-                  {/* A title on no Mac has nobody behind it and nobody current: a dash, not a
-                      zero that would read as "every Mac is up to date". */}
-                  <td className="px-4 py-2 tabular-nums">
-                    {title.deviceCount === 0 ? (
-                      <span className="text-muted-foreground">-</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        {title.devicesBehind > 0 && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d03b3b]" />}
-                        {title.devicesBehind}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    {title.versionChangedAt === null ? (
-                      <span className="text-muted-foreground" title={t.fleetCatalog.notMovedHint}>
-                        {t.fleetCatalog.notMoved}
-                      </span>
-                    ) : (
-                      t.fleetCatalog.movedFrom(when(title.versionChangedAt), title.previousVersion ?? "")
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={title.slug}>
+                  <tr className={open.has(title.slug) ? "" : "border-b last:border-0"}>
+                    <td className="px-4 py-2 font-medium">
+                      <button
+                        type="button"
+                        className="text-left hover:underline"
+                        aria-expanded={open.has(title.slug)}
+                        title={t.fleetCatalog.historyToggleHint}
+                        onClick={() => toggleHistory(title.slug)}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          {open.has(title.slug) ? (
+                            <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0" />
+                          ) : (
+                            <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
+                          )}
+                          {title.name}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-2">{title.bundleId}</td>
+                    <td className="px-4 py-2 tabular-nums">{title.latestVersion}</td>
+                    <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
+                      {title.deviceCount}
+                    </td>
+                    {/* A title on no Mac has nobody behind it and nobody current: a dash, not a
+                        zero that would read as "every Mac is up to date". */}
+                    <td className="px-4 py-2 tabular-nums">
+                      {title.deviceCount === 0 ? (
+                        <span className="text-muted-foreground">-</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          {title.devicesBehind > 0 && <span className="h-2 w-2 shrink-0 rounded-full bg-[#d03b3b]" />}
+                          {title.devicesBehind}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">{arrived(title)}</td>
+                  </tr>
+                  {open.has(title.slug) && (
+                    <tr className="border-b bg-muted/20 last:border-0">
+                      <td className="px-4 py-3" colSpan={COLUMNS}>
+                        <FleetTitleHistory slug={title.slug} canRead={canCheck} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
           </tbody>
         </table>

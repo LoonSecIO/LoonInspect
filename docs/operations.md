@@ -777,7 +777,9 @@ catalog sync, the sign-in cache renewals, the daily data-sharing exchange, the u
 at moments drawn afresh less than a day apart ([`troubleshooting.md`](troubleshooting.md)
 §10), and the daily check of Fleet's
 catalog where its flag is on ([`fleet-catalog.md`](fleet-catalog.md);
-**Check now** on that tab still works in a web-only process). So what a
+**Check now** on that tab still works in a web-only process). It also stops the two loops
+that start beside them: inventory summaries, and the Fleet catalog's version history
+(**Read history** on a title still works). So what a
 web-only process *queues* — a re-emit's events, a redriven dead letter — is delivered by
 the process that still has the scheduler, not by it; with no such process running, the
 queue simply grows.

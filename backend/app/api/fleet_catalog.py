@@ -1,13 +1,15 @@
 """Devices > Applications > Fleet catalog: Fleet's maintained Mac apps beside what this
 organization has installed (#794).
 
-Two routes. The read joins the global catalogue (`app.core.fleet_catalog`) to this
+Four routes. The read joins the global catalogue (`app.core.fleet_catalog`) to this
 organization's installed apps by bundle identifier and counts Macs; it asks GitHub nothing.
 The refresh is a person's check, with the same permission as Jamf's catalogue sync because
-it is the same kind of act: an outbound read of a public catalogue.
+it is the same kind of act: an outbound read of a public catalogue. A title's history
+(#838) is read the same two ways: what the instance holds, and a person's read of it from
+Fleet's commits (`app.core.fleet_history`), with the refresh's permission for its reason.
 
-The flag decides both. Off, the read answers `enabled: false` with no titles and the
-refresh is refused in words, so an organization that never asked for this reads nothing
+The flag decides all four. Off, the read answers `enabled: false` with no titles and the
+other three are refused in words, so an organization that never asked for this reads nothing
 another organization's flag had fetched.
 """
 
@@ -15,18 +17,24 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import String, column, distinct, func, select, values
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import fleet_catalog
+from app.core import fleet_catalog, fleet_history
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
 from app.core.permissions import Permission
 from app.mdm.patch.requirements import compare_versions
-from app.models.schema import Device, FleetCatalogState, FleetMaintainedApp, InstalledApp
-from app.schemas.fleet_catalog import FleetCatalogOut, FleetCatalogStateOut, FleetCatalogTitleOut
+from app.models.schema import Device, FleetAppVersion, FleetCatalogState, FleetMaintainedApp, InstalledApp
+from app.schemas.fleet_catalog import (
+    FleetCatalogOut,
+    FleetCatalogStateOut,
+    FleetCatalogTitleOut,
+    FleetTitleHistoryOut,
+    FleetVersionOut,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +104,17 @@ async def device_counts(db: AsyncSession, titles: list[FleetMaintainedApp]) -> d
     return {title.slug: (int(per_bundle.get(title.bundle_id, 0)), int(behind.get(title.slug, 0))) for title in titles}
 
 
+async def latest_since(db: AsyncSession, titles: list[FleetMaintainedApp]) -> dict[str, FleetAppVersion]:
+    """slug -> the version history's row for the title's latest version (#838): when Fleet's
+    catalog first carried it, and the version it replaced. Only for titles whose history
+    holds a date for their latest version. One statement for the page."""
+    latest = {title.slug: title.latest_version for title in titles if title.history_read_at is not None}
+    if not latest:
+        return {}
+    rows = (await db.execute(select(FleetAppVersion).where(FleetAppVersion.slug.in_(latest)))).scalars().all()
+    return {row.slug: row for row in rows if latest[row.slug] == row.version}
+
+
 @router.get("", response_model=FleetCatalogOut, dependencies=[Depends(require(Permission.APP_READ))])
 async def read_catalog(
     db: AsyncSession = Depends(get_db),
@@ -120,6 +139,7 @@ async def read_catalog(
     titles = list((await db.execute(select(FleetMaintainedApp))).scalars().all())
     counts = await device_counts(db, titles)
     installed_titles = sum(1 for title in titles if counts[title.slug][0] > 0)
+    installed_with_history = sum(1 for title in titles if counts[title.slug][0] > 0 and title.history_read_at is not None)
 
     needle = (q or "").strip().casefold()
     shown = [
@@ -136,9 +156,12 @@ async def read_catalog(
     shown.sort(key=lambda title: (title.name.casefold(), title.slug))
     start = (page - 1) * page_size
 
+    page_titles = shown[start : start + page_size]
+    since = await latest_since(db, page_titles)
     items = []
-    for title in shown[start : start + page_size]:
+    for title in page_titles:
         device_count, devices_behind = counts[title.slug]
+        dated = since.get(title.slug)
         items.append(
             FleetCatalogTitleOut(
                 slug=title.slug,
@@ -151,6 +174,9 @@ async def read_catalog(
                 device_count=device_count,
                 devices_behind=devices_behind,
                 devices_current=device_count - devices_behind,
+                in_catalog_since=dated.seen_at if dated is not None else None,
+                version_before=dated.previous_version if dated is not None else None,
+                history_read_at=title.history_read_at,
             )
         )
     return FleetCatalogOut(
@@ -162,6 +188,7 @@ async def read_catalog(
         page=page,
         page_size=page_size,
         installed_titles=installed_titles,
+        installed_titles_with_history=installed_with_history,
     )
 
 
@@ -200,3 +227,92 @@ async def refresh_catalog(db: AsyncSession = Depends(get_db)) -> FleetCatalogSta
     if failed:
         raise HTTPException(status_code=409, detail=state.detail)
     return FleetCatalogStateOut.model_validate(state)
+
+
+# Fleet's directory name for a title, as `app.core.fleet_catalog` admits it into a URL path.
+_SLUG = Path(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _not_held(slug: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail=(
+            f"Fleet's catalog, as this instance last read it, holds no Mac title {slug}. Check now reads it "
+            "again; a title Fleet stopped listing is removed with its history."
+        ),
+    )
+
+
+async def _history_out(db: AsyncSession, title: FleetMaintainedApp) -> FleetTitleHistoryOut:
+    return FleetTitleHistoryOut(
+        slug=title.slug,
+        name=title.name,
+        latest_version=title.latest_version,
+        history_read_at=title.history_read_at,
+        history_since=title.history_since,
+        history_through=title.history_through,
+        history_complete=title.history_complete,
+        history_detail=title.history_detail,
+        versions=[FleetVersionOut.model_validate(row) for row in await fleet_history.versions_of(db, title.slug)],
+    )
+
+
+@router.get(
+    "/{slug}/history",
+    response_model=FleetTitleHistoryOut,
+    dependencies=[Depends(require(Permission.APP_READ))],
+)
+async def read_title_history(slug: str = _SLUG, db: AsyncSession = Depends(get_db)) -> FleetTitleHistoryOut:
+    """One title's version history as this instance holds it (#838), newest first. Asks
+    GitHub nothing: a title never read answers `historyReadAt: null` and no versions."""
+    if not await fleet_catalog.enabled(db):
+        raise HTTPException(status_code=409, detail=fleet_catalog.FLAG_OFF)
+    title = await db.get(FleetMaintainedApp, slug)
+    if title is None:
+        raise _not_held(slug)
+    return await _history_out(db, title)
+
+
+@router.post(
+    "/{slug}/history",
+    response_model=FleetTitleHistoryOut,
+    # The refresh's permission, for the refresh's reason: an outbound read of a public
+    # repository that a read-only role may not fire in a loop.
+    dependencies=[Depends(require(Permission.PATCH_CATALOG_SYNC))],
+)
+async def read_title_history_now(slug: str = _SLUG, db: AsyncSession = Depends(get_db)) -> FleetTitleHistoryOut:
+    """Read one title's whole version history from Fleet's commits now, with a person waiting.
+
+    One request to the GitHub API per hundred changes to the title's manifest, then the
+    manifest at each change, four at a time: a few seconds for most titles. Any title, on a
+    Mac here or not. A refusal is a 409 whose `detail` is the sentence (docs/diagnosability.md
+    rule 3): the flag is off, a history read is already running, GitHub's allowance for this
+    address is down to the reserve the background leaves, or GitHub could not be read.
+    """
+    if not await fleet_catalog.enabled(db):
+        raise HTTPException(status_code=409, detail=fleet_catalog.FLAG_OFF)
+    if await db.get(FleetMaintainedApp, slug) is None:
+        raise _not_held(slug)
+    try:
+        title = await fleet_history.read_now(db, slug)
+    except fleet_history.HistoryBusy as exc:
+        raise HTTPException(status_code=409, detail=fleet_history.BUSY) from exc
+    except fleet_history.HistoryFailed as failed:
+        audit(
+            AuditAction.FLEET_CATALOG_HISTORY_READ,
+            outcome="failure",
+            target_type="fleet_catalog",
+            target_id=slug,
+            result=failed.outcome,
+        )
+        raise HTTPException(status_code=409, detail=failed.detail) from failed
+    out = await _history_out(db, title)
+    audit(
+        AuditAction.FLEET_CATALOG_HISTORY_READ,
+        outcome="success",
+        target_type="fleet_catalog",
+        target_id=slug,
+        result=fleet_history.OUTCOME_OK,
+        versions=len(out.versions),
+    )
+    return out

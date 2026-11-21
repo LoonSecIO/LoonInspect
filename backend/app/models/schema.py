@@ -719,6 +719,38 @@ class FleetMaintainedApp(Base):
     # same file, which is how a check reads only the manifests that changed.
     manifest_sha: Mapped[str] = mapped_column(String(40))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # The version history read from Fleet's commits (#838, `app.core.fleet_history`): when
+    # this container last read it (NULL: never), the oldest and newest change the reads reached, whether
+    # they reached the title's first change, and a sentence when the last read left something
+    # undated or could not be read. The versions themselves are `fleet_app_versions`.
+    history_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    history_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The newest change the reads reached and its date: where a re-read after a move starts.
+    history_through: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    history_last_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    history_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    history_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class FleetAppVersion(Base):
+    """One version of a Fleet title, and when Fleet's catalog first carried it (#838).
+
+    Read from Fleet's repository: `seen_at` is the date GitHub records for the first commit
+    whose manifest carried the version, and `commit_sha` is that commit. A version is dated
+    only where the commits show its arrival: replacing another version, or the title's first
+    change in Fleet's history (docs/fleet-catalog.md). These are Fleet's dates, not a vendor's.
+    Global like the titles, and removed with its title.
+    """
+
+    __tablename__ = "fleet_app_versions"
+
+    slug: Mapped[str] = mapped_column(ForeignKey("fleet_maintained_apps.slug", ondelete="CASCADE"), primary_key=True)
+    version: Mapped[str] = mapped_column(String(64), primary_key=True)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    commit_sha: Mapped[str] = mapped_column(String(40))
+    # The version the manifest carried at the change before: the one this replaced. NULL at
+    # the title's first change, and where the manifest had been missing.
+    previous_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class FleetCatalogState(Base):
@@ -741,6 +773,12 @@ class FleetCatalogState(Base):
     outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     app_count: Mapped[int] = mapped_column(Integer, default=0)
+    # The last version history read (#838): when, `app.core.fleet_history`'s outcome word
+    # (`waiting` when it is leaving GitHub's allowance alone until the hour resets), and its
+    # sentence.
+    history_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    history_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    history_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class UpdateCheckState(Base):

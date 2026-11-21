@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/config/api";
 import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
-import type { FleetCatalog, FleetCatalogState, FleetCatalogTitle } from "@/features/fleetCatalog/types";
+import type { FleetCatalog, FleetCatalogState, FleetCatalogTitle, FleetTitleHistory } from "@/features/fleetCatalog/types";
 import { en } from "@/i18n/en";
 
 vi.mock("@/i18n/LocaleContext", async () => {
@@ -16,7 +16,12 @@ vi.mock("@/i18n/LocaleContext", async () => {
   return { useLocale: () => ({ t, locale: "en" }) };
 });
 
-const api = vi.hoisted(() => ({ getFleetCatalog: vi.fn(), refreshFleetCatalog: vi.fn() }));
+const api = vi.hoisted(() => ({
+  getFleetCatalog: vi.fn(),
+  refreshFleetCatalog: vi.fn(),
+  getTitleHistory: vi.fn(),
+  readTitleHistory: vi.fn()
+}));
 vi.mock("@/features/fleetCatalog/api", () => api);
 
 const permission = vi.hoisted(() => ({ held: true }));
@@ -32,7 +37,10 @@ const ALPHA: FleetCatalogTitle = {
   firstSeenAt: "2026-11-01T09:00:00Z",
   deviceCount: 3,
   devicesBehind: 1,
-  devicesCurrent: 2
+  devicesCurrent: 2,
+  inCatalogSince: null,
+  versionBefore: null,
+  historyReadAt: null
 };
 const GAMMA: FleetCatalogTitle = {
   ...ALPHA,
@@ -50,7 +58,10 @@ const READ: FleetCatalogState = {
   changedAt: "2026-11-15T12:00:00Z",
   outcome: "ok",
   detail: null,
-  appCount: 953
+  appCount: 953,
+  historyCheckedAt: null,
+  historyOutcome: null,
+  historyDetail: null
 };
 const catalog = (overrides: Partial<FleetCatalog> = {}): FleetCatalog => ({
   enabled: true,
@@ -61,8 +72,31 @@ const catalog = (overrides: Partial<FleetCatalog> = {}): FleetCatalog => ({
   page: 1,
   pageSize: 5000,
   installedTitles: 1,
+  installedTitlesWithHistory: 0,
   ...overrides
 });
+const NEVER_READ: FleetTitleHistory = {
+  slug: "alpha",
+  name: "Alpha",
+  latestVersion: "2.0",
+  historyReadAt: null,
+  historySince: null,
+  historyThrough: null,
+  historyComplete: false,
+  historyDetail: null,
+  versions: []
+};
+const HISTORY: FleetTitleHistory = {
+  ...NEVER_READ,
+  historyReadAt: "2026-11-21T12:00:00Z",
+  historySince: "2025-03-12T21:51:14Z",
+  historyThrough: "2026-11-18T02:27:27Z",
+  historyComplete: true,
+  versions: [
+    { version: "2.0", seenAt: "2026-11-18T02:27:27Z", commitSha: "6".repeat(40), previousVersion: "1.9" },
+    { version: "1.9", seenAt: "2025-03-12T21:51:14Z", commitSha: "4".repeat(40), previousVersion: null }
+  ]
+};
 
 /** Renders the page and lets the first read land. */
 async function open(answer: FleetCatalog) {
@@ -76,6 +110,8 @@ beforeEach(() => {
   permission.held = true;
   api.getFleetCatalog.mockReset();
   api.refreshFleetCatalog.mockReset();
+  api.getTitleHistory.mockReset();
+  api.readTitleHistory.mockReset();
 });
 afterEach(cleanup);
 
@@ -148,5 +184,72 @@ describe("the Fleet catalog tab", () => {
 
     expect(screen.getByText(refusal)).toBeTruthy();
     expect(api.getFleetCatalog).toHaveBeenCalledTimes(2); // a failed check still wrote what it found
+  });
+
+  it("dates the latest version from the version history when it has one, and says how far the history has got", async () => {
+    await open(
+      catalog({
+        items: [{ ...ALPHA, inCatalogSince: "2026-11-18T02:27:27Z", versionBefore: "1.9.4", historyReadAt: "2026-11-21T12:00:00Z" }],
+        installedTitlesWithHistory: 1,
+        state: { ...READ, historyCheckedAt: "2026-11-21T12:00:00Z", historyOutcome: "ok" }
+      })
+    );
+
+    expect(screen.getByText("Alpha").closest("tr")?.textContent).toContain(", from 1.9.4");
+    expect(screen.getByRole("status").textContent).toContain(en.fleetCatalog.historyProgress(1, 1));
+  });
+
+  it("shows why the history read is holding back, in the server's words", async () => {
+    const sentence = "Paused until 14:05 UTC: GitHub says 20 of this address's 60 requests an hour are left.";
+    await open(catalog({ state: { ...READ, historyCheckedAt: "2026-11-21T13:30:00Z", historyOutcome: "waiting", historyDetail: sentence } }));
+
+    expect(screen.getByRole("status").textContent).toContain(sentence);
+  });
+
+  it("opens a title's history from its row, and Read history reads it and lists the versions newest first", async () => {
+    await open(catalog());
+    api.getTitleHistory.mockResolvedValue(NEVER_READ);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    });
+    expect(api.getTitleHistory).toHaveBeenCalledExactlyOnceWith("alpha");
+    expect(screen.getByText(en.fleetCatalog.historyNotRead)).toBeTruthy();
+
+    api.readTitleHistory.mockResolvedValue(HISTORY);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyRead }));
+    });
+
+    expect(api.readTitleHistory).toHaveBeenCalledExactlyOnceWith("alpha");
+    const panel = screen.getByTestId("fleet-history-alpha");
+    const versions = Array.from(panel.querySelectorAll(":scope tbody tr")).map((row) => row.querySelector("td")?.textContent);
+    expect(versions).toEqual(["2.0", "1.9"]);
+    expect(panel.querySelector("a")?.getAttribute("href")).toBe(`https://github.com/fleetdm/fleet/commit/${"6".repeat(40)}`);
+    expect(panel.textContent).toContain(en.fleetCatalog.historyFirstListed);
+    expect(screen.getByRole("button", { name: en.fleetCatalog.historyReadAgain })).toBeTruthy();
+  });
+
+  it("shows the server's sentence when a history read is refused, and offers no read to a reader", async () => {
+    await open(catalog());
+    api.getTitleHistory.mockResolvedValue(NEVER_READ);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    });
+    const refusal = "Not read: GitHub says 20 of this address's 60 requests an hour are left. Try again after 14:05 UTC.";
+    api.readTitleHistory.mockRejectedValue(new ApiError(409, refusal));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyRead }));
+    });
+    expect(screen.getByText(refusal)).toBeTruthy();
+
+    cleanup();
+    permission.held = false;
+    await open(catalog());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    });
+    expect(screen.queryByRole("button", { name: en.fleetCatalog.historyRead })).toBeNull();
   });
 });

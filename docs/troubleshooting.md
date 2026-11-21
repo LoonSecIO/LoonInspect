@@ -163,6 +163,8 @@ words nobody sees.
 | *No Jamf Patch titles synced yet.* | §6 |
 | *… is available, and this build does not contain it.* — the update notice | §10 |
 | *The last check, … did not get an answer.* above the Fleet catalog table | §27 step 3 |
+| *Version history: … read* not climbing, or a line under it that begins "Paused until" | §27 step 8 |
+| *The last version history read, … did not finish.* above the Fleet catalog table | §27 step 9 |
 
 ### The front page is not the same for every role
 
@@ -3358,7 +3360,39 @@ nothing here is a permissions problem in Jamf.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
-   the first check after the flag is turned on again.
+   the first check after the flag is turned on again. The version history stops being read at
+   the same moment (step 8), and what it held stays.
+8. **The version history line is not moving, or says *Paused until …*.** The history of each
+   title installed here is read from Fleet's commits in the background (#838,
+   [`fleet-catalog.md`](fleet-catalog.md#version-history)): one title at a time, about two
+   minutes apart, the most-installed first, so *Version history: 12 of the 140 titles installed
+   here read* climbs by twenty to thirty an hour at best. It reads only while the flag is on for
+   some organization, only titles on a Mac in such an organization, and only after the daily
+   check has read the catalog (step 2).
+   - *Paused until …* → GitHub said 20 or fewer of this address's 60 requests an hour were
+     left, and the history leaves those to the daily check, **Check now** and every other tool
+     behind the address. It carries on by itself at the time given. Paused every hour means
+     something else behind this address spends GitHub's allowance: another instance, or a CI
+     runner or script on the same network. `docker compose logs app | grep "version history"`
+     shows each title it read and what it cost.
+   - Not moving and not paused → `docker compose logs app | grep "version history"`. No lines at
+     all after the flag was turned on: the process has no scheduler (step 2's
+     `SCHEDULER_ENABLED`), and a title's **Read history** still works there. A line *could not
+     run* names the database: §4.
+9. **The status line says *The last version history read, … did not finish.*** The sentence
+   after it is the reason, and it is one of the daily check's (step 3 has each, by how it
+   opens). A refusal or no answer pauses the background for a quarter of an hour and leaves
+   the title to be read again; nothing already held is removed. *GitHub answered, but …* or
+   *… not JSON* for one title's list of changes marks that title read with the sentence, which
+   its history panel shows, and the background moves on to the next title. **Read again** on
+   that title asks once more.
+10. **A title's history has versions with no date, or *Not dated* in the last column.** A
+    version gets a date only where Fleet's commits show it arriving: replacing another
+    version, or the title's first change. The panel's sentence says why one did not: a manifest
+    this build could not read at some change (the version after it is not dated), or a history
+    longer than the read's thousand changes (its oldest version is not dated). Nothing to do;
+    **Read again** cannot see further than the commits do. The dates are when Fleet's catalog
+    took each version, hours to a day after Homebrew and the vendor, never before.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
-lines of the container log, and the build.
+and *version history* lines of the container log, and the build.

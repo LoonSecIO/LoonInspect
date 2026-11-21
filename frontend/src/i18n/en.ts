@@ -1620,7 +1620,7 @@ export const en = {
     eyebrow: "Devices › Applications",
     title: "Fleet catalog",
     description:
-      "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day.",
+      "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day, with the version history of the titles installed here read slowly in the background.",
     checkNow: "Check now",
     checking: "Checking...",
     checkError: "The check did not finish. Try again.",
@@ -1640,6 +1640,33 @@ export const en = {
     notMovedHint:
       "Fleet's version of this title has not changed since this instance first read it, so there is no earlier version to show.",
     movedFrom: (at: string, previous: string) => `${at}, from ${previous}`,
+    // From the version history read from Fleet's commits (#838).
+    sinceFirstListed: (at: string) => `${at}, when Fleet first listed it`,
+    inCatalogSinceHint:
+      "When Fleet's catalog took this version: the date of the first commit in Fleet's repository that carried it. Fleet takes versions from Homebrew, so this is usually hours to a day after the vendor's release, never before it.",
+    notDated: "Not dated",
+    historyToggleHint: "Show or hide this title's version history",
+    historyProgress: (read: number, installed: number) =>
+      `Version history: ${read} of the ${installed} title${installed === 1 ? "" : "s"} installed here read. The rest are read in the background, one every two minutes or so, most-installed first.`,
+    historyFailed: (at: string) => `The last version history read, ${at}, did not finish.`,
+    historyErrorLoading: "This title's version history could not be loaded.",
+    historyReadError: "The read did not finish. Try again.",
+    historyNotRead:
+      "Not read yet. The background reads the history of titles installed here, one at a time; Read history reads this one now.",
+    historyReadWhole: (readAt: string, since: string) =>
+      `Read ${readAt}, back to ${since}, when Fleet first listed this title.`,
+    historyReadFrom: (readAt: string, since: string) =>
+      `Read ${readAt}, back to ${since}. Fleet's history of this title goes further back than this read reached.`,
+    historyDatesNote:
+      "Dates are when Fleet's catalog took each version, from Fleet's commits on GitHub; they are not the vendor's release dates. Each links to its commit.",
+    historyRead: "Read history",
+    historyReadAgain: "Read again",
+    historyReading: "Reading...",
+    historyNoVersions: "The read found no version it could date.",
+    historyVersion: "Version",
+    historyInCatalog: "In Fleet's catalog",
+    historyReplaced: "Replaced",
+    historyFirstListed: "first listed",
     // The status line: never asked, answered (changed or not), and no answer. The failure's
     // own sentence comes from the server and is shown under `statusFailed`.
     statusNever:
@@ -1666,7 +1693,7 @@ export const en = {
     footer: (shown: number, total: number, installed: number) =>
       `${shown} shown · ${total} in Fleet's catalog · ${installed} installed here`,
     licenceNote:
-      "Fleet publishes this catalog under the licence in its repository's ee/ folder, which says production use needs a Fleet subscription. LoonInspect keeps each title's name, bundle ID and version, and nothing else from it.",
+      "Fleet publishes this catalog under the licence in its repository's ee/ folder, which says production use needs a Fleet subscription. LoonInspect keeps each title's name, bundle ID and versions, with the date and commit of each version, and nothing else from it.",
     licenceLink: "Read the licence"
   },
   jamfPatch: {
