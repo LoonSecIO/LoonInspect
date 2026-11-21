@@ -9,12 +9,14 @@ from pydantic.alias_generators import to_camel
 
 
 class CollectionKind(StrEnum):
+    recent_activity = "recent_activity"
     device_sweep = "device_sweep"
     catalog = "catalog"
     webhook = "webhook"
 
 
 class Frequency(StrEnum):
+    quarter_hourly = "quarter_hourly"
     hourly = "hourly"
     daily = "daily"
     weekly = "weekly"

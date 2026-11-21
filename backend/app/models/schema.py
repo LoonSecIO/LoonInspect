@@ -1702,6 +1702,8 @@ class ObservationSpan(Base):
     # section is X" is an index lookup — the second hop of the inverted index.
     section_digests: Mapped[dict] = mapped_column(JSONB)
 
+    first_run_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    report_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     first_collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -1968,6 +1970,7 @@ class Run(Base):
     # UI's "39,998 processed, 2 failed" and the run.completed event surface.
     devices_processed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     devices_failed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    coverage_scope: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     observations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

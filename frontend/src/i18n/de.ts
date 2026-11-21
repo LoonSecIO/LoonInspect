@@ -1927,6 +1927,7 @@ export const de: Translations = {
     colLastRun: "Letzter Lauf",
     colNextDue: "Nächster Lauf",
     kinds: {
+      recent_activity: "Neue Jamf-Aktivität",
       device_sweep: "Geräte-Durchlauf",
       catalog: "Gruppenkatalog",
       webhook: "Webhook"
@@ -1943,6 +1944,7 @@ export const de: Translations = {
       hourly: "Stündlich",
       daily: "Täglich",
       weekly: "Wöchentlich",
+      quarter_hourly: "Alle 15 Minuten",
       every_n_days: "Alle N Tage"
     } as Record<string, string>,
     scheduleHourly: (minute: string) => `Stündlich um :${minute}`,

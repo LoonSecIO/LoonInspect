@@ -2102,6 +2102,7 @@ export const en = {
     colLastRun: "Last run",
     colNextDue: "Next due",
     kinds: {
+      recent_activity: "Recent Jamf activity",
       device_sweep: "Device sweep",
       catalog: "Group catalog",
       webhook: "Webhook"
@@ -2118,6 +2119,7 @@ export const en = {
       hourly: "Hourly",
       daily: "Daily",
       weekly: "Weekly",
+      quarter_hourly: "Every 15 minutes",
       every_n_days: "Every N days"
     } as Record<string, string>,
     scheduleHourly: (minute: string) => `Hourly at :${minute}`,

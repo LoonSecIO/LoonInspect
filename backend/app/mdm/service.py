@@ -299,6 +299,7 @@ async def sweep_jamf_connection(
     # expire_on_commit=False — and an expired attribute read under asyncio raises
     # MissingGreenlet instead of lazily refreshing (#125).
     connection_id = connection.id
+    client = None
     try:
         # This tenant's data-sharing tier, once for the whole sweep (#248,
         # docs/vulnerabilities.md §8). It decides whether `loaded_corpus()` answers for
@@ -368,6 +369,7 @@ async def sweep_jamf_connection(
             ok=False,
             error=str(exc),
             device_count=exc.devices_attempted,
+            observations={"requests": client.request_count} if client else {},
             devices_processed=exc.devices_processed,
             devices_failed=exc.devices_failed,
             collection_id=collection_id,
@@ -387,7 +389,13 @@ async def sweep_jamf_connection(
         # terminal status must land or the UI shows a sync that never ends.
         await db.refresh(connection)
         await set_sync_status(db, connection, SyncStatus.failed)
-        return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
+        return ConnectionSyncResult(
+            connection_id=connection_id,
+            ok=False,
+            error=str(exc),
+            collection_id=collection_id,
+            observations={"requests": client.request_count} if client else {},
+        )
 
     logger.info(
         "jamf sweep finished",
@@ -667,6 +675,14 @@ async def _stream_jamf_fleet(
     # in a context variable and reported as one line per object after the loop.
     async with client.http() as http, collecting_departures() as collapsed:
         aperture = await capture_aperture(client, http, sections=sections, quarantined_extension_attributes=quarantine)
+        inventory_version = 4
+        if run is not None and (run.coverage_scope or {}).get("kind") == "recent_activity":
+            from app.mdm.recent_activity import activity_selector, inventory_api_version
+
+            version = aperture.document["collector"].get("version")
+            inventory_version = inventory_api_version(version)
+            selector = activity_selector(run.coverage_scope, version)
+            run.coverage_scope = {**run.coverage_scope, "effectiveSelector": selector}
         aperture_digest = await ensure_aperture(db, connection_id=connection.id, aperture=aperture)
         connection.last_successful_auth_at = datetime.now(UTC)
         await db.commit()
@@ -737,7 +753,9 @@ async def _stream_jamf_fleet(
         # The collection's override wins, then the connection's setting, then the
         # default — the collection knows its sections, the connection its worst case.
         effective_page_size = page_size or connection.sweep_page_size or DEFAULT_SWEEP_PAGE_SIZE
-        async for raw in client.iter_computers(http, sections, rsql_filter=selector, page_size=effective_page_size):
+        async for raw in client.iter_computers(
+            http, sections, rsql_filter=selector, page_size=effective_page_size, inventory_version=inventory_version
+        ):
             note_progress()
             device_count += 1
             jamf_id = raw.get("id")
@@ -828,6 +846,8 @@ async def _stream_jamf_fleet(
         # observations JSONB the ledger outcomes do, so the run detail can show them
         # and a dynamic tuner (#74) reads structure instead of parsing text.
         throttle = {**client.throttle.observations(), **client.adaptive.observations()}
+        if run is not None and run.coverage_scope:
+            run.coverage_scope = {**run.coverage_scope, "requests": client.request_count}
         if run is not None:
             await _log_collapsed_departures(db, run, collapsed)
             if client.adaptive.changes:

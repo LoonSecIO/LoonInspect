@@ -14,7 +14,7 @@ from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
 from app.core.permissions import Permission
 from app.core.runs import RunReclaimed, acquire, entered, finish
-from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_WEBHOOK, ScheduleError, stale_after
+from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_RECENT, KIND_WEBHOOK, ScheduleError, stale_after
 from app.core.tenancy import reset_tenant_id, set_tenant_id
 from app.mdm.collections import (
     LOCK_CLASS_FOR_KIND,
@@ -104,20 +104,22 @@ def _validate_scope(collection: Collection) -> None:
     unknown = [name for name in sections if name not in SECTIONS]
     if unknown:
         raise HTTPException(status_code=422, detail=f"Unknown sections: {', '.join(unknown)}")
-    if collection.kind in (KIND_DEVICE_SWEEP, KIND_WEBHOOK) and not sections:
+    if collection.kind in (KIND_DEVICE_SWEEP, KIND_RECENT, KIND_WEBHOOK) and not sections:
         raise HTTPException(status_code=422, detail="Choose at least one section")
-    if collection.kind in (KIND_DEVICE_SWEEP, KIND_WEBHOOK):
+    if collection.kind in (KIND_DEVICE_SWEEP, KIND_RECENT, KIND_WEBHOOK):
         # Asking for extension attributes reads the five sections they are displayed
         # under (#197). Applied at save so the row, the editor and the aperture all show
         # the set that is actually fetched, rather than a picker that silently narrows
         # EAs; sweep_jamf_connection and webhook_scope apply the same closure for rows that predate it.
+        if collection.kind == KIND_RECENT and "general" not in sections:
+            sections.append("general")
         collection.sections = list(with_extension_attribute_carriers(sections))
     if collection.kind == KIND_CATALOG:
         collection.sections = []
         collection.selector = None
     if collection.kind == KIND_WEBHOOK:
         collection.selector = None
-    if collection.kind != KIND_DEVICE_SWEEP:
+    if collection.kind not in (KIND_DEVICE_SWEEP, KIND_RECENT):
         collection.page_size = None  # webhooks fetch by id and catalogs read no computers
     if collection.selector is not None:
         collection.selector = collection.selector.strip() or None

@@ -303,6 +303,7 @@ class JamfClient:
         # client shared across runs would mix one sweep's throttling into a webhook's.
         self.throttle = ThrottleCounters()
         self.adaptive = AdaptiveConcurrency()
+        self.request_count = 0
 
     # Seam for tests: retry waits go through this so a scripted 429 doesn't cost the
     # suite real seconds. An attribute, not a wrapper method, so monkeypatching the
@@ -445,9 +446,11 @@ class JamfClient:
         expiry is set below Jamf's own, so this is the rare race, and one retry is its
         whole cost. A second failure is a real one and propagates."""
         try:
+            self.request_count += 1
             return await send()
         except _DROPPED_CONNECTION:
             logger.info("jamf closed a kept-alive connection; sending again on a new one", extra={"path": path})
+            self.request_count += 1
             return await send()
 
     async def _get(self, client: httpx.AsyncClient, path: str, *, comment: str, params: dict | None = None) -> httpx.Response:
@@ -609,6 +612,7 @@ class JamfClient:
         *,
         rsql_filter: str | None = None,
         page_size: int = DEFAULT_SWEEP_PAGE_SIZE,
+        inventory_version: int = 4,
     ) -> AsyncIterator[dict]:
         """Page through computers-inventory with pages in flight, yielding raw records
         one at a time so a 40,000-device tenant is never held in memory at once.
@@ -635,10 +639,10 @@ class JamfClient:
         if rsql_filter:
             params["filter"] = rsql_filter
 
+        path = "/api/v3/computers-inventory" if inventory_version == 3 else "/api/v4/computers-inventory"
+
         async def fetch_page(page: int) -> dict:
-            response = await self._get(
-                client, "/api/v4/computers-inventory", comment="inventory", params={**params, "page": page}
-            )
+            response = await self._get(client, path, comment="inventory", params={**params, "page": page})
             response.raise_for_status()
             body = response.json()
             return body if isinstance(body, dict) else {}

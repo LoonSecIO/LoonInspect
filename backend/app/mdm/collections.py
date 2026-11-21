@@ -29,6 +29,7 @@ from app.core.runs import (
 from app.core.scheduling import (
     KIND_CATALOG,
     KIND_DEVICE_SWEEP,
+    KIND_RECENT,
     KIND_WEBHOOK,
     RUNNABLE_KINDS,
     Schedule,
@@ -38,6 +39,7 @@ from app.core.scheduling import (
     within_rate_floor,
 )
 from app.mdm.jamf.contract import V0_SECTIONS
+from app.mdm.recent_activity import collection_scope
 from app.mdm.service import (
     TRIGGER_SWEEP,
     ConnectionSyncResult,
@@ -161,7 +163,7 @@ async def ensure_default_collections(db: AsyncSession, connection: MdmConnection
 # --- running ------------------------------------------------------------------------
 
 
-LOCK_CLASS_FOR_KIND = {KIND_DEVICE_SWEEP: LOCK_DEVICE_SWEEP, KIND_CATALOG: LOCK_CATALOG}
+LOCK_CLASS_FOR_KIND = {KIND_RECENT: LOCK_DEVICE_SWEEP, KIND_DEVICE_SWEEP: LOCK_DEVICE_SWEEP, KIND_CATALOG: LOCK_CATALOG}
 
 
 async def run_one_collection(
@@ -229,7 +231,16 @@ async def run_one_collection(
     success_before = collection.last_success_at
     async with entered(run):
         try:
-            if collection.kind == KIND_DEVICE_SWEEP:
+            if collection.kind in (KIND_DEVICE_SWEEP, KIND_RECENT):
+                poll = collection.kind == KIND_RECENT
+                if poll or (collection.frequency == "daily" and run.collection_id == collection.id):
+                    run.coverage_scope = await collection_scope(db, collection, started)
+                    if poll and due_at:
+                        run.coverage_scope = {
+                            **run.coverage_scope,
+                            "scheduleLagSeconds": max(0, (started - due_at).total_seconds()),
+                        }
+                    await db.commit()
                 await set_sync_status(db, connection, SyncStatus.syncing)
                 result = await sweep_jamf_connection(
                     db,
@@ -239,7 +250,7 @@ async def run_one_collection(
                     selector=collection.selector,
                     page_size=collection.page_size,
                     quarantined_extension_attributes=collection.quarantined_extension_attributes or (),
-                    include_catalog=True,
+                    include_catalog=not poll,
                     collection_id=collection.id,
                     run=run,
                 )
@@ -397,8 +408,8 @@ async def claim_due(db: AsyncSession, now: datetime | None = None) -> list[tuple
     busy = await active_connection_ids(db, LOCK_DEVICE_SWEEP)
 
     claimed: list[tuple[Collection, datetime, datetime | None]] = []
-    for collection in sorted(candidates, key=lambda row: row.id):
-        if collection.kind == KIND_DEVICE_SWEEP and collection.mdm_connection_id in busy:
+    for collection in sorted(candidates, key=lambda row: (row.kind == KIND_RECENT, row.id)):
+        if collection.kind in (KIND_DEVICE_SWEEP, KIND_RECENT) and collection.mdm_connection_id in busy:
             continue
         # Captured before the UPDATE overwrites it. This is the occurrence being served —
         # the run's window, and so the `_time` every event of this sweep is stamped with.
@@ -427,7 +438,7 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
         # A previous collection can roll back on contention, expiring every row
         # returned by claim_due. Refresh explicitly before reading ORM attributes.
         await db.refresh(collection)
-        if within_rate_floor(collection.kind, collection.last_run_at, now):
+        if collection.kind != KIND_RECENT and within_rate_floor(collection.kind, collection.last_run_at, now):
             # A skip is not a result, and must not erase one.
             #
             # `last_run_status` is a cache of the newest thing that *happened* to this
@@ -477,7 +488,16 @@ async def tick_tenant(db: AsyncSession, now: datetime | None = None) -> list[Con
             continue
         collection_id, connection_id = collection.id, collection.mdm_connection_id
         try:
-            results.append(await run_one_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at))
+            result = await run_one_collection(db, collection, trigger=TRIGGER_SWEEP, due_at=due_at)
+            results.append(result)
+            if result.skipped:
+                # A poll can acquire the shared device lock after the full crawl claimed its slot.
+                await db.execute(
+                    update(Collection)
+                    .where(Collection.id == collection_id, Collection.next_due_at == following, Collection.last_claimed_at == now)
+                    .values(next_due_at=due_at)
+                )
+                await db.commit()
         except AcquisitionBusy as exc:
             await db.rollback()
             # Restore only our own claim; a later worker or schedule edit wins.

@@ -1246,7 +1246,9 @@ async def finish(
                 observations=observations or None,
                 error=error,
             )
-            .returning(Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start)
+            .returning(
+                Run.id, Run.mdm_connection_id, Run.trigger, Run.comparison, Run.lock_class, Run.window_start, Run.coverage_scope
+            )
         )
         row = closed.first()
         # The release, committed alone and first. Everything else this close records — the
@@ -1336,7 +1338,7 @@ async def finish(
             # has always been, and a non-zero count is the anomaly worth a field.
             **({"devicesFailed": devices_failed} if devices_failed else {}),
         )
-        if row.lock_class == LOCK_DEVICE_SWEEP:
+        if row.lock_class == LOCK_DEVICE_SWEEP and (row.coverage_scope or {}).get("kind") != "recent_activity":
             # Deliberately narrower than RUN_COMPLETED_LOCK_CLASSES above: a posture snapshot
             # is a fleet-wide capture, and a webhook run touched exactly one device, so #224
             # widening run.completed did not widen this.

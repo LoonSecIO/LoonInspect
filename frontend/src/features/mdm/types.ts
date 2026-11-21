@@ -186,8 +186,8 @@ export interface RunLogResponse {
 
 // --- Collections (#27): what to collect from a connection, and when -----------------
 
-export type CollectionKind = "device_sweep" | "catalog" | "webhook";
-export type CollectionFrequency = "hourly" | "daily" | "weekly" | "every_n_days";
+export type CollectionKind = "recent_activity" | "device_sweep" | "catalog" | "webhook";
+export type CollectionFrequency = "quarter_hourly" | "hourly" | "daily" | "weekly" | "every_n_days";
 
 export interface Collection {
   id: number;

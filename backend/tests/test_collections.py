@@ -1160,3 +1160,133 @@ async def test_the_tenant_wide_list_is_a_projection_not_the_configuration_row(db
     editor = await api.get(f"/api/mdm/connections/{two_connections['mine'][0]}/collections")
     assert editor.status_code == 200, editor.text
     assert 'username=="jdoe"' in {row["selector"] for row in editor.json()}
+
+
+async def test_daily_crawl_reconciles_a_build_missing_from_completed_poll(db, connection, jamf):
+    from app.mdm.collections import default_collections, run_one_collection
+    from app.mdm.recent_activity import coverage
+    from app.models.schema import Collection, Run
+
+    full = default_collections(connection)[0]
+    poll = Collection(
+        mdm_connection_id=connection.id,
+        name="Recent contacts",
+        kind="recent_activity",
+        enabled=True,
+        sections=full.sections,
+        frequency="quarter_hourly",
+        timezone="UTC",
+        quarantined_extension_attributes=[],
+    )
+    db.add_all([full, poll])
+    await db.commit()
+    assert (await run_one_collection(db, full, trigger="sweep")).ok
+    assert (await run_one_collection(db, poll, trigger="sweep")).ok
+    poll_run = await db.scalar(select(Run).where(Run.collection_id == poll.id))
+    assert "reportDate" in jamf.filters[-1] and poll_run.coverage_scope["requests"] > 0
+    reported = datetime.fromisoformat(poll_run.coverage_scope["end"]).replace(microsecond=0) - timedelta(minutes=8)
+    jamf.synthetic["general"]["reportDate"] = reported.isoformat()
+    jamf.synthetic["operatingSystem"]["build"] = "sample-new-build"
+    assert (await run_one_collection(db, full, trigger="sweep")).ok
+    crawl = await db.scalar(select(Run).where(Run.collection_id == full.id).order_by(Run.started_at.desc()).limit(1))
+    result = await coverage(db, crawl, 0)
+    assert result["counts"]["coveredMiss"] == result["affectedMacs"] == 1
+    miss = next(row for row in result["rows"] if row["status"] == "coveredMiss")
+    assert miss["poll"] == str(poll_run.id) and miss["build"] == "sample-new-build" and miss["report_at"] == reported
+    before = list(jamf.requests)
+    assert result == await coverage(db, crawl, 0)
+    assert jamf.requests == before
+
+
+async def test_recent_poll_checkpoint_survives_a_failed_page_and_reopened_session(db, connection, jamf):
+    from app.core.database import bound_tenant_id, session_for_tenant
+    from app.mdm.collections import run_one_collection
+    from app.models.schema import Collection, Run
+
+    poll = Collection(
+        mdm_connection_id=connection.id,
+        name="Recent",
+        kind="recent_activity",
+        enabled=True,
+        sections=["general", "operating_system"],
+        frequency="quarter_hourly",
+        timezone="UTC",
+        quarantined_extension_attributes=[],
+    )
+    db.add(poll)
+    await db.commit()
+    assert (await run_one_collection(db, poll, trigger="sweep")).ok
+    first = await db.scalar(select(Run).where(Run.collection_id == poll.id))
+    jamf.transient.append(("/api/v4/computers-inventory", 400, {}))
+    assert not (await run_one_collection(db, poll, trigger="sweep")).ok
+    async with session_for_tenant(bound_tenant_id(db)) as fresh:
+        reloaded = await fresh.get(Collection, poll.id)
+        assert (await run_one_collection(fresh, reloaded, trigger="sweep")).ok
+        runs = (await fresh.scalars(select(Run).where(Run.collection_id == poll.id).order_by(Run.started_at))).all()
+        assert [r.status for r in runs] == ["succeeded", "failed", "succeeded"]
+        assert (
+            runs[-1].coverage_scope["start"]
+            == (datetime.fromisoformat(first.coverage_scope["end"]) - timedelta(minutes=2)).isoformat()
+        )
+        assert runs[1].observations["requests"] > 0
+        assert runs[-1].observations.get("changed", 0) == 0
+
+
+async def test_recent_report_or_heartbeat_selects_only_managed_macs(db, connection, jamf, monkeypatch):
+    import re
+
+    from app.mdm.collections import default_collections, run_one_collection
+    from app.mdm.jamf.contract import parse_jamf_datetime
+    from app.models.schema import Collection, Device
+
+    full = default_collections(connection)[0]
+    poll = Collection(
+        mdm_connection_id=connection.id,
+        name="Managed activity",
+        kind="recent_activity",
+        enabled=True,
+        sections=full.sections,
+        selector="general.remoteManagement.managed==true",
+        frequency="quarter_hourly",
+        timezone="UTC",
+        quarantined_extension_attributes=[],
+    )
+    db.add_all([full, poll])
+    await db.commit()
+    jamf.seed(1)
+    fresh, heartbeat, outside = jamf.computers
+    for raw in jamf.computers:
+        raw["general"]["remoteManagement"]["managed"] = raw is not outside
+    assert (await run_one_collection(db, full, trigger="sweep")).ok
+    time = (datetime.now(UTC) - timedelta(minutes=3)).isoformat()
+    fresh["general"]["reportDate"] = time
+    fresh["operatingSystem"]["build"] = "test-build"
+    heartbeat["general"]["lastContact"] = time
+    outside["general"]["reportDate"] = time
+    selected = []
+    previous = jamf.handler
+
+    def page(req):
+        if req.url.path != "/api/v4/computers-inventory":
+            return previous(req)
+        query = req.url.params["filter"]
+        assert query.startswith("(general.remoteManagement.managed==true);(")
+        bounds = re.findall(r'\(general\.(\w+)>="([^"]+)";general\.\1<="([^"]+)"\)', query)
+        assert {f for f, _, _ in bounds} == {"reportDate", "lastContact", "lastCheckIn"}
+        for raw in jamf.computers:
+            general = raw["general"]
+            if general["remoteManagement"]["managed"] and any(
+                (stamp := parse_jamf_datetime(general.get(field)))
+                and datetime.fromisoformat(start) <= stamp <= datetime.fromisoformat(end)
+                for field, start, end in bounds
+            ):
+                selected.append(raw)
+        return httpx.Response(200, json={"totalCount": len(selected), "results": selected})
+
+    monkeypatch.setattr(jamf, "handler", page)
+    result = await run_one_collection(db, poll, trigger="sweep")
+    assert result.ok and result.device_count == 2 and {r["id"] for r in selected} == {fresh["id"], heartbeat["id"]}
+    assert result.observations.get("changed") == 1
+    assert await db.scalar(
+        select(Device.id).where(Device.external_id == outside["id"], Device.mdm_connection_id == connection.id)
+    )

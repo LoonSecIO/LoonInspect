@@ -248,7 +248,7 @@ async def record_observation(
     span to decide whether to proceed at all; otherwise it is fetched here.
     """
     collected_at = collected_at or _utcnow()
-    from app.core.runs import fence_write
+    from app.core.runs import fence_write, get_run
 
     fence_write(db)
     observed_at = observation.observed_at or collected_at
@@ -308,6 +308,8 @@ async def record_observation(
         aperture_digest=aperture_digest,
         head_digest=head_digest,
         section_digests=observation.section_digests,
+        first_run_id=run.id if (run := get_run()) else None,
+        report_at=observation.observed_at,
         first_observed_at=observed_at,
         last_observed_at=observed_at,
         first_collected_at=collected_at,

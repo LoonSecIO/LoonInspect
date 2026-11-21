@@ -15,20 +15,22 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-Frequency = Literal["hourly", "daily", "weekly", "every_n_days"]
-FREQUENCIES: tuple[str, ...] = ("hourly", "daily", "weekly", "every_n_days")
+Frequency = Literal["quarter_hourly", "hourly", "daily", "weekly", "every_n_days"]
+FREQUENCIES: tuple[str, ...] = ("quarter_hourly", "hourly", "daily", "weekly", "every_n_days")
 
 KIND_DEVICE_SWEEP = "device_sweep"
+KIND_RECENT = "recent_activity"
 KIND_CATALOG = "catalog"
 KIND_WEBHOOK = "webhook"
-KINDS: tuple[str, ...] = (KIND_DEVICE_SWEEP, KIND_CATALOG, KIND_WEBHOOK)
-RUNNABLE_KINDS: tuple[str, ...] = (KIND_DEVICE_SWEEP, KIND_CATALOG)
+KINDS: tuple[str, ...] = (KIND_DEVICE_SWEEP, KIND_RECENT, KIND_CATALOG, KIND_WEBHOOK)
+RUNNABLE_KINDS: tuple[str, ...] = (KIND_DEVICE_SWEEP, KIND_RECENT, KIND_CATALOG)
 
 # Rate floors per kind (docs/ingest-scheduling.md §4.2): "no full pull more than once
 # an hour" is enforced at claim time as well as on save, because manual runs never pass
 # through schedule validation. A floor enforced only at config time is a floor with a
 # bypass button next to it.
 RATE_FLOORS: dict[str, timedelta] = {
+    KIND_RECENT: timedelta(minutes=15),
     KIND_DEVICE_SWEEP: timedelta(hours=1),
     KIND_CATALOG: timedelta(minutes=15),
 }
@@ -36,6 +38,7 @@ RATE_FLOORS: dict[str, timedelta] = {
 # How long one occurrence of each frequency is. `every_n_days` computes its own from
 # interval_n, so it is absent here rather than unrepresentable.
 CADENCE: dict[str, timedelta] = {
+    "quarter_hourly": timedelta(minutes=15),
     "hourly": timedelta(hours=1),
     "daily": timedelta(days=1),
     "weekly": timedelta(days=7),
@@ -74,6 +77,8 @@ def validate_schedule(kind: str, schedule: Schedule) -> None:
         return
     if kind == KIND_WEBHOOK:
         raise ScheduleError("a webhook collection is event-driven and carries no schedule")
+    if (kind == KIND_RECENT) != (schedule.frequency == "quarter_hourly"):
+        raise ScheduleError("Only recent activity collections use the fixed 15-minute schedule")
     if schedule.frequency not in FREQUENCIES:
         raise ScheduleError(f"unknown frequency {schedule.frequency!r}")
     if not schedule.timezone:
@@ -110,6 +115,9 @@ def next_due(schedule: Schedule, after: datetime, anchor: datetime | None = None
     minute = schedule.at_minute or 0
     hour = schedule.at_hour or 0
 
+    if schedule.frequency == "quarter_hourly":
+        utc = after.astimezone(UTC)
+        return utc.replace(minute=utc.minute // 15 * 15, second=0, microsecond=0) + timedelta(minutes=15)
     if schedule.frequency == "hourly":
         candidate = after.astimezone(UTC).replace(minute=minute, second=0, microsecond=0)
         return candidate + timedelta(hours=1) if candidate <= after else candidate
@@ -160,6 +168,8 @@ def latest_due(schedule: Schedule, first_due: datetime, now: datetime) -> dateti
     tz = ZoneInfo(schedule.timezone or "UTC")
     local = now.astimezone(tz)
     minute, hour = schedule.at_minute or 0, schedule.at_hour or 0
+    if schedule.frequency == "quarter_hourly":
+        return max(first_due, next_due(schedule, now) - timedelta(minutes=15))
     if schedule.frequency == "hourly":
         candidate = now.astimezone(UTC).replace(minute=minute, second=0, microsecond=0)
         if candidate > now:
