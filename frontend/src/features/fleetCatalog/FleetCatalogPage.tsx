@@ -209,6 +209,7 @@ export function FleetCatalogPage() {
         <input
           className={`${inputClasses} min-w-[240px] flex-1`}
           placeholder={t.fleetCatalog.searchPlaceholder}
+          data-page-search=""
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />

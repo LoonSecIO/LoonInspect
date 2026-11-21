@@ -28,8 +28,9 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
                 try await exerciseWindowRecovery()
                 try await exerciseLateStartup()
                 try await exerciseUpdateCheckSwitch()
+                try await exerciseFind()
                 windows.forEach { $0.orderOut(nil) }
-                print("PASS: 6 real-AppDelegate window/lifecycle regression checks")
+                print("PASS: real-AppDelegate window, lifecycle and Find regression checks complete")
                 fflush(stdout)
                 exit(0)
             } catch {
@@ -142,6 +143,12 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
         try check(web.url == nil && !status.isHidden && heading(status) == "LoonInspect could not start", "Late startup callback overwrote failed state")
         try check(supervisor.stopCount == 1 && !delegate.validateMenuItem(menuItem("reload")), "Late startup reenabled actions or repeated stop")
         print("PASS: late successful startup callback cannot replace the failure")
+    }
+
+    private func exerciseFind() async throws {
+        let (delegate, web, status) = try launch(Supervisor(port: port, directory: directory))
+        try await eventually("find fixture loads") { web.url != nil && !web.isLoading && !web.isHidden && status.isHidden }
+        try await FindHarness.run(delegate: delegate, web: web)
     }
 
     private func exerciseUpdateCheckSwitch() async throws {

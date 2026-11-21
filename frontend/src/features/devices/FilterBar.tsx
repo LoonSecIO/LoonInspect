@@ -42,6 +42,7 @@ export function FilterBar({ filters, corpusAsOf, onChange }: FilterBarProps) {
         <input
           className={`${inputClasses} min-w-[200px] flex-1`}
           placeholder={t.devices.searchPlaceholder}
+          data-page-search=""
           value={filters.q ?? ""}
           onChange={(e) => update({ q: e.target.value || undefined })}
         />

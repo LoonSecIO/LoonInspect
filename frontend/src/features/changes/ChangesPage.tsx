@@ -303,7 +303,7 @@ export function ChangesPage() {
       >
         <label className="space-y-1 text-sm">
           <span className="block text-muted-foreground">{tc.search}</span>
-          <input className={inputClasses} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder={tc.searchPlaceholder} />
+          <input data-page-search="" className={inputClasses} value={draftQuery} onChange={(e) => setDraftQuery(e.target.value)} placeholder={tc.searchPlaceholder} />
         </label>
         {/* Deliberately its own box rather than a mode switch on the one above: the two
             compose, and the pair "this fleet" + "this app" is the whole investigation.
