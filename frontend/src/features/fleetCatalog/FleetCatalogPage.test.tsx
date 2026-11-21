@@ -226,7 +226,8 @@ describe("the Fleet catalog tab", () => {
     const versions = Array.from(panel.querySelectorAll(":scope tbody tr")).map((row) => row.querySelector("td")?.textContent);
     expect(versions).toEqual(["2.0", "1.9"]);
     expect(panel.querySelector("a")?.getAttribute("href")).toBe(`https://github.com/fleetdm/fleet/commit/${"6".repeat(40)}`);
-    expect(panel.textContent).toContain(en.fleetCatalog.historyFirstListed);
+    expect(panel.textContent).toContain(en.fleetCatalog.historyReplacedNone);
+    expect(api.getFleetCatalog).toHaveBeenCalledTimes(2); // the row's date and the progress line are read again
     expect(screen.getByRole("button", { name: en.fleetCatalog.historyReadAgain })).toBeTruthy();
   });
 

@@ -1510,7 +1510,11 @@ export const de: Translations = {
     historyVersion: "Version",
     historyInCatalog: "In Fleets Katalog",
     historyReplaced: "Ersetzte",
-    historyFirstListed: "erstmals geführt",
+    historyReplacedNone: "keine",
+    historyReadNothing: (readAt: string) => `Gelesen ${readAt}.`,
+    historyCommitLabel: (at: string, sha: string) => `${at}: Commit ${sha} in Fleets Repository (öffnet in neuem Tab)`,
+    notDatedHint:
+      "Die Versionsgeschichte dieses Titels ist gelesen, konnte die neueste Version aber nicht datieren: Das Lesen hat ihr Eintreffen nicht gesehen. Öffnen Sie den Titel für den Grund.",
     statusNever:
       "Fleets Katalog wurde noch nicht gelesen. Die erste Prüfung läuft innerhalb einer Stunde, nachdem das Flag eingeschaltet wurde.",
     statusRead: (at: string, count: number) =>

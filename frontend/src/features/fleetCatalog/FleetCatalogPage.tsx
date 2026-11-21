@@ -81,7 +81,10 @@ export function FleetCatalogPage() {
       return t.fleetCatalog.movedFrom(when(title.versionChangedAt), title.previousVersion ?? "");
     }
     return (
-      <span className="text-muted-foreground" title={t.fleetCatalog.notMovedHint}>
+      <span
+        className="text-muted-foreground"
+        title={title.historyReadAt === null ? t.fleetCatalog.notMovedHint : t.fleetCatalog.notDatedHint}
+      >
         {title.historyReadAt === null ? t.fleetCatalog.notMoved : t.fleetCatalog.notDated}
       </span>
     );
@@ -316,6 +319,7 @@ export function FleetCatalogPage() {
                         type="button"
                         className="text-left hover:underline"
                         aria-expanded={open.has(title.slug)}
+                        aria-controls={`fleet-history-row-${title.slug}`}
                         title={t.fleetCatalog.historyToggleHint}
                         onClick={() => toggleHistory(title.slug)}
                       >
@@ -349,9 +353,9 @@ export function FleetCatalogPage() {
                     <td className="px-4 py-2">{arrived(title)}</td>
                   </tr>
                   {open.has(title.slug) && (
-                    <tr className="border-b bg-muted/20 last:border-0">
+                    <tr id={`fleet-history-row-${title.slug}`} className="border-b bg-muted/20 last:border-0">
                       <td className="px-4 py-3" colSpan={COLUMNS}>
-                        <FleetTitleHistory slug={title.slug} canRead={canCheck} />
+                        <FleetTitleHistory slug={title.slug} canRead={canCheck} onRead={() => void load()} />
                       </td>
                     </tr>
                   )}

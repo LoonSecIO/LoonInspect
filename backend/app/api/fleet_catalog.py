@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from sqlalchemy import String, column, distinct, func, select, values
+from sqlalchemy import String, column, distinct, func, select, tuple_, values
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import fleet_catalog, fleet_history
@@ -106,13 +106,36 @@ async def device_counts(db: AsyncSession, titles: list[FleetMaintainedApp]) -> d
 
 async def latest_since(db: AsyncSession, titles: list[FleetMaintainedApp]) -> dict[str, FleetAppVersion]:
     """slug -> the version history's row for the title's latest version (#838): when Fleet's
-    catalog first carried it, and the version it replaced. Only for titles whose history
-    holds a date for their latest version. One statement for the page."""
+    catalog first carried it, and the version it replaced.
+
+    Only where that row is the title's newest dated arrival. A version that left and came back
+    keeps the date of its first arrival, which is not when it became the latest again; the
+    move this instance saw says that better, so the row is not offered. Two statements for the
+    page, each on the table's primary key."""
     latest = {title.slug: title.latest_version for title in titles if title.history_read_at is not None}
     if not latest:
         return {}
-    rows = (await db.execute(select(FleetAppVersion).where(FleetAppVersion.slug.in_(latest)))).scalars().all()
-    return {row.slug: row for row in rows if latest[row.slug] == row.version}
+    rows = (
+        (
+            await db.execute(
+                select(FleetAppVersion).where(tuple_(FleetAppVersion.slug, FleetAppVersion.version).in_(list(latest.items())))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return {}
+    newest = dict(
+        (
+            await db.execute(
+                select(FleetAppVersion.slug, func.max(FleetAppVersion.seen_at))
+                .where(FleetAppVersion.slug.in_([row.slug for row in rows]))
+                .group_by(FleetAppVersion.slug)
+            )
+        ).all()
+    )
+    return {row.slug: row for row in rows if newest.get(row.slug) == row.seen_at}
 
 
 @router.get("", response_model=FleetCatalogOut, dependencies=[Depends(require(Permission.APP_READ))])

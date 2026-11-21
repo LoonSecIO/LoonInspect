@@ -50,7 +50,7 @@ from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.database import unscoped_session
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.user_agent import build_user_agent
-from app.models.schema import Device, FleetAppVersion, FleetMaintainedApp, InstalledApp
+from app.models.schema import Device, FleetAppVersion, FleetCatalogState, FleetMaintainedApp, InstalledApp
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +73,11 @@ PERSON_CONCURRENCY = 4
 # the last read reached, so that change is in the list whatever its recorded date, and starts
 # at it. One it cannot find there is read again from the title's first change.
 REREAD_MARGIN = timedelta(days=7)
-# After `refused` or `unreachable`, the background tries again no sooner than this.
+# After a read that failed, the background tries again no sooner than this, and leaves the
+# title that failed for `FAILED_TITLE_SKIP`, so one title GitHub keeps refusing never holds up
+# the rest. A failure marks nothing read: once the cause is gone, every title is read.
 FAILURE_PAUSE = timedelta(minutes=15)
+FAILED_TITLE_SKIP = timedelta(hours=1)
 
 _MAX_COMMITS_BYTES = 8 * 1024 * 1024
 _MANIFEST = f"{fc.FOLDER}/outputs/{{slug}}/darwin.json"
@@ -357,10 +360,10 @@ async def read_title(
     `resume` starts at the newest change the last read reached, when there was one; a
     person's read is always the whole history.
 
-    Raises `HistoryFailed` for a read that could not finish, after recording it: `waiting`
-    and `refused` and `unreachable` write nothing to the title, so it is read again later;
-    `unexpected` marks the title read with the sentence, so a title whose history this build
-    cannot read is not asked for every two minutes.
+    Raises `HistoryFailed` for a read that could not finish, after recording it as the last
+    history read, a person's `waiting` aside (that is their 409, not the instance's state).
+    Nothing is written to the title: a proxy answering in GitHub's place fails every title the
+    same way, and marking each one read would leave them unread once it is fixed.
     """
     started = time.monotonic()
     now = datetime.now(UTC)
@@ -400,15 +403,9 @@ async def read_title(
         "by": "person" if person else "background",
     }
     if error is not None:
-        if error.outcome == fc.OUTCOME_UNEXPECTED:
-            async with fc._lock:  # the title's row written and committed where the check cannot remove it
-                title = await db.get(FleetMaintainedApp, slug, populate_existing=True)
-                if title is not None:
-                    title.history_read_at, title.history_detail = now, error.detail
-                await _record(db, error.outcome, error.detail, now)
-        elif error.outcome != OUTCOME_WAITING or person:
+        if error.outcome != OUTCOME_WAITING:
             await _record(db, error.outcome, error.detail, now)
-        else:
+        elif not person:
             await _record_waiting(db, error.detail, now)
         if error.outcome == OUTCOME_WAITING:
             logger.info("Fleet version history read waiting: %s", error.detail, extra=facts)
@@ -445,7 +442,12 @@ async def read_title(
             title.history_last_sha, title.history_through = read.newest
         if not read.resumed:
             title.history_complete = read.complete
-        title.history_detail = _title_sentence(read)
+        said = _title_sentence(read)
+        if read.resumed:
+            # What an earlier read left undated stays undated, so its sentence stays.
+            title.history_detail = " ".join(dict.fromkeys(part for part in (title.history_detail, said) if part)) or None
+        else:
+            title.history_detail = said
         state = await fc._state(db)
         state.history_checked_at, state.history_outcome, state.history_detail = now, OUTCOME_OK, None
         await db.commit()
@@ -473,10 +475,21 @@ async def _record_waiting(db: AsyncSession, detail: str, now: datetime) -> None:
     await _record(db, OUTCOME_WAITING, detail, now)
 
 
+async def _end_waiting(db: AsyncSession) -> None:
+    """A pause that is over, with nothing left to read: its sentence would otherwise stay on the
+    tab saying it waits for an hour already past."""
+    state = await db.get(FleetCatalogState, 1)
+    if state is not None and state.history_outcome == OUTCOME_WAITING:
+        state.history_outcome = state.history_detail = None
+        await db.commit()
+
+
 # --- who reads what, and when -------------------------------------------------------------
 
 _lock = asyncio.Lock()
 _paused_until: datetime | None = None
+# slug -> when the background may try it again after it failed (`FAILED_TITLE_SKIP`).
+_skipped: dict[str, datetime] = {}
 
 
 async def read_now(db: AsyncSession, slug: str, *, transport: httpx.AsyncBaseTransport | None = None) -> FleetMaintainedApp:
@@ -498,15 +511,21 @@ def _wanted():
     )
 
 
-async def next_title() -> str | None:
+async def next_title(now: datetime | None = None) -> str | None:
     """The next title the background reads: wanted, installed on a Mac in an organization with
-    the flag on, and on the most Macs of those. None when there is nothing to read."""
+    the flag on, not set aside after a failure, and on the most Macs of those. None when there
+    is nothing to read."""
+    now = now or datetime.now(UTC)
     async with unscoped_session() as db:
-        wanted = (
-            await db.execute(
-                select(FleetMaintainedApp.slug, FleetMaintainedApp.bundle_id, FleetMaintainedApp.name).where(_wanted())
-            )
-        ).all()
+        wanted = [
+            row
+            for row in (
+                await db.execute(
+                    select(FleetMaintainedApp.slug, FleetMaintainedApp.bundle_id, FleetMaintainedApp.name).where(_wanted())
+                )
+            ).all()
+            if _skipped.get(row.slug, now) <= now
+        ]
     if not wanted:
         return None
     bundles = {row.bundle_id for row in wanted}
@@ -541,12 +560,19 @@ async def tick(*, transport: httpx.AsyncBaseTransport | None = None) -> str | No
         return None
     actor_token = set_actor(SYSTEM)
     try:
-        if (sentence := _held_back(now, person=False)) is not None:
+        slug = await next_title(now)
+        sentence = _held_back(now, person=False)
+        if slug is None or sentence is None:
+            # Nothing to read, or the hour has reset: a pause written earlier is over.
+            async with unscoped_session() as db:
+                await _end_waiting(db)
+        if slug is None:
+            return None
+        if sentence is not None:
             async with unscoped_session() as db:
                 await _record_waiting(db, sentence, now)
             return None
-        slug = await next_title()
-        if slug is None or _lock.locked():
+        if _lock.locked():
             return None
         async with _lock, unscoped_session() as db:
             if await db.get(FleetMaintainedApp, slug) is None:
@@ -554,9 +580,11 @@ async def tick(*, transport: httpx.AsyncBaseTransport | None = None) -> str | No
             try:
                 await read_title(db, slug, resume=True, person=False, transport=transport)
             except HistoryFailed as failed:
-                if failed.outcome in (fc.OUTCOME_REFUSED, fc.OUTCOME_UNREACHABLE):
+                if failed.outcome != OUTCOME_WAITING:
                     _paused_until = now + FAILURE_PAUSE
+                    _skipped[slug] = now + FAILED_TITLE_SKIP
                 return None
+        _skipped.pop(slug, None)
         return slug
     finally:
         reset_actor(actor_token)
@@ -578,6 +606,7 @@ async def run_worker() -> None:
 def reset_for_tests() -> None:
     global _paused_until
     _paused_until = None
+    _skipped.clear()
     fc.ALLOWANCE.forget()
 
 

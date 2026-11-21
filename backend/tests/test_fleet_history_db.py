@@ -250,6 +250,7 @@ async def test_the_reserve_leaves_githubs_last_requests_alone_until_the_hour_res
     held = await admin.post("/api/fleet-catalog/alpha/history")
     assert held.status_code == 409 and held.json()["detail"].startswith("Not read:")
     assert fleet.requests == []
+    assert (await _state(db)).history_detail.startswith("Paused until")  # a person's 409 is not the instance's state
 
     fc.ALLOWANCE.reset_at = datetime.now(UTC) - timedelta(seconds=1)  # the hour reset
     assert await fh.tick(transport=fleet.transport) == "alpha"
@@ -323,7 +324,7 @@ async def test_a_manifest_that_cannot_be_read_at_one_change_is_named_and_the_res
     assert "1 of the 6 changes did not carry a manifest" in (await _titles(db))["alpha"].history_detail
 
 
-async def test_a_refusal_pauses_the_background_and_a_list_it_cannot_read_marks_only_its_title(db, fleet, flag_on, macs) -> None:
+async def test_a_failure_pauses_the_background_marks_nothing_read_and_sets_only_its_title_aside(db, fleet, flag_on, macs) -> None:
     from app.core import fleet_catalog as fc
     from app.core import fleet_history as fh
 
@@ -339,16 +340,61 @@ async def test_a_refusal_pauses_the_background_and_a_list_it_cannot_read_marks_o
     fleet.requests.clear()
     assert await fh.tick(transport=fleet.transport) is None and fleet.requests == []  # paused, not hammering
 
-    fh._paused_until = None  # the pause is over
+    # A proxy answering in GitHub's place: every title would fail the same way, so none is marked read.
+    fh._paused_until = None
+    fh._skipped.clear()
     fleet.broken_commits = lambda: httpx.Response(200, content=b"<html>Sign in to your proxy</html>")
     assert await fh.tick(transport=fleet.transport) is None
-    alpha = (await _titles(db))["alpha"]
-    assert alpha.history_read_at is not None and "not JSON" in alpha.history_detail
+    assert (await _titles(db))["alpha"].history_read_at is None
     assert (await _state(db)).history_outcome == fc.OUTCOME_UNEXPECTED
 
-    # Not asked for again every two minutes: the background moves on to the next title.
+    # Once it is fixed, the next title is read while the one that failed waits its hour, and then it is read too.
     fleet.broken_commits = None
+    fh._paused_until = None
     assert await fh.tick(transport=fleet.transport) == "beta"
+    fh._skipped.clear()  # the hour is over
+    assert await fh.tick(transport=fleet.transport) == "alpha"
+    assert (await _state(db)).history_outcome == fh.OUTCOME_OK
+
+
+async def test_a_pause_comes_off_the_status_line_once_the_hour_resets_with_nothing_left_to_read(db, fleet, flag_on, macs) -> None:
+    from app.core import fleet_catalog as fc
+    from app.core import fleet_history as fh
+
+    await fc.check(db, transport=fleet.transport)
+    assert await fh.tick(transport=fleet.transport) == "alpha"
+    assert await fh.tick(transport=fleet.transport) == "beta"
+
+    # GitHub's allowance down to the reserve with nothing left to read: no pause is written.
+    fc.ALLOWANCE.remaining, fc.ALLOWANCE.reset_at = fh.RESERVE, datetime.now(UTC) + timedelta(minutes=30)
+    assert await fh.tick(transport=fleet.transport) is None
+    assert (await _state(db)).history_outcome == fh.OUTCOME_OK
+
+    # A pause written while a title was waiting goes once there is nothing left and the hour has reset.
+    state = await _state(db)
+    state.history_outcome, state.history_detail = fh.OUTCOME_WAITING, "Paused until 14:05 UTC: …"
+    await db.commit()
+    fc.ALLOWANCE.reset_at = datetime.now(UTC) - timedelta(seconds=1)
+    assert await fh.tick(transport=fleet.transport) is None
+    cleared = await _state(db)
+    assert cleared.history_outcome is None and cleared.history_detail is None
+
+
+async def test_a_version_that_came_back_shows_the_move_seen_here_not_its_first_date(db, fleet, flag_on, macs, viewer) -> None:
+    from app.core import fleet_catalog as fc
+    from app.core import fleet_history as fh
+
+    await fc.check(db, transport=fleet.transport)
+    assert await fh.tick(transport=fleet.transport) == "alpha"
+    fleet.change("alpha", "1.5", days_ago=0.01)  # Fleet went back from 2.0 to 1.5
+    await fc.check(db, transport=fleet.transport)
+    assert await fh.tick(transport=fleet.transport) == "alpha"  # moved, and on the most Macs: before beta's first read
+    assert (await _versions(db, "alpha"))["1.5"] == (150, "1.0")  # the first arrival keeps its date
+
+    alpha = (await viewer.get("/api/fleet-catalog")).json()["items"][0]
+    assert alpha["latestVersion"] == "1.5"
+    assert alpha["inCatalogSince"] is None and alpha["versionBefore"] is None  # not 150 days ago
+    assert alpha["previousVersion"] == "2.0" and alpha["versionChangedAt"] is not None
 
 
 # --- a person's read, and the tab ---------------------------------------------------------------

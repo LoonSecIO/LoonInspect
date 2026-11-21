@@ -3381,17 +3381,19 @@ nothing here is a permissions problem in Jamf.
      run* names the database: §4.
 9. **The status line says *The last version history read, … did not finish.*** The sentence
    after it is the reason, and it is one of the daily check's (step 3 has each, by how it
-   opens). A refusal or no answer pauses the background for a quarter of an hour and leaves
-   the title to be read again; nothing already held is removed. *GitHub answered, but …* or
-   *… not JSON* for one title's list of changes marks that title read with the sentence, which
-   its history panel shows, and the background moves on to the next title. **Read again** on
-   that title asks once more.
-10. **A title's history has versions with no date, or *Not dated* in the last column.** A
-    version gets a date only where Fleet's commits show it arriving: replacing another
-    version, or the title's first change. The panel's sentence says why one did not: a manifest
-    this build could not read at some change (the version after it is not dated), or a history
-    longer than the read's thousand changes (its oldest version is not dated). Nothing to do;
-    **Read again** cannot see further than the commits do. The dates are when Fleet's catalog
+   opens). The background pauses for a quarter of an hour and then reads a different title:
+   the one that failed waits an hour, so a single manifest GitHub keeps refusing never holds up
+   the rest. Nothing is marked read and nothing already held is removed, so once the cause is
+   fixed every title is read. The same sentence every quarter of an hour for different titles
+   is a cause outside the instance (a proxy, an egress rule); the same title every hour is that
+   title, and its sentence names the manifest.
+10. **A title's history leaves out a version, or the last column says *Not dated*.** A version
+    is listed only where Fleet's commits show it arriving: replacing another version, or the
+    title's first change. The title's history says why one is missing: a manifest this build
+    could not read at some change (the version after it is left out), or a history longer than
+    the read's thousand changes (its oldest version is left out). A version that left and came
+    back shows the move this instance saw, not its first arrival. Nothing to do; **Read again**
+    cannot see further than the commits do. The dates are when Fleet's catalog
     took each version, hours to a day after Homebrew and the vendor, never before.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*

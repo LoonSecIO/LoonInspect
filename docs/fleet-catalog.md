@@ -163,14 +163,17 @@ then one request to `raw.githubusercontent.com` per change. Titles had 31 to 113
 2026-11-21; a list longer than ten pages is read back ten pages and no further.
 
 **A version is dated only where the commits show it arriving**: at a change where it replaced
-another version or a missing manifest, or at the title's first change in Fleet's history.
-Three things leave a version undated rather than give it a date that is only a bound:
+another version or a missing manifest, or at the title's first change in Fleet's history. A
+version the read cannot see arrive is left out of the history rather than given a date that is
+only a bound, and the title's history says what was left out. Three things do that:
 
 - the first version in a history longer than the read's thousand changes;
 - the version after a change whose manifest this build could not read;
-- a version that left and came back is dated at its first arrival, never its return.
+- a version that left and came back keeps the date of its first arrival, never its return, and
+  while it is the latest again the tab shows the move this instance saw instead of that date.
 
-The title's history panel says which applied. **These are Fleet's dates, not the vendor's.**
+The title's history panel says which of the first two applied, and keeps saying it after later
+reads add to the history. **These are Fleet's dates, not the vendor's.**
 Fleet builds its manifests from Homebrew (its README says so) and commits them some hours later.
 For Firefox in October and November 2026, Fleet's commit came 5 to 13 hours after Homebrew's.
 
@@ -184,8 +187,11 @@ which the background never reads. It is held to the same reserve, and it is in t
 | --- | --- | --- |
 | `ok` | The title's changes were read and every version that could be dated was. | Added to; nothing removed. |
 | `waiting` | GitHub said 20 or fewer requests were left this hour. It carries on by itself after the time given. | As it was. |
-| `refused`, `unreachable` | The daily check's words and sentences (below). The background pauses a quarter of an hour, and the title is read again later. | As it was. |
-| `unexpected` | The list of changes for one title was not GitHub's answer. That title is marked read with the sentence, and the background moves on; **Read again** asks once more. | As it was. |
+| `refused`, `unreachable`, `unexpected` | The daily check's words and sentences (below). The background pauses a quarter of an hour and leaves the title that failed for an hour, so one title GitHub keeps refusing never holds up the rest. Nothing is marked read, so once the cause is gone every title is read. | As it was. |
+
+*Paused until …* comes off the status line by itself once the hour has reset, whether or not a
+title was left to read. A person's read refused for the reserve is their own `409`, and is not
+written to the status line.
 
 The API is `GET /api/fleet-catalog/{slug}/history` (`app:read`, asks GitHub nothing) and `POST`
 to the same address (`patch:catalog-sync`, reads it now). Both are refused in words with the

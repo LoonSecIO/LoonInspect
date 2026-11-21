@@ -1666,7 +1666,11 @@ export const en = {
     historyVersion: "Version",
     historyInCatalog: "In Fleet's catalog",
     historyReplaced: "Replaced",
-    historyFirstListed: "first listed",
+    historyReplacedNone: "none",
+    historyReadNothing: (readAt: string) => `Read ${readAt}.`,
+    historyCommitLabel: (at: string, sha: string) => `${at}: commit ${sha} in Fleet's repository (opens in a new tab)`,
+    notDatedHint:
+      "This title's version history is read, and it could not date the latest version: the read could not see it arrive. Open the title for the reason.",
     // The status line: never asked, answered (changed or not), and no answer. The failure's
     // own sentence comes from the server and is shown under `statusFailed`.
     statusNever:

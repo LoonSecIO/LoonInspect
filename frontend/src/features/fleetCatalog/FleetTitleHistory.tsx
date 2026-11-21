@@ -20,7 +20,16 @@ function day(value: string | null): string {
  * title, installed here or not. A refusal shows the server's sentence: the reserve, a read
  * already running, or what GitHub did.
  */
-export function FleetTitleHistory({ slug, canRead }: { slug: string; canRead: boolean }) {
+export function FleetTitleHistory({
+  slug,
+  canRead,
+  onRead
+}: {
+  slug: string;
+  canRead: boolean;
+  /** After a read that landed, so the page reads its list again: the row's date and the progress line moved. */
+  onRead?: () => void;
+}) {
   const { t } = useLocale();
   const [history, setHistory] = useState<History | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,27 +54,37 @@ export function FleetTitleHistory({ slug, canRead }: { slug: string; canRead: bo
     setReading(true);
     setReadError(null);
     readTitleHistory(slug)
-      .then(setHistory)
+      .then((answer) => {
+        setHistory(answer);
+        onRead?.();
+      })
       .catch((caught: unknown) =>
         setReadError(caught instanceof ApiError && caught.detail ? caught.detail : t.fleetCatalog.historyReadError)
       )
       .finally(() => setReading(false));
   }
 
-  if (error !== null) return <p className="text-sm text-destructive">{error}</p>;
+  if (error !== null)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+    );
   if (history === null) return <p className="text-sm text-muted-foreground">{t.fleetCatalog.loading}</p>;
 
   const read = history.historyReadAt !== null;
   return (
     <div className="space-y-3 text-sm" data-testid={`fleet-history-${slug}`}>
       <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
+        <div className="space-y-1" aria-live="polite">
           <p>
             {!read
               ? t.fleetCatalog.historyNotRead
-              : history.historyComplete
-                ? t.fleetCatalog.historyReadWhole(day(history.historyReadAt), day(history.historySince))
-                : t.fleetCatalog.historyReadFrom(day(history.historyReadAt), day(history.historySince))}
+              : history.historySince === null
+                ? t.fleetCatalog.historyReadNothing(day(history.historyReadAt))
+                : history.historyComplete
+                  ? t.fleetCatalog.historyReadWhole(day(history.historyReadAt), day(history.historySince))
+                  : t.fleetCatalog.historyReadFrom(day(history.historyReadAt), day(history.historySince))}
           </p>
           {history.historyDetail && <p className="text-muted-foreground">{history.historyDetail}</p>}
           <p className="text-xs text-muted-foreground">{t.fleetCatalog.historyDatesNote}</p>
@@ -76,7 +95,11 @@ export function FleetTitleHistory({ slug, canRead }: { slug: string; canRead: bo
           </Button>
         )}
       </div>
-      {readError && <p className="text-destructive">{readError}</p>}
+      {readError && (
+        <p role="alert" className="text-destructive">
+          {readError}
+        </p>
+      )}
       {read && history.versions.length === 0 && <p className="text-muted-foreground">{t.fleetCatalog.historyNoVersions}</p>}
       {history.versions.length > 0 && (
         <table className="w-full max-w-xl">
@@ -97,12 +120,13 @@ export function FleetTitleHistory({ slug, canRead }: { slug: string; canRead: bo
                     href={`${COMMIT_URL}${version.commitSha}`}
                     target="_blank"
                     rel="noreferrer noopener"
+                    aria-label={t.fleetCatalog.historyCommitLabel(day(version.seenAt), version.commitSha.slice(0, 8))}
                   >
                     {day(version.seenAt)}
                   </a>
                 </td>
                 <td className="py-1 tabular-nums text-muted-foreground">
-                  {version.previousVersion ?? t.fleetCatalog.historyFirstListed}
+                  {version.previousVersion ?? t.fleetCatalog.historyReplacedNone}
                 </td>
               </tr>
             ))}
