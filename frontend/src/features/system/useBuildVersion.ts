@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getVersion } from "@/features/system/api";
+import { getVersion, type VersionResponse } from "@/features/system/api";
 
 /** The build this instance is running, or null until the answer arrives (and on a
  *  failed request — a chrome element nobody came to read should not show an error).
@@ -9,14 +9,14 @@ import { getVersion } from "@/features/system/api";
  *  status === "unknown" — and on a claimed instance bootstrap runs while anonymous,
  *  where the probe now withholds the build. So a bootstrap-then-login sequence in one
  *  page load would leave the store holding null forever (issue #130). */
-export function useBuildVersion(): string | null {
-  const [version, setVersion] = useState<string | null>(null);
+export function useBuildVersion(): VersionResponse | null {
+  const [version, setVersion] = useState<VersionResponse | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     getVersion()
       .then((result) => {
-        if (!cancelled) setVersion(result.version);
+        if (!cancelled) setVersion(result);
       })
       .catch(() => {
         // Unreachable backend or a stale session: stay silent.

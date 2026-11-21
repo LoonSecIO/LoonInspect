@@ -14,6 +14,9 @@ class VersionOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     version: str
+    kind: Literal["container", "mac-app"] = "container"
+    app_version: str | None = None
+    app_build: str | None = None
 
 
 class UpdateStatusOut(BaseModel):

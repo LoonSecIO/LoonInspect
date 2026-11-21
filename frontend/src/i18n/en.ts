@@ -605,11 +605,17 @@ export const en = {
     title: "Support",
     description:
       "Two places to ask for help with LoonInspect — and one thing that goes to neither of them. Nothing here files a ticket for you: LoonInspect is self-hosted, and a report is something you write and send yourself.",
+    macApp: "LoonInspect.app",
+    appVersion: "App version",
+    appBuild: "App build",
+    backendBuild: "Backend build",
+    notRecorded: "Not recorded",
+    appIdentityUnavailable: "This package did not record its full app identity. Open LoonInspect → About LoonInspect for the app version and build, and include those with the backend build in your report.",
     buildHeading: "Start with the build you're running",
     buildHelp:
       "The build string of this instance. Paste it into whatever you write — it is the first thing anyone reading a report has to ask for, and it is the difference between an answer and a round trip.",
     buildUnavailable:
-      "Not read yet. If it stays blank, this browser could not reach the backend — say that in your report, and name the image tag you deployed instead.",
+      "Not read yet. Check that LoonInspect is running, then reopen Support. If it stays blank, include the version from About LoonInspect or your container image tag in the report.",
     copy: "Copy",
     copied: "Copied",
     siteHeading: "Website and Field Notes",

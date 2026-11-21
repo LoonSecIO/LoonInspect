@@ -130,8 +130,13 @@ step "backend: laid out as the image's /app"
 mkdir -p "$res/backend" "$res/launcher"
 cp -R "$src/backend/app" "$src/backend/migrations" "$src/backend/alembic.ini" "$src/backend/docs" "$res/backend/"
 cp -R "$src/frontend/dist" "$res/backend/app/static"
-# The same stamp the Dockerfile writes, so the page's build readout and the update check read it as they read an image's.
-printf '{"version": "%s+%s"}\n' "$(date -u +%Y.%m.%d)" "${commit:0:7}" >"$res/backend/app/build_info.json"
+# Keep the backend stamp for update checks, and identify the bundle with the same values as About LoonInspect.
+"$py" -I - "$res/backend/app/build_info.json" "$(date -u +%Y.%m.%d)+${commit:0:7}" "$version" "$build_number" <<'PY'
+import json
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"version": sys.argv[2], "app_version": sys.argv[3], "app_build": sys.argv[4]}) + "\n")
+PY
 cp "$launcher_source/loon_backend.py" "$res/launcher/"
 
 step "bytecode: compiled now, unchecked-hash, so nothing writes into the signed bundle at run time"
