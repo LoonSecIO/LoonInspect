@@ -45,6 +45,7 @@ from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config, prompt_status
 from app.core.ai import AIRefused, require_ai
+from app.core.ai_usage import recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
@@ -141,6 +142,7 @@ async def draft(payload: RuleDraftIn, db: AsyncSession = Depends(get_db)) -> Rul
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
+        record_usage=recorder(db, FEATURE, provider.value, model),
         serial=provider is Provider.apple_fm,
         base_url=base_url, model=model, prompt=statement, system=SYSTEM_INSTRUCTION, api_key=api_key,
         # Never for Apple, whatever the row holds: `fm serve` answers 400 to any effort on its

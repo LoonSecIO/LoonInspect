@@ -18,6 +18,7 @@ from app.api.ai import judged_endpoint
 from app.changes.derive import load_policy
 from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, saved_config
+from app.core.ai_usage import prune, queue_event, recorder
 from app.core.auth import as_utc
 from app.core.outbox import enqueue_event
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
@@ -87,6 +88,7 @@ async def finish(db, job, status, summary=None, reason=None):
     if state and state.source_id == job.source_id:
         state.summary_status, state.short_summary = status, summary
     await retain_summary(db, job.source_id, status, summary, job.provider, reason)
+    await queue_event(db, job.provider, reason if reason == "expired" else status, job.finished_at)
     await count_outcome(db, job.provider, status, reason=reason, at=job.created_at)
     if status in ("dropped", "failed"):
         log_drop(job.source_id, reason, summary_id=str(job.id), age_seconds=(now() - as_utc(job.created_at)).total_seconds())
@@ -131,8 +133,10 @@ async def finish(db, job, status, summary=None, reason=None):
 
 
 async def collect(db):
+    await prune(db, now().date())
     settings = await db.scalar(select(Settings).with_for_update(skip_locked=True))
     if not settings:
+        await db.commit()
         return
     # retention-clock: summary-jobs — receipts/cache expire even while AI is disabled.
     await db.execute(delete(Job).where(Job.created_at < now() - timedelta(days=8), Job.status.in_(TERMINAL)))
@@ -206,6 +210,8 @@ async def collect(db):
                     db.add(state)
                 state.source_id = event.id
                 kind = evidence["kind"]
+                if kind == "changed":
+                    await queue_event(db, settings.provider, "received", clock)
                 if kind != "changed":
                     status = "no_updates" if kind == "unchanged" else kind
                     state.summary_status = status
@@ -214,6 +220,7 @@ async def collect(db):
                 elif as_utc(event.created_at) + TTL <= clock:
                     state.summary_status, state.short_summary = "dropped", None
                     log_drop(event.id, "expired")
+                    await queue_event(db, settings.provider, "expired", clock)
                     await count_outcome(db, settings.provider, "dropped", reason="expired")
                 else:
                     config = await saved_config(db, Provider(settings.provider))
@@ -228,6 +235,7 @@ async def collect(db):
                     if not cached and pending >= MAX_PENDING:
                         state.summary_status, state.short_summary = "dropped", None
                         log_drop(event.id, "capacity")
+                        await queue_event(db, settings.provider, "capacity", clock)
                         await count_outcome(db, settings.provider, "dropped", reason="capacity")
                     else:
                         job = Job(
@@ -308,6 +316,13 @@ async def work_one(tenant_id, *, transport=None):
             await finish(db, job, "cached", cached)
             return True
         job.status = "processing"
+        await queue_event(
+            db,
+            job.provider,
+            "retry" if job.attempts else "started",
+            clock,
+            max(0, int((clock - as_utc(job.created_at)).total_seconds() * 1000)),
+        )
         job.attempts += 1
         job.next_attempt_at = clock + timedelta(minutes=2)
         await db.commit()
@@ -338,6 +353,7 @@ async def work_one(tenant_id, *, transport=None):
             )
             text = prompt(job.evidence, settings.preprompt)
             request = CompletionRequest(
+                record_usage=recorder(db, "inventory_summary", provider.value, config.model),
                 base_url=base,
                 model=config.model,
                 prompt=text,

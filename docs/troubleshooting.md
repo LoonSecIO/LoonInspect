@@ -3443,3 +3443,7 @@ The release markers and hardware catalog use the [SOFA macOS feed maintained by 
 In Connections → Collections add a **Recent Jamf activity** collection. Set the same device filter, sections and extension attribute quarantine as the daily crawl for comparable results. Each quarter-hourly poll catches up from the last fully successful window, with a two-minute overlap. The first window covers the preceding 17 minutes. If a poll fails, check its run log for Jamf version privileges, unsupported filters, paging or rate limits. The daily sweep keeps its own schedule.
 
 Open **Daily coverage** beside the daily crawl. A covered miss means the crawl first recorded a changed section with an inventory report time inside a completed, comparable poll window. Jamf can expose that inventory later than its report time. Open the poll or crawl log and the device history to investigate. Pending, failed or partial crawls have incomplete coverage. A baseline, a contact without changed inventory, and an uncovered time interval each have a separate meaning.
+
+### AI usage gaps or a growing queue
+
+In Settings → AI select a UTC range that includes the first measured date. Review the reporting-call counts next to the token totals. A provider that omits usage can still return a successful answer. Compare arrivals to completed jobs and cache hits, then look for retries, high queue age, and expired jobs. If calls succeed while the counters stay empty, check the server log for “AI usage could not be saved” and verify the database migration.

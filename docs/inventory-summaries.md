@@ -209,3 +209,9 @@ ledger sections the observation moved (`recordedSections`, against the span befo
 observation the AI had nothing to say about still says what it recorded (#644). The history
 point's quiet-sweep digest deliberately leaves extension attributes out: the span already keys
 on that section, and a digest that widened on upgrade would open one new point per device.
+
+### Historical AI usage
+
+Settings → AI → AI usage and processing capacity shows tenant-scoped UTC daily aggregates for 90 days. The first retained measurement marks the available history. Calls cover LoonInspect features, including interactive tests and background summaries. A request records the configured feature, provider, model sent, response-reported model, outcome and elapsed milliseconds. Token totals sum the provider's reported values. Parentheses give reporting calls divided by total calls. Unknown means the endpoint omitted the measurement. Provider time, when reported, is distinct from request elapsed time. These counters store only metadata.
+
+The queue records changed observations received, first attempts, retries, cache hits, completed jobs, failures, drops and expirations on the day of each event. A cache hit completes work without an inference call. Compare received with completed and cached jobs by UTC day. The current backlog includes pending and processing jobs. Compare the age of its oldest job with the maximum age measured at attempts that day. When backlog age grows, inspect the recent attempts, provider latency, throttling and expirations before changing the provider or cadence.
