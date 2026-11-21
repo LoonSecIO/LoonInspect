@@ -10312,6 +10312,37 @@
       },
       "VersionOut": {
         "properties": {
+          "appBuild": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appbuild"
+          },
+          "appVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appversion"
+          },
+          "kind": {
+            "default": "container",
+            "enum": [
+              "container",
+              "mac-app"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "string"

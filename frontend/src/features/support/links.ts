@@ -63,12 +63,3 @@ export const SUPPORT_LINKS = {
   /** LoonInspect.app's update and its step back, which are a disk image's and not the image's (#820). */
   macAppUpdates: `${GITHUB}/blob/main/docs/macos-app.md#updates`
 } as const;
-
-/** What the copy button puts on the clipboard, or null when there is nothing worth
- *  copying. `useBuildVersion` answers null both while the request is in flight and
- *  after it fails, and a stray whitespace-only build string would otherwise arm a
- *  button that silently copies nothing. */
-export function copyableBuild(version: string | null | undefined): string | null {
-  const trimmed = version?.trim() ?? "";
-  return trimmed === "" ? null : trimmed;
-}

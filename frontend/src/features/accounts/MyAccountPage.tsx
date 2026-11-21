@@ -6,6 +6,7 @@ import { changeOwnPassword } from "@/features/accounts/api";
 import { TwoStepSignIn } from "@/features/accounts/TwoStepSignIn";
 import { useAuthStore } from "@/features/auth/store";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
+import { buildLabel, copyableBuild } from "@/features/system/buildIdentity";
 import { useLocale } from "@/i18n/LocaleContext";
 
 export function MyAccountPage() {
@@ -76,8 +77,8 @@ export function MyAccountPage() {
             operator cannot lose. */}
         <div>
           <p className="text-xs text-muted-foreground">{t.myAccount.build}</p>
-          <p className="truncate font-mono text-sm font-medium" title={version ?? undefined}>
-            {version ?? "—"}
+          <p className="truncate font-mono text-sm font-medium" title={copyableBuild(version, t.support) ?? undefined}>
+            {version ? buildLabel(version, t.support) : "—"}
           </p>
         </div>
       </div>

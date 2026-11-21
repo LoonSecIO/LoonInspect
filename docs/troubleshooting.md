@@ -3362,3 +3362,16 @@ nothing here is a permissions problem in Jamf.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 lines of the container log, and the build.
+
+## 28. "Support does not show the Mac app version or build"
+
+Open **LoonInspect → About LoonInspect** and compare its version and build with
+**Settings → Support**. The sidebar shows the app release; Support keeps the app version,
+app build, and backend build separate, and Copy includes all three.
+
+- **Not recorded** means this package did not include that app field. Use the value in About
+  LoonInspect in the report, together with the backend build. Do not infer a release from the
+  backend's date-plus-commit stamp. A newly packaged app includes the fields.
+- A blank build block means Support has not read the running service's identity. Check that
+  LoonInspect is running and reopen Support. If it stays blank, include the About values and
+  that failed read in the report. For a container, include the deployed image tag instead.
