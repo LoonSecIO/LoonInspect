@@ -29,3 +29,19 @@ def get_app_version() -> str:
     except (OSError, KeyError, json.JSONDecodeError):
         return _DEV_VERSION
     return version if isinstance(version, str) and version else _DEV_VERSION
+
+
+def get_mac_app_identity() -> tuple[str | None, str | None]:
+    """The bundle values stamped beside the backend build by the Mac packager."""
+    try:
+        info = json.loads(_BUILD_INFO_PATH.read_text())
+    except (OSError, ValueError):
+        return None, None
+    if not isinstance(info, dict):
+        return None, None
+
+    def value(key: str) -> str | None:
+        text = info.get(key)
+        return text.strip() if isinstance(text, str) and text.strip() else None
+
+    return value("app_version"), value("app_build")

@@ -1,5 +1,6 @@
 import { Info } from "lucide-react";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
+import { buildLabel, copyableBuild } from "@/features/system/buildIdentity";
 import { useLocale } from "@/i18n/LocaleContext";
 
 interface BuildVersionProps {
@@ -20,7 +21,7 @@ export function BuildVersion({ collapsed = false }: BuildVersionProps) {
 
   if (!version) return null;
 
-  const label = `${t.auth.versionLabel} ${version}`;
+  const label = copyableBuild(version, t.support) ?? undefined;
 
   if (collapsed) {
     return (
@@ -37,7 +38,7 @@ export function BuildVersion({ collapsed = false }: BuildVersionProps) {
       title={label}
     >
       <span className="sr-only">{t.auth.versionLabel} </span>
-      {version}
+      {buildLabel(version, t.support)}
     </p>
   );
 }

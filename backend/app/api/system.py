@@ -27,7 +27,7 @@ from app.core.sharing import (
 )
 from app.core.storage import measure_storage
 from app.core.update_check import disclosed, dismiss_notice, read_update_status
-from app.core.version import get_app_version
+from app.core.version import get_app_version, get_mac_app_identity
 from app.models.schema import ShareLog
 from app.schemas.system import (
     DataSharingOut,
@@ -51,7 +51,8 @@ async def version() -> VersionOut:
     """The build this instance is running. Authenticated but unprivileged: anyone who
     can sign in should be able to answer "what am I running?" when they file a bug.
     Behind-ness stays behind SYSTEM_READ below — that is the sensitive half."""
-    return VersionOut(version=get_app_version())
+    app_version, app_build = get_mac_app_identity() if settings.instance_kind == "mac-app" else (None, None)
+    return VersionOut(version=get_app_version(), kind=settings.instance_kind, app_version=app_version, app_build=app_build)
 
 
 @router.get(

@@ -54,6 +54,10 @@ export function dismissUpdateNotice(): Promise<UpdateStatusResponse> {
 
 export interface VersionResponse {
   version: string;
+  /** Optional while talking to an older backend during an upgrade. */
+  kind?: "container" | "mac-app";
+  appVersion?: string | null;
+  appBuild?: string | null;
 }
 
 /** The running build. Needs a session but no permission — /auth/status withholds it
