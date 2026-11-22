@@ -147,6 +147,7 @@ STOPS = {
         *("POST /api/auth/setup", "POST /api/auth/mfa/recovery-codes", "DELETE /api/accounts/{account_id}/mfa"),
     ],
     "AI features are off and no provider is saved": [
+        "GET /api/system/ai/usage",
         *("GET /api/system/ai/providers", "GET /api/system/ai/host", "POST /api/system/ai/models", "POST /api/system/ai/test"),
         *("PUT /api/system/ai/configs/{provider}", "DELETE /api/system/ai/configs/{provider}"),
         *("POST /api/system/data-sharing/exclusion-ranking", "POST /api/changes/prompt"),

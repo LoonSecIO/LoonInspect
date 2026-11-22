@@ -61,6 +61,7 @@ from app.api.ai import APPLE_FM_SYSTEM_ONLY, CARD_LABELS, judged_endpoint
 from app.api.changes import CHANGE_KINDS, change_conditions
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, list_configs
+from app.core.ai_usage import recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.crypto import StoredValueUnknownKeyId, StoredValueUnreadable
@@ -462,6 +463,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
+        record_usage=recorder(db, FEATURE, provider.value, model),
         serial=provider is Provider.apple_fm,
         base_url=base_url,
         model=model,

@@ -36,9 +36,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import weakref
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -84,6 +86,9 @@ class CompletionRequest:
     system: str | None = None
     # Local-only slots pin a previously checked address, preserving Host and TLS identity.
     connect_ip: str | None = None
+    record_usage: Callable[[str, CompletionResult | None, int], Awaitable[None]] | None = field(
+        default=None, repr=False, compare=False
+    )
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,9 @@ class CompletionResult:
     model: str | None
     finish_reason: str | None
     completion_tokens: int | None
+    input_tokens: int | None = None
+    cached_tokens: int | None = None
+    provider_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +214,15 @@ def _outcome(content: str, reasoning: str | None, finish_reason: str | None) -> 
     return OUTCOME_EMPTY
 
 
+def measurement(value):
+    return value if type(value) is int and 0 <= value <= 2**53 - 1 else None
+
+
+def provider_time(payload):
+    duration = measurement(payload.get("total_duration"))
+    return duration // 1_000_000 if duration is not None else None
+
+
 def parse_response(wire: Wire, payload: Any) -> CompletionResult:
     """A 2xx JSON body into the normalised result, or ``AdapterError('malformed')``
     naming what was missing. Pure."""
@@ -226,6 +243,8 @@ def parse_response(wire: Wire, payload: Any) -> CompletionResult:
             reasoning = None
         finish_reason = first.get("finish_reason")
         usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        details = usage.get("prompt_tokens_details")
+        details = details if isinstance(details, dict) else {}
         tokens = usage.get("completion_tokens")
         return CompletionResult(
             outcome=_outcome(content, reasoning, finish_reason),
@@ -233,7 +252,10 @@ def parse_response(wire: Wire, payload: Any) -> CompletionResult:
             reasoning=reasoning,
             model=payload.get("model") if isinstance(payload.get("model"), str) else None,
             finish_reason=finish_reason if isinstance(finish_reason, str) else None,
-            completion_tokens=tokens if isinstance(tokens, int) else None,
+            completion_tokens=measurement(tokens),
+            input_tokens=measurement(usage.get("prompt_tokens")),
+            cached_tokens=measurement(details.get("cached_tokens")),
+            provider_ms=provider_time(payload),
         )
 
     if wire is Wire.anthropic_messages:
@@ -257,7 +279,10 @@ def parse_response(wire: Wire, payload: Any) -> CompletionResult:
             reasoning=reasoning,
             model=payload.get("model") if isinstance(payload.get("model"), str) else None,
             finish_reason=finish_reason,
-            completion_tokens=tokens if isinstance(tokens, int) else None,
+            completion_tokens=measurement(tokens),
+            input_tokens=measurement(usage.get("input_tokens")),
+            cached_tokens=measurement(usage.get("cache_read_input_tokens")),
+            provider_ms=provider_time(payload),
         )
 
     raise ValueError(f"unknown wire {wire!r}")
@@ -437,12 +462,12 @@ class _SerialLane:
 _serial_slots: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
-async def _serial_complete(wire, req, transport, timeout_seconds):
+async def _serial_complete(req, exchange):
     loop = asyncio.get_running_loop()
     lane = _serial_slots.setdefault(loop, _SerialLane())
     await lane.acquire(req)
     try:
-        return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+        return await exchange()
     finally:
         await lane.release()
 
@@ -451,13 +476,31 @@ async def complete(
     wire: Wire, req: CompletionRequest, *, transport=None, timeout_seconds=DEFAULT_TIMEOUT_SECONDS
 ) -> CompletionResult:
     """Share one Apple FM lane with interactive calls; timeout includes the meter wait."""
+    started = None
+    result = None
+    outcome = "interrupted"
+
+    async def exchange():
+        nonlocal started
+        started = time.monotonic()
+        return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+
     try:
         async with asyncio.timeout(timeout_seconds):
-            if req.serial:
-                return await _serial_complete(wire, req, transport, timeout_seconds)
-            return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+            result = await _serial_complete(req, exchange) if req.serial else await exchange()
+            outcome = result.outcome
+            return result
     except TimeoutError as exc:
+        outcome = "timeout"
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
+    except AdapterError as exc:
+        outcome = exc.kind
+        raise
+    finally:
+        # Finish metering outside the request deadline and serial lane. A slow database
+        # write must not turn a completed inference into a retry or block the next caller.
+        if started is not None and req.record_usage:
+            await req.record_usage(outcome, result, int((time.monotonic() - started) * 1000))
 
 
 async def _complete_unmetered(

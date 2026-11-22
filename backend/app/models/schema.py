@@ -12,7 +12,7 @@ these ones serialized.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -2275,6 +2275,32 @@ class InventorySummaryState(Base):
     source_id: Mapped[int] = mapped_column(Integer)
     summary_status: Mapped[str] = mapped_column(String(24), default="baseline")
     short_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AIUsageDaily(Base):
+    """Tenant-scoped daily inference attempts or logical queue events."""
+
+    __tablename__ = "ai_usage_daily"
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    day: Mapped[date] = mapped_column(primary_key=True)
+    feature: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    requested: Mapped[str] = mapped_column(String(200), primary_key=True)
+    reported: Mapped[str] = mapped_column(String(200), primary_key=True)
+    outcome: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    events: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    request_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    input_tokens: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    input_reports: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    output_reports: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    cached_tokens: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    cache_reports: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    provider_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    provider_reports: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    queue_wait_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    max_queue_wait_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
 
 
 class InventorySummaryMetric(Base):

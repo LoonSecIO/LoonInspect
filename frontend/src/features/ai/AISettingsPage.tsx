@@ -1,3 +1,4 @@
+import { HistoricalUsage } from "./HistoricalUsage";
 import { InventorySummarySettings } from "@/features/ai/InventorySummaries";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -457,6 +458,7 @@ export function AISettingsPage() {
         </div>
       </div>
 
+      <HistoricalUsage />
       <InventorySummarySettings />
 
       {detection && (

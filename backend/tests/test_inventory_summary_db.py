@@ -23,6 +23,7 @@ async def summary_db(tenant_ready):
     from app.core.sharing import get_or_create_settings
     from app.models.schema import (
         AIProviderConfig,
+        AIUsageDaily,
         DataSharingSettings,
         EventOutbox,
         FeatureFlag,
@@ -55,6 +56,7 @@ async def summary_db(tenant_ready):
         finally:
             await db.rollback()
             for model in (
+                AIUsageDaily,
                 InventorySummaryJob,
                 InventorySummaryMetric,
                 InventorySummaryState,
@@ -221,6 +223,11 @@ async def test_cache_reuses_identical_changes_for_a_second_device(summary_db):
     statuses = (await db.scalars(select(Job.status))).all()
     assert statuses.count("cached") == 1 and statuses.count("completed") == 1
     assert len(calls) == 1
+    from app.models.schema import AIUsageDaily
+
+    assert (await db.scalar(select(AIUsageDaily.events).where(AIUsageDaily.kind == "call"))) == 1
+    events = (await db.execute(select(AIUsageDaily.outcome, AIUsageDaily.events).where(AIUsageDaily.kind == "queue"))).all()
+    assert dict(events) == {"received": 2, "started": 1, "completed": 1, "cached": 1}
 
 
 async def test_overload_retries_preserve_expiry_and_are_counted(summary_db):

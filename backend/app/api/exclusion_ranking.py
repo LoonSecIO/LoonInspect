@@ -16,6 +16,7 @@ from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import list_configs
+from app.core.ai_usage import recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
@@ -119,6 +120,7 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         result = await complete(
             wire,
             CompletionRequest(
+                record_usage=recorder(db, FEATURE, payload.provider.value, config.model),
                 base_url=base_url,
                 model=config.model,
                 prompt=prompt,
