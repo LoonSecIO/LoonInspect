@@ -66,6 +66,7 @@ services:
       TLS_MODE: ${TLS_MODE:-off}
       TLS_HOSTNAME: ${TLS_HOSTNAME:-localhost}
       # Only read when TLS_MODE=provided; mount the files in via the volumes below.
+      SOFA_CACHE_DIR: ${SOFA_CACHE_DIR:-./data/sofa}
       TLS_CERT_PATH: ${TLS_CERT_PATH:-./data/certs/server.crt}
       TLS_KEY_PATH: ${TLS_KEY_PATH:-./data/certs/server.key}
       # Whose X-Forwarded-For is believed. Set to your reverse proxy's address (or "*"

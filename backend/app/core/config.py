@@ -228,6 +228,7 @@ class Settings(BaseSettings):
     # matters, because audit written anywhere else is destroyed on the next
     # `docker compose up --build`.
     audit_log_path: str = "./data/audit/audit.jsonl"
+    sofa_cache_dir: str = "./data/sofa"
     audit_retention_days: int = 30
 
     host: str = "0.0.0.0"

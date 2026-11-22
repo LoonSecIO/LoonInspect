@@ -14,6 +14,7 @@ import {
   type HistoryPage,
 } from "./history";
 import { PreviousValue } from "./PreviousValue";
+import { OsTransitions } from "@/features/osPosture/OsPosturePage";
 
 /** A keyed instance drops every request and saved value when the account, tenant or device changes. */
 export function DeviceHistoryCard({ deviceId }: { deviceId: number }) {
@@ -24,6 +25,7 @@ export function DeviceHistoryCard({ deviceId }: { deviceId: number }) {
 
 function HistoryCard({ deviceId }: { deviceId: number }) {
   const { t, locale } = useLocale();
+  const [osOpen, setOsOpen] = useState(false);
   const copy = t.deviceHistory;
   const sectionLabels = t.changes.sections;
   const [page, setPage] = useState(1);
@@ -157,6 +159,7 @@ function HistoryCard({ deviceId }: { deviceId: number }) {
       className="overflow-hidden rounded-lg border bg-card"
       aria-label={copy.heading}
     >
+      <details className="px-5 py-2" onToggle={event => setOsOpen(event.currentTarget.open)}><summary>macOS</summary>{osOpen && <OsTransitions deviceId={deviceId} />}</details>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/30 px-5 py-4">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">

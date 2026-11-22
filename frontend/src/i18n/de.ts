@@ -353,6 +353,7 @@ export const de: Translations = {
     applications: "Anwendungen",
     smartGroupCost: "Gruppenkosten",
     posture: "Sicherheitslage",
+    osPosture: "macOS-Versionen",
     vulnerabilities: "Schwachstellen",
     compliance: "Nachweise",
     patchPolicy: "Patch-Richtlinie",
