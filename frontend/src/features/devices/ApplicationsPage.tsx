@@ -79,7 +79,7 @@ export function ApplicationsPage() {
         )}
         {fleetCatalogEnabled && (
           <NavLink
-            to="/devices/applications/fleet-catalog"
+            to="/devices/applications/fleet-catalog?days=7"
             className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
           >
             {t.fleetCatalog.tabLabel}

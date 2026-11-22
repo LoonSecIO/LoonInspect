@@ -13,20 +13,14 @@ against GitHub once, on 2026-11-15, with the numbers under [Validation](#validat
 Fleet keeps a catalog of the Mac apps it maintains in its public repository,
 [`fleetdm/fleet`](https://github.com/fleetdm/fleet), under `ee/maintained-apps/outputs`: one
 index of titles and one manifest per title, updated as vendors release. With the flag on,
-LoonInspect reads that folder once a day and shows it under **Devices › Applications › Fleet
-catalog**: each title, Fleet's latest version of it, how many of this organization's Macs have
-it and how many of those are behind. In the background, slowly, it also reads the version
-history of the titles installed here from the same repository's commits: every version Fleet's
-catalog carried, and the day it took each.
+LoonInspect reads that folder daily and makes the public titles available under
+**Devices › Applications › Fleet catalog**. Patch planning opens on the organization's
+Jamf-inventoried apps. Fleet titles opens on the full public catalog. Select an app or a
+title to inspect its version distribution, release history, update options and evidence.
 
-Each title also has a **Fleet source** link to its current `darwin.json` manifest on
-GitHub (#840). It is separate from the button that opens version history and works with
-the keyboard. In LoonInspect.app it opens in the default browser; on the web it opens
-in a new tab.
-
-It is a second public list of titles and latest versions, beside Jamf's patch catalog, and it
-needs no Jamf Pro connection. It is a display. Nothing here feeds the vulnerability join, the
-App Catalog's judgements, the wire or the posture tape, and LoonInspect installs nothing.
+Every public title links to its current manifest. A dated version links to the manifest at
+the corresponding commit. The date records when Fleet published that catalog version.
+Historical reads continue in the background for installed titles.
 
 Fleet builds its Mac manifests from Homebrew metadata (the folder's own README says so), so
 *Fleet's latest* is the version Fleet last recorded for the title, not a vendor's
@@ -67,9 +61,7 @@ The flag ships off, nothing is read until an administrator turns it on, and the 
 description says what this section says. Kyle chose this source with that stated (2026-11-15,
 #794).
 
-**Each instance reads for itself.** Nothing here is collected by LoonSec, shipped in the image,
-or sent anywhere: every request is the instance's own, to GitHub, under its own operator's
-answer to the licence question. A history gathered once by LoonSec and served to instances
+**Each instance reads for itself.** The instance fetches the public manifests and their history directly from GitHub under its operator’s answer to the licence question. A history gathered once by LoonSec and served to instances
 would be LoonSec copying and using these files in production, which is why it is not built
 that way (Kyle, 2026-11-21, #838).
 
@@ -117,8 +109,8 @@ with what it found. The daily check is the scheduler's and is in the container l
 What one check asks:
 
 1. **The folder's listing**, one request to the GitHub API. It names the `outputs` tree by
-   its git sha. The same sha as the last complete read is the same content, so the check
-   stops here. This is every check on a day Fleet changed nothing: one request.
+   its git sha. When it matches the last reconciled listing, the check stops after this request.
+   An unchanged listing keeps its previous complete or partial coverage.
 2. **The tree, listed whole**, one more API request. The listing GitHub's Contents API gives
    for a folder stops at 1,000 entries and this folder holds more, so the Git Trees API is
    asked instead. It gives every Mac manifest's blob sha.
@@ -209,7 +201,7 @@ on the tab's status line and, for a failed check, in the container log.
 
 | Outcome | Means | The titles held |
 | --- | --- | --- |
-| `ok` | The catalog had changed and was read. A sentence follows only if some manifests could not be read as a title with a version; they are named, left as they were, and read again when Fleet next changes its catalog. | Now what Fleet publishes. |
+| `ok` | The catalog had changed and was read. A sentence follows only if some manifests could not be read as a title with a version; they are named, left as they were, and read again when Fleet next changes its catalog. | Readable current titles, with earlier copies retained for skipped entries. |
 | `unchanged` | GitHub answered and nothing had moved. | As they were. |
 | `refused` | GitHub's rate limit answered (a 403 or 429 carrying its limit headers). | As they were. |
 | `unreachable` | No answer, an answer GitHub does not give (a proxy's 403, a 502), or a name that resolved to an address this instance will not dial. | As they were. |
@@ -217,52 +209,70 @@ on the tab's status line and, for a failed check, in the container log.
 
 **A failed check never removes or blanks what is held.** Three rules make that true. A check
 that fails before reading manifests writes nothing but its own outcome. A check cut short
-part-way through the manifests keeps the ones it read, says how many, and does not record the
-new tree sha, so the next check lists the tree again and reads only the rest. And titles are
-removed only by a complete read that no longer lists them, never by a listing that failed or
-was cut short.
+part-way through the manifests keeps the ones it read and reports how many. If the held
+rows changed, the cache becomes partial. The next check reconciles the full listing, even
+if Fleet reverted to its earlier tree. A title is removed when both the completed tree
+listing and the index omit it.
+
+Patch planning can rule out a Fleet match or confirm a single channel only with a complete
+snapshot. Partial snapshots still show known candidates and local installed builds. During
+the 1.3.0 upgrade, an existing cache is marked partial until the next eligible scheduled
+check reconciles it. A previous failure keeps its usual retry interval.
 
 Before the first check there is no outcome at all, and the tab says the catalog has not been
 read yet. That is its own state, not an empty catalog.
 
-## The tab
+## Planning a Jamf-to-Fleet migration
 
-**Devices › Applications › Fleet catalog** lists, per title: the name, the bundle identifier,
-Fleet's latest version, *Macs with app*, *Macs behind*, and when the version last moved with
-the version before it.
+The application tab opens on seven days of last contact. Use **Inventory scope** to choose a Jamf connection, time window and clock. Last contact
+means the Mac checked in. Last inventory dates the software observation. **All dates**
+includes computers with missing timestamps. A dated window lists missing and future-dated observations separately from
+Macs known to be outside it. Counts use distinct Macs and omit finalized departures.
+Prevalence is the share of in-scope Macs with an installation.
 
-- **The match is the exact bundle identifier.** A title is on a Mac when an installed app
-  there carries the title's bundle identifier, letter for letter. Fleet's own check for a
-  title is the same equality. Only Macs are counted: an iPad app sharing the identifier is not
-  the Mac title.
-- **Behind is any copy older than Fleet's latest.** The installed version is compared with
-  Fleet's by the comparison the Jamf Patch matcher uses, on the numbers in the version
-  string. A Mac with two copies of an app, one current and one stale, is behind. A Mac on a
-  build newer than Fleet lists is not behind. *Macs behind* and the rest are both served, so
-  the page never subtracts.
-- **Only titles installed here** is ticked by default and hides Fleet's titles no Mac has.
-  Unticked, the whole catalog is listed. A title on no Mac shows a dash under *Macs behind*,
-  not a zero.
-- **The status line** says when GitHub was last asked and what it answered. After a failed
-  check it shows the sentence and says the titles below are as read on the earlier date. Under
-  it, how many of the titles installed here have their version history read, and the
-  sentence when the last history read held back or failed.
-- **When the version moved** is the version history's date when it has one: the day Fleet's
-  catalog took the latest version, and the version it replaced. Without one, it is the move
-  this instance saw, or that there is neither yet.
-- **A title's name opens its version history**, newest first, each date linked to its commit
-  in Fleet's repository.
+- Select **Outside policy** to find apps with a build past the organization's confirmed
+  Jamf patch deadline or release limit. The report uses the applicable title override,
+  exemption or default. An app may meet its deadline while Fleet already has a newer
+  release. **Unassessed** means the rule or supporting identity, clock or release evidence
+  is missing. See the app for build-level reasons.
+- Sort by **Most installed** to see reach or **Oldest open patch gap** to find longstanding
+  gaps. **Patch priority** combines observed prevalence, the age of a confirmed gap,
+  policy, release cadence, and vulnerability evidence. A known-exploited finding carries
+  more weight than prevalence alone. Select an app to see the reasons and the underlying
+  counts. Installation counts measure reach. Application runtime requires usage telemetry.
+- Select **Fleet titles** to search the full public catalog, including apps absent from
+  the selected Macs. Titles show the number of in-scope devices whose bundle identifiers
+  match. Multiple release channels can use the same identifier. Their counts may overlap.
+- Open an installed app to find the count on an exact version. Recorded version changes
+  and dated Fleet versions describe local update behavior and upstream release cadence.
+  The dated sample on the detail page shows how long after Fleet publication matching
+  upgrades were first observed. Inventory collection intervals affect that measurement.
+- Select the current or an earlier cached Fleet target to see how many Macs have an older
+  copy. Dotted numeric releases can be ordered. Different prerelease or vendor-qualified strings stay unknown when their order cannot be established. One Mac with multiple copies counts once in the projection. Distinct sampled
+  versions, installs and Macs have different denominators. The report shows exact
+  addressed, introduced and remaining findings only where both build records have
+  complete evidence in the organization's selected corpus. A capped ID list supports
+  only the difference in total. Authorized vulnerability readers can open individual IDs.
+- **Outside both catalogs** requires a checked Jamf Patch identity and a populated Fleet
+  catalog. A missing bundle ID, unread catalog, or unchecked Jamf match stays unresolved.
+  Open the app to review custom packages, Installomator and Munki.
+- The pilot guide describes patching existing installs, offering a title in Self-service
+  and installing on Macs missing it. Review target fleet, labels, settings and a pilot
+  result in Fleet before broadening deployment. Public catalog availability alone gives
+  no evidence that a policy is deployed. Chrome, Falcon and Zwift include identity-specific
+  notes on update settings, sensor health or launcher scope.
+- When AI is enabled with consent and a saved provider, **Generate briefing** sends
+  aggregate counters after an explicit request. The selected provider can rank up to
+  three evidence-backed highlights. The app renders the text locally and identifies the model.
+  Local report highlights remain available if the inference call fails.
 
-The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`) and
-`POST /api/fleet-catalog/refresh` (`patch:catalog-sync`). A refresh that could not read GitHub
-answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
-state.
+**Check now** refreshes the instance's public catalog. **Version history** displays the
+locally held dates and offers a separately permissioned refresh. The status reports the
+last GitHub response and the date of retained data after a failed refresh.
 
 ## What it leaves out
 
-- **No vulnerability or patch judgement.** Fleet's titles are not joined to the vulnerability
-  corpus, are not a Jamf Patch title match, and do not count as a public source where the
-  product asks whether one knows an app.
+- **Dataset scope.** The migration report reads existing corpus and Jamf match evidence. Changing a Fleet target recalculates the local projection. It leaves the source catalogs and the organization’s patch rules intact.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**

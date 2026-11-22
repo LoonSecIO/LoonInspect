@@ -1,5 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { portfolioCopy } from "./portfolioCopy";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
@@ -38,8 +40,19 @@ function when(value: string | null): string {
  * title's Read history (#838) are the controls that do, and only for an account that may sync
  * a catalog. A title's row opens its version history.
  */
-export function FleetCatalogPage() {
-  const { t } = useLocale();
+interface CatalogPlanning {
+  search: string;
+  setSearch: (search: string) => void;
+  installedOnly: boolean;
+  setInstalledOnly: (value: boolean) => void;
+  counts: Record<string, number>;
+  titleHref: (slug: string) => string;
+  onRefresh: () => void;
+}
+
+export function FleetCatalogPage({ planning }: { planning?: CatalogPlanning }) {
+  const { locale, t } = useLocale();
+  const copy = portfolioCopy[locale];
   const canCheck = useHasPermission(PERMISSIONS.PATCH_CATALOG_SYNC);
 
   const [catalog, setCatalog] = useState<FleetCatalog | null>(null);
@@ -48,10 +61,15 @@ export function FleetCatalogPage() {
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const searchTerm = planning?.search ?? localSearch;
+  const setSearchTerm = planning?.setSearch ?? setLocalSearch;
   // Installed titles only, by default, as the Jamf Patch tab opens on titles with devices:
   // the question the tab answers first is "what do we have that Fleet tracks".
-  const [installedOnly, setInstalledOnly] = useState(true);
+  const [localInstalledOnly, setLocalInstalledOnly] = useState(true);
+  const installedOnly = planning?.installedOnly ?? localInstalledOnly;
+  const setInstalledOnly = planning?.setInstalledOnly ?? setLocalInstalledOnly;
+  const requestInstalledOnly = planning ? false : installedOnly;
   const [sortKey, setSortKey] = useState<FleetSortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   // The titles whose version history is open under their row.
@@ -96,7 +114,7 @@ export function FleetCatalogPage() {
    *  is how the effect drops a read a later one superseded (CONTRIBUTING.md, #479). */
   const load = useCallback(
     (live: () => boolean = () => true): Promise<void> =>
-      getFleetCatalog(installedOnly)
+      getFleetCatalog(requestInstalledOnly)
         .then((response) => {
           if (live()) setCatalog(response);
         })
@@ -106,7 +124,7 @@ export function FleetCatalogPage() {
         .finally(() => {
           if (live()) setLoading(false);
         }),
-    [installedOnly, t]
+    [requestInstalledOnly, t]
   );
 
   // Adjusted during the render that moved the inputs, keyed on the effect's whole
@@ -141,7 +159,7 @@ export function FleetCatalogPage() {
         setError(null);
         return load();
       })
-      .finally(() => setChecking(false));
+      .finally(() => { setChecking(false); planning?.onRefresh(); });
   }
 
   function handleSort(key: FleetSortKey) {
@@ -156,11 +174,14 @@ export function FleetCatalogPage() {
   const visible = useMemo(
     () =>
       sortTitles(
-        (catalog?.items ?? []).filter((title) => titleMatches(title, searchTerm)),
+        (catalog?.items ?? []).filter(title => (
+          (!planning || !installedOnly || planning.counts[title.slug] > 0) && titleMatches(title, searchTerm)
+        )),
         sortKey,
-        sortDir
+        sortDir,
+        planning?.counts
       ),
-    [catalog, searchTerm, sortKey, sortDir]
+    [catalog, searchTerm, sortKey, sortDir, planning, installedOnly]
   );
 
   const empty = catalog === null ? null : emptyState(catalog, visible, { searching: searchTerm.trim() !== "", installedOnly });
@@ -174,7 +195,7 @@ export function FleetCatalogPage() {
       case "neverRead":
         return t.fleetCatalog.emptyNeverRead;
       case "noneInstalled":
-        return t.fleetCatalog.emptyNoneInstalled(catalog.state?.appCount ?? 0);
+        return planning ? copy.noneScoped : t.fleetCatalog.emptyNoneInstalled(catalog.state?.appCount ?? 0);
       case "noMatchInstalled":
         return t.fleetCatalog.emptyNoMatchInstalled;
       case "noMatch":
@@ -202,8 +223,8 @@ export function FleetCatalogPage() {
     <section className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">{t.fleetCatalog.eyebrow}</p>
-          <h1 className="text-3xl font-bold tracking-tight">{t.fleetCatalog.title}</h1>
+          {!planning && <p className="text-sm font-medium text-muted-foreground">{t.fleetCatalog.eyebrow}</p>}
+          {planning ? <h2 className="text-xl font-semibold">{copy.allTitles}</h2> : <h1 className="text-3xl font-bold tracking-tight">{t.fleetCatalog.title}</h1>}
           <p className="mt-1 text-sm text-muted-foreground">{t.fleetCatalog.description}</p>
         </div>
         {canCheck && (
@@ -246,7 +267,8 @@ export function FleetCatalogPage() {
               the last read held back or failed, the server's sentence for why. */}
           {status !== "never" && catalog.installedTitles > 0 && (
             <p className="mt-2 text-muted-foreground">
-              {t.fleetCatalog.historyProgress(catalog.installedTitlesWithHistory, catalog.installedTitles)}
+              {planning ? copy.organizationHistory(catalog.installedTitlesWithHistory, catalog.installedTitles)
+                : t.fleetCatalog.historyProgress(catalog.installedTitlesWithHistory, catalog.installedTitles)}
             </p>
           )}
           {historyStatus === "waiting" && state?.historyDetail && <p className="mt-1">{state.historyDetail}</p>}
@@ -266,12 +288,13 @@ export function FleetCatalogPage() {
       <div className="flex flex-wrap gap-3">
         <input
           className={`${inputClasses} min-w-[240px] flex-1`}
+          aria-label={t.fleetCatalog.searchPlaceholder}
           placeholder={t.fleetCatalog.searchPlaceholder}
           data-page-search=""
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        <label className="flex items-center gap-2 text-sm" title={t.fleetCatalog.installedOnlyHint}>
+        <label className="flex items-center gap-2 text-sm" title={planning ? copy.scopedHint : t.fleetCatalog.installedOnlyHint}>
           <input type="checkbox" checked={installedOnly} onChange={(e) => setInstalledOnly(e.target.checked)} />
           {t.fleetCatalog.installedOnly}
         </label>
@@ -285,28 +308,28 @@ export function FleetCatalogPage() {
               {sortableHeader("bundleId", t.fleetCatalog.tableBundleId)}
               {sortableHeader("latestVersion", t.fleetCatalog.tableLatestVersion)}
               {sortableHeader("deviceCount", t.fleetCatalog.tableDeviceCount)}
-              {sortableHeader("devicesBehind", t.fleetCatalog.tableDevicesBehind)}
+              {!planning && sortableHeader("devicesBehind", t.fleetCatalog.tableDevicesBehind)}
               {sortableHeader("versionChangedAt", t.fleetCatalog.tableVersionChanged)}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={COLUMNS}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={planning ? COLUMNS - 1 : COLUMNS}>
                   {t.fleetCatalog.loading}
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={COLUMNS}>
+                <td className="px-4 py-4 text-destructive" colSpan={planning ? COLUMNS - 1 : COLUMNS}>
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && emptyMessage !== null && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={COLUMNS}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={planning ? COLUMNS - 1 : COLUMNS}>
                   {emptyMessage}
                 </td>
               </tr>
@@ -317,6 +340,7 @@ export function FleetCatalogPage() {
                 <Fragment key={title.slug}>
                   <tr className={open.has(title.slug) ? "" : "border-b last:border-0"}>
                     <td className="px-4 py-2 font-medium">
+                      {planning && <Link className="block text-primary hover:underline" to={planning.titleHref(title.slug)}>{title.name}</Link>}
                       <button
                         type="button"
                         className="text-left hover:underline"
@@ -331,7 +355,7 @@ export function FleetCatalogPage() {
                           ) : (
                             <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
                           )}
-                          {title.name}
+                          {planning ? copy.history : title.name}
                         </span>
                       </button>
                       <a
@@ -346,12 +370,12 @@ export function FleetCatalogPage() {
                     </td>
                     <td className="px-4 py-2">{title.bundleId}</td>
                     <td className="px-4 py-2 tabular-nums">{title.latestVersion}</td>
-                    <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
-                      {title.deviceCount}
+                    <td className="px-4 py-2 tabular-nums">
+                      {planning ? planning.counts[title.slug] ?? copy.unknownCount : title.deviceCount}
                     </td>
                     {/* A title on no Mac has nobody behind it and nobody current: a dash, not a
                         zero that would read as "every Mac is up to date". */}
-                    <td className="px-4 py-2 tabular-nums">
+                    {!planning && <td className="px-4 py-2 tabular-nums">
                       {title.deviceCount === 0 ? (
                         <span className="text-muted-foreground">-</span>
                       ) : (
@@ -360,12 +384,12 @@ export function FleetCatalogPage() {
                           {title.devicesBehind}
                         </span>
                       )}
-                    </td>
+                    </td>}
                     <td className="px-4 py-2">{arrived(title)}</td>
                   </tr>
                   {open.has(title.slug) && (
                     <tr id={`fleet-history-row-${title.slug}`} className="border-b bg-muted/20 last:border-0">
-                      <td className="px-4 py-3" colSpan={COLUMNS}>
+                      <td className="px-4 py-3" colSpan={planning ? COLUMNS - 1 : COLUMNS}>
                         <FleetTitleHistory slug={title.slug} canRead={canCheck} onRead={() => void load()} />
                       </td>
                     </tr>
@@ -378,7 +402,7 @@ export function FleetCatalogPage() {
 
       {catalog !== null && catalog.enabled && (
         <p className="text-sm text-muted-foreground">
-          {t.fleetCatalog.footer(visible.length, state?.appCount ?? 0, catalog.installedTitles)}
+          {planning ? copy.catalogCount(visible.length) : t.fleetCatalog.footer(visible.length, state?.appCount ?? 0, catalog.installedTitles)}
         </p>
       )}
 

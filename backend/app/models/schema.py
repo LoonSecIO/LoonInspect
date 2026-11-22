@@ -756,9 +756,9 @@ class FleetAppVersion(Base):
 class FleetCatalogState(Base):
     """What the last check of Fleet's catalogue found: one row, or none before the first (#794).
 
-    `tree_sha` is the catalogue folder's git tree sha as of the last **complete** read, so a
-    check that finds the same sha has nothing to read. A check that failed leaves it where it
-    was and says why in `detail`, in the operator's words; the titles already held stay.
+    `tree_sha` identifies the listing most recently reconciled, including listings with skipped
+    titles. A check that partially updates held titles clears the SHA so the next check reconciles
+    the mixed rows. `snapshot_status` describes the held rows independently of the latest attempt.
     """
 
     __tablename__ = "fleet_catalog_state"
@@ -766,6 +766,7 @@ class FleetCatalogState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
     tree_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    snapshot_status: Mapped[str] = mapped_column(String(16), default="unread", server_default="unread")
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When the titles held here last changed, which is not when GitHub was last asked.
     changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

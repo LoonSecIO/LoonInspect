@@ -3314,6 +3314,22 @@ for the whole instance, read from Fleet's public repository on GitHub once a day
 while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
 nothing here is a permissions problem in Jamf.
 
+**Patch planning** uses cached public titles and the selected organization's inventory.
+**Fleet titles** contains the public-catalog refresh and version-history status described below.
+
+- A record that opens with *No selected Mac has this Jamf app* may have fallen outside
+  the selected connection or activity window. Return to the catalog, widen the window and
+  check the inventory date. A recent contact alone cannot confirm an app version.
+- *This Fleet title is absent* means the cached catalog no longer contains that slug.
+  Search Fleet titles again and check the last refresh. *This version is absent* means
+  the requested target is neither the current release nor a held historical version.
+  Open version history and select a recorded release.
+- Where **Unassessed** appears under patch policy, check the matched Jamf title, the
+  confirmed patch rule and the dated newer release. For missing vulnerability evidence,
+  check the corpus date, installed build identity and target build coverage on the app page.
+  A shared bundle may require manual channel verification before an update can be projected.
+- If both views report that Fleet catalog is disabled, check the organization's feature flag.
+
 1. **The tab is not there.** The flag is per organization and ships off. An administrator turns
    on **Fleet catalog (maintained apps)** under Settings › Feature Flags, and the tab is listed
    at once. Its address opened with the flag off reads *The Fleet catalog is off*, which is this
@@ -3356,23 +3372,15 @@ nothing here is a permissions problem in Jamf.
      this build reads: the folder is gone, it holds no Mac manifest, or GitHub cut its listing
      short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
      release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
-4. **The check answered and the table is empty.** Read which sentence the table shows.
-   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
-     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
-     title matches an installed app by its exact bundle ID, on Macs only, so an organization
-     with no device sweep yet matches nothing (§1). For one title you know is installed,
-     compare its bundle ID under Devices › Applications with the tab's, letter for letter:
-     `com.Example.App` is not `com.example.app`.
-   - *No installed title matches this search* → the search missed among installed titles;
-     untick the box to search the whole catalog.
-   - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
-     failed; step 3.
-5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
-   is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
-   a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
-   latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
-   finding follows from a version is not this tab's question: it judges nothing but older or
-   not.
+4. **The check answered and the table is empty.** Clear the title search or turn off
+   **Only titles installed here** to browse the full public catalog. Widen the connection
+   and activity window to include older observations. Compare the local and public
+   bundle identifiers, including capitalization. An empty result before the first successful
+   catalog read is covered in steps 2 and 3.
+5. **A count under Below target looks unexpected.** A Mac with any verified older copy
+   appears once in this projection. A Mac with a current copy and an unreadable second
+   version falls under **Version unknown**. Open **Installed builds** to see the exact
+   versions. Returning to the same app the next day can move a Mac outside the activity window.
 6. **The status line ends with manifests that *could not be read … and were left as held*.**
    The check succeeded. The named titles had a manifest this build could not read a version
    from; they keep what they showed, or stay unlisted if they were new, until Fleet next
@@ -3453,3 +3461,7 @@ In Settings → AI select a UTC range that includes the first measured date. Rev
 On the OpenAI-compatible card in Settings → AI, enter the Ollama endpoint ending in /v1. Existing cards use their pinned model. Choose **Prefer a loaded compatible Ollama model**, enter the model tags in preference order, then preview. The installed list comes from /api/tags. The running list comes from /api/ps. LoonInspect checks the completion capability with /api/show and chooses the first compatible preference, then tries remaining loaded names in alphabetical order. Preview shows the model and reason before sending a test. Save the card to apply the same choice to interactive features and background summaries.
 
 If no compatible model is loaded, load a chat-capable model or explicitly set a fallback on the card. A selected fallback may cause Ollama to load that model. If discovery is unavailable, a configured fallback can still be requested on the same endpoint. Check the URL, reverse proxy routing for /api/ps and /api/show, credentials and consent. The usage view records the concrete model requested and the model reported in the reply.
+
+### Fleet migration briefing
+
+The optional briefing asks the configured provider to select up to three highlights from the current report's aggregate counts. If the control is unavailable, check the Fleet catalog and AI feature flags, AI inference consent in **Settings → Data Sharing**, and the saved provider in **Settings → AI**. If the provider times out or returns an unusable selection, the briefing shows locally computed highlights. Test the provider in **Settings → AI** before requesting the briefing again. An empty cohort has only its Mac count to show.

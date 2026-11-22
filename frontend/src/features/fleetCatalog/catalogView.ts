@@ -108,15 +108,20 @@ export function historyStatusOf(state: FleetCatalogState | null): FleetHistorySt
 export function sortTitles(
   titles: readonly FleetCatalogTitle[],
   key: FleetSortKey,
-  dir: SortDir
+  dir: SortDir,
+  scopedCounts?: Readonly<Record<string, number>>
 ): FleetCatalogTitle[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...titles].sort((a, b) => {
     if (key === "versionChangedAt" && (movedAt(a) === null) !== (movedAt(b) === null)) {
       return movedAt(a) === null ? 1 : -1;
     }
-    const left = sortValue(a, key);
-    const right = sortValue(b, key);
+    const counts = key === "deviceCount" ? scopedCounts : undefined;
+    if (counts && (counts[a.slug] === undefined) !== (counts[b.slug] === undefined)) {
+      return counts[a.slug] === undefined ? 1 : -1;
+    }
+    const left = counts ? counts[a.slug] ?? 0 : sortValue(a, key);
+    const right = counts ? counts[b.slug] ?? 0 : sortValue(b, key);
     const order =
       typeof left === "number" && typeof right === "number"
         ? left - right

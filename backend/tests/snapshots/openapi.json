@@ -1129,6 +1129,80 @@
         "title": "AuthStatusOut",
         "type": "object"
       },
+      "BriefingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "BriefingIn",
+        "type": "object"
+      },
+      "BriefingOut": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/Highlight"
+            },
+            "title": "Highlights",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "enum": [
+              "selected",
+              "fallback"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "highlights",
+          "outcome"
+        ],
+        "title": "BriefingOut",
+        "type": "object"
+      },
       "CatalogEntryAssessedOut": {
         "description": "A catalog row that **is** the build being answered about, so it can carry an\nassessment (#251).\n\nThe split is the point, not the inheritance. `vuln` is scoped to `key_full` \u2014 one\nanswer per distinct build \u2014 so it may only ride a row a caller asked for *by build*.\nThe lookup endpoint answers by `appHash` too, where the row returned is deliberately a\nstand-in for a **different** build (the newest version the tenant has seen), and a\nclean bill from a newer build presented as the title's answer is\n`docs/vulnerabilities.md` \u00a74a's failure one grain out \u2014 a caller reads \"no findings\"\nfor a build nobody assessed.\n\nThat is refused by the type rather than documented: `CatalogLookupOut.tenant` is the\nbase `CatalogEntryOut`, which has no `vuln` at all, so a stand-in cannot carry one even\nby accident. The list endpoint's rows are each their own build, so they use this.",
         "properties": {
@@ -4561,6 +4635,436 @@
         "title": "FindingDetectedOut",
         "type": "object"
       },
+      "FleetAssessmentOut": {
+        "properties": {
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "behindBuilds": {
+            "default": 0,
+            "title": "Behindbuilds",
+            "type": "integer"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/FleetBuildAssessmentOut"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "corpusAsOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusasof"
+          },
+          "exactBuilds": {
+            "default": 0,
+            "title": "Exactbuilds",
+            "type": "integer"
+          },
+          "historyComplete": {
+            "default": false,
+            "title": "Historycomplete",
+            "type": "boolean"
+          },
+          "historyDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historydetail"
+          },
+          "historyReadAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historyreadat"
+          },
+          "historySince": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historysince"
+          },
+          "historyThrough": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Historythrough"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "management": {
+            "default": "observe",
+            "enum": [
+              "recurring",
+              "one_time",
+              "observe"
+            ],
+            "title": "Management",
+            "type": "string"
+          },
+          "managementReason": {
+            "title": "Managementreason",
+            "type": "string"
+          },
+          "netOnlyBuilds": {
+            "default": 0,
+            "title": "Netonlybuilds",
+            "type": "integer"
+          },
+          "oldestGapDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldestgapdays"
+          },
+          "outOfPolicyBuilds": {
+            "default": 0,
+            "title": "Outofpolicybuilds",
+            "type": "integer"
+          },
+          "policyExemptBuilds": {
+            "default": 0,
+            "title": "Policyexemptbuilds",
+            "type": "integer"
+          },
+          "policyUnassessedBuilds": {
+            "default": 0,
+            "title": "Policyunassessedbuilds",
+            "type": "integer"
+          },
+          "priority": {
+            "default": "monitor",
+            "enum": [
+              "review_now",
+              "plan_update",
+              "review_identity",
+              "monitor"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "recentVersions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recentversions"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          },
+          "unorderedBuilds": {
+            "default": 0,
+            "title": "Unorderedbuilds",
+            "type": "integer"
+          },
+          "withinPolicyBuilds": {
+            "default": 0,
+            "title": "Withinpolicybuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "managementReason",
+          "reason",
+          "targetVersion"
+        ],
+        "title": "FleetAssessmentOut",
+        "type": "object"
+      },
+      "FleetBuildAssessmentOut": {
+        "properties": {
+          "addressedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressedids"
+          },
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "comparison": {
+            "enum": [
+              "exact",
+              "net_only",
+              "off",
+              "unknown_source",
+              "unknown_target",
+              "ambiguous"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "installedKev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installedkev"
+          },
+          "introducedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introducedids"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "policyDueAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policydueat"
+          },
+          "policyReason": {
+            "title": "Policyreason",
+            "type": "string"
+          },
+          "policySource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "override"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policysource"
+          },
+          "policyState": {
+            "default": "unassessed",
+            "enum": [
+              "within",
+              "out",
+              "exempt",
+              "unassessed"
+            ],
+            "title": "Policystate",
+            "type": "string"
+          },
+          "remainingIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainingids"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comparison",
+          "deviceCount",
+          "name",
+          "policyReason",
+          "version"
+        ],
+        "title": "FleetBuildAssessmentOut",
+        "type": "object"
+      },
+      "FleetCandidate": {
+        "properties": {
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundleId",
+          "latestVersion",
+          "name",
+          "slug"
+        ],
+        "title": "FleetCandidate",
+        "type": "object"
+      },
       "FleetCatalogOut": {
         "properties": {
           "enabled": {
@@ -5076,6 +5580,29 @@
         "title": "HeldEvents",
         "type": "object"
       },
+      "Highlight": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "count",
+          "text"
+        ],
+        "title": "Highlight",
+        "type": "object"
+      },
       "HostDetectionOut": {
         "properties": {
           "alias": {
@@ -5406,6 +5933,92 @@
           "versionHash"
         ],
         "title": "InstalledAppOut",
+        "type": "object"
+      },
+      "InstalledBuild": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "shortVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortversion"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "versionHash": {
+            "title": "Versionhash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appHash",
+          "macs",
+          "shortVersion",
+          "version",
+          "versionHash"
+        ],
+        "title": "InstalledBuild",
+        "type": "object"
+      },
+      "InstalledEvidence": {
+        "properties": {
+          "affectedBuilds": {
+            "default": 0,
+            "title": "Affectedbuilds",
+            "type": "integer"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "assessedBuilds": {
+            "default": 0,
+            "title": "Assessedbuilds",
+            "type": "integer"
+          },
+          "highOrCriticalBuilds": {
+            "default": 0,
+            "title": "Highorcriticalbuilds",
+            "type": "integer"
+          },
+          "kevBuilds": {
+            "default": 0,
+            "title": "Kevbuilds",
+            "type": "integer"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf"
+        ],
+        "title": "InstalledEvidence",
         "type": "object"
       },
       "JamfPatchCoverageOut": {
@@ -5798,6 +6411,24 @@
         "title": "JamfPatchTitleOut",
         "type": "object"
       },
+      "JamfTitle": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "JamfTitle",
+        "type": "object"
+      },
       "KnownDepartment": {
         "description": "A department id and the name Jamf's catalog gives it. One row per distinct pair: two\nconnections that both have a department 5 with different names send both, and the page\nlabels an id only when its name is unambiguous.",
         "properties": {
@@ -5865,6 +6496,68 @@
           "name"
         ],
         "title": "KnownGroup",
+        "type": "object"
+      },
+      "LocalApp": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "fleetCandidates": {
+            "items": {
+              "$ref": "#/components/schemas/FleetCandidate"
+            },
+            "title": "Fleetcandidates",
+            "type": "array"
+          },
+          "hasJamfMatch": {
+            "title": "Hasjamfmatch",
+            "type": "boolean"
+          },
+          "jamfEvaluated": {
+            "title": "Jamfevaluated",
+            "type": "boolean"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "match": {
+            "enum": [
+              "exact",
+              "ambiguous",
+              "none",
+              "unknown"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appHash",
+          "bundleId",
+          "fleetCandidates",
+          "hasJamfMatch",
+          "jamfEvaluated",
+          "macs",
+          "match",
+          "name",
+          "versionCount"
+        ],
+        "title": "LocalApp",
         "type": "object"
       },
       "LoginRequest": {
@@ -6749,6 +7442,336 @@
           "recoveryCodesRemaining"
         ],
         "title": "MfaStatusOut",
+        "type": "object"
+      },
+      "MigrationDetail": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "assessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Assessments",
+            "type": "object"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionImpact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalApp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "jamfTitles": {
+            "items": {
+              "$ref": "#/components/schemas/JamfTitle"
+            },
+            "title": "Jamftitles",
+            "type": "array"
+          },
+          "observedChanges": {
+            "$ref": "#/components/schemas/ObservedChanges"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "builds",
+          "installedMacs",
+          "items",
+          "jamfTitles",
+          "observedChanges",
+          "scope"
+        ],
+        "title": "MigrationDetail",
+        "type": "object"
+      },
+      "MigrationReport": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "assessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Assessments",
+            "type": "object"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/SourceConnection"
+            },
+            "title": "Connections",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "fleetDeviceCounts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Fleetdevicecounts",
+            "type": "object"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          }
+        },
+        "required": [
+          "asOf",
+          "scope"
+        ],
+        "title": "MigrationReport",
+        "type": "object"
+      },
+      "MigrationScope": {
+        "properties": {
+          "activeMacs": {
+            "default": 0,
+            "title": "Activemacs",
+            "type": "integer"
+          },
+          "clock": {
+            "default": "contact",
+            "enum": [
+              "contact",
+              "inventory"
+            ],
+            "title": "Clock",
+            "type": "string"
+          },
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectionid"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "eligibleMacs": {
+            "default": 0,
+            "title": "Eligiblemacs",
+            "type": "integer"
+          },
+          "staleMacs": {
+            "default": 0,
+            "title": "Stalemacs",
+            "type": "integer"
+          },
+          "unknownMacs": {
+            "default": 0,
+            "title": "Unknownmacs",
+            "type": "integer"
+          }
+        },
+        "title": "MigrationScope",
+        "type": "object"
+      },
+      "ObservedChanges": {
+        "properties": {
+          "adoptionSamples": {
+            "default": 0,
+            "title": "Adoptionsamples",
+            "type": "integer"
+          },
+          "firstAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firstat"
+          },
+          "lastAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastat"
+          },
+          "macs": {
+            "default": 0,
+            "title": "Macs",
+            "type": "integer"
+          },
+          "medianDaysAfterFleetPublication": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediandaysafterfleetpublication"
+          },
+          "versionChanges": {
+            "default": 0,
+            "title": "Versionchanges",
+            "type": "integer"
+          },
+          "windowDays": {
+            "default": 90,
+            "title": "Windowdays",
+            "type": "integer"
+          }
+        },
+        "title": "ObservedChanges",
         "type": "object"
       },
       "ObservedEntryOut": {
@@ -9737,6 +10760,24 @@
         "title": "SmartGroupCriterionOut",
         "type": "object"
       },
+      "SourceConnection": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SourceConnection",
+        "type": "object"
+      },
       "StorageOut": {
         "properties": {
           "databaseBytes": {
@@ -10631,6 +11672,39 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionImpact": {
+        "properties": {
+          "atOrAboveMacs": {
+            "title": "Atorabovemacs",
+            "type": "integer"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "olderMacs": {
+            "title": "Oldermacs",
+            "type": "integer"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownMacs": {
+            "title": "Unknownmacs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atOrAboveMacs",
+          "installedMacs",
+          "olderMacs",
+          "targetVersion",
+          "unknownMacs"
+        ],
+        "title": "VersionImpact",
         "type": "object"
       },
       "VersionOperator": {
@@ -14239,6 +15313,420 @@
         ]
       }
     },
+    "/api/fleet-catalog/briefing": {
+      "get": {
+        "operationId": "briefing_status_api_fleet_catalog_briefing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Briefing Status",
+        "tags": [
+          "fleet-catalog"
+        ]
+      },
+      "post": {
+        "operationId": "briefing_api_fleet_catalog_briefing_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "connectionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connectionid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clock",
+            "required": false,
+            "schema": {
+              "default": "contact",
+              "enum": [
+                "contact",
+                "inventory"
+              ],
+              "title": "Clock",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Briefing",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration": {
+      "get": {
+        "description": "Current Jamf Mac inventory for the selected connection and activity window. Omit days to include all timestamps.",
+        "operationId": "migration_report_api_fleet_catalog_migration_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "connectionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connectionid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clock",
+            "required": false,
+            "schema": {
+              "default": "contact",
+              "enum": [
+                "contact",
+                "inventory"
+              ],
+              "title": "Clock",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Migration Report",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/apps/{app_hash}": {
+      "get": {
+        "operationId": "read_app_api_fleet_catalog_migration_apps__app_hash__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_hash",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connectionid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clock",
+            "required": false,
+            "schema": {
+              "default": "contact",
+              "enum": [
+                "contact",
+                "inventory"
+              ],
+              "title": "Clock",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read App",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/titles/{slug}": {
+      "get": {
+        "operationId": "read_title_api_fleet_catalog_migration_titles__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Connectionid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "clock",
+            "required": false,
+            "schema": {
+              "default": "contact",
+              "enum": [
+                "contact",
+                "inventory"
+              ],
+              "title": "Clock",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 3650,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
     "/api/fleet-catalog/refresh": {
       "post": {
         "description": "Check Fleet's catalogue now: the daily check, with a person waiting.\n\nUnchanged, it is one request to GitHub and returns at once. The first check reads every\nMac manifest and takes about fifteen seconds. A refusal is a 409 whose `detail` is the\nsentence to read (docs/diagnosability.md rule 3): the flag is off, a check is already\nrunning, or GitHub could not be read, in which case the same sentence is stored as the\ncatalogue's state and stays on the page until a later check answers.",
@@ -14271,7 +15759,7 @@
             "name": "slug",
             "required": true,
             "schema": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
               "title": "Slug",
               "type": "string"
             }
@@ -14313,7 +15801,7 @@
             "name": "slug",
             "required": true,
             "schema": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
               "title": "Slug",
               "type": "string"
             }

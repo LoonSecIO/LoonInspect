@@ -284,6 +284,7 @@ async def test_a_title_fleet_drops_is_removed_a_new_one_is_added_and_a_rename_fo
     [
         ("contents", rate_limited, "refused", "60 an hour for each address"),
         ("tree", rate_limited, "refused", "60 an hour for each address"),
+        ("alpha", rate_limited, "refused", "GitHub limits how fast"),
         ("contents", lambda: httpx.Response(200, text="<html>Sign in to the guest network</html>"), "unexpected", "not JSON"),
         (
             "contents",
@@ -295,7 +296,16 @@ async def test_a_title_fleet_drops_is_removed_a_new_one_is_added_and_a_rename_fo
         ("index", lambda: httpx.Response(200, json={"version": 2, "apps": []}), "unexpected", "lists no Mac app"),
         ("index", lambda: httpx.Response(429), "refused", "raw.githubusercontent.com refused"),
     ],
-    ids=["api-limit", "api-limit-at-the-tree", "captive-portal", "folder-gone", "bad-gateway", "empty-index", "raw-limit"],
+    ids=[
+        "api-limit",
+        "api-limit-at-the-tree",
+        "limit-before-first-write",
+        "captive-portal",
+        "folder-gone",
+        "bad-gateway",
+        "empty-index",
+        "raw-limit",
+    ],
 )
 async def test_a_check_that_fails_says_which_failure_and_leaves_the_catalogue(db, github, where, answer, outcome, said) -> None:
     from app.core import fleet_catalog as fc
@@ -309,14 +319,14 @@ async def test_a_check_that_fails_says_which_failure_and_leaves_the_catalogue(db
 
     assert state.outcome == outcome and state.outcome in fc.FAILED
     assert state.detail is not None and said in state.detail and "Nothing was changed" in state.detail
-    assert (state.tree_sha, state.changed_at, state.app_count) == (tree_sha, changed_at, 3)
+    assert (state.tree_sha, state.changed_at, state.app_count, state.snapshot_status) == (tree_sha, changed_at, 3, "complete")
     assert (await _titles(db))["alpha"].latest_version == "2.0"
 
 
 async def test_a_check_cut_short_keeps_what_it_read_and_the_next_one_reads_the_rest(db, github) -> None:
     from app.core import fleet_catalog as fc
 
-    first = await fc.check(db, transport=github.transport)
+    await fc.check(db, transport=github.transport)
     github.put("alpha", "Alpha", ALPHA, "2.1")
     github.put("beta", "Beta", BETA, "1.1")
     github.put("gamma", "Gamma", GAMMA, "7.2")
@@ -328,7 +338,7 @@ async def test_a_check_cut_short_keeps_what_it_read_and_the_next_one_reads_the_r
     assert cut.outcome == fc.OUTCOME_REFUSED
     assert cut.detail is not None and "3 of the 4 manifests that had changed were read and kept" in cut.detail
     assert "Nothing was changed" not in cut.detail  # something was, and the sentence does not say otherwise
-    assert cut.tree_sha == first.tree_sha  # not moved, so the next check does not call this one complete
+    assert cut.tree_sha is None and cut.snapshot_status == "partial"
     titles = await _titles(db)
     assert {slug: t.latest_version for slug, t in titles.items()} == {"alpha": "2.1", "beta": "1.1", "gamma": "7.2"}
 
@@ -336,7 +346,7 @@ async def test_a_check_cut_short_keeps_what_it_read_and_the_next_one_reads_the_r
     github.requests.clear()
     done = await fc.check(db, transport=github.transport)
 
-    assert (done.outcome, done.app_count, done.tree_sha) == (fc.OUTCOME_OK, 4, github.tree_sha)
+    assert (done.outcome, done.app_count, done.tree_sha, done.snapshot_status) == (fc.OUTCOME_OK, 4, github.tree_sha, "complete")
     assert github.manifests_read() == ["zeta"]  # the three it kept are not read twice
 
 
@@ -351,6 +361,42 @@ async def test_a_manifest_that_cannot_be_read_is_skipped_by_name_and_the_rest_la
     assert state.detail is not None and state.detail.startswith("1 of Fleet's Mac manifests could not be read")
     assert "left as held: beta." in state.detail
     assert sorted(await _titles(db)) == ["alpha", "gamma"]
+    assert state.snapshot_status == "partial"
+    github.requests.clear()
+    repeat = await fc.check(db, transport=github.transport)
+    assert repeat.outcome == fc.OUTCOME_UNCHANGED and repeat.snapshot_status == "partial" and repeat.detail
+    assert len(github.requests) == 1
+    # A later failure updates the last-check outcome, not the held rows' completeness.
+    github.broken["contents"] = rate_limited
+    assert (await fc.check(db, transport=github.transport)).snapshot_status == "partial"
+
+
+async def test_an_upstream_revert_cannot_leave_partially_applied_titles_in_a_complete_snapshot(db, github) -> None:
+    from app.core import fleet_catalog as fc
+
+    old_sha = (await fc.check(db, transport=github.transport)).tree_sha
+    github.put("alpha", "Alpha", ALPHA, "9")
+    github.put("zeta", "Zeta", "com.example.zeta", "1")
+    github.broken["zeta"] = rate_limited
+    assert (await fc.check(db, transport=github.transport)).snapshot_status == "partial"
+    github.drop("zeta")
+    github.put("alpha", "Alpha", ALPHA, "2.0")
+    assert github.tree_sha == old_sha
+    repaired = await fc.check(db, transport=github.transport)
+    assert repaired.tree_sha == old_sha and repaired.snapshot_status == "complete"
+    assert (await _titles(db))["alpha"].latest_version == "2.0"
+
+
+async def test_an_index_only_title_makes_the_snapshot_partial_and_keeps_its_previous_row(db, github) -> None:
+    from app.core import fleet_catalog as fc
+
+    await fc.check(db, transport=github.transport)
+    index = github._index()
+    github.drop("alpha")
+    github.broken["index"] = lambda: httpx.Response(200, json=index)
+    partial = await fc.check(db, transport=github.transport)
+    assert partial.snapshot_status == "partial" and "alpha" in partial.detail
+    assert (await _titles(db))["alpha"].latest_version == "2.0"
 
 
 # --- who makes a check happen ---------------------------------------------------------------
