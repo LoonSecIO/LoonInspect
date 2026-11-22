@@ -20,6 +20,7 @@ import type {
   MdmConnection,
   SectionInfo
 } from "@/features/mdm/types";
+import { DailyCoverage } from "./DailyCoverage";
 import { WebhookSetupPanel } from "@/features/mdm/WebhookSetupPanel";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -161,7 +162,7 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
     if (row.kind === "catalog") return tc.catalogWhat;
     const parts: string[] = [];
     parts.push(row.sections.length >= 14 ? tc.allSections : tc.sectionsCount(row.sections.length));
-    if (row.kind === "device_sweep") parts.push(row.selector ? `${tc.selectorLabel}: ${row.selector}` : tc.noSelector);
+    if ((row.kind === "device_sweep" || row.kind === "recent_activity")) parts.push(row.selector ? `${tc.selectorLabel}: ${row.selector}` : tc.noSelector);
     if (row.quarantinedExtensionAttributes.length > 0)
       parts.push(tc.quarantineCount(row.quarantinedExtensionAttributes.length));
     // A disabled webhook collection does not stop webhooks: with no enabled one, each
@@ -175,6 +176,7 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
     const zone = row.timezone ?? "UTC";
     const time = `${pad(row.atHour)}:${pad(row.atMinute)}`;
     switch (row.frequency) {
+      case "quarter_hourly": return tc.frequency.quarter_hourly;
       case "hourly":
         return tc.scheduleHourly(pad(row.atMinute));
       case "daily":
@@ -279,7 +281,10 @@ export function CollectionsPanel({ connection, onConnectionChanged }: Collection
                   <td className="px-3 py-2">{tc.kinds[row.kind] ?? row.kind}</td>
                   <td className="px-3 py-2 text-xs">{describeWhat(row)}</td>
                   <td className="px-3 py-2 text-xs">{describeWhen(row)}</td>
-                  <td className="px-3 py-2 text-xs">{describeLastRun(row)}</td>
+                  <td className="px-3 py-2 text-xs">{describeLastRun(row)}
+                    {row.kind === "device_sweep" && row.frequency === "daily" && typeof row.lastRunSummary?.jobId === "string" &&
+                      <DailyCoverage jobId={row.lastRunSummary.jobId}/>}
+                  </td>
                   <td className="px-3 py-2 text-xs">
                     {row.nextDueAt ? new Date(row.nextDueAt).toLocaleString() : "—"}
                   </td>
@@ -430,8 +435,8 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
       kind,
       enabled,
       sections: usesSections ? effectiveSections : [],
-      selector: kind === "device_sweep" && selector.trim() ? selector.trim() : null,
-      pageSize: kind === "device_sweep" && pageSize.trim() ? Number(pageSize) : null,
+      selector: (kind === "device_sweep" || kind === "recent_activity") && selector.trim() ? selector.trim() : null,
+      pageSize: (kind === "device_sweep" || kind === "recent_activity") && pageSize.trim() ? Number(pageSize) : null,
       quarantinedExtensionAttributes: quarantine
         .split(",")
         .map((s) => s.trim())
@@ -472,11 +477,12 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
             onChange={(e) => {
               const next = e.target.value as CollectionKind;
               setKind(next);
+              if (next === "recent_activity") setFrequency("quarter_hourly");
               if (next === "catalog") setFrequency("hourly");
-              if (next === "device_sweep" && frequency === "hourly") setFrequency("daily");
+              if (next === "device_sweep" && (frequency === "hourly" || frequency === "quarter_hourly")) setFrequency("daily");
             }}
           >
-            {(["device_sweep", "catalog", "webhook"] as CollectionKind[]).map((value) => (
+            {(["device_sweep", "recent_activity", "catalog", "webhook"] as CollectionKind[]).map((value) => (
               <option key={value} value={value}>
                 {tc.kinds[value]}
               </option>
@@ -531,7 +537,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
         </fieldset>
       )}
 
-      {kind === "device_sweep" && (
+      {(kind === "device_sweep" || kind === "recent_activity") && (
         <label className="block space-y-1 text-sm">
           <span className="font-medium">{tf.selector}</span>
           <div className="flex gap-2">
@@ -551,7 +557,7 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
         </label>
       )}
 
-      {kind === "device_sweep" && (
+      {(kind === "device_sweep" || kind === "recent_activity") && (
         <label className="block space-y-1 text-sm">
           <span className="font-medium">{tf.pageSize}</span>
           <input
@@ -583,14 +589,14 @@ function CollectionForm({ connectionId, collection, onSaved, onCancel }: Collect
             <label className="space-y-1">
               <span>{tf.frequency}</span>
               <select className={inputClasses} value={frequency} onChange={(e) => setFrequency(e.target.value as CollectionFrequency)}>
-                {(["hourly", "daily", "weekly", "every_n_days"] as CollectionFrequency[]).map((value) => (
+                {((kind === "recent_activity" ? ["quarter_hourly"] : ["hourly", "daily", "weekly", "every_n_days"]) as CollectionFrequency[]).map((value) => (
                   <option key={value} value={value}>
                     {tc.frequency[value]}
                   </option>
                 ))}
               </select>
             </label>
-            {frequency !== "hourly" && (
+            {frequency !== "quarter_hourly" && frequency !== "hourly" && (
               <label className="space-y-1">
                 <span>{tf.time}</span>
                 <input

@@ -24,6 +24,7 @@ from app.core.runs import (
     STATUS_SUCCEEDED,
     TRIGGER_WEBHOOK,
 )
+from app.mdm.recent_activity import coverage
 from app.models.schema import MdmConnection, Run, RunLogLine
 from app.schemas.runs import RunListResponse, RunLogLineOut, RunLogResponse, RunOut, RunSummaryOut
 
@@ -153,6 +154,7 @@ async def run_summary(
                     .where(
                         Run.mdm_connection_id == cid,
                         Run.lock_class == LOCK_DEVICE_SWEEP,
+                        Run.coverage_scope["kind"].astext.is_distinct_from("recent_activity"),
                         Run.trigger != TRIGGER_WEBHOOK,
                         Run.status == STATUS_SUCCEEDED,
                     )
@@ -235,3 +237,10 @@ async def get_run_log(
         for row in result.scalars().all()
     ]
     return RunLogResponse(run=_to_out(run), lines=lines, complete=run.status != STATUS_RUNNING)
+
+
+@router.get(
+    "/{job_id}/coverage", dependencies=[Depends(require(Permission.CONNECTION_READ)), Depends(require(Permission.DEVICE_READ))]
+)
+async def daily_coverage(job_id: uuid.UUID, page: int = Query(0, ge=0), db=Depends(get_db)):
+    return await coverage(db, await _get_or_404(job_id, db), page)

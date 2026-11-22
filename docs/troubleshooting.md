@@ -3437,3 +3437,9 @@ app build, and backend build separate, and Copy includes all three.
 Open Posture → macOS and select the reporting date in UTC. Counts carry the latest retained inventory forward for each Mac. The device history shows when Jamf reported each version and build. A blank interval before the first observation has no inventory evidence. Check that the collection reads Hardware and Operating System.
 
 The release markers and hardware catalog use the [SOFA macOS feed maintained by Mac Admins Open Source](https://sofa.macadmins.io/). The SOFA timestamp identifies the local compatibility catalog used for the selected day. An administrator can refresh the catalog on the macOS page. Check outbound HTTPS to sofafeed.macadmins.io and write access to SOFA_CACHE_DIR if refresh fails. Historical days before the earliest retained catalog have unknown eligibility.
+
+### Recent Jamf activity and daily coverage
+
+In Connections → Collections add a **Recent Jamf activity** collection. Set the same device filter, sections and extension attribute quarantine as the daily crawl for comparable results. Each quarter-hourly poll catches up from the last fully successful window, with a two-minute overlap. The first window covers the preceding 17 minutes. If a poll fails, check its run log for Jamf version privileges, unsupported filters, paging or rate limits. The daily sweep keeps its own schedule.
+
+Open **Daily coverage** beside the daily crawl. A covered miss means the crawl first recorded a changed section with an inventory report time inside a completed, comparable poll window. Jamf can expose that inventory later than its report time. Open the poll or crawl log and the device history to investigate. Pending, failed or partial crawls have incomplete coverage. A baseline, a contact without changed inventory, and an uncovered time interval each have a separate meaning.

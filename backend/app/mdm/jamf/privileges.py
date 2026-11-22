@@ -41,7 +41,7 @@ REQUIRED_PRIVILEGES: tuple[JamfPrivilege, ...] = (
     # fetch. Everything below degrades on purpose.
     JamfPrivilege(
         name="Read Computers",
-        paths=("/api/v4/computers-inventory", "/api/v4/computers-inventory-detail/"),
+        paths=("/api/v3/computers-inventory", "/api/v4/computers-inventory", "/api/v4/computers-inventory-detail/"),
     ),
     # Absent → 403, an empty group list and a log line; devices still sweep, group
     # definitions are simply not observed.
