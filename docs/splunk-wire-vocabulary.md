@@ -493,6 +493,10 @@ issue rather than living on as a footnote.
 | --- | --- | --- |
 | `device.inventory.summary` | `loon:inventory:summary` | `INVENTORY_SUMMARY_SOURCETYPE` |
 
+Issue #852 adds two optional strings to the summary event. `requestedModel` names the
+model LoonInspect sent to the provider. `reportedModel` names the model returned in the
+response. A cached briefing retains the available model names from its original inference.
+
 The thirty-third stamped string is minted in `app/core/wire_vocabulary.py`; the producer
 reads `INVENTORY_SUMMARY_EVENT_TYPE` from the same module. It is LoonInspect's derived
 briefing rather than a Jamf wrapper. It never changes an existing inventory event.

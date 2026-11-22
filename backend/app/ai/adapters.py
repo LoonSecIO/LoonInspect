@@ -541,3 +541,66 @@ async def list_models(
     reply = await _request("GET", url, headers=headers, transport=transport, timeout_seconds=timeout_seconds)
     logger.info("ai wire: %s GET %s -> %s", wire.value, httpx.URL(url).host, reply.status)
     return parse_models_response(wire, _json_or_raise(reply))
+
+
+async def discover_ollama(base_url, policy, *, api_key=None, host=None, transport=None, connect_ip=None, preview=False):
+    """Ollama control-plane calls share inference's bounded, no-redirect transport and optional DNS pin."""
+    root = base_url.rstrip("/").removesuffix("/v1")
+    headers = _headers(Wire.openai_chat, api_key, host)
+
+    async def fetch(path, body=None):
+        reply = await _request(
+            "POST" if body else "GET",
+            root + path,
+            headers=headers,
+            json_body=body,
+            transport=transport,
+            timeout_seconds=5,
+            connect_ip=connect_ip,
+        )
+        payload = _json_or_raise(reply)
+        if not isinstance(payload, dict):
+            raise AdapterError("malformed", "Ollama discovery returned an unexpected response.")
+        return payload
+
+    def models(payload):
+        entries = payload.get("models")
+        if not isinstance(entries, list):
+            raise AdapterError("malformed", "Ollama did not return its model list.")
+        return {
+            entry["name"]: entry.get("digest")
+            for entry in entries[:MAX_MODELS_LISTED]
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str) and 0 < len(entry["name"]) <= MAX_MODEL_ID_CHARS
+        }
+
+    async def compatible(name):
+        try:
+            info = await fetch("/api/show", {"model": name, "verbose": False})
+        except AdapterError as exc:
+            if exc.status == 404:
+                return False
+            raise
+        caps = info.get("capabilities")
+        return isinstance(caps, list) and "completion" in caps
+
+    try:
+        async with asyncio.timeout(15):
+            running = models(await fetch("/api/ps"))
+            installed = models(await fetch("/api/tags")) if preview else {}
+            ordered = dict.fromkeys([*policy.get("preferences", []), *sorted(running)])
+            response = {
+                "model": None,
+                "digest": None,
+                "reason": "no_compatible_loaded",
+                "loaded": sorted(running),
+                "installed": sorted(installed),
+            }
+            for name in ordered:
+                if name in running and await compatible(name):
+                    return {**response, "model": name, "digest": running[name], "reason": "loaded"}
+            fallback = policy.get("fallback")
+            if fallback and fallback not in running and await compatible(fallback):
+                return {**response, "model": fallback, "digest": installed.get(fallback), "reason": "fallback"}
+            return response
+    except TimeoutError as exc:
+        raise AdapterError("timeout", "Ollama discovery exceeded its time limit.") from exc

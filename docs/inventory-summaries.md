@@ -115,6 +115,8 @@ for independent review; once shipped it follows the frozen additive-only contrac
 | `expiresAt` | ISO deadline, source enqueue plus one hour. |
 | `summaryStatus` | `completed` or `cached`; other outcomes are local. |
 | `summaryProvider` | `apple_fm` or `openai_compatible`. |
+| `requestedModel` | Optional string naming the model LoonInspect asked to generate the briefing. Cached summaries carry the original request's model when recorded. |
+| `reportedModel` | Optional string naming the model the provider reported in its response. Cached summaries carry the original response's model when recorded. |
 | `promptVersion` | String identifying the prompt contract (`inventory-1`). |
 | `shortSummary` | Validated advisory string, always present on emitted briefings. |
 | `advisory` | Boolean, always true. |

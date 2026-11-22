@@ -66,6 +66,7 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.crypto import StoredValueUnknownKeyId, StoredValueUnreadable
 from app.core.database import get_db
+from app.core.ollama import select_model, selected
 from app.core.permissions import Permission
 from app.core.sharing import get_or_create_settings
 from app.mdm.org_units import DEPARTMENT, ids_for_name
@@ -457,6 +458,19 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
 
     # The gate, before anything is dialled. Its refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence.
+    model = selected(
+        await select_model(
+            db,
+            provider=provider,
+            pinned=config.model,
+            policy=config.ollama_policy,
+            base=base_url,
+            destination=destination,
+            host=host_header,
+            key=config.api_key_encrypted,
+            transport=transport_override,
+        )
+    )
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:

@@ -63,6 +63,7 @@ from app.core.egress import (
     refuse_blocked_resolution,
     validate_inference_base_url,
 )
+from app.core.ollama import select_model, selected, validate_policy
 from app.core.permissions import Permission
 from app.schemas.ai import (
     API_KEY_MAX_LENGTH,
@@ -77,6 +78,7 @@ from app.schemas.ai import (
     AITestOut,
     HostDetectionOut,
     HostReachOut,
+    OllamaPreviewIn,
     ProviderEntryOut,
     ProvidersOut,
 )
@@ -336,18 +338,33 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         payload.provider, payload.host_reach, payload.base_url, carries_key=bool(payload.api_key)
     )
 
+    selection = await select_model(
+        db,
+        provider=payload.provider,
+        pinned=payload.model,
+        policy=payload.ollama_policy.model_dump() if payload.ollama_policy else None,
+        base=base_url,
+        destination=destination,
+        host=host_header,
+        key=payload.api_key,
+        transport=transport_override,
+    )
+    model = selected(selection)
+    if payload.ollama_policy and payload.expected_model and payload.expected_model != model:
+        raise HTTPException(409, "The loaded model changed. Preview the selection again before sending the test.")
+
     # The gate, before anything is dialled. Refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence rather than a generic error.
     try:
-        await require_ai(db, feature=AI_TEST_BOX_FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=payload.model)
+        await require_ai(db, feature=AI_TEST_BOX_FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except (AIFeaturesDisabled, AIConsentMissing) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
-        record_usage=recorder(db, AI_TEST_BOX_FEATURE, payload.provider.value, payload.model),
+        record_usage=recorder(db, AI_TEST_BOX_FEATURE, payload.provider.value, model),
         serial=payload.provider is Provider.apple_fm,
         base_url=base_url,
-        model=payload.model,
+        model=model,
         prompt=payload.prompt,
         api_key=payload.api_key,
         reasoning_effort=payload.reasoning_effort,
@@ -419,6 +436,7 @@ def config_out(config: SavedConfig) -> AIConfigOut:
         has_key=config.has_key,
         updated_at=config.updated_at,
         updated_by=config.updated_by,
+        ollama_policy=config.ollama_policy,
     )
 
 
@@ -456,6 +474,7 @@ async def save_provider_config(
     has_key = keeps_key(stored is not None and stored.has_key, payload.api_key, payload.clear_key)
     _, base_url, destination, _ = await judged_endpoint(provider, payload.host_reach, payload.base_url, carries_key=has_key)
 
+    validate_policy(provider, base_url, payload.ollama_policy)
     config = await save_config(
         db,
         provider,
@@ -466,6 +485,7 @@ async def save_provider_config(
         api_key=payload.api_key,
         clear_key=payload.clear_key,
         updated_by=principal.account.email,
+        ollama_policy=payload.ollama_policy.model_dump() if payload.ollama_policy else None,
     )
     audit(
         AuditAction.AI_CONFIG_SAVED,
@@ -501,3 +521,24 @@ async def historical_usage(start: date | None = None, end: date | None = None, d
     if end < start or end > today or (end - start).days >= RETENTION_DAYS:
         raise HTTPException(422, "Choose a UTC date range of 1–90 days ending today or earlier.")
     return await usage_report(db, start, end)
+
+
+@router.post("/ollama/preview", dependencies=[Depends(require(Permission.SYSTEM_WRITE))])
+async def preview_ollama(payload: OllamaPreviewIn, db: AsyncSession = Depends(get_db)):
+    await _flag_or_409(db, "ollama_model_selection")
+    _bounded_key(payload.api_key)
+    _, base, destination, host = await judged_endpoint(
+        payload.provider, payload.host_reach, payload.base_url, carries_key=bool(payload.api_key)
+    )
+    return await select_model(
+        db,
+        provider=payload.provider,
+        pinned=payload.model,
+        policy=payload.ollama_policy.model_dump() if payload.ollama_policy else None,
+        base=base,
+        destination=destination,
+        host=host,
+        key=payload.api_key,
+        transport=transport_override,
+        preview=True,
+    )

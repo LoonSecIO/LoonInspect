@@ -49,6 +49,7 @@ class SavedConfig:
     has_key: bool
     updated_at: datetime | None
     updated_by: str | None
+    ollama_policy: dict | None = None
 
 
 # The columns of a `SavedConfig`, in its field order. The key is tested, never selected.
@@ -61,6 +62,7 @@ _SAVED_COLUMNS = (
     AIProviderConfig.api_key_encrypted.is_not(None),
     AIProviderConfig.updated_at,
     AIProviderConfig.updated_by,
+    AIProviderConfig.ollama_policy,
 )
 
 
@@ -104,6 +106,7 @@ async def save_config(
     api_key: str | None,
     clear_key: bool,
     updated_by: str | None,
+    ollama_policy: dict | None = None,
 ) -> SavedConfig:
     """Create or replace the provider's row, in one statement. The key follows
     ``keeps_key``: written when sent, NULLed when cleared, and otherwise not in the
@@ -113,6 +116,7 @@ async def save_config(
         "host_reach": host_reach,
         "base_url": base_url,
         "model": model,
+        "ollama_policy": ollama_policy,
         "reasoning_effort": reasoning_effort,
         # Stamped on every Save, changed or not: the card says when an admin last stood
         # behind these settings, which a no-op save still is.

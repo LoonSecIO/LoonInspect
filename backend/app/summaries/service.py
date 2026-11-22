@@ -20,6 +20,7 @@ from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, requ
 from app.core.ai_configs import get_config, saved_config
 from app.core.ai_usage import prune, queue_event, recorder
 from app.core.auth import as_utc
+from app.core.ollama import select_model
 from app.core.outbox import enqueue_event
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.wire import ENVELOPE
@@ -105,6 +106,8 @@ async def finish(db, job, status, summary=None, reason=None):
             "deviceMeta": job.correlation["deviceMeta"],
             "summaryStatus": status,
             "summaryProvider": job.provider,
+            **({"requestedModel": job.requested_model} if job.requested_model else {}),
+            **({"reportedModel": job.reported_model} if job.reported_model else {}),
             "promptVersion": PROMPT_VERSION,
             "shortSummary": summary,
             "evidence": job.evidence,
@@ -130,6 +133,18 @@ async def finish(db, job, status, summary=None, reason=None):
 
         await enqueue_event(db, EVENT, present(body))
     await db.commit()
+
+
+async def cached_job(db, key):
+    return await db.scalar(
+        select(Job).where(Job.cache_key == key, Job.status == "completed").order_by(Job.finished_at.desc()).limit(1)
+    )
+
+
+async def use_cache(db, job, cached):
+    job.requested_model = cached.requested_model
+    job.reported_model = cached.reported_model
+    await finish(db, job, "cached", cached.summary)
 
 
 async def collect(db):
@@ -226,9 +241,7 @@ async def collect(db):
                     config = await saved_config(db, Provider(settings.provider))
                     key = config_key(settings, config)
                     cache_key = digest([key, evidence])
-                    cached = await db.scalar(
-                        select(Job.summary).where(Job.cache_key == cache_key, Job.status == "completed").limit(1)
-                    )
+                    cached = None if config and config.ollama_policy else await cached_job(db, cache_key)
                     pending = await db.scalar(
                         select(func.count()).select_from(Job).where(Job.status.in_(("pending", "processing")))
                     )
@@ -265,7 +278,7 @@ async def collect(db):
                         state.summary_status, state.short_summary = "pending", None
                         if cached:
                             await db.flush()
-                            await finish(db, job, "cached", cached)
+                            await use_cache(db, job, cached)
         if state and state.source_id == event.id:
             await retain_summary(db, event.id, state.summary_status, state.short_summary, settings.provider)
         await db.commit()
@@ -311,19 +324,11 @@ async def work_one(tenant_id, *, transport=None):
         if apple_model_refused(Provider(settings.provider), config.model):
             await finish(db, job, "failed", reason="apple_model_refused")
             return True
-        cached = await db.scalar(select(Job.summary).where(Job.cache_key == job.cache_key, Job.status == "completed").limit(1))
+        cached = None if config.ollama_policy else await cached_job(db, job.cache_key)
         if cached:
-            await finish(db, job, "cached", cached)
+            await use_cache(db, job, cached)
             return True
         job.status = "processing"
-        await queue_event(
-            db,
-            job.provider,
-            "retry" if job.attempts else "started",
-            clock,
-            max(0, int((clock - as_utc(job.created_at)).total_seconds() * 1000)),
-        )
-        job.attempts += 1
         job.next_attempt_at = clock + timedelta(minutes=2)
         await db.commit()
         job_id = job.id
@@ -336,6 +341,38 @@ async def work_one(tenant_id, *, transport=None):
                 config.base_url,
                 carries_key=bool(config.api_key_encrypted),
             )
+            selection = await select_model(
+                db,
+                provider=provider,
+                pinned=config.model,
+                policy=config.ollama_policy,
+                base=base,
+                destination=destination,
+                host=host,
+                key=config.api_key_encrypted,
+                transport=transport,
+            )
+            model = selection["model"]
+            if not model:
+                await finish(db, job, "failed", reason="ollama_model_unavailable")
+                return True
+            if config.ollama_policy:
+                # A fallback after failed discovery lacks a verified digest. Keep that answer private to this job.
+                identity = selection["digest"] or (str(job.id) if selection["reason"] == "discovery_failed_fallback" else model)
+                job.cache_key = digest([job.config_key, job.evidence, model, identity])
+                cached = await cached_job(db, job.cache_key)
+                if cached:
+                    await use_cache(db, job, cached)
+                    return True
+            job.requested_model = model
+            await queue_event(
+                db,
+                job.provider,
+                "retry" if job.attempts else "started",
+                clock,
+                max(0, int((clock - as_utc(job.created_at)).total_seconds() * 1000)),
+            )
+            job.attempts += 1
             await require_ai(
                 db,
                 feature="inventory_summary",
@@ -349,13 +386,13 @@ async def work_one(tenant_id, *, transport=None):
                     "extension_attribute_values",
                     "customer_preprompt",
                 ],
-                model=config.model,
+                model=model,
             )
             text = prompt(job.evidence, settings.preprompt)
             request = CompletionRequest(
-                record_usage=recorder(db, "inventory_summary", provider.value, config.model),
+                record_usage=recorder(db, "inventory_summary", provider.value, model),
                 base_url=base,
-                model=config.model,
+                model=model,
                 prompt=text,
                 system=SYSTEM,
                 api_key=config.api_key_encrypted,
@@ -370,6 +407,7 @@ async def work_one(tenant_id, *, transport=None):
             result = await complete(
                 wire, request, transport=transport, timeout_seconds=min(60, (as_utc(job.expires_at) - now()).total_seconds())
             )
+            job.reported_model = result.model[:200] if result.model else None
             answer = checked_reply(result.content, job.evidence["facts"])
             job.latency_ms = int((time.monotonic() - start) * 1000)
             # Recheck consent/config after the network hop; never publish a stale setting's result.

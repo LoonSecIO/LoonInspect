@@ -1039,6 +1039,7 @@ class AIProviderConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column()
     # app.ai.providers.Provider: apple_fm | openai_compatible | anthropic
+    ollama_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     provider: Mapped[str] = mapped_column(String(32))
     # app.ai.providers.HostReach; NULL is the card's default reach.
     host_reach: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -2330,6 +2331,8 @@ class InventorySummaryJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     source_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requested_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reported_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     provider: Mapped[str] = mapped_column(String(32))
     config_key: Mapped[str] = mapped_column(String(64))
     cache_key: Mapped[str] = mapped_column(String(64))
