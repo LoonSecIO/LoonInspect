@@ -703,6 +703,15 @@ Messages API. Bring your own URL and key; the key is used for that one request a
 stored. Every model call is made by the backend, never by your browser. Design record:
 `docs/ai-layer.md`; issue #319.
 
+## Connect Codex or Claude
+
+**Settings → AI connections** configures the built-in MCP server for fleet inspection,
+vulnerability evidence, reports and permitted inventory/catalog refreshes. Access defaults
+off: an administrator enables the AI feature flag and the organization's separate MCP
+consent, then each client receives an explicitly scoped, expiring credential. The Mac app
+includes a local stdio adapter; server deployments use authenticated HTTPS. Setup, current
+development status and limits are in [the MCP runbook](docs/mcp.md).
+
 ## 👥 Accounts and roles
 
 The first administrator is created either through the first-run wizard (a claim token

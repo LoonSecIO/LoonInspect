@@ -57,6 +57,7 @@ describe("visibleNavigation", () => {
       "changeTracking",
       "featureFlags",
       "apiTokens",
+      "aiConnections",
       "dataSharing",
       "destinations",
       "accounts",
@@ -79,6 +80,13 @@ describe("visibleNavigation", () => {
       "ai",
       "myAccount"
     ]);
+  });
+
+  it("AI connection setup remains reachable while AI is off, only for accounts that can mint tokens", () => {
+    expect(settingsChildren(visibleNavigation([PERMISSIONS.TOKEN_CREATE], NO_FLAGS))).toEqual([
+      "apiTokens", "aiConnections", "myAccount"
+    ]);
+    expect(settingsChildren(visibleNavigation(VIEWER, AI_ON))).not.toContain("aiConnections");
   });
 
   describe("Posture \u203a Vulnerabilities follows the corpus, with the flag as the override", () => {

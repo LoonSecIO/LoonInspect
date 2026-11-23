@@ -1,10 +1,12 @@
 import { historyGerman } from "@/features/devices/historyCopy";
 import { patchPolicyGerman } from "@/features/patchPolicy/copy";
+import { mcpGerman } from "@/features/mcp/copy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
   deviceHistory: historyGerman,
   patchPolicy: patchPolicyGerman,
+  mcp: mcpGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
@@ -364,6 +366,7 @@ export const de: Translations = {
     intelligenceAccess: "Informationszugang",
     ai: "KI",
     apiTokens: "API-Token",
+    aiConnections: "KI-Verbindungen",
     accounts: "Konten",
     myAccount: "Mein Konto",
     destinations: "Ziele",
@@ -729,6 +732,7 @@ export const de: Translations = {
     }
   },
   apiTokens: {
+    aiConnectionsHint: "Erstellen Sie für Codex oder Claude eine Verbindung mit begrenzten Berechtigungen unter",
     title: "API-Token",
     description:
       "Persönliche Token für Clients außerhalb des Browsers – Skripte, CI und native Clients. Ein Token kann nie mehr als Ihr Konto.",

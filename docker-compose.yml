@@ -53,6 +53,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://looninspect_app:${POSTGRES_APP_PASSWORD}@db:5432/looninspect
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env — see backend/.env.example}
       ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
+      # MCP binds to the app listener but accepts only these Host/Origin values.
+      # Add the HTTPS hostname in .env when connecting to a hosted deployment.
+      MCP_ALLOWED_HOSTS: '${MCP_ALLOWED_HOSTS:-["127.0.0.1","127.0.0.1:*","localhost","localhost:*","[::1]","[::1]:*"]}'
+      MCP_ALLOWED_ORIGINS: '${MCP_ALLOWED_ORIGINS:-["http://127.0.0.1","http://127.0.0.1:*","http://localhost","http://localhost:*","http://[::1]","http://[::1]:*"]}'
       # Legacy: while no destination exists, a start makes this URL a generic webhook
       # destination; Settings › Destinations holds them all (docs/splunk-setup.md).
       SIEM_WEBHOOK_URL: ${SIEM_WEBHOOK_URL:-}

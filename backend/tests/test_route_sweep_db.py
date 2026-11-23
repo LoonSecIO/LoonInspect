@@ -107,6 +107,8 @@ BODIES: dict[str, dict] = {
     "POST /api/accounts": {"email": "route-sweep@sweep.example.com", "displayName": "route sweep", "password": PASSWORD},
     "POST /api/accounts/{account_id}/reset-password": {"newPassword": PASSWORD},
     "POST /api/auth/tokens": {"name": "route sweep"},
+    "PATCH /api/mcp/settings": {"enabled": False},
+    "POST /api/mcp/test": {"token": "not-an-mcp-credential"},
     "POST /api/mdm/connections": {"name": "route sweep", **JAMF, "credentials": {"clientId": "c", "clientSecret": "s"}},
     "POST /api/mdm/connections/test": JAMF,
     "POST /api/mdm/connections/{connection_id}/collections": {"name": "route sweep", "kind": "catalog", **HOURLY},
@@ -143,6 +145,7 @@ STOPS = {
         "POST /api/auth/login",  # the second tenant signs in by a minted session only (tests/test_tenancy_sweep.py)
         *("POST /api/auth/login/mfa", "POST /api/auth/change-password", "POST /api/auth/mfa/confirm"),
         "POST /webhooks/jamf/{connection_id}",
+        "POST /api/mcp/test",
     ],
     "setup is done, and the account holds no second factor": [
         *("POST /api/auth/setup", "POST /api/auth/mfa/recovery-codes", "DELETE /api/accounts/{account_id}/mfa"),
@@ -233,8 +236,14 @@ async def test_the_walk_reaches_every_route_the_api_documents() -> None:
     """A vacuity guard: a walk that missed the included routers would pass every lane below."""
     documented = {(m.upper(), p) for p, ops in app.openapi()["paths"].items() for m in ops}
     assert documented <= {(method, re.sub(r":\w+}", "}", path)) for method, path, _ in ROUTES}
-    kinds = {type(c.original_route).__name__ for c in iter_route_contexts(app.routes)}
-    assert kinds == {"APIRoute"}, f"_walk sweeps APIRoutes only; teach it {kinds - {'APIRoute'}}"
+    # MCP's ASGI transport speaks JSON-RPC rather than REST. Its authentication,
+    # tenant isolation and protocol matrix are exercised in test_mcp_db.py.
+    transports = {
+        (type(c.original_route).__name__, c.path)
+        for c in iter_route_contexts(app.routes)
+        if not isinstance(c.original_route, APIRoute)
+    }
+    assert transports == {("Route", "/mcp"), ("Route", "/mcp/")}, f"uncovered non-REST routes: {transports}"
 
 
 async def test_every_entry_names_a_route() -> None:
@@ -390,7 +399,8 @@ async def _send(client: httpx.AsyncClient, method: str, path: str, route: APIRou
     needs_body = route.body_field is not None and route.body_field.field_info.is_required()
     body = BODIES.get(f"{method} {path}", {} if needs_body else None)
     body = jsonable_encoder({**(body or {}), **ids}) if ids else body
-    return await client.request(method, url, params=query, json=body)
+    headers = {"X-Expected-Tenant-ID": str(values["tenant_id"])} if method != "GET" and path.startswith("/api/mcp/") else {}
+    return await client.request(method, url, params=query, json=body, headers=headers)
 
 
 def _said(method: str, path: str, response: httpx.Response) -> str:
@@ -509,7 +519,7 @@ async def _doomed(tenant: dict, name: str) -> object:
     from app.core.content_keys import app_title_key
     from app.core.database import session_for_tenant
     from app.core.submissions import mint_case_key
-    from app.models.schema import ApiToken, AppPromotion, Collection, Destination, MdmConnection, SubmissionCase
+    from app.models.schema import ApiToken, ApiTokenTenant, AppPromotion, Collection, Destination, MdmConnection, SubmissionCase
 
     tag = uuidlib.uuid4().hex[:8]
     label = f"route sweep {tag}"
@@ -535,6 +545,8 @@ async def _doomed(tenant: dict, name: str) -> object:
         else:
             row = made[name]()
             db.add(row)
+            if name == "token_id":
+                db.add(ApiTokenTenant(token_hash=row.token_hash, tenant_id=tenant["tenant_id"]))
         await db.commit()
         return row.id
 

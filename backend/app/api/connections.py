@@ -771,9 +771,11 @@ async def trigger_sync(
         _run_connection_sync,
         connection.id,
         Actor(
-            type="account",
-            id=principal.account.id,
-            label=principal.account.email,
+            type="api_token" if principal.token else "account",
+            id=principal.token.id if principal.token else principal.account.id,
+            label=(
+                f"{principal.account.email} via token {principal.token.name!r}" if principal.token else principal.account.email
+            ),
             tenant_id=principal.tenant_id,
         ),
         principal.tenant_id,
