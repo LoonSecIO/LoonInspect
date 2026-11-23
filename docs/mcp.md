@@ -159,7 +159,7 @@ lists only those the token can call; naming a hidden tool does not grant access.
 | Reports | `get_posture_registry`, `get_posture`, `get_evidence_report` | Metric definitions, retained posture and observation-ledger evidence, preserving caveats and missing values. |
 | Refresh actions | `refresh_device`, `start_inventory_sync`, `refresh_patch_catalog` | Read from existing Jamf connections or public catalogs and update LoonInspect's records. These do not deploy software or send a command to a managed Mac. |
 
-`start_inventory_sync` returns the existing API's `jobID` promptly. If a sweep is already
+`start_inventory_sync` returns the existing API's `jobId` promptly. If a sweep is already
 running, it returns that job with `started=false` instead of starting another. Poll
 `get_run` and `get_run_log` using the tool argument `job_id`; a returned job ID is not a
 completion receipt.
@@ -193,10 +193,14 @@ to resume and no automatic write replay.
 | Limit | Current behavior |
 | --- | --- |
 | Request / response | 256 KiB request limit; results are bounded to fit a 512 KiB response. Oversize results are refused with a request to narrow the query. |
-| Tool concurrency | 8 in progress per backend process; one patch-catalog refresh through MCP at a time per process. |
+| Tool concurrency | 8 active tool calls per backend process; one active patch-catalog tool call at a time per process. |
 | Call rate | 60 tool calls per minute per token, including at most 6 refresh calls. Limits are held per process, not across replicas. |
 | Pages | Usually 50 records by default, at most 200; the device-history timeline uses its existing 12-point pages. Follow each returned pagination field. |
 | Deadlines | 30 seconds per ordinary server tool; 300 seconds for patch catalog. The helper allows 45 and 330 seconds respectively; local discovery allows 10 seconds. |
+
+Background syncs and writes retained after a timeout or cancellation can continue after
+their tool call releases its slot. A retained catalog refresh blocks another refresh
+of the same source until it ends; a different catalog source can still run.
 
 Some source REST answers are assembled before the adapter slices a page. The internal
 REST response has a 4 MiB limit, so a large device or evidence report can be refused even
