@@ -110,7 +110,8 @@ def scope_description(scope: DeviceScope) -> list[str]:
             return
         key = f" [{rule.key}]" if rule.key else ""
         suffix = " days" if rule.field in {"contact", "inventory"} and rule.operator != "unknown" else ""
-        lines.append(indent + f"{rule.field}{key} {rule.operator.replace('_', ' ')} {rule.value}{suffix}".strip())
+        value = "" if rule.operator == "unknown" else rule.value
+        lines.append(indent + f"{rule.field}{key} {rule.operator.replace('_', ' ')} {value}{suffix}".strip())
 
     for rule in scope.rules:
         describe(rule, 0)

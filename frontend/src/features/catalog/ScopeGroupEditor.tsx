@@ -28,7 +28,7 @@ export function ScopeGroupEditor({ group, path = [], depth = 1, options, connect
             {scopeFields.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           </select>
           {node.field === "ea" && <input aria-label={`Condition ${id} attribute`} className={scopeInput} list="patch-scope-attributes" placeholder="EA name or definition ID" value={node.key} onChange={e => update({ key: e.target.value })} />}
-          <select aria-label={`Condition ${id} comparison`} className={scopeInput} value={node.operator} onChange={e => update({ operator: e.target.value as ScopeOperator })}>
+          <select aria-label={`Condition ${id} comparison`} className={scopeInput} value={node.operator} onChange={e => { const operator = e.target.value as ScopeOperator; update({ operator, value: operator === "unknown" ? "" : node.value || newRule(node.field).value }); }}>
             {operators(node.field).map(op => <option key={op} value={op}>{comparisonLabels[op]}</option>)}
           </select>
           {node.operator !== "unknown" && (node.field === "group" ? <>

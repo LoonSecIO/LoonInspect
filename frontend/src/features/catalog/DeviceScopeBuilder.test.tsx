@@ -31,6 +31,9 @@ describe("device scope builder", () => {
     expect(change).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Apply device filter" }));
     expect(JSON.parse(change.mock.calls[0][0])).toEqual({ match: "all", rules: [newRule(), { match: "any", rules: [newRule("contact")] }] });
+    fireEvent.change(screen.getByLabelText("Condition 2.1 comparison"), { target: { value: "unknown" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply device filter" }));
+    expect(JSON.parse(change.mock.calls[1][0]).rules[1].rules[0]).toEqual({ ...newRule("contact"), operator: "unknown", value: "" });
     fireEvent.click(screen.getByLabelText("Remove condition 2.1"));
     expect((screen.getByRole("button", { name: "Apply device filter" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByLabelText("Remove group 2"));

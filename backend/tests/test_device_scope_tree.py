@@ -45,3 +45,8 @@ def test_depth_is_bounded_before_recursive_model_validation():
         node = {"match": "any", "rules": [node]}
     with pytest.raises(ValidationError, match="four group levels"):
         DeviceScope.model_validate(node)
+
+
+def test_unknown_comparison_does_not_print_an_ignored_old_value():
+    scope = DeviceScope.model_validate({"rules": [{"field": "contact", "operator": "unknown", "value": "14"}]})
+    assert scope_description(scope)[-1] == "contact unknown"
