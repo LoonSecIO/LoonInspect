@@ -65,6 +65,8 @@ class Preset:
 # extraction), and only the layout, and so the page numbers, differ. `url` is that copy; the
 # earlier address, /files/cyber-essentials-requirements-for-it-infrastructure-v3-3.pdf, still
 # answers with the first.
+# Re-read 2026-11-23 for v1.3.0 (#867): control 3, pages 17-18, is unchanged.
+# The 14-day rule and the English/German requires/maps/differs copy still match.
 CYBER_ESSENTIALS_3_3 = Preset(
     id="cyber-essentials-3.3",
     framework="Cyber Essentials",
@@ -72,7 +74,7 @@ CYBER_ESSENTIALS_3_3 = Preset(
     published="April 2026",
     section="Security update management",
     url="https://www.ncsc.gov.uk/sites/default/files/2026-11/Cyber-Essentials-Requirements-for-IT-Infrastructure-v3-3.pdf",
-    verified_on=date(2026, 11, 18),
+    verified_on=date(2026, 11, 23),
     rule=Rule(max_days_behind=14),
 )
 
