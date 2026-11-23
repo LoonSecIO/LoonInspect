@@ -226,9 +226,29 @@ installed client configuration and the release workflow were not changed.
 | --- | --- |
 | Codex CLI 0.169.1, HTTP | Completed `get_instance_status`, `list_devices` and `get_device`; returned the synthetic tenant and its one Mac. The client blocked a refresh under its approval policy. |
 | Codex CLI 0.169.1, Mac stdio | Launched the native `--mcp` entrypoint, read the synthetic Keychain profile and completed the same three reads. |
-| Claude Code 2.1.330, HTTP and Mac stdio | Both real-client connection checks reported Connected. A model-driven tool call still requires Claude Code sign-in on the validation machine. |
+| Claude Code 2.1.330, HTTP and Mac stdio | On 2026-11-23, model-driven calls against merged commit `0ab7d7cc` completed `get_instance_status`, `list_devices` and `get_device` over each transport. All six results matched the synthetic organization and device. |
+| Claude Code 2.1.330, fleet reads over HTTP | Seven additional model-driven calls completed: `list_connections`, `get_vulnerability_status`, `list_runs`, `get_run`, `get_run_log`, `get_posture` and `get_evidence_report`. Returned connection/run IDs, the seeded log, device total and report caveats matched the fixture. |
 | Official SDK through the Mac entrypoint | Both 2025-11-25 and 2026-07-28 flows listed the 24 granted tools and completed the same three reads. The catalog-refresh permission was deliberately omitted from this test credential. |
 | Revocation | Revoking the synthetic credential through the token API changed Claude's stdio check from Connected to an explicit expired-or-revoked error; HTTP MCP initialization returned 401. |
+
+The Claude follow-up used a fresh isolated database, a one-day credential granting
+22 read tools, and a temporary Keychain profile. All 13 model-driven reads returned
+the expected organization. The completed run and posture capture were seeded records,
+not an executed Jamf sync. With no vulnerability corpus loaded, Claude reported the
+fleet as unassessed; the evidence answer preserved missing coverage, pagination and
+the report's refusal to judge compliance. No refresh actions were granted or invoked.
+
+Disclosure and audit records matched all 13 Claude reads plus nine fixture smoke reads.
+Disclosure rows contained field categories, not the synthetic hostname, serial or
+credential. Revocation was repeated after the model calls: the token API returned 204,
+Claude's HTTP connection check rejected the credential with 401, and its Mac stdio
+check reported expired or revoked. The temporary database, backend, credentials,
+Keychain profile and runtime descriptor were removed and their absence verified.
+
+This completes live Claude Code validation on both transports. Claude Desktop's UI
+and model interaction, production-fleet behavior and actual Jamf refreshes were not
+exercised. The Mac check reused the existing development bundle; its native MCP
+entrypoint and Python bridge matched the tested commit, with no new signing run.
 
 Automated checks in the integrated checkout:
 
