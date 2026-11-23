@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import select
@@ -57,7 +58,12 @@ async def health(response: Response) -> dict[str, str]:
         logger.warning("health check could not reach the database", exc_info=True)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "reason": "database"}
-    return {"status": "ok"}
+    result = {"status": "ok"}
+    # The bundled Mac helper checks this random per-launch identity before sending
+    # a credential to a remembered port. It identifies a process, never a tenant.
+    if instance_id := os.environ.get("LOONINSPECT_INSTANCE_ID"):
+        result["instanceId"] = instance_id
+    return result
 
 
 @router.get(

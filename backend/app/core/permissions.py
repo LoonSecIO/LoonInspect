@@ -38,6 +38,7 @@ class Permission(StrEnum):
     # fire in a loop. The check of Fleet's maintained-apps catalogue (#794) is the same
     # kind of act against GitHub and takes the same permission.
     PATCH_CATALOG_SYNC = "patch:catalog-sync"
+    PATCH_PLAN_WRITE = "patch:plan-write"
 
     # Trigger an on-demand inventory pull from an MDM. Not a configuration change, so
     # it isn't CONNECTION_WRITE — but it does hit a third-party API and write inventory,
@@ -55,6 +56,9 @@ class Permission(StrEnum):
     # a Viewer's token would be dangerous — a token can never exceed its owner — but to
     # keep long-lived credentials off accounts with no automation story.
     TOKEN_CREATE = "token:create"
+
+    # Explicit opt-in on a finite-lived, narrowed API token for external AI clients.
+    MCP_CONNECT = "mcp:connect"
 
     # Where processed events get delivered (SIEM, warehouse, generic webhook). Split
     # read/write for the same reason as connections: an analyst should be able to see
@@ -96,9 +100,11 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     | {
         Permission.CONNECTION_READ,
         Permission.PATCH_CATALOG_SYNC,
+        Permission.PATCH_PLAN_WRITE,
         Permission.DEVICE_SYNC,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.MCP_CONNECT,
         Permission.DESTINATION_READ,
         Permission.SYSTEM_READ,
     },
@@ -111,6 +117,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.ACCOUNT_READ,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.MCP_CONNECT,
         Permission.DESTINATION_READ,
         Permission.SYSTEM_READ,
     },

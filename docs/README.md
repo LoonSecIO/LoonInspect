@@ -18,6 +18,7 @@ ends with a reading order through the rest.
 | [`BRANCHING.md`](BRANCHING.md) | v1, enforcement partial | How work enters `main`: release milestones and labels (§1.1), branch names, commit subjects, and the control register CI enforces. |
 | [`alerts.md`](alerts.md) | v0, 2026-09-04 (#101) | Latches the product holds open while something is true, and what closes them. |
 | [`app-catalog.md`](app-catalog.md) | v0, 2026-08-22 (#67) | The tenant's distinct apps, first and last seen, and what Jamf says about each. |
+| [`application-patch-plans.md`](application-patch-plans.md) | 2026-11-22 | Installed-app device scopes, saved Jamf patch plans, background investigation and auditor PDF exports. |
 | [`baseline-rules.yml`](baseline-rules.yml) | catalogue v1, 2026-09-16 (#463) | The macOS baseline rule vocabulary the evidence report is printed from. Code reads this file. |
 | [`change-log.md`](change-log.md) | v0, 2026-08-22 (#61) | Which differences between two observations become change rows and events, at what level. |
 | [`compliance-evidence.md`](compliance-evidence.md) | built, ruled 2026-09-16 (#219 R5) | The evidence artefact an auditor is handed, and what it may claim. |
@@ -52,6 +53,7 @@ ends with a reading order through the rest.
 | --- | --- | --- |
 | [`jamf-webhooks.md`](jamf-webhooks.md) | built, 2026-09-12 (#406) | Pointing Jamf Pro's webhooks at this instance, and what each event costs. |
 | [`macos-app.md`](macos-app.md) | built, 1.2.0 (2026-11-18) | LoonInspect as a signed macOS app with Postgres embedded: how it runs, where its data lives, how a release is notarized, how an update is taken, what it leaves out. |
+| [`mcp.md`](mcp.md) | implemented in development, default-off, 2026-11-22 | Connect Codex and Claude: organization consent, scoped credentials, local Mac pairing, hosted HTTPS, fleet tools and operating limits. |
 | [`releases/v1.2.0.md`](releases/v1.2.0.md) | draft for the v1.2.0 tag | The v1.2.0 release notes: the previous different value in Device history, the re-read of the published requirements, what a draft release now reports, the update from v1.1.0 and the way back, the flag gate as ruled, and the walk. |
 | [`releases/v1.1.0.md`](releases/v1.1.0.md) | published as v1.1.0 | The v1.1.0 release notes, which become the GitHub release's body: what is new since v1.0.0, how the container and the Mac app are updated, the flag verdicts, the way back. |
 | [`releases/README.md`](releases/README.md) | convention, 2026-11-18 (#811) | How a release's notes file is laid out: the header the draft leaves out, the body it copies, and the `*(filled in at the tag)*` marker the draft run lists and the publication check refuses. |

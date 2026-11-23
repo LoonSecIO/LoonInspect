@@ -138,6 +138,7 @@ from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({"version": sys.argv[2], "app_version": sys.argv[3], "app_build": sys.argv[4]}) + "\n")
 PY
 cp "$launcher_source/loon_backend.py" "$res/launcher/"
+cp "$launcher_source/loon_mcp.py" "$res/launcher/"
 
 step "bytecode: compiled now, unchecked-hash, so nothing writes into the signed bundle at run time"
 "$py" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$res/python/lib/python3.12" "$res/backend" "$res/launcher" >/dev/null

@@ -151,6 +151,13 @@ export const navigationItems: NavItem[] = [
         permission: PERMISSIONS.TOKEN_CREATE
       },
       {
+        labelKey: "aiConnections",
+        icon: Plug,
+        to: "/settings/ai-connections",
+        end: false,
+        permission: PERMISSIONS.TOKEN_CREATE
+      },
+      {
         labelKey: "dataSharing",
         icon: Share2,
         to: "/settings/data-sharing",

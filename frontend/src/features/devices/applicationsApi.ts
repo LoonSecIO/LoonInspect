@@ -29,10 +29,12 @@ export interface ApplicationListResponse {
  *  them (#137). `pageSize` is capped at 500 server-side. */
 export function listApplications(params: {
   q?: string;
+  deviceScope?: string;
   page?: number;
   pageSize?: number;
 } = {}): Promise<ApplicationListResponse> {
   const query = new URLSearchParams();
+  if (params.deviceScope) query.set("deviceScope", params.deviceScope);
   if (params.q) query.set("q", params.q);
   if (params.page !== undefined) query.set("page", String(params.page));
   if (params.pageSize !== undefined) query.set("pageSize", String(params.pageSize));

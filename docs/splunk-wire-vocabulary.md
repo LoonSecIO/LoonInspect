@@ -526,6 +526,18 @@ than treating every manual completion as a fleet scan. Older events lacking this
 field retain their prior meaning. The targeted read uses the usual inventory,
 change, summary, and run-failure families; no device-event shape changes.
 
+### MCP connection audit actions
+
+The audit vocabulary adds `mcp.access.changed` for organization consent changes and
+`mcp.tool.called` for tool attempts. The existing audit envelope is unchanged. Tool
+events identify the connection through the API-token actor and the tool through
+`target_type: "mcp_tool"` and `target_id`; arguments, credentials and returned fleet
+values are omitted. Outcomes include `succeeded`, `refused`, `failed`, `timed_out`,
+`cancelled`, `timed_out_outcome_unknown` and `cancelled_outcome_unknown`. An unknown
+outcome means a dispatched write may still finish; it must not be counted as a
+prevented action. MCP disclosure categories are recorded separately in the `ai`
+share-log tier before a successful result is returned to the client.
+
 ### Paid-access administrator audit actions (#622)
 
 The audit vocabulary adds `intelligence.activated`,
@@ -533,3 +545,14 @@ The audit vocabulary adds `intelligence.activated`,
 `target_type: intelligence`. These record successful local administrator changes
 without activation secrets, bearer credentials or capability URLs. No inventory
 envelope, assessment vocabulary or posture key is redefined.
+
+### Installed application patch-plan audit actions
+
+The audit vocabulary adds four actions with `target_type: patch_plan` and a UUID
+`target_id`. `patch-plan.created` carries `applications` (integer), `revision`
+(integer) and `sha256` (string). `patch-plan.review.updated` and
+`patch-plan.exported` carry `revision` and `sha256`. `patch-plan.investigation.started`
+carries `provider` (the requested provider string, or null when AI was not requested).
+These events record local planning, review and export, not patch deployment or
+remediation. Operator notes, inventory rows and prompts are not copied into the audit
+event. Existing event families, envelopes and posture keys retain their meanings.

@@ -24,6 +24,7 @@ import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
 import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
+import { McpSettingsPage } from "@/features/mcp/McpSettingsPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
@@ -118,6 +119,7 @@ export function AppRoutes() {
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.TOKEN_CREATE} />}>
           <Route path="settings/api-tokens" element={<ApiTokensPage />} />
+          <Route path="settings/ai-connections" element={<McpSettingsPage />} />
         </Route>
         <Route element={<RequirePermission permission={PERMISSIONS.ACCOUNT_READ} />}>
           <Route path="settings/accounts" element={<AccountsPage />} />
