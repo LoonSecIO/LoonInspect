@@ -118,7 +118,7 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
       }} />
       <section className="space-y-3 rounded-lg border bg-card p-4" aria-label="Application scope">
         <div><h2 className="font-semibold">Application scope</h2><p className="text-sm text-muted-foreground">Narrow the apps found on the devices above. Severity choices match any selected band; KEV adds another condition.</p></div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <Input aria-label="Application name or bundle ID" maxLength={255} data-page-search="" placeholder={t.applications.searchPlaceholder} value={draft} onChange={event => setDraft(event.target.value)} className="max-w-sm" />
           <fieldset className="flex flex-wrap gap-2"><legend className="mb-1 text-xs text-muted-foreground">Has severity</legend>
             {bands.map(band => <label key={band} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm capitalize">

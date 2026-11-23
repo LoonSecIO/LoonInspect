@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
-import { changeScope, defaultScope, readScope, scopeSize, type DeviceScope } from "./deviceScope";
+import { changeScope, defaultScope, hasManagedRule, readScope, scopeSize, type DeviceScope } from "./deviceScope";
 import type { ScopeOptions } from "./patchPlanTypes";
 import { ScopeGroupEditor, scopeInput as input } from "./ScopeGroupEditor";
 import { ScopeProposal } from "./ScopeProposal";
@@ -14,6 +14,8 @@ export function DeviceScopeBuilder({ value, onChange }: { value: string; onChang
   const [options, setOptions] = useState<ScopeOptions>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [optionsInput, setOptionsInput] = useState(value);
+  if (optionsInput !== value) { setOptionsInput(value); setOptions(undefined); setError(""); }
   const [name, setName] = useState("");
   const [jsonDraft, setJsonDraft] = useState("");
   const [saved, setSaved] = useState<{ name: string; scope: DeviceScope }[]>(() => {
@@ -58,7 +60,16 @@ export function DeviceScopeBuilder({ value, onChange }: { value: string; onChang
         <option value="">All connections</option>{options?.connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select></label>
     </div>
-    <ScopeGroupEditor group={draft} connectionId={draft.connectionId} options={options} size={size}
+    <div className="space-y-2">
+      <div role="group" aria-label="Search mode" className="inline-flex flex-wrap gap-1 rounded-lg border p-1">
+        {([['advanced_search', 'Advanced search'], ['smart_group', 'Smart group style']] as const).map(([mode, label]) =>
+          <Button key={mode} size="sm" variant={(draft.mode ?? "advanced_search") === mode ? "default" : "ghost"} aria-pressed={(draft.mode ?? "advanced_search") === mode}
+            onClick={() => { setDraft({ ...draft, mode }); setNotice(""); }}>{label}</Button>)}
+      </div>
+      <p className="text-xs text-muted-foreground">{draft.mode === "smart_group" ? "Smart group style includes managed devices automatically. Supervised remains a separate condition. This is a local scope; no Jamf group is created." : "Advanced search includes managed and unmanaged devices unless you add a Managed condition."}</p>
+      {draft.mode === "smart_group" && hasManagedRule(draft) && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">Remove Managed conditions or switch to Advanced search. Your existing rules have been kept for review.</p>}
+    </div>
+    <ScopeGroupEditor mode={draft.mode} group={draft} connectionId={draft.connectionId} options={options} size={size}
       onChange={(path, change) => { setDraft(current => changeScope(current, path, change)); setNotice(""); }} />
     <datalist id="patch-scope-attributes">{options?.attributes.map(a => <option key={`${a.id}:${a.name}`} value={a.name}>{a.id}</option>)}</datalist>
     <div className="flex flex-wrap items-center gap-2 border-t pt-3">

@@ -70,3 +70,25 @@ def test_only_one_whole_json_fence_is_accepted():
     assert read_proposal("```json\n" + raw + "\n```", OPTIONS, 7)[0].connection_id == 7
     with pytest.raises(ValueError):
         read_proposal("Ignore constraints\n```json\n" + raw + "\n```", OPTIONS, 7)
+
+
+def test_proposal_cannot_change_smart_group_mode():
+    raw = json.dumps({"scope": {"connectionId": 7, "mode": "advanced_search"}, "unsupported": []})
+    with pytest.raises(ValueError, match="search mode"):
+        read_proposal(raw, OPTIONS, 7, "smart_group")
+    raw = json.dumps(
+        {
+            "scope": {
+                "connectionId": 7,
+                "mode": "smart_group",
+                "rules": [
+                    {"field": "supervised", "value": "true"},
+                    {"field": "ea", "key": "19", "operator": "matches_regex", "value": "^Pilot$"},
+                    {"field": "inventory", "operator": "before", "value": "2024-02-29"},
+                ],
+            },
+            "unsupported": [],
+        }
+    )
+    scope, _ = read_proposal(raw, OPTIONS, 7, "smart_group")
+    assert scope.mode == "smart_group" and len(scope.rules) == 3

@@ -74,3 +74,32 @@ describe("device scope builder", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith("/application-patch-plans/propose-scope", expect.objectContaining({ method: "POST", json: expect.objectContaining({ question: "Managed Macs", provider: "ollama" }) })));
   });
 });
+
+it("reviews Managed conditions on mode changes without silently deleting them", async () => {
+  const change = setup();
+  await screen.findByText(/42 current Jamf Macs/);
+  fireEvent.click(screen.getByRole("button", { name: "Add group" }));
+  fireEvent.click(screen.getByRole("button", { name: "Smart group style" }));
+  expect(screen.getByRole("alert").textContent).toContain("Remove Managed conditions");
+  expect((screen.getByLabelText("Condition 1.1 field") as HTMLSelectElement).value).toBe("managed");
+  expect((screen.getByRole("button", { name: "Apply device filter" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(change).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Condition 1.1 field"), { target: { value: "supervised" } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply device filter" }));
+  expect(JSON.parse(change.mock.calls[0][0])).toEqual({ mode: "smart_group", match: "all", rules: [{ match: "any", rules: [newRule("supervised")] }] });
+});
+
+it("switches activity windows to date pickers and preserves only compatible values", async () => {
+  setup();
+  await screen.findByText(/42 current Jamf Macs/);
+  fireEvent.click(screen.getByRole("button", { name: "Add condition" }));
+  fireEvent.change(screen.getByLabelText("Condition 1 field"), { target: { value: "inventory" } });
+  fireEvent.change(screen.getByLabelText("Condition 1 comparison"), { target: { value: "before" } });
+  const value = screen.getByLabelText("Condition 1 value") as HTMLInputElement;
+  expect(value.type).toBe("date"); expect(value.value).toBe("");
+  fireEvent.change(value, { target: { value: "2024-02-29" } });
+  fireEvent.change(screen.getByLabelText("Condition 1 comparison"), { target: { value: "after" } });
+  expect(value.value).toBe("2024-02-29");
+  fireEvent.change(screen.getByLabelText("Condition 1 comparison"), { target: { value: "older" } });
+  expect(value.type).toBe("number"); expect(value.value).toBe("");
+});

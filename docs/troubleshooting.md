@@ -3580,6 +3580,19 @@ Start in **Settings → AI connections**, with the intended organization selecte
 - **Apply device filter is disabled.** Complete each value, remove empty inner brackets,
   and keep within 20 conditions, ten groups and four group levels. The JSON importer uses
   the same vocabulary; unsupported fields are rejected without replacing the draft.
+- **Smart group style cannot apply existing Managed rules.** Smart group style already
+  includes only managed Macs, outside the brackets. Remove each Managed condition,
+  including nested ones, or switch to Advanced search. The mode switch keeps your rules
+  for review. Supervised is independent and remains available in both modes.
+- **The EA regular expression is invalid.** Check unmatched brackets, parentheses and
+  escaping; these filters use PostgreSQL regex syntax. Use `like` for a literal substring.
+  Try the corrected filter again. A failed expression never counts as a negative match.
+- **The regex device filter exceeded the database time limit.** Simplify the expression
+  or narrow the Jamf connection and retry. Each database statement is limited to five
+  seconds (or the database's stricter configured limit). No partial plan was saved.
+- **Before/After date differs from an expected device count.** Check the UTC boundary:
+  both exclude the selected calendar day. Missing dates and future timestamps count as
+  unknown. Confirm whether you meant Last contact or Last inventory; these are distinct.
 - **AI cannot propose the group.** Open Settings > AI, verify the selected provider/model
   and inference consent, then use **Check again**. The error names an unavailable service,
   unfinished response, invalid JSON, or unavailable group/EA reference. Try a shorter

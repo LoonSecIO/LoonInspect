@@ -12,9 +12,10 @@ from app.ai.providers import Provider
 from app.api.changes_prompt import prompt_status
 from app.core.audit import audit
 from app.core.auth import Principal, current_principal, require
-from app.core.database import bound_tenant_id, get_db, get_snapshot_db
+from app.core.database import bound_tenant_id, get_db
 from app.core.device_scope import parse_scope, scoped_devices
 from app.core.device_scope_proposal import propose_scope
+from app.core.device_scope_queries import get_scope_db, get_scope_snapshot_db, prepare_scope
 from app.core.patch_plan_pdf import render_pdf
 from app.core.patch_plan_research import run_research
 from app.core.patch_plans import build_snapshot, plan_output
@@ -31,9 +32,11 @@ router = APIRouter(
 
 @router.get("/scope-options")
 async def scope_options(
-    device_scope: str | None = Query(None, alias="deviceScope", max_length=12000), db: AsyncSession = Depends(get_snapshot_db)
+    device_scope: str | None = Query(None, alias="deviceScope", max_length=12000),
+    db: AsyncSession = Depends(get_scope_snapshot_db),
 ) -> dict:
     scope = parse_scope(device_scope)
+    await prepare_scope(db, scope)
     population = scoped_devices(scope)
     sources = (
         await db.execute(
@@ -73,7 +76,7 @@ async def ai_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/propose-scope")
-async def propose_group(payload: ProposeScope, db: AsyncSession = Depends(get_db)) -> dict:
+async def propose_group(payload: ProposeScope, db: AsyncSession = Depends(get_scope_db)) -> dict:
     options = await scope_options(payload.scope.model_dump_json(by_alias=True), db)
     return await propose_scope(db, payload, options)
 
@@ -96,7 +99,7 @@ async def list_plans(db: AsyncSession = Depends(get_db)) -> list[dict]:
 
 @router.post("", status_code=201, dependencies=[Depends(require(Permission.PATCH_PLAN_WRITE))])
 async def build_plan(
-    payload: BuildPlan, db: AsyncSession = Depends(get_snapshot_db), principal: Principal = Depends(current_principal)
+    payload: BuildPlan, db: AsyncSession = Depends(get_scope_snapshot_db), principal: Principal = Depends(current_principal)
 ) -> dict:
     organization = await db.get(Tenant, bound_tenant_id(db))
     snapshot = await build_snapshot(db, payload, organization.name if organization else "Organization")

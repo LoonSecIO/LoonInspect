@@ -14,11 +14,34 @@ combine with **AND** or **OR**, inside the connection selection. Brackets can ne
 up to four group levels (including the root), with at most ten groups total. Each
 indented bracket has a vertical line and its own AND/OR selector:
 
-- Managed status, including unknown.
-- Last contact or inventory within/older than 1–3650 days, or unknown/future dates.
+- Managed and Supervised independently, each Yes/No or unknown.
+- Last contact or inventory within/older than 1–3650 days, before/after a calendar date, or unknown/future dates.
 - Observed smart/static group membership, keyed by connection ID and Jamf group ID.
-- EA name/definition ID and exact value (including multi-value EAs), or unknown.
+- EA name/definition ID with is, is not, like, not like, matches regex, does not match regex, or unknown.
 - Site, department/building IDs and macOS version.
+
+**Advanced search** includes managed and unmanaged Macs unless a Managed rule narrows it.
+**Smart group style** (`mode: "smart_group"`) implicitly requires Managed = Yes outside
+all AND/OR brackets; Managed conditions are unavailable in this mode. Switching modes
+keeps existing rules for review and blocks Apply until Managed conditions are removed.
+Supervised is independent in both modes. Old JSON defaults to `advanced_search`.
+This is a local inventory scope, not creation or export of a Jamf group.
+
+Before/After uses `YYYY-MM-DD` and UTC calendar boundaries, excluding the selected day:
+before 2024-02-29 means earlier than midnight starting that day; after means midnight
+starting 2024-03-01 or later. Missing and future timestamps are unknown and excluded
+from these comparisons. Day windows remain relative to the query time.
+
+EA comparison labels follow [Jamf's criteria operators](https://learn.jamf.com/r/en-US/jamf-pro-documentation-11.16.0/Criteria_Operators).
+`like` / `not_like` use a case-insensitive literal substring (% and _ are ordinary characters).
+`matches_regex` / `does_not_match_regex` use case-insensitive PostgreSQL regular-expression
+search; add ^ and $ for whole-value matching. Advanced regex syntax can differ from
+Jamf's engine. Existing `is` / `is_not` retain exact, case-sensitive matching.
+A positive comparison matches any EA value; a negative comparison requires an observed,
+nonempty values list with no matching element. Missing/empty EAs match only unknown.
+Invalid regex is rejected before querying inventory, even when there are no devices.
+Regex-scoped database statements have a five-second limit (or a stricter configured
+limit); a timeout returns an explicit error, never a partial plan or empty-success result.
 
 `deviceScope` holds the validated JSON in the URL. Named filters are browser-local and
 partitioned by organization and account. Saved filters and imported JSON load into the
@@ -56,7 +79,7 @@ connection/group/EA names and IDs through the existing saved-provider, consent, 
 and usage-accounting gates. It adds no inventory device names, serial numbers or stored credentials.
 Each metadata category is limited to 100 entries and 3,500 serialized characters;
 matching names are preferred and truncation is disclosed. Group and EA references must
-be present in this supplied context. The selected connection cannot be changed by the model. Observed EA references are
+be present in this supplied context. The selected connection and search mode cannot be changed by the model. Observed EA references are
 limited to that connection, so an ID from another Jamf instance cannot be borrowed.
 
 The model returns validated recursive JSON. Unsupported criteria, invented references,

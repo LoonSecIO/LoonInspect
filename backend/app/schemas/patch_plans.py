@@ -1,5 +1,7 @@
 """Validated device scopes and immutable application patch-plan snapshots."""
 
+import re
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -15,8 +17,21 @@ class ReportModel(BaseModel):
 
 class ScopeRule(ReportModel):
     model_config = ConfigDict(extra="forbid")
-    field: Literal["managed", "contact", "inventory", "group", "ea", "site", "department", "building", "os_version"]
-    operator: Literal["is", "is_not", "contains", "within", "older", "unknown"] = "is"
+    field: Literal["managed", "supervised", "contact", "inventory", "group", "ea", "site", "department", "building", "os_version"]
+    operator: Literal[
+        "is",
+        "is_not",
+        "contains",
+        "like",
+        "not_like",
+        "matches_regex",
+        "does_not_match_regex",
+        "within",
+        "older",
+        "before",
+        "after",
+        "unknown",
+    ] = "is"
     value: str = Field(default="", max_length=255)
     key: str = Field(default="", max_length=255)
 
@@ -24,23 +39,28 @@ class ScopeRule(ReportModel):
     def valid_rule(self):
         allowed = {
             "managed": {"is", "unknown"},
-            "contact": {"within", "older", "unknown"},
-            "inventory": {"within", "older", "unknown"},
+            "supervised": {"is", "unknown"},
+            "contact": {"within", "older", "before", "after", "unknown"},
+            "inventory": {"within", "older", "before", "after", "unknown"},
             "group": {"is", "is_not"},
-            "ea": {"is", "is_not", "unknown"},
+            "ea": {"is", "is_not", "like", "not_like", "matches_regex", "does_not_match_regex", "unknown"},
         }.get(self.field, {"is", "is_not", "contains", "unknown"})
         if self.operator not in allowed:
             raise ValueError("This comparison is not supported for the selected device field.")
         if self.operator != "unknown" and not self.value.strip():
             raise ValueError("Enter a value for every device condition.")
-        if self.field == "managed" and self.operator != "unknown" and self.value not in {"true", "false"}:
-            raise ValueError("Managed must be true, false, or unknown.")
+        if self.field in {"managed", "supervised"} and self.operator != "unknown" and self.value not in {"true", "false"}:
+            raise ValueError("Managed and Supervised must be true, false, or unknown.")
         if (
             self.field in {"contact", "inventory"}
-            and self.operator != "unknown"
+            and self.operator in {"within", "older"}
             and (not self.value.isdigit() or not 1 <= int(self.value) <= 3650)
         ):
             raise ValueError("The activity window must be between 1 and 3650 days.")
+        if self.operator in {"before", "after"}:
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", self.value):
+                raise ValueError("Enter a calendar date as YYYY-MM-DD.")
+            date.fromisoformat(self.value)
         if self.field in {"ea", "group"} and not self.key.strip():
             raise ValueError("Select an extension attribute or the group's Jamf connection.")
         if self.field == "group" and (not self.key.isdigit() or not 1 <= int(self.key) <= 2147483647):
@@ -58,9 +78,23 @@ class ScopeGroup(ReportModel):
 
 class DeviceScope(ReportModel):
     model_config = ConfigDict(extra="forbid")
+    mode: Literal["advanced_search", "smart_group"] = "advanced_search"
     connection_id: int | None = Field(default=None, ge=1, le=2147483647)
     match: Literal["all", "any"] = "all"
     rules: list[ScopeRule | ScopeGroup] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def smart_group_managed(self):
+        pending = list(self.rules)
+        while pending:
+            rule = pending.pop()
+            if isinstance(rule, ScopeGroup):
+                pending.extend(rule.rules)
+            elif self.mode == "smart_group" and rule.field == "managed":
+                raise ValueError(
+                    "Smart group style already includes only managed devices. Remove Managed conditions or use Advanced search."
+                )
+        return self
 
     @model_validator(mode="before")
     @classmethod

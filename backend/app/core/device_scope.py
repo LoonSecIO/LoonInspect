@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, not_, or_, select
+from sqlalchemy import and_, false, func, not_, or_, select
 
 from app.models.schema import Device, DeviceExtensionAttribute, ObservationEntry, ObservationSection, ObservationSpan
 from app.observations.departure import gone_for_good
@@ -39,17 +39,40 @@ def rule_predicate(rule, now):
         stamp = Device.last_check_in if rule.field == "contact" else Device.last_inventory_at
         if rule.operator == "unknown":
             return or_(stamp.is_(None), stamp > now)
+        if rule.operator in {"before", "after"}:
+            boundary = datetime.fromisoformat(rule.value).replace(tzinfo=UTC)
+            if rule.operator == "before":
+                return and_(stamp < boundary, stamp <= now)
+            if rule.value == "9999-12-31":
+                return false()
+            return stamp.between(boundary + timedelta(days=1), now)
         cutoff = now - timedelta(days=int(rule.value))
         return stamp.between(cutoff, now) if rule.operator == "within" else stamp < cutoff
-    if rule.field == "managed":
-        return Device.managed.is_(None) if rule.operator == "unknown" else Device.managed.is_(rule.value == "true")
+    if rule.field in {"managed", "supervised"}:
+        flag = Device.managed if rule.field == "managed" else Device.supervised
+        return flag.is_(None) if rule.operator == "unknown" else flag.is_(rule.value == "true")
     if rule.field == "ea":
         ea = DeviceExtensionAttribute
         known = select(ea.id).where(ea.device_id == Device.id, or_(ea.definition_id == rule.key, ea.name == rule.key))
         if rule.operator == "unknown":
             return ~known.where(ea.values != []).exists()
-        matching = known.where(ea.values.contains([rule.value])).exists()
-        return matching if rule.operator == "is" else and_(known.where(ea.values != []).exists(), ~matching)
+        if rule.operator in {"is", "is_not"}:
+            match = ea.values.contains([rule.value])
+        else:
+            values = func.jsonb_array_elements_text(ea.values).table_valued("value").render_derived()
+            value = values.c.value
+            comparison = (
+                value.icontains(rule.value, autoescape=True)
+                if rule.operator in {"like", "not_like"}
+                else value.regexp_match(rule.value, flags="i")
+            )
+            match = select(1).select_from(values).where(comparison).correlate(ea).exists()
+        matching = known.where(match).exists()
+        return (
+            matching
+            if rule.operator in {"is", "like", "matches_regex"}
+            else and_(known.where(ea.values != []).exists(), ~matching)
+        )
     if rule.field == "group":
         entry, section = ObservationEntry, ObservationSection
         known = _group_sections()
@@ -92,6 +115,8 @@ def scoped_devices(scope: DeviceScope, now: datetime | None = None):
     )
     if scope.connection_id is not None:
         stmt = stmt.where(Device.mdm_connection_id == scope.connection_id)
+    if scope.mode == "smart_group":
+        stmt = stmt.where(Device.managed.is_(True))
     if scope.rules:
         stmt = stmt.where(group_predicate(scope, now))
     return stmt.cte("patch_plan_devices")
@@ -99,6 +124,11 @@ def scoped_devices(scope: DeviceScope, now: datetime | None = None):
 
 def scope_description(scope: DeviceScope) -> list[str]:
     lines = [f"Jamf connection: {scope.connection_id or 'all'}", f"Match {scope.match} conditions; current Jamf macOS inventory."]
+    lines.append(
+        "Smart group style: managed devices only."
+        if scope.mode == "smart_group"
+        else "Advanced search: Managed is an explicit condition, if selected."
+    )
 
     def describe(rule, depth):
         indent = "  " * depth
@@ -109,7 +139,17 @@ def scope_description(scope: DeviceScope) -> list[str]:
             lines.append(f"{indent})")
             return
         key = f" [{rule.key}]" if rule.key else ""
-        suffix = " days" if rule.field in {"contact", "inventory"} and rule.operator != "unknown" else ""
+        suffix = (
+            " days"
+            if rule.operator in {"within", "older"}
+            else " (UTC; selected day excluded)"
+            if rule.operator in {"before", "after"}
+            else ""
+        )
+        if rule.operator in {"like", "not_like"}:
+            suffix = " (case-insensitive literal substring)"
+        elif rule.operator in {"matches_regex", "does_not_match_regex"}:
+            suffix = " (case-insensitive regex search)"
         value = "" if rule.operator == "unknown" else rule.value
         lines.append(indent + f"{rule.field}{key} {rule.operator.replace('_', ' ')} {value}{suffix}".strip())
 

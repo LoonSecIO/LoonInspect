@@ -13,6 +13,7 @@ from app.core import fleet_catalog
 from app.core.application_risk import application_rows, application_scope_description, risk_output
 from app.core.config import settings
 from app.core.device_scope import scope_description, scoped_devices
+from app.core.device_scope_queries import prepare_scope
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, corpus_as_of
 from app.mdm.patch.requirements import compare_versions, version_tuple
@@ -73,6 +74,7 @@ def rollout_steps(name, target):
 
 
 async def build_snapshot(db, payload, organization):
+    await prepare_scope(db, payload.scope)
     now = datetime.now(UTC)
     devices = scoped_devices(payload.scope, now)
     app = InstalledApp

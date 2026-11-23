@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog.index import lookup_versions
 from app.catalog.service import refresh_tenant, title_names
 from app.core.auth import Principal, current_principal, require
-from app.core.database import get_db, get_vuln_read_db
+from app.core.database import get_db
 from app.core.device_scope import parse_scope, scoped_devices
+from app.core.device_scope_queries import get_scope_vuln_read_db, prepare_scope
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import READ_HERE, counted, served, stored_corpus
@@ -163,7 +164,7 @@ def _assessed_entry_out(
 
 @router.get("", response_model=CatalogListResponse, dependencies=[Depends(require(Permission.APP_READ))])
 async def list_catalog(
-    db: AsyncSession = Depends(get_vuln_read_db),
+    db: AsyncSession = Depends(get_scope_vuln_read_db),
     principal: Principal = Depends(current_principal),
     device_scope: Annotated[str | None, Query(alias="deviceScope", max_length=12000)] = None,
     q: str | None = Query(default=None, max_length=255),
@@ -214,6 +215,7 @@ async def list_catalog(
     if device_scope is not None and Permission.DEVICE_READ not in principal.permissions:
         raise HTTPException(403, "Device read permission is required to filter applications by device.")
     scope = parse_scope(device_scope) if device_scope is not None else None
+    await prepare_scope(db, scope)
     counts = (
         await _device_counts_once(db, app_hash, scope=scope) if scope is not None else await _device_counts_once(db, app_hash)
     )

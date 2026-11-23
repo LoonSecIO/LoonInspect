@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.application_risk import application_rows, risk_output
 from app.core.auth import Principal, current_principal, require
-from app.core.database import get_snapshot_db
 from app.core.device_scope import parse_scope
+from app.core.device_scope_queries import get_scope_snapshot_db, prepare_scope
 from app.core.permissions import Permission
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, corpus_as_of
@@ -40,7 +40,7 @@ def _refuse_retired_parameters(request: Request) -> None:
 
 @router.get("", response_model=ApplicationListResponse, dependencies=[Depends(_refuse_retired_parameters)])
 async def list_applications(
-    db: AsyncSession = Depends(get_snapshot_db),
+    db: AsyncSession = Depends(get_scope_snapshot_db),
     principal: Principal = Depends(current_principal),
     device_scope: Annotated[str | None, Query(alias="deviceScope", max_length=12000)] = None,
     q: str | None = Query(default=None, max_length=255),
@@ -59,6 +59,7 @@ async def list_applications(
     if device_scope is not None and Permission.DEVICE_READ not in principal.permissions:
         raise HTTPException(403, "Device read permission is required to filter applications by device.")
     scope = parse_scope(device_scope) if device_scope is not None else None
+    await prepare_scope(db, scope)
     app_scope = ApplicationScope(q=q or "", severities=severity or [], hasKev=has_kev)
     corpus = await earned_corpus(db)
     stamp = corpus_as_of(corpus)

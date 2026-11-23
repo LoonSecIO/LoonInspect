@@ -50,3 +50,18 @@ def test_depth_is_bounded_before_recursive_model_validation():
 def test_unknown_comparison_does_not_print_an_ignored_old_value():
     scope = DeviceScope.model_validate({"rules": [{"field": "contact", "operator": "unknown", "value": "14"}]})
     assert scope_description(scope)[-1] == "contact unknown"
+
+
+@pytest.mark.parametrize("field", ["contact", "inventory"])
+@pytest.mark.parametrize("value", ["2023-02-29", "2024-02-30", "2024-2-29", "0000-01-01", "2024-01-01T00:00:00Z"])
+def test_invalid_calendar_dates_are_rejected(field, value):
+    with pytest.raises(ValidationError):
+        DeviceScope(rules=[{"field": field, "operator": "before", "value": value}])
+
+
+def test_smart_group_rules_cannot_hide_managed_inside_brackets():
+    with pytest.raises(ValidationError):
+        DeviceScope(mode="smart_group", rules=[{"match": "any", "rules": [MANAGED]}])
+    scope = DeviceScope(mode="smart_group", rules=[{"field": "inventory", "operator": "after", "value": "2024-02-29"}])
+    assert "Smart group style: managed devices only." in scope_description(scope)
+    assert scope_description(scope)[-1] == "inventory after 2024-02-29 (UTC; selected day excluded)"

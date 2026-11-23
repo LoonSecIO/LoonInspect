@@ -4428,6 +4428,15 @@
             "title": "Match",
             "type": "string"
           },
+          "mode": {
+            "default": "advanced_search",
+            "enum": [
+              "advanced_search",
+              "smart_group"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "rules": {
             "items": {
               "anyOf": [
@@ -9765,6 +9774,7 @@
           "field": {
             "enum": [
               "managed",
+              "supervised",
               "contact",
               "inventory",
               "group",
@@ -9789,8 +9799,14 @@
               "is",
               "is_not",
               "contains",
+              "like",
+              "not_like",
+              "matches_regex",
+              "does_not_match_regex",
               "within",
               "older",
+              "before",
+              "after",
               "unknown"
             ],
             "title": "Operator",

@@ -23,3 +23,25 @@ describe("nested device scope JSON", () => {
     for (const raw of bad) expect(readScope(raw), raw).toBeNull();
   });
 });
+
+describe("Jamf-style scope comparisons", () => {
+  it("validates calendar dates and text comparisons without interpreting PostgreSQL regex in JavaScript", () => {
+    for (const field of ["contact", "inventory"]) {
+      for (const operator of ["before", "after"]) {
+        expect(readScope(JSON.stringify({ rules: [{ field, operator, value: "2024-02-29" }] }))).not.toBeNull();
+        for (const value of ["2023-02-29", "2024-02-30", "2024-2-29", "0000-01-01", "14"]) {
+          expect(readScope(JSON.stringify({ rules: [{ field, operator, value }] }))).toBeNull();
+        }
+      }
+    }
+    for (const operator of ["like", "not_like", "matches_regex", "does_not_match_regex"]) {
+      expect(readScope(JSON.stringify({ rules: [{ field: "ea", key: "Ring", operator, value: "[[:alpha:]]+" }] }))).not.toBeNull();
+    }
+  });
+  it("preserves smart group mode and refuses explicit Managed conditions at any depth", () => {
+    const scope = { mode: "smart_group", match: "all", rules: [newRule("supervised")] };
+    expect(readScope(JSON.stringify(scope))).toEqual(scope);
+    expect(readScope(JSON.stringify({ ...scope, rules: [{ match: "any", rules: [newRule()] }] }))).toBeNull();
+    expect(readScope(JSON.stringify({ ...scope, mode: "guess" }))).toBeNull();
+  });
+});
