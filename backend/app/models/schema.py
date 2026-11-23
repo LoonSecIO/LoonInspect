@@ -756,9 +756,9 @@ class FleetAppVersion(Base):
 class FleetCatalogState(Base):
     """What the last check of Fleet's catalogue found: one row, or none before the first (#794).
 
-    `tree_sha` is the catalogue folder's git tree sha as of the last **complete** read, so a
-    check that finds the same sha has nothing to read. A check that failed leaves it where it
-    was and says why in `detail`, in the operator's words; the titles already held stay.
+    `tree_sha` identifies the listing most recently reconciled, including listings with skipped
+    titles. A check that partially updates held titles clears the SHA so the next check reconciles
+    the mixed rows. `snapshot_status` describes the held rows independently of the latest attempt.
     """
 
     __tablename__ = "fleet_catalog_state"
@@ -766,6 +766,7 @@ class FleetCatalogState(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
     tree_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    snapshot_status: Mapped[str] = mapped_column(String(16), default="unread", server_default="unread")
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When the titles held here last changed, which is not when GitHub was last asked.
     changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -2375,6 +2376,22 @@ class DeviceHistoryPreference(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
     slots: Mapped[list] = mapped_column(JSONB)
+
+
+class ApplicationPatchPlan(Base):
+    """Tenant-owned evidence snapshot and its bounded background investigation."""
+
+    __tablename__ = "application_patch_plans"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_by: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(160))
+    snapshot: Mapped[dict] = mapped_column(JSONB)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    research_status: Mapped[str] = mapped_column(String(24), default="not_started")
+    research_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    research: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class SchemaRelease(Base):

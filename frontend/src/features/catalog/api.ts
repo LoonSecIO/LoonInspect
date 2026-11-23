@@ -13,6 +13,7 @@ import type {
 const ALL_ROWS_PAGE_SIZE = 5000;
 
 export interface CatalogQuery {
+  deviceScope?: string;
   jamf?: CatalogJamfFilter;
   installedOnly?: boolean;
   appHash?: string;
@@ -28,6 +29,7 @@ export interface CatalogQuery {
 
 export function listCatalog(params: CatalogQuery = {}): Promise<CatalogListResponse> {
   const query = new URLSearchParams({ pageSize: String(params.pageSize ?? ALL_ROWS_PAGE_SIZE) });
+  if (params.deviceScope) query.set("deviceScope", params.deviceScope);
   if (params.jamf) query.set("jamf", params.jamf);
   if (params.installedOnly !== undefined) query.set("installedOnly", String(params.installedOnly));
   if (params.q) query.set("q", params.q);

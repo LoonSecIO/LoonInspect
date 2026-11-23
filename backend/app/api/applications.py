@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require
+from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
+from app.core.device_scope import parse_scope, scoped_devices
 from app.core.permissions import Permission
 from app.models.schema import InstalledApp
 from app.schemas.applications import ApplicationListResponse, ApplicationOut
@@ -36,6 +39,8 @@ def _refuse_retired_parameters(request: Request) -> None:
 @router.get("", response_model=ApplicationListResponse, dependencies=[Depends(_refuse_retired_parameters)])
 async def list_applications(
     db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(current_principal),
+    device_scope: Annotated[str | None, Query(alias="deviceScope", max_length=12000)] = None,
     q: str | None = Query(default=None, max_length=255),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=500, alias="pageSize"),
@@ -82,6 +87,11 @@ async def list_applications(
         .order_by(device_count.desc(), func.min(InstalledApp.name))
     )
 
+    if device_scope is not None:
+        if Permission.DEVICE_READ not in principal.permissions:
+            raise HTTPException(403, "Device read permission is required to filter applications by device.")
+        population = scoped_devices(parse_scope(device_scope))
+        grouped = grouped.join(population, population.c.id == InstalledApp.device_id)
     if q:
         pattern = f"%{q}%"
         grouped = grouped.having(func.min(InstalledApp.name).ilike(pattern) | func.min(InstalledApp.bundle_id).ilike(pattern))

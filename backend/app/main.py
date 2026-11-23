@@ -36,6 +36,7 @@ from app.alerts.service import purge_closed_alerts
 from app.api.accounts import router as accounts_router
 from app.api.ai import router as ai_router
 from app.api.alerts import router as alerts_router
+from app.api.application_patch_plans import router as application_patch_plans_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
@@ -838,6 +839,7 @@ app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
+app.include_router(application_patch_plans_router)
 app.include_router(fleet_catalog_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)

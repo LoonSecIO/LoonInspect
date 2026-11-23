@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import BigInteger, String, bindparam, column, distinct, func, or_, select
@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.index import lookup_versions
 from app.catalog.service import refresh_tenant, title_names
-from app.core.auth import require
+from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db, get_vuln_read_db
+from app.core.device_scope import parse_scope, scoped_devices
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
 from app.core.vuln_answer import READ_HERE, counted, served, stored_corpus
@@ -51,7 +52,7 @@ def _counted(band: str, counts=AppCatalogEntry.vuln_counts):
     return counted(counts, band)
 
 
-def _device_counts(app_hash: str | None = None, *, collation: str | None = None):
+def _device_counts(app_hash: str | None = None, *, collation: str | None = None, scope=None):
     """version_hash -> distinct devices carrying it now (tenant-scoped by RLS on installed_apps).
 
     `app_hash` is pushed inside the subquery on purpose (#299). Joined on the nullable side of
@@ -69,10 +70,13 @@ def _device_counts(app_hash: str | None = None, *, collation: str | None = None)
     stmt = select(build.label("version_hash"), func.count(distinct(InstalledApp.device_id)).label("devices"))
     if app_hash is not None:
         stmt = stmt.where(InstalledApp.app_hash == app_hash)
+    if scope is not None:
+        population = scoped_devices(scope)
+        stmt = stmt.join(population, population.c.id == InstalledApp.device_id)
     return stmt.group_by(build).subquery()
 
 
-async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
+async def _device_counts_once(db: AsyncSession, app_hash: str | None = None, *, scope=None):
     """`_device_counts`, read once and handed back as rows for a request's statements to join in
     its place (#726): the same two columns, so every expression on `counts.c.devices` reads the
     numbers it did. Two arrays in two bound parameters whatever the fleet carries, where a
@@ -93,7 +97,7 @@ async def _device_counts_once(db: AsyncSession, app_hash: str | None = None):
     index meant to serve this read has to order `version_hash COLLATE "C"`: one in the column's
     own order cannot.
     """
-    counts = _device_counts(app_hash, collation="C")
+    counts = _device_counts(app_hash, collation="C", scope=scope)
     rows = (await db.execute(select(counts.c.version_hash, counts.c.devices))).all()
     hashes = bindparam("counted_version_hashes", [row.version_hash for row in rows], type_=ARRAY(String(32)))
     devices = bindparam("counted_devices", [row.devices for row in rows], type_=ARRAY(BigInteger))
@@ -160,6 +164,8 @@ def _assessed_entry_out(
 @router.get("", response_model=CatalogListResponse, dependencies=[Depends(require(Permission.APP_READ))])
 async def list_catalog(
     db: AsyncSession = Depends(get_vuln_read_db),
+    principal: Principal = Depends(current_principal),
+    device_scope: Annotated[str | None, Query(alias="deviceScope", max_length=12000)] = None,
     q: str | None = Query(default=None, max_length=255),
     jamf: Literal["all", "matched", "unmatched"] = Query(default="all"),
     installed_only: bool = Query(default=True, alias="installedOnly"),
@@ -205,14 +211,19 @@ async def list_catalog(
     # within one statement, so it meant folding all three into one query, with a row to stand on
     # when the page is empty; measured at 14,000 Macs it costs what this does, and this leaves
     # the three statements as they were. A window count folds in only the total: two walks.
-    counts = await _device_counts_once(db, app_hash)
+    if device_scope is not None and Permission.DEVICE_READ not in principal.permissions:
+        raise HTTPException(403, "Device read permission is required to filter applications by device.")
+    scope = parse_scope(device_scope) if device_scope is not None else None
+    counts = (
+        await _device_counts_once(db, app_hash, scope=scope) if scope is not None else await _device_counts_once(db, app_hash)
+    )
     devices = func.coalesce(counts.c.devices, 0)
     stmt = select(AppCatalogEntry, devices.label("devices")).outerjoin(
         counts, counts.c.version_hash == AppCatalogEntry.version_hash
     )
     if app_hash is not None:
         stmt = stmt.where(AppCatalogEntry.app_hash == app_hash)
-    if installed_only:
+    if installed_only or scope is not None:
         stmt = stmt.where(devices > 0)
     if jamf == "matched":
         stmt = stmt.where(AppCatalogEntry.jamf_title_ids.is_not(None))
@@ -314,6 +325,7 @@ async def list_catalog(
                 )
                 .select_from(AppCatalogEntry)
                 .outerjoin(counts, counts.c.version_hash == AppCatalogEntry.version_hash)
+                .where(devices > 0 if scope is not None else True)
             )
         ).one()
         summary = CatalogSummaryOut(

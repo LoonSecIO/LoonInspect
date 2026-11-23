@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { Button } from "@/components/ui/button";
+import { useHasPermission } from "@/features/auth/store";
+import { DeviceScopeBuilder } from "@/features/catalog/DeviceScopeBuilder";
+import { PatchPlanWorkspace, type PatchPlanActions } from "@/features/catalog/PatchPlanWorkspace";
+import { defaultScope } from "@/features/catalog/patchPlanTypes";
 import { Input } from "@/components/ui/input";
 import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
 import { listApplications, type Application } from "@/features/devices/applicationsApi";
@@ -27,6 +32,15 @@ function emptyReason(q: string, statuses: MdmSyncStatus[]): EmptyReason {
  * Search lives in the URL (`q`), as the Devices page's does, so a filtered list is a link.
  */
 export function ApplicationsOverviewPage() {
+  const [params] = useSearchParams();
+  const scope = params.get("deviceScope") ?? JSON.stringify(defaultScope);
+  return <InstalledApplications key={scope} deviceScope={scope} />;
+}
+
+function InstalledApplications({ deviceScope }: { deviceScope: string }) {
+  const canPlan = useHasPermission("patch:plan-write");
+  const [selected, setSelected] = useState<string[]>([]);
+  const planActions = useRef<PatchPlanActions>(null);
   const { t } = useLocale();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,6 +49,12 @@ export function ApplicationsOverviewPage() {
   const [loaded, setLoaded] = useState<{ q: string; items: Application[]; total: number; statuses: MdmSyncStatus[] | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState(q);
+  const [loadInputs, setLoadInputs] = useState({ q, t });
+  if (loadInputs.q !== q || loadInputs.t !== t) {
+    setLoadInputs({ q, t });
+    setLoaded(null);
+    setError(null);
+  }
 
   // The box is a draft, applied on a debounce; it follows the URL when the back button
   // moves it. Adjusted during render rather than from an effect.
@@ -47,13 +67,16 @@ export function ApplicationsOverviewPage() {
   useEffect(() => {
     const trimmed = draft.trim();
     if (trimmed === q) return;
-    const handle = setTimeout(() => setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true }), 250);
+    const handle = setTimeout(() => setSearchParams(current => {
+      const next = new URLSearchParams(current); if (trimmed) next.set("q", trimmed); else next.delete("q");
+      next.delete("page"); return next;
+    }, { replace: true }), 250);
     return () => clearTimeout(handle);
   }, [draft, q, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
-    listApplications({ q: q || undefined, pageSize: 200 })
+    listApplications({ q: q || undefined, pageSize: 200, deviceScope })
       .then(async (response) => {
         if (cancelled) return;
         // The four empty states need the sync status, and only the empty path reads it.
@@ -68,13 +91,20 @@ export function ApplicationsOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, t]);
+  }, [q, deviceScope, t]);
 
   const current = loaded && loaded.q === q ? loaded : null;
   const loading = current === null && error === null;
 
   return (
     <section className="space-y-4">
+      <DeviceScopeBuilder value={deviceScope} onChange={value => {
+        const next = new URLSearchParams(searchParams); next.set("deviceScope", value); next.delete("plan"); setSearchParams(next);
+      }} />
+      <PatchPlanWorkspace ref={planActions} scope={deviceScope} selected={selected} planId={searchParams.get("plan")}
+        onClear={() => setSelected([])} onOpen={id => {
+          const next = new URLSearchParams(searchParams); if (id) next.set("plan", id); else next.delete("plan"); setSearchParams(next);
+        }} />
       <Input data-page-search="" placeholder={t.applications.searchPlaceholder} value={draft} onChange={(event) => setDraft(event.target.value)} className="max-w-sm" />
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -83,6 +113,7 @@ export function ApplicationsOverviewPage() {
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/30 text-left text-muted-foreground">
             <tr>
+              {canPlan && <th className="px-4 py-2 font-medium">Patch plan</th>}
               <th className="px-4 py-2 font-medium">{t.applications.tableName}</th>
               <th className="px-4 py-2 font-medium">{t.applications.tableBundleId}</th>
               <th className="px-4 py-2 font-medium">{t.applications.tableVersions}</th>
@@ -93,14 +124,14 @@ export function ApplicationsOverviewPage() {
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={5}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 6 : 5}>
                   {t.applications.loading}
                 </td>
               </tr>
             )}
             {current && current.items.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={5}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 6 : 5}>
                   {current.statuses === null && !q
                     ? t.applications.empty
                     : t.applications.emptyStates[emptyReason(q, current.statuses ?? [])]}
@@ -113,6 +144,11 @@ export function ApplicationsOverviewPage() {
                 className="cursor-pointer border-b last:border-0 hover:bg-accent/40"
                 onClick={() => navigate(`/devices/applications/${app.appHash}`)}
               >
+                {canPlan && <td className="px-4 py-2" onClick={e => e.stopPropagation()}><div className="flex items-center gap-2">
+                  <input type="checkbox" aria-label={`Select ${app.name} for a patch plan`} checked={selected.includes(app.appHash)}
+                    onChange={e => setSelected(current => e.target.checked ? [...current, app.appHash] : current.filter(hash => hash !== app.appHash))} />
+                  <Button variant="outline" size="sm" onClick={() => planActions.current?.build([app.appHash])}>Build a patch plan</Button>
+                </div></td>}
                 <td className="px-4 py-2 font-medium">
                   <Link to={`/devices/applications/${app.appHash}`} className="hover:underline" onClick={(event) => event.stopPropagation()}>
                     {app.name}

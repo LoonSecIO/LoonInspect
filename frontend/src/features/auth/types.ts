@@ -56,6 +56,7 @@ export const PERMISSIONS = {
   CONNECTION_WRITE: "connection:write",
   CONNECTION_CREDENTIAL_READ: "connection:credential-read",
   PATCH_CATALOG_SYNC: "patch:catalog-sync",
+  PATCH_PLAN_WRITE: "patch:plan-write",
   DEVICE_SYNC: "device:sync",
   FEATURE_FLAG_WRITE: "feature-flag:write",
   ACCOUNT_READ: "account:read",

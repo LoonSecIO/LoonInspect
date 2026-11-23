@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§28, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§29, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -70,6 +70,7 @@ they were written — §9 ends by saying the paths continue at §10.
   answer"](#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)
 
 - **§28** ["Support does not show the Mac app version or build"](#28-support-does-not-show-the-mac-app-version-or-build)
+- **§29** [Installed application patch plans](#29-installed-application-patch-plans)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -3453,3 +3454,40 @@ In Settings → AI select a UTC range that includes the first measured date. Rev
 On the OpenAI-compatible card in Settings → AI, enter the Ollama endpoint ending in /v1. Existing cards use their pinned model. Choose **Prefer a loaded compatible Ollama model**, enter the model tags in preference order, then preview. The installed list comes from /api/tags. The running list comes from /api/ps. LoonInspect checks the completion capability with /api/show and chooses the first compatible preference, then tries remaining loaded names in alphabetical order. Preview shows the model and reason before sending a test. Save the card to apply the same choice to interactive features and background summaries.
 
 If no compatible model is loaded, load a chat-capable model or explicitly set a fallback on the card. A selected fallback may cause Ollama to load that model. If discovery is unavailable, a configured fallback can still be requested on the same endpoint. Check the URL, reverse proxy routing for /api/ps and /api/show, credentials and consent. The usage view records the concrete model requested and the model reported in the reply.
+
+## 29. Installed application patch plans
+
+- **No applications match a device filter:** open **Devices → Applications → Installed
+  Apps**, check the connection and All/Any condition choice, and remove conditions one
+  at a time. Group IDs belong to a specific Jamf connection. Missing EA values, contact
+  dates or group observations are unknown; a negative filter does not treat them as a
+  confirmed non-match. Collect fresh inventory if the values are missing or stale.
+- **An application disappeared while building:** the selected app no longer has devices
+  in the applied scope. Refresh the list and select the current application identities.
+  Existing saved plans retain the inventory snapshot from when they were built.
+- **A plan says “requires investigation” or has conditional matches:** inspect each
+  source, its read date and the open review items. A public Jamf title or Fleet package
+  does not prove that a deployment policy exists in this Jamf instance. Validate the
+  bundle, version and installer before filling in the operator review notes.
+- **Installomator is unavailable or no label was found:** check outbound HTTPS to
+  `api.github.com` and `raw.githubusercontent.com`, including GitHub rate limits. A missing
+  name-derived label can be an alias; search the upstream project and review its script.
+  The investigation records a pinned source revision and never executes that script.
+- **AI is unavailable or returns an unusable result:** open **Settings → AI**, check the
+  enabled provider and loaded model, then send a test prompt. Check the AI feature flag
+  and inference consent in **Settings → Data Sharing**. For Ollama, use its endpoint
+  ending in `/v1`. Retry the investigation after fixing the provider. The plan retains
+  its source evidence when AI cannot select valid review priorities.
+- **Investigation is interrupted, fails or cannot start:** the application permits two
+  concurrent investigations per organization and bounds each to five minutes. Wait for
+  a running job to finish. After a restart, reload the plan; after six minutes it marks
+  the old job interrupted and allows a retry. Check the server log and connectivity to
+  the named source or AI service before retrying a failed job.
+- **PDF export or review save reports a changed revision:** reload the saved plan and
+  review the newer findings or notes before saving or exporting. Unsaved operator notes
+  disable export. The PDF represents the displayed saved revision and includes its
+  data checksum. It documents a proposed plan; approvals and deployment results must
+  be recorded separately. Analyst or Admin access is needed to build, investigate and
+  update a plan; Viewer and Auditor roles can read and export one.
+
+See [Application patch plans](application-patch-plans.md) for the complete workflow.

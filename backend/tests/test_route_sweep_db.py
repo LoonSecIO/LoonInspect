@@ -66,6 +66,7 @@ OWNED = {
     "span_id": "ObservationSpan",
     "tenant_id": "Tenant",
     "token_id": "ApiToken",
+    "plan_id": "ApplicationPatchPlan",
 }
 # A parameter naming one of those rows by another name or spelling: (its OWNED key, its value as a template
 # over the `tenants` fixture's keys).
@@ -76,6 +77,7 @@ ALIASES = {
 }
 # Parameters that name no tenant's row: one value any tenant may send.
 SHARED = {
+    "revision": 1,
     "bundle_id": "com.example.sweep",
     "client_id": "c",
     "full_path": "devices",
@@ -98,6 +100,8 @@ SUBMISSION = {"kind": "coverage", "appName": "Route Sweep", "platform": "macos",
 # required body and no entry sends `{}`. Harmless to the own lane's tenant: renames none of its rows, and
 # sets nothing the other lanes rely on.
 BODIES: dict[str, dict] = {
+    "POST /api/application-patch-plans": {"appHashes": ["0" * 32], "title": "route sweep patch plan"},
+    "PATCH /api/application-patch-plans/{plan_id}": {"revision": 1, "owner": "route sweep"},
     "POST /api/auth/setup": {"claimToken": "x", "email": "setup@sweep.example.com", "displayName": "s", "password": PASSWORD},
     "POST /api/auth/login": {"email": ADMIN2[0], "password": ADMIN2[1]},
     "POST /api/auth/login/mfa": {"challenge": "route-sweep", "code": "000000"},
@@ -271,8 +275,10 @@ async def _seed(tenant: dict) -> dict:
     secret on the connection, which is what POST /api/mdm/connections/test reads of a connection it names
     (with no client id beside it, nothing can call out with it)."""
     from app.core.database import session_for_tenant
+    from app.core.patch_plans import build_snapshot
     from app.mdm.jamf.contract import digest
-    from app.models.schema import Device, DeviceChange, MdmConnection, ObservationSpan
+    from app.models.schema import ApplicationPatchPlan, Device, DeviceChange, MdmConnection, ObservationSpan
+    from app.schemas.patch_plans import BuildPlan
 
     now, secret = datetime.now(UTC), '{"client_secret": "route-sweep"}'
     async with session_for_tenant(tenant["tenant_id"]) as db:
@@ -297,8 +303,11 @@ async def _seed(tenant: dict) -> dict:
             change.serial_number, change.entry_label = device.serial_number, "route sweep"
             db.add(change)
             await db.flush()
+        snapshot = await build_snapshot(db, BuildPlan(appHashes=["0" * 32]), f"route sweep {tenant['tenant_id']}")
+        plan = ApplicationPatchPlan(title="route sweep patch plan", created_by="route sweep", snapshot=snapshot)
+        db.add(plan)
         await db.commit()
-        return {"span_id": span.id, "subject": device.external_id, "stored": stored}
+        return {"span_id": span.id, "subject": device.external_id, "stored": stored, "plan_id": plan.id}
 
 
 async def _tidy(rows: dict[str, dict], since: datetime) -> None:
@@ -310,6 +319,7 @@ async def _tidy(rows: dict[str, dict], since: datetime) -> None:
 
     for tenant in rows.values():
         async with session_for_tenant(tenant["tenant_id"]) as db:
+            await db.execute(delete(s.ApplicationPatchPlan).where(s.ApplicationPatchPlan.title.like("route sweep%")))
             mine = s.UserSession.account_id == tenant["account_id"], s.UserSession.created_at >= since
             await db.execute(delete(s.UserSession).where(*mine))
             # The own lane's sign-in counts against the operational tenant, as a failed one.
@@ -509,7 +519,15 @@ async def _doomed(tenant: dict, name: str) -> object:
     from app.core.content_keys import app_title_key
     from app.core.database import session_for_tenant
     from app.core.submissions import mint_case_key
-    from app.models.schema import ApiToken, AppPromotion, Collection, Destination, MdmConnection, SubmissionCase
+    from app.models.schema import (
+        ApiToken,
+        ApplicationPatchPlan,
+        AppPromotion,
+        Collection,
+        Destination,
+        MdmConnection,
+        SubmissionCase,
+    )
 
     tag = uuidlib.uuid4().hex[:8]
     label = f"route sweep {tag}"
@@ -527,6 +545,13 @@ async def _doomed(tenant: dict, name: str) -> object:
         "destination_id": lambda: Destination(name=label, type="generic_webhook", url="https://doomed.example", auth_type="none"),
         "token_id": lambda: ApiToken(id=f"sweep{tag}", account_id=tenant["account_id"], name=label, token_hash=tag * 8),
     }
+    if name == "plan_id":
+        async with session_for_tenant(tenant["tenant_id"]) as db:
+            original = await db.get(ApplicationPatchPlan, tenant["plan_id"])
+            row = ApplicationPatchPlan(title=label, created_by=label, snapshot=original.snapshot)
+            db.add(row)
+            await db.commit()
+            return row.id
     if name not in made and name != "account_id":
         return tenant[name]
     async with session_for_tenant(tenant["tenant_id"]) as db:
