@@ -7,6 +7,21 @@ record of what ships; the plan below it is the road it sits on. Grounded in
 Run this session: one metadata probe, two Ollama chat completions, three Apple FM generations
 (one through a throwaway shim). No docker, no Splunk, no container.
 
+## Implemented in development (2026-11-22): external MCP connections
+
+The built-in MCP endpoint gives a user-configured assistant bounded access to fleet
+records and explicitly permitted refresh actions. It requires the existing `ai_features`
+master flag and a separate, default-off organization consent, `mcp_access`, under
+**Settings → AI connections**. It does not use `ai_inference`, because LoonInspect is
+returning data to an external client rather than choosing or calling a model provider.
+
+The external client may send that data onward. The consent names the field categories
+and states that its downstream provider/model are unknown. Before a successful result
+leaves, the MCP gate rechecks the grant and commits its tier-`ai` disclosure row without
+raw fleet values. LoonInspect's own model calls continue through `require_ai`; this MCP
+path uses `app.mcp.access.resolve_grant` and `disclose`. Neither path installs a hosted
+model default. The [MCP runbook](mcp.md) records the setup, credentials, tools and limits.
+
 ## Built (2026-09-14, spike, no issue or PR yet): the Changes Prompt bar
 
 Slot 1, sentence-to-filter, on Devices › Changes. A handoff from a claude.ai session supplied the

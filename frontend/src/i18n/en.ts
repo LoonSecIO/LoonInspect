@@ -1,10 +1,12 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
+import { mcpEnglish } from "@/features/mcp/copy";
 import type { UpdateReason } from "@/features/system/api";
 import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
+  mcp: mcpEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
@@ -401,6 +403,7 @@ export const en = {
     intelligenceAccess: "Intelligence Access",
     ai: "AI",
     apiTokens: "API Tokens",
+    aiConnections: "AI connections",
     accounts: "Accounts",
     myAccount: "My Account",
     destinations: "Destinations",
@@ -784,6 +787,7 @@ export const en = {
   },
   apiTokens: {
     title: "API Tokens",
+    aiConnectionsHint: "For Codex or Claude, create a scoped connection in",
     description:
       "Personal tokens for non-browser clients — scripts, CI, and native clients. A token can never do more than your account can.",
     name: "Name",

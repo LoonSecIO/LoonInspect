@@ -15,6 +15,7 @@ it will not open or start, [docs/troubleshooting.md](../docs/troubleshooting.md)
 | `scripts/make-icon.swift` | Renders `LoonInspect.icns` from `frontend/public/brand/loon-mark-reversed.svg` at build time; no binary icon is committed. |
 | `shell/` | The Swift shell (SwiftPM, no Xcode project): the window, the menu, and the supervisor that starts and stops Postgres and the backend. `Info.plist` holds the app's version. |
 | `launcher/loon_backend.py` | The backend's entry in the bundle: `app.serve` plus a watchdog that stops it, and Postgres, if the shell dies. |
+| `launcher/loon_mcp.py` | The bundled stdio MCP adapter: attaches a paired client to this app's authenticated local backend. |
 
 ## Install and use
 
@@ -29,6 +30,31 @@ and enabled sharing or AI can make outbound connections. Review the setup sharin
 Copying the installer to another Mac does not copy existing accounts, connections or inventory.
 Those live outside the app. Follow [Backup](../docs/macos-app.md#backup) for an existing
 instance's database and matching Keychain items. Quit before replacing the app with an update.
+
+### Connect Codex or Claude through MCP
+
+Open LoonInspect and create a connection in **Settings › AI connections**. Give each client its own
+explicitly scoped, expiring token. Pair the token from Terminal; paste it at the hidden
+prompt, never into the command itself:
+
+```sh
+/Applications/LoonInspect.app/Contents/MacOS/LoonInspect --mcp-pair --profile codex
+```
+
+The command stores that credential in this Mac's login Keychain. Client configuration uses
+the executable above with arguments `--mcp --profile codex`; it contains no token. Use
+separate profiles such as `claude-code` and `claude-desktop` for the other clients. If the app
+is installed elsewhere, use its actual bundle path. Repeating pairing replaces the saved
+credential for that profile; revoke the previous connection in LoonInspect Settings.
+
+The adapter requires the app to be running. Closing its window keeps MCP available; quitting
+or sleeping the Mac interrupts requests. It discovers the current loopback port through the
+private `run/mcp.json` descriptor and checks the server's instance identity before sending
+the credential. It does not launch a second database or turn on network access. Reconnect
+the MCP client after quitting and reopening LoonInspect. A timed-out sync has an unknown
+outcome: inspect its run status before deliberately retrying. Requests are never retried
+automatically. The adapter accepts the bundled server's stateless JSON responses, with a
+256 KiB request limit and 512 KiB response limit.
 
 ## Build and run
 
@@ -176,6 +202,9 @@ check, against a fake `gh`; it needs `jq`, which macOS and the runners ship.
 watchdog behavior, export replacement and the backend's environment for each state of Check for
 Updates Daily and of the app's own environment, using temporary files and mocked signals.
 It never starts the real app or reads its Keychain items. These checks also run in macOS CI.
+The backend test suite's `tests/test_mcp_bridge.py` checks MCP identity validation, private
+runtime files, credential transport, cancellation, response limits and failure handling
+against mock HTTP peers, without reading a real Keychain or contacting a fleet.
 
 For window recovery and native Find in Page, run `python3 macos/tests/window/run.py --source-dir .` from the repository
 on a Mac with a logged-in graphical session. It compiles the actual delegate and views against

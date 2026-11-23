@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound } from "lucide-react";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/features/auth/store";
+import { PERMISSIONS } from "@/features/auth/types";
 import { createToken, listTokens, revokeToken } from "@/features/tokens/api";
 import type { ApiToken, ApiTokenCreated } from "@/features/tokens/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -131,6 +133,9 @@ export function ApiTokensPage() {
         <p className="text-sm font-medium text-muted-foreground">{t.settings.eyebrow}</p>
         <h1 className="text-3xl font-bold tracking-tight">{t.apiTokens.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.apiTokens.description}</p>
+        {ownPermissions.includes(PERMISSIONS.MCP_CONNECT) && <p className="mt-2 text-sm text-muted-foreground">
+          {t.apiTokens.aiConnectionsHint}{" "}<Link to="/settings/ai-connections" className="underline">{t.mcp.title}</Link>.
+        </p>}
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -199,7 +204,7 @@ export function ApiTokensPage() {
           <p className="text-sm font-medium">{t.apiTokens.scopes}</p>
           <p className="text-xs text-muted-foreground">{t.apiTokens.scopesHint}</p>
           <div className="flex flex-wrap gap-2">
-            {ownPermissions.map((permission) => {
+            {ownPermissions.filter(permission => permission !== PERMISSIONS.MCP_CONNECT).map((permission) => {
               const selected = scopes.includes(permission);
               return (
                 <button

@@ -80,11 +80,13 @@ def test_the_tree_gives_each_mac_manifest_its_blob_sha_and_nothing_else() -> Non
             {"path": "1password/darwin.json", "type": "blob", "sha": BLOB},
             {"path": "1password/windows.json", "type": "blob", "sha": "3" * 40},
             {"path": "box-drive/darwin.json", "type": "blob", "sha": "4" * 40},
+            {"path": "python@3.13+/darwin.json", "type": "blob", "sha": "7" * 40},
+            {"path": "unsafe%2Fpath/darwin.json", "type": "blob", "sha": "8" * 40},
             {"path": "../etc/darwin.json", "type": "blob", "sha": "5" * 40},  # not a slug: never a URL
             {"path": "nested/deeper/darwin.json", "type": "blob", "sha": "6" * 40},
         ],
     }
-    assert fc.parse_tree(_body(tree)) == {"1password": BLOB, "box-drive": "4" * 40}
+    assert fc.parse_tree(_body(tree)) == {"1password": BLOB, "box-drive": "4" * 40, "python@3.13+": "7" * 40}
 
 
 def test_a_listing_github_cut_short_is_refused_whole() -> None:

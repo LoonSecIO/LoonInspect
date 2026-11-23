@@ -70,6 +70,8 @@ they were written — §9 ends by saying the paths continue at §10.
   answer"](#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)
 
 - **§28** ["Support does not show the Mac app version or build"](#28-support-does-not-show-the-mac-app-version-or-build)
+- **§29** ["Codex or Claude cannot use LoonInspect"](#29-codex-or-claude-cannot-use-looninspect)
+- **§30** [Installed application patch plans](#30-installed-application-patch-plans)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -3453,3 +3455,120 @@ In Settings → AI select a UTC range that includes the first measured date. Rev
 On the OpenAI-compatible card in Settings → AI, enter the Ollama endpoint ending in /v1. Existing cards use their pinned model. Choose **Prefer a loaded compatible Ollama model**, enter the model tags in preference order, then preview. The installed list comes from /api/tags. The running list comes from /api/ps. LoonInspect checks the completion capability with /api/show and chooses the first compatible preference, then tries remaining loaded names in alphabetical order. Preview shows the model and reason before sending a test. Save the card to apply the same choice to interactive features and background summaries.
 
 If no compatible model is loaded, load a chat-capable model or explicitly set a fallback on the card. A selected fallback may cause Ollama to load that model. If discovery is unavailable, a configured fallback can still be requested on the same endpoint. Check the URL, reverse proxy routing for /api/ps and /api/show, credentials and consent. The usage view records the concrete model requested and the model reported in the reply.
+
+## 29. "Codex or Claude cannot use LoonInspect"
+
+Start in **Settings → AI connections**, with the intended organization selected. The
+[MCP runbook](mcp.md) has the Mac and hosted setup. Choose the step matching the refusal:
+
+1. **The page is absent, or AI features/MCP access is off.** Viewers cannot create
+   connections. An administrator must enable **AI features** in **Settings → Feature
+   Flags** and separately choose **Allow AI connections** for this organization. The
+   community-sharing and AI-inference switches do not substitute for MCP consent.
+2. **The active organization changed, or creating a token is refused.** Reload the page,
+   confirm the organization, and choose an expiry from 1–365 days. Grant only capabilities
+   your account currently holds. Create one token per assistant; an ordinary unrestricted
+   API token does not become an MCP grant by being pasted into this page.
+3. **The token expired, was revoked, or is not an MCP grant.** Check **Your AI connection
+   tokens** and the owner's account status. Create a replacement with explicit capabilities
+   and an expiry. For the Mac app, repeat the displayed pairing command with the same
+   profile and paste the replacement at its hidden prompt. For HTTP clients, replace the
+   credential in the environment or credential store that launches the client. Reconnect
+   that client. Never paste the token into a support report or chat.
+4. **The Mac helper says no usable Keychain credential was found.** Confirm that the
+   profile in the client configuration exactly matches the pairing command, such as
+   `codex`, `claude-code` or `claude-desktop`. Unlock the login Keychain and pair again.
+   If the bundle does not contain the adapter, install a build that includes MCP support;
+   changing the profile cannot add the missing executable resources.
+5. **LoonInspect is not ready, restarted, or its local identity does not match.** Open
+   LoonInspect, wait for its workspace, and reconnect the assistant. If the mismatch remains,
+   quit and reopen LoonInspect once, then reconnect. Do not replace the generated runtime
+   file or pin an old localhost port: the helper checks the current app's identity before
+   sending a credential. If it reports that the runtime directory or file is not private,
+   inspect ownership and sharing permissions on this user's LoonInspect Application Support
+   directory. It must not be shared with other accounts. Follow §25 if the app itself will
+   not become ready.
+6. **Test connection succeeds here, but the assistant cannot connect.** This test checks
+   the token, not the assistant's network or configuration. Check the configured command
+   and profile for the local app, or the exact HTTPS endpoint for a server. Confirm that
+   an HTTP client's launch environment contains the credential variable it references.
+   Claude's cloud connector cannot reach this Mac's localhost or an ordinary private
+   network address. Use local stdio for this Mac's app, or a reachable HTTPS server for a
+   cloud connector. The bundled Mac helper does not proxy a separate hosted instance.
+7. **Remote HTTPS, Host or Origin is refused.** Check the app/proxy TLS configuration and
+   whether forwarded scheme headers are trusted only from the intended proxy. Configure
+   `MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS` as JSON arrays naming the actual address,
+   including a nondefault port when sent by the client, then recreate the app container.
+   Defaults accept loopback. An HTTP 421 indicates a refused Host; an Origin refusal is
+   HTTP 403. A proxy sign-in page, redirect or HTML response is not an MCP response: route
+   the authenticated `/mcp` request to the app. LoonInspect has no MCP OAuth sign-in flow.
+8. **A tool is missing, unavailable, or its arguments are invalid.** Recheck the token's
+   selected capabilities and its owner's current role. Discovery hides tools outside
+   that grant. Reconnect after changing access. For argument errors, use the tool's
+   published schema: integer IDs and page sizes, dates with timezones, and returned app
+   hashes or job IDs. Inventory sweep results use `jobID`; polling tools accept `job_id`.
+   An MCP-only credential used against a normal REST URL is deliberately refused.
+9. **The connection is busy or reached its per-minute limit.** Let current work finish;
+   after a rate refusal, wait a minute before another call. Each backend process allows
+   eight tools in progress, sixty tool calls per minute per token and at most six refresh
+   calls. A patch-catalog refresh through MCP already in progress also blocks a second
+   such refresh in that process. Repeated immediate retries do not make progress.
+10. **A sync or refresh timed out.** Its outcome may be unknown. For inventory sweeps,
+    inspect the connection's runs or use `list_runs`, `get_run` and `get_run_log` before
+    another request. A running sweep is reused and returns `started=false`. Patch-catalog
+    refresh is synchronous and has no job ID: inspect the Jamf/Fleet catalog status and
+    its existing logs (§6 or §27). Its first read can take minutes; allow a 330-second
+    client timeout if using it. Neither client cancellation nor timeout proves that an
+    already-started write was rolled back. Do not configure automatic retries.
+11. **The result is too large, or report pages seem inconsistent.** Reduce the query's
+    page size or time window. Some full REST results are built before MCP slices a page,
+    so a small page cannot bypass the source-response limit. For a large evidence report,
+    narrow the window or use the existing UI's HTML export. Keep the first answer's
+    reporting window on subsequent pages; these are live reads, not a frozen export.
+    Read the pagination scope: fleet totals cover the full report, while device details
+    can describe only the returned interval page. Missing assessment remains unknown,
+    not zero findings.
+12. **The operation still cannot complete, or the helper reports an unsupported response.**
+    Update the app and helper together and reconnect the client. Read the local backend
+    log (**LoonInspect → Show Logs in Finder**) or `docker compose logs app`, using the
+    request ID from the failure. If it persists, report it through §8 with the build,
+    client name, tool name, time and request ID. Leave out tokens, raw tool results and
+    fleet-identifying records. A disclosure entry records categories delivered to the
+    client; it cannot identify which downstream model processed them.
+
+## 30. Installed application patch plans
+
+- **No applications match a device filter:** open **Devices → Applications → Installed
+  Apps**, check the connection and All/Any condition choice, and remove conditions one
+  at a time. Group IDs belong to a specific Jamf connection. Missing EA values, contact
+  dates or group observations are unknown; a negative filter does not treat them as a
+  confirmed non-match. Collect fresh inventory if the values are missing or stale.
+- **An application disappeared while building:** the selected app no longer has devices
+  in the applied scope. Refresh the list and select the current application identities.
+  Existing saved plans retain the inventory snapshot from when they were built.
+- **A plan says “requires investigation” or has conditional matches:** inspect each
+  source, its read date and the open review items. A public Jamf title or Fleet package
+  does not prove that a deployment policy exists in this Jamf instance. Validate the
+  bundle, version and installer before filling in the operator review notes.
+- **Installomator is unavailable or no label was found:** check outbound HTTPS to
+  `api.github.com` and `raw.githubusercontent.com`, including GitHub rate limits. A missing
+  name-derived label can be an alias; search the upstream project and review its script.
+  The investigation records a pinned source revision and never executes that script.
+- **AI is unavailable or returns an unusable result:** open **Settings → AI**, check the
+  enabled provider and loaded model, then send a test prompt. Check the AI feature flag
+  and inference consent in **Settings → Data Sharing**. For Ollama, use its endpoint
+  ending in `/v1`. Retry the investigation after fixing the provider. The plan retains
+  its source evidence when AI cannot select valid review priorities.
+- **Investigation is interrupted, fails or cannot start:** the application permits two
+  concurrent investigations per organization and bounds each to five minutes. Wait for
+  a running job to finish. After a restart, reload the plan; after six minutes it marks
+  the old job interrupted and allows a retry. Check the server log and connectivity to
+  the named source or AI service before retrying a failed job.
+- **PDF export or review save reports a changed revision:** reload the saved plan and
+  review the newer findings or notes before saving or exporting. Unsaved operator notes
+  disable export. The PDF represents the displayed saved revision and includes its
+  data checksum. It documents a proposed plan; approvals and deployment results must
+  be recorded separately. Analyst or Admin access is needed to build, investigate and
+  update a plan; Viewer and Auditor roles can read and export one.
+
+See [Application patch plans](application-patch-plans.md) for the complete workflow.

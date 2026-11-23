@@ -1,5 +1,8 @@
 import AppKit
 
+// MCP attaches to an existing app; this must run before constructing its supervisor.
+MCPCommand.handleIfRequested()
+
 // LoonInspect.app's entry point. `--headless` does everything the app does except the window
 // (start, health, the same stop on SIGTERM or SIGINT), for testing from a terminal.
 let supervisor = Supervisor()

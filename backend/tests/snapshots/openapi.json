@@ -1129,6 +1129,35 @@
         "title": "AuthStatusOut",
         "type": "object"
       },
+      "BuildPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "appHashes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Apphashes",
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DeviceScope"
+          },
+          "title": {
+            "default": "Application patch plan",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appHashes"
+        ],
+        "title": "BuildPlan",
+        "type": "object"
+      },
       "CatalogEntryAssessedOut": {
         "description": "A catalog row that **is** the build being answered about, so it can carry an\nassessment (#251).\n\nThe split is the point, not the inheritance. `vuln` is scoped to `key_full` \u2014 one\nanswer per distinct build \u2014 so it may only ride a row a caller asked for *by build*.\nThe lookup endpoint answers by `appHash` too, where the row returned is deliberately a\nstand-in for a **different** build (the newest version the tenant has seen), and a\nclean bill from a newer build presented as the title's answer is\n`docs/vulnerabilities.md` \u00a74a's failure one grain out \u2014 a caller reads \"no findings\"\nfor a build nobody assessed.\n\nThat is refused by the type rather than documented: `CatalogLookupOut.tenant` is the\nbase `CatalogEntryOut`, which has no `vuln` at all, so a stand-in cannot carry one even\nby accident. The list endpoint's rows are each their own build, so they use this.",
         "properties": {
@@ -4242,6 +4271,42 @@
         "title": "DeviceObservationOut",
         "type": "object"
       },
+      "DeviceScope": {
+        "additionalProperties": false,
+        "properties": {
+          "connectionId": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectionid"
+          },
+          "match": {
+            "default": "all",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRule"
+            },
+            "maxItems": 20,
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "title": "DeviceScope",
+        "type": "object"
+      },
       "DeviceVulnAppsOut": {
         "description": "One Mac's apps counted three ways (#535) \u2014 **apps, never findings summed across\nthem**: a Mac carrying two vulnerable builds is 2, and each build's own `counts.total`\nstays in its own cell on the Mac's page. The three travel together and there is no shape\nin which they do not: `with_findings` alone is what a Mac whose apps are all outside the\ncorpus would read as a clean bill, and `outside_corpus` beside it is what stops that\n(\u00a74a). `on_kev` is a subset of the first, counted the same way.",
         "properties": {
@@ -5884,6 +5949,143 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MCPScope": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "label",
+          "value"
+        ],
+        "title": "MCPScope",
+        "type": "object"
+      },
+      "MCPSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "aiFeaturesEnabled": {
+            "title": "Aifeaturesenabled",
+            "type": "boolean"
+          },
+          "canManage": {
+            "title": "Canmanage",
+            "type": "boolean"
+          },
+          "disclosure": {
+            "default": "Connected assistants can retrieve this organization's fleet data within the permissions you grant: device names, identifiers, serials, users, inventory and application details, vulnerability evidence, changes, alerts, run diagnostics, connection names and reports. The selected client may send those results to its model provider. LoonInspect cannot verify the client's downstream provider or model. Every permitted tool result records its connection and disclosed field categories in the share log; credentials and account-management tools are never exposed. Sync permissions also allow requests to Jamf.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "default": "/mcp",
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "requiredScopes": {
+            "default": [
+              "mcp:connect"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Requiredscopes",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/MCPScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "aiFeaturesEnabled",
+          "canManage",
+          "enabled",
+          "organizationId",
+          "scopes"
+        ],
+        "title": "MCPSettings",
+        "type": "object"
+      },
+      "MCPTest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "MCPTest",
+        "type": "object"
+      },
+      "MCPTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "toolCount": {
+            "title": "Toolcount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organizationId",
+          "toolCount"
+        ],
+        "title": "MCPTestResult",
+        "type": "object"
+      },
+      "MCPUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "MCPUpdate",
         "type": "object"
       },
       "MdmConnectionCreate": {
@@ -8886,6 +9088,79 @@
         "title": "RankingStatus",
         "type": "object"
       },
+      "ResearchPlan": {
+        "properties": {
+          "installomator": {
+            "default": true,
+            "title": "Installomator",
+            "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "ResearchPlan",
+        "type": "object"
+      },
+      "ReviewPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "approval": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Approval",
+            "type": "string"
+          },
+          "exceptions": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Exceptions",
+            "type": "string"
+          },
+          "owner": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Owner",
+            "type": "string"
+          },
+          "pilot": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Pilot",
+            "type": "string"
+          },
+          "recovery": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Recovery",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "window": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "ReviewPlan",
+        "type": "object"
+      },
       "RuleDraftIn": {
         "properties": {
           "provider": {
@@ -9277,6 +9552,55 @@
           "webhookSweepsSince"
         ],
         "title": "RunSummaryOut",
+        "type": "object"
+      },
+      "ScopeRule": {
+        "properties": {
+          "field": {
+            "enum": [
+              "managed",
+              "contact",
+              "inventory",
+              "group",
+              "ea",
+              "site",
+              "department",
+              "building",
+              "os_version"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Key",
+            "type": "string"
+          },
+          "operator": {
+            "default": "is",
+            "enum": [
+              "is",
+              "is_not",
+              "contains",
+              "within",
+              "older",
+              "unknown"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "ScopeRule",
         "type": "object"
       },
       "SectionInfo": {
@@ -11585,11 +11909,370 @@
         ]
       }
     },
+    "/api/application-patch-plans": {
+      "get": {
+        "operationId": "list_plans_api_application_patch_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Plans Api Application Patch Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "application-patch-plans"
+        ]
+      },
+      "post": {
+        "operationId": "build_plan_api_application_patch_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildPlan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Build Plan Api Application Patch Plans Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Plan",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
+    "/api/application-patch-plans/ai-status": {
+      "get": {
+        "operationId": "ai_status_api_application_patch_plans_ai_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ai Status",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
+    "/api/application-patch-plans/scope-options": {
+      "get": {
+        "operationId": "scope_options_api_application_patch_plans_scope_options_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Scope Options Api Application Patch Plans Scope Options Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scope Options",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
+    "/api/application-patch-plans/{plan_id}": {
+      "get": {
+        "operationId": "read_plan_api_application_patch_plans__plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Plan Api Application Patch Plans  Plan Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Plan",
+        "tags": [
+          "application-patch-plans"
+        ]
+      },
+      "patch": {
+        "operationId": "record_review_api_application_patch_plans__plan_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewPlan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Record Review Api Application Patch Plans  Plan Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Review",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
+    "/api/application-patch-plans/{plan_id}/pdf": {
+      "get": {
+        "operationId": "export_plan_api_application_patch_plans__plan_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Plan",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
+    "/api/application-patch-plans/{plan_id}/research": {
+      "post": {
+        "operationId": "investigate_api_application_patch_plans__plan_id__research_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchPlan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Investigate Api Application Patch Plans  Plan Id  Research Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
     "/api/applications": {
       "get": {
         "description": "Applications grouped by app_hash, ordered by how many devices have them.\n\nPaged by `page` and `pageSize` (at most 500) and searched by `q`, like every other\nlist; the response echoes the page it served.\n\nOne query. The per-version breakdown this used to fetch for the page (~4 s of the\nrequest's database time at the 40k target) existed only to fill an expansion the\nApplications table no longer has; the version spread lives on the application record\npage, read from the catalog by `appHash` (#299).",
         "operationId": "list_applications_api_applications_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          },
           {
             "in": "query",
             "name": "q",
@@ -12059,6 +12742,25 @@
       "get": {
         "description": "The caller's own tokens. There is no endpoint for reading anyone else's \u2014\nlisting another account's credentials isn't an admin convenience worth the blast\nradius, and revoking them belongs with account management.",
         "operationId": "list_tokens_api_auth_tokens_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -12073,6 +12775,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Tokens",
@@ -12082,6 +12794,25 @@
       },
       "post": {
         "operationId": "create_token_api_auth_tokens_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12132,6 +12863,23 @@
               "title": "Token Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
           }
         ],
         "responses": {
@@ -12159,6 +12907,23 @@
       "get": {
         "operationId": "list_catalog_api_catalog_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          },
           {
             "in": "query",
             "name": "q",
@@ -14271,7 +15036,7 @@
             "name": "slug",
             "required": true,
             "schema": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
               "title": "Slug",
               "type": "string"
             }
@@ -14313,7 +15078,7 @@
             "name": "slug",
             "required": true,
             "schema": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
               "title": "Slug",
               "type": "string"
             }
@@ -14607,6 +15372,160 @@
         "summary": "Get Title",
         "tags": [
           "jamf-patch"
+        ]
+      }
+    },
+    "/api/mcp/settings": {
+      "get": {
+        "operationId": "get_settings_api_mcp_settings_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "operationId": "update_settings_api_mcp_settings_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Expected-Tenant-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/test": {
+      "post": {
+        "operationId": "test_connection_api_mcp_test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Expected-Tenant-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Connection",
+        "tags": [
+          "mcp"
         ]
       }
     },

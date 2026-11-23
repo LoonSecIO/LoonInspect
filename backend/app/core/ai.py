@@ -1,8 +1,6 @@
 """The AI gate (INSPECT-0112): the socket every future AI feature plugs into.
 
-No AI feature exists yet — this module ships before any does, so that the first one
-arrives into plumbing that already refuses correctly. Two independent switches, both
-default OFF:
+LoonInspect's own model calls use two independent switches, both default OFF:
 
 - the master feature flag (``ai_features``, app.core.feature_flags): turns the AI
   feature area on at all;
@@ -17,6 +15,12 @@ destination, the model asked for, and the field-level disclosure of what left. F
 names only, never payload contents: the log answers "what kind of thing left, and where
 to", and the row is committed before the first byte moves, so a crash mid-call can lose
 the answer but never the question.
+
+External MCP connections use the same master flag and a separate default-off
+``mcp_access`` consent, checked by ``app.mcp.access.resolve_grant``. They return data
+to a user-configured client whose downstream provider/model are unknown, rather than
+calling a model here. ``disclose`` commits their field-category share-log row before
+the result is returned. The setup and boundary are in ``docs/mcp.md``.
 
 Standing doctrine for every implementer who calls this gate (founder-ruled;
 ``docs/v-never.md`` restated — these four bind the product, not just this module,
@@ -33,7 +37,8 @@ so a feature that never reaches the gate is still bound by them):
   Enabling an AI feature must show field-level disclosure of exactly what leaves
   the pod and to where.
 - **No silent egress.** If the gate did not log it, the call was not permitted to
-  happen. Call ``require_ai`` before the request is made, not after.
+  happen. For model calls, call ``require_ai`` before the request is made, not after;
+  MCP uses its dedicated access and disclosure gates above.
 """
 
 from __future__ import annotations

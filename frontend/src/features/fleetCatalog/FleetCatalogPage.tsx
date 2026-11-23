@@ -39,7 +39,7 @@ function when(value: string | null): string {
  * a catalog. A title's row opens its version history.
  */
 export function FleetCatalogPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const canCheck = useHasPermission(PERMISSIONS.PATCH_CATALOG_SYNC);
 
   const [catalog, setCatalog] = useState<FleetCatalog | null>(null);
@@ -343,6 +343,9 @@ export function FleetCatalogPage() {
                       >
                         {t.fleetCatalog.sourceLink}
                       </a>
+                      {title.deviceCount > 0 && <a className="mt-1 block text-xs underline" href={`/devices/applications?q=${encodeURIComponent(title.name)}`}>
+                        {locale === "de" ? "Patchplan erstellen" : "Build a patch plan"}
+                      </a>}
                     </td>
                     <td className="px-4 py-2">{title.bundleId}</td>
                     <td className="px-4 py-2 tabular-nums">{title.latestVersion}</td>

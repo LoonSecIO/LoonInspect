@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
+import { Button } from "@/components/ui/button";
+import { useHasPermission } from "@/features/auth/store";
+import { DeviceScopeBuilder } from "./DeviceScopeBuilder";
+import { PatchPlanWorkspace, type PatchPlanActions } from "./PatchPlanWorkspace";
+import { defaultScope } from "./patchPlanTypes";
 import { LoonLoading } from "@/components/icons/LoonLoading";
 import { listCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell, TitlesCell } from "@/features/catalog/PatchAnswerCell";
@@ -57,6 +63,22 @@ function formatDate(value: string | null): string {
 }
 
 export function CatalogPage() {
+  const [params, setParams] = useSearchParams();
+  const scope = params.get("deviceScope") ?? JSON.stringify(defaultScope);
+  return <div className="space-y-4">
+    <DeviceScopeBuilder key={`filter:${scope}`} value={scope} onChange={value => {
+      const next = new URLSearchParams(params); next.set("deviceScope", value); next.delete("plan"); setParams(next);
+    }} />
+    <ScopedCatalog key={`catalog:${scope}`} deviceScope={scope} initialSearch={params.get("q") ?? ""} planId={params.get("plan")} onOpen={id => {
+      const next = new URLSearchParams(params); if (id) next.set("plan", id); else next.delete("plan"); setParams(next);
+    }} />
+  </div>;
+}
+
+function ScopedCatalog({ deviceScope, initialSearch, planId, onOpen }: { deviceScope: string; initialSearch: string; planId: string | null; onOpen: (id: string) => void }) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const planActions = useRef<PatchPlanActions>(null);
+  const canPlan = useHasPermission("patch:plan-write");
   const { t } = useLocale();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [summary, setSummary] = useState({ entries: 0, installed: 0, matched: 0, unmatched: 0 });
@@ -65,9 +87,9 @@ export function CatalogPage() {
   const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [jamfFilter, setJamfFilter] = useState<CatalogJamfFilter>("all");
-  const [installedOnly, setInstalledOnly] = useState(true);
+  const installedOnly = true;
   const [sortKey, setSortKey] = useState<SortKey>("deviceCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -76,7 +98,7 @@ export function CatalogPage() {
     function load() {
       setLoading(true);
       setError(null);
-      listCatalog({ jamf: jamfFilter, installedOnly })
+      listCatalog({ jamf: jamfFilter, installedOnly, deviceScope })
         .then((response) => {
           if (cancelled) return;
           setEntries(response.items);
@@ -94,7 +116,7 @@ export function CatalogPage() {
     return () => {
       cancelled = true;
     };
-  }, [jamfFilter, installedOnly, t]);
+  }, [jamfFilter, installedOnly, deviceScope, t]);
 
   const visible = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -133,7 +155,8 @@ export function CatalogPage() {
 
   return (
     <section className="space-y-4">
-      <p className="text-sm text-muted-foreground">{t.catalog.description}</p>
+      <PatchPlanWorkspace ref={planActions} scope={deviceScope} selected={selected} planId={planId} onOpen={onOpen} onClear={() => setSelected([])} />
+      <p className="text-sm text-muted-foreground">{t.catalog.description} Selecting an application includes all its installed versions in the applied device scope.</p>
 
       <CorpusBanner corpusAsOf={corpusAsOf} t={t} />
 
@@ -164,16 +187,14 @@ export function CatalogPage() {
           <option value="matched">{t.catalog.filterMatched}</option>
           <option value="unmatched">{t.catalog.filterUnmatched}</option>
         </select>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={installedOnly} onChange={(e) => setInstalledOnly(e.target.checked)} />
-          {t.catalog.installedOnly}
-        </label>
+
       </div>
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="border-b bg-muted/30 text-left text-muted-foreground">
             <tr>
+              {canPlan && <th className="px-4 py-2 font-medium">Patch plan</th>}
               {header("name", t.catalog.tableName)}
               <th className="px-4 py-2 font-medium">{t.catalog.tableBundleId}</th>
               {header("version", t.catalog.tableVersion)}
@@ -190,21 +211,21 @@ export function CatalogPage() {
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={11}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 12 : 11}>
                   <LoonLoading label={t.catalog.loading} />
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td className="px-4 py-4 text-destructive" colSpan={11}>
+                <td className="px-4 py-4 text-destructive" colSpan={canPlan ? 12 : 11}>
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && visible.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={11}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 12 : 11}>
                   {entries.length === 0 ? t.catalog.empty : t.catalog.noMatches}
                 </td>
               </tr>
@@ -213,6 +234,11 @@ export function CatalogPage() {
               !error &&
               visible.map((entry) => (
                 <tr key={entry.id} className="border-b last:border-0">
+                  {canPlan && <td className="px-4 py-2"><div className="flex items-center gap-2">
+                    <input type="checkbox" aria-label={`Select ${entry.name} ${entry.version} for a patch plan`} checked={selected.includes(entry.appHash)}
+                      onChange={e => setSelected(current => e.target.checked ? [...new Set([...current, entry.appHash])] : current.filter(hash => hash !== entry.appHash))} />
+                    <Button variant="outline" size="sm" onClick={() => planActions.current?.build([entry.appHash])}>Build a patch plan</Button>
+                  </div></td>}
                   <td className="px-4 py-2 font-medium">{entry.name}</td>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{entry.bundleId}</td>
                   <td className="px-4 py-2 tabular-nums">

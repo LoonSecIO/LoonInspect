@@ -32,6 +32,10 @@ Fleet builds its Mac manifests from Homebrew metadata (the folder's own README s
 *Fleet's latest* is the version Fleet last recorded for the title, not a vendor's
 announcement.
 
+Saved application plans and auditor PDFs start from **Installed Apps**, with the same
+workflow also available in Catalog. Installed Fleet titles link to that workflow. See
+[Installed application patch plans](application-patch-plans.md).
+
 ## The flag, and what it decides
 
 `fleet_maintained_apps` is a switch under **Settings › Feature Flags**, per organization, off

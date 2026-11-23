@@ -31,11 +31,13 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
+from starlette.routing import Route
 
 from app.alerts.service import purge_closed_alerts
 from app.api.accounts import router as accounts_router
 from app.api.ai import router as ai_router
 from app.api.alerts import router as alerts_router
+from app.api.application_patch_plans import router as application_patch_plans_router
 from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.catalog import router as catalog_router
@@ -53,6 +55,7 @@ from app.api.fleet_catalog import router as fleet_catalog_router
 from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
+from app.api.mcp import router as mcp_router
 from app.api.mfa import router as mfa_router
 from app.api.os_posture import router as os_posture_router
 from app.api.outbox import router as outbox_router
@@ -93,6 +96,7 @@ from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.update_check import startup_line as update_check_line
 from app.core.update_check import tick as update_check
 from app.core.vuln_library import refresh_from_db
+from app.mcp.server import MCPRuntime
 from app.mdm.collections import tick_tenant
 from app.mdm.concurrency import IngestBusy
 from app.mdm.factory import keep_sign_in
@@ -688,7 +692,8 @@ async def lifespan(app: FastAPI):
         if line := update_check_line():  # said before the first check is sent (#819)
             logger.info(line)
 
-    yield
+    async with app.state.mcp.lifespan():
+        yield
 
     for task in (summary_task, history_task):
         if task is not None:
@@ -814,10 +819,21 @@ app.add_middleware(
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Plain ASGI routes do not inherit FastAPI dependencies. MCPRuntime authenticates
+# every request itself, and its allowlisted API calls then traverse normal RBAC/RLS.
+app.state.mcp = MCPRuntime(app)
+app.router.routes.extend(
+    [
+        Route("/mcp", endpoint=app.state.mcp, methods=["GET", "POST", "DELETE"]),
+        Route("/mcp/", endpoint=app.state.mcp, methods=["GET", "POST", "DELETE"]),
+    ]
+)
+
 app.include_router(auth_router)
 app.include_router(mfa_router)
 app.include_router(accounts_router)
 app.include_router(tokens_router)
+app.include_router(mcp_router)
 app.include_router(api_router)
 app.include_router(webhooks_router)
 app.include_router(connections_router)
@@ -838,6 +854,7 @@ app.include_router(devices_router)
 app.include_router(applications_router)
 app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
+app.include_router(application_patch_plans_router)
 app.include_router(fleet_catalog_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
@@ -996,7 +1013,7 @@ if static_dir.exists():
     # FastAPI's own `@app.get` does not register HEAD the way plain Starlette routes do.
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def serve_spa(full_path: str, request: Request) -> Response:
-        if full_path.startswith("api/") or full_path.startswith("webhooks/"):
+        if full_path.startswith(("api/", "webhooks/", "mcp/")):
             raise HTTPException(status_code=404, detail="Not Found")
 
         asset = _resolve_static_asset(full_path)

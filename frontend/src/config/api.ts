@@ -39,6 +39,7 @@ export class ApiBodyError extends Error {
 
 type ApiRequestOptions = RequestInit & {
   json?: unknown;
+  responseType?: "json" | "blob";
 };
 
 // An abort is the caller's own doing, whenever it lands; it reaches the caller as it came.
@@ -65,7 +66,7 @@ export async function apiRequest<TResponse>(
   path: string,
   options: ApiRequestOptions = {}
 ): Promise<TResponse> {
-  const { json, headers, method = "GET", ...requestOptions } = options;
+  const { json, headers, responseType = "json", method = "GET", ...requestOptions } = options;
 
   const requestHeaders: Record<string, string> = {
     "Content-Type": "application/json",
@@ -126,6 +127,7 @@ export async function apiRequest<TResponse>(
   }
 
   try {
+    if (responseType === "blob") return await response.blob() as TResponse;
     return (await response.json()) as TResponse;
   } catch (error) {
     if (isAbort(error)) throw error;

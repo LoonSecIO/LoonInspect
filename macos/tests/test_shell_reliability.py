@@ -74,8 +74,11 @@ case "backend-env":
         inherited: inherited, resources: URL(fileURLWithPath: "/Resources"), port: 49152,
         socketDir: URL(fileURLWithPath: "/socket"),
         secrets: Supervisor.Secrets(encryptionKey: "key", appPassword: "password", superuserPassword: ""),
-        checksDaily: Supervisor.checksForUpdatesDaily(in: defaults))
+        checksDaily: Supervisor.checksForUpdatesDaily(in: defaults), instanceID: "shell-generated-instance")
     print(String(decoding: try JSONSerialization.data(withJSONObject: env, options: .sortedKeys), as: UTF8.self))
+case "mcp-validate":
+    print(MCPCommand.validProfile(CommandLine.arguments[2]))
+    print(MCPCommand.validToken(CommandLine.arguments[3]))
 default:
     fatalError("Unknown harness operation")
 }
@@ -102,6 +105,7 @@ class ShellReliabilityTests(unittest.TestCase):
                 str(cls.root / "module-cache"),
                 str(sources / "Tools.swift"),
                 str(sources / "Supervisor.swift"),
+                str(sources / "MCPCommand.swift"),
                 str(harness),
                 "-o",
                 str(cls.executable),
@@ -218,7 +222,8 @@ class ShellReliabilityTests(unittest.TestCase):
             ("on", ["UPDATE_CHECK=0", f"UPDATE_CHECK_URL={url}"], {"UPDATE_CHECK": "0", "UPDATE_CHECK_URL": url}),
             (
                 "off",
-                ["INSTANCE_KIND=container", "DATABASE_URL=elsewhere", "PYTHONPATH=/x", "PGDATA=/x", "HOME=/Users/t"],
+                ["INSTANCE_KIND=container", "DATABASE_URL=elsewhere", "PYTHONPATH=/x", "PGDATA=/x", "HOME=/Users/t",
+                 "LOONINSPECT_INSTANCE_ID=untrusted-inherited-instance"],
                 {"UPDATE_CHECK": "false", "HOME": "/Users/t"},
             ),
         ]
@@ -240,9 +245,25 @@ class ShellReliabilityTests(unittest.TestCase):
         watchdog = ["LOON_SHELL_PGDATA", "LOON_SHELL_PID", "LOON_SHELL_POSTGRES_PID"]
         self.assertEqual(added, watchdog, "set it in backendEnvironment, which the environment test reads")
 
+    def test_mcp_profile_and_token_validation_without_keychain_access(self):
+        token = "loon_pat_" + "a" * 32 + "_fake_credential"
+        for profile, candidate, expected in [
+            ("claude-desktop", token, ["true", "true"]),
+            ("../escape", token, ["false", "true"]),
+            ("codex", "bad\ncredential", ["true", "false"]),
+            ("x" * 65, token, ["false", "true"]),
+        ]:
+            result = subprocess.run(
+                [str(self.executable), "mcp-validate", profile, candidate],
+                check=False, capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), expected)
+
 
 # What the backend is told with the choice on, for the harness's port, paths and secrets.
 BACKEND_ENVIRONMENT = {
+    "LOONINSPECT_INSTANCE_ID": "shell-generated-instance",
     "DATABASE_MODE": "bundled",
     "DATABASE_URL": "postgresql+asyncpg://looninspect_app:password@/looninspect?host=/socket",
     "ENCRYPTION_KEY": "key",

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 SESSION_COOKIE = "loon_session"
 CSRF_COOKIE = "loon_csrf"
 CSRF_HEADER = "X-CSRF-Token"
+
+# An object identity inside an ASGI scope, never a header a network client can forge.
+# MCP credentials may reach ordinary API routes only through the audited MCP adapter.
+MCP_DISPATCH_MARKER = object()
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -96,6 +100,8 @@ def as_utc(value: datetime | None) -> datetime | None:
 
 
 def is_public_path(path: str) -> bool:
+    if path == "/mcp" or path.startswith("/mcp/"):
+        return False
     if path in _PUBLIC_EXACT:
         return True
     if path.startswith(_PUBLIC_PREFIXES):
@@ -116,9 +122,8 @@ class Principal:
     auth_method: str  # "session" | "api_token"
     session: UserSession | None = None
     token: ApiToken | None = None
-    # A session switched to another tenant (#36) acts for that tenant while its row and
-    # its account stay home; the index said which, and it is carried here so the
-    # property below answers the acting tenant rather than the row's.
+    # Switched sessions and tokens issued there act for that tenant while their row
+    # and account stay home; their credential index carries both tenant identifiers.
     acting_tenant_id: uuid.UUID | None = None
     # The tenant's policy asks this session's account for a second factor it has not
     # enrolled (#653); `authenticate` then opens only `_ENROLMENT_EXACT`. Never set on a token.
@@ -265,18 +270,33 @@ async def tenant_for_api_token(db: AsyncSession, secret_hash: str) -> uuid.UUID 
     return result.scalar_one_or_none()
 
 
+async def tenants_for_api_token(db: AsyncSession, secret_hash: str) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(acting, home) for an API token, with NULL home preserving existing credentials."""
+    row = (
+        await db.execute(
+            select(ApiTokenTenant.tenant_id, ApiTokenTenant.home_tenant_id).where(ApiTokenTenant.token_hash == secret_hash)
+        )
+    ).first()
+    if row is None:
+        return None
+    acting, home = row
+    return acting, home or acting
+
+
 async def revoke_session(db: AsyncSession, session: UserSession) -> None:
     session.revoked_at = datetime.now(UTC)
 
 
-def scoped_permissions(account: Account, scopes: list[str] | None) -> frozenset[Permission]:
+def scoped_permissions(
+    account: Account, scopes: list[str] | None, *, roles: Iterable[str] | None = None
+) -> frozenset[Permission]:
     """Effective permissions for a token: the owner's set, optionally narrowed.
 
     Always an intersection, never a union. A token cannot outrank its owner, and a
     token minted while its owner was an Admin silently loses that reach the moment the
     account is demoted — the scopes list is a ceiling request, not a grant.
     """
-    granted = permissions_for(row.role for row in account.roles)
+    granted = permissions_for(roles if roles is not None else (row.role for row in account.roles))
     if not scopes:
         return granted
 
@@ -438,6 +458,13 @@ async def authenticate(request: Request, response: Response, db: AsyncSession = 
     if principal is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
+    if (
+        principal.token is not None
+        and Permission.MCP_CONNECT.value in (principal.token.scopes or [])
+        and request.scope.get("looninspect.mcp_dispatch") is not MCP_DISPATCH_MARKER
+    ):
+        raise HTTPException(403, "MCP connection credentials can only be used through the MCP endpoint.")
+
     # CSRF is a cookie problem specifically: the browser attaches cookies to
     # cross-site requests on its own, but never an Authorization header. Requiring the
     # token here would be pure friction for the macOS client and CI.
@@ -544,14 +571,14 @@ async def _authenticate_bearer(db: AsyncSession, raw: str) -> Principal | None:
     if parsed is None:
         return None
 
-    # The same two reads as resolve_session (#35): the secret's hash names the tenant
-    # through the unscoped index, the request is rebound to it, and the token row is
-    # read where it lives. A secret paired with the wrong id still fails the compare.
+    # The token and owner stay at home, including tokens issued while switched to
+    # another organization. Only the index names where the credential may act.
     secret_hash = hash_token(parsed.secret)
-    tenant_id = await tenant_for_api_token(db, secret_hash)
-    if tenant_id is None:
+    tenants = await tenants_for_api_token(db, secret_hash)
+    if tenants is None:
         return None
-    await act_as_tenant(db, tenant_id)
+    acting, home = tenants
+    await act_as_tenant(db, home)
 
     token = await db.get(ApiToken, parsed.token_id)
     if token is None or token.revoked_at is not None:
@@ -569,18 +596,33 @@ async def _authenticate_bearer(db: AsyncSession, raw: str) -> Principal | None:
 
     account = await db.get(Account, token.account_id)
     if account is None or account.status != "active":
+        token.revoked_at = now
+        await db.commit()
+        return None
+
+    roles = await membership_roles(db, account, acting)
+    if roles is None:
+        # Like a switched browser session, a grant whose membership was removed
+        # stays revoked even if that membership is later granted again.
+        token.revoked_at = now
+        await db.commit()
         return None
 
     if token.last_used_at is None or now - as_utc(token.last_used_at) > _SESSION_TOUCH_INTERVAL:
         token.last_used_at = now
         await db.commit()
 
-    return Principal(
+    principal = Principal(
         account=account,
-        permissions=scoped_permissions(account, token.scopes),
+        permissions=scoped_permissions(account, token.scopes, roles=roles),
         auth_method="api_token",
         token=token,
+        acting_tenant_id=acting,
     )
+    # MCP also calls this resolver directly before reading organization consent.
+    # Finish all token writes at home before moving the session and context together.
+    await act_as_tenant(db, acting)
+    return principal
 
 
 def current_principal(request: Request) -> Principal:

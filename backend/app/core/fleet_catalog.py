@@ -9,8 +9,8 @@ the version before the last move it saw. Installer addresses, scripts and querie
 manifest are parsed past and never stored (docs/fleet-catalog.md).
 
 **What one check asks.** One request to the GitHub API for the folder's listing, which names
-the `outputs` tree by its git sha. The same sha as the last complete read is the same content,
-so the check stops there. A new sha costs one more API request, the tree listed whole (the
+the `outputs` tree by its git sha. The same sha as the last reconciled read is the same content,
+so the check stops there with the same coverage. A new sha costs one more API request, the tree listed whole (the
 Contents API cuts a directory off at 1,000 entries and this one is past that), then the index
 and each changed manifest from `raw.githubusercontent.com`. Nothing about this instance or
 its organizations is sent: every request is a plain GET naming Fleet's files.
@@ -21,8 +21,8 @@ organization on the instance has it on, `tick` asks GitHub nothing at all.
 **A check that fails says which failure it was** (docs/diagnosability.md rule 1) and leaves
 the titles already held in place. `outcome` is one of five words and `detail` is the
 sentence, written for Settings and the Fleet catalog tab rather than for a log: what failed,
-why, and what to check. A check cut short part-way keeps the manifests it did read and does
-not move the tree sha, so the next check resumes with the rest. Titles are removed only by a
+why, and what to check. A check cut short part-way keeps the manifests it did read and
+clears the tree sha, so the next check resumes with the rest. Titles are removed only by a
 complete read that no longer lists them.
 
 Redirects are not followed. The two hosts are constants, so nothing here can be pointed
@@ -36,6 +36,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -76,7 +77,8 @@ _MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 
 # A Mac manifest's path inside the outputs tree. The slug is Fleet's directory name and
 # goes into a URL path, so anything outside this alphabet is not read.
-_MANIFEST_PATH = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]{0,127})/darwin\.json")
+SLUG_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}"
+_MANIFEST_PATH = re.compile(rf"({SLUG_PATTERN})/darwin\.json")
 _SHA = re.compile(r"[0-9a-f]{40}")
 
 OUTCOME_OK = "ok"  # the catalogue had moved and was read
@@ -135,7 +137,7 @@ class _Tally:
     moved: int = 0
     added: int = 0
     removed: int = 0
-    skipped: list[str] = field(default_factory=list)
+    skipped: set[str] = field(default_factory=set)
 
 
 class Allowance:
@@ -265,7 +267,7 @@ def parse_contents(body: bytes) -> str:
     raise _not_the_catalogue(f"the listing of {FOLDER} holds no outputs folder")
 
 
-def parse_tree(body: bytes) -> dict[str, str]:
+def parse_tree(body: bytes, *, skipped: set[str] | None = None) -> dict[str, str]:
     """slug -> the git blob sha of its Mac manifest, from the tree listed whole.
 
     A listing GitHub cut short is refused: titles missing from half a listing would be
@@ -290,12 +292,14 @@ def parse_tree(body: bytes) -> dict[str, str]:
         match = _MANIFEST_PATH.fullmatch(path) if isinstance(path, str) else None
         if match and isinstance(sha, str) and _SHA.fullmatch(sha):
             manifests[match.group(1)] = sha
+        elif skipped is not None and isinstance(path, str) and path.count("/") == 1 and path.endswith("/darwin.json"):
+            skipped.add(match.group(1) if match else "unrecognized Mac manifest path")
     if not manifests:
         raise _not_the_catalogue("the catalog's file listing holds no Mac manifest")
     return manifests
 
 
-def parse_index(body: bytes) -> dict[str, tuple[str, str]]:
+def parse_index(body: bytes, *, skipped: set[str] | None = None) -> dict[str, tuple[str, str]]:
     """slug -> (name, bundle identifier) for the Mac titles `apps.json` lists.
 
     A row this container could not hold whole (a name or identifier past the column, or
@@ -310,13 +314,19 @@ def parse_index(body: bytes) -> dict[str, tuple[str, str]]:
         if not isinstance(app, dict) or app.get("platform") != "darwin":
             continue
         slug, name, identifier = app.get("slug"), app.get("name"), app.get("unique_identifier")
-        if not (isinstance(slug, str) and slug.endswith("/darwin")):
+        key = slug.removesuffix("/darwin") if isinstance(slug, str) and slug.endswith("/darwin") else ""
+        if not re.fullmatch(SLUG_PATTERN, key):
+            if skipped is not None:
+                skipped.add("unrecognized Mac index entry")
             continue
-        if not (isinstance(name, str) and isinstance(identifier, str)):
-            continue
-        name, identifier = name.strip(), identifier.strip()
+        name = name.strip() if isinstance(name, str) else ""
+        identifier = identifier.strip() if isinstance(identifier, str) else ""
         if name and identifier and len(name) <= 255 and len(identifier) <= 255:
-            titles[slug.removesuffix("/darwin")] = (name, identifier)
+            if skipped is not None and key in titles and titles[key] != (name, identifier):
+                skipped.add(key)
+            titles[key] = (name, identifier)
+        elif skipped is not None:
+            skipped.add(key)
     if not titles:
         raise _not_the_catalogue("the catalog's index (apps.json) lists no Mac app")
     return titles
@@ -375,7 +385,7 @@ async def _read_manifests(
     return versions, (stopped[0] if stopped else None)
 
 
-def _skipped_sentence(skipped: list[str]) -> str | None:
+def _skipped_sentence(skipped: Collection[str]) -> str | None:
     if not skipped:
         return None
     named = ", ".join(sorted(skipped)[:5])
@@ -475,7 +485,15 @@ async def _read(
         await _get(client, CONTENTS_URL, ceiling=_MAX_LISTING_BYTES, what=f"the folder {FOLDER}", tally=tally)
     )
     if tree_sha == state.tree_sha:
-        return OUTCOME_UNCHANGED, None
+        detail = (
+            None
+            if state.snapshot_status == "complete"
+            else (
+                "The catalog tree is unchanged. The held snapshot still has unread Mac titles. "
+                "They are checked again when Fleet changes its catalog."
+            )
+        )
+        return OUTCOME_UNCHANGED, detail
 
     manifests = parse_tree(
         await _get(
@@ -484,16 +502,19 @@ async def _read(
             ceiling=_MAX_LISTING_BYTES,
             what="the catalog's file listing",
             tally=tally,
-        )
+        ),
+        skipped=tally.skipped,
     )
     index = parse_index(
-        await _get(client, f"{_RAW}/apps.json", ceiling=_MAX_INDEX_BYTES, what="the catalog's index (apps.json)", tally=tally)
+        await _get(client, f"{_RAW}/apps.json", ceiling=_MAX_INDEX_BYTES, what="the catalog's index (apps.json)", tally=tally),
+        skipped=tally.skipped,
     )
 
     held = {row.slug: row for row in (await db.execute(select(FleetMaintainedApp))).scalars().all()}
     listed = sorted(slug for slug in manifests if slug in index)
-    # A manifest the index does not name has no name or identifier to keep it under.
-    tally.skipped.extend(slug for slug in manifests if slug not in index)
+    # Either direction leaves an unverified Mac title. Retain any previously held
+    # copy while the manifest and index disagree.
+    tally.skipped.update(manifests.keys() ^ index.keys())
     wanted = [slug for slug in listed if slug not in held or held[slug].manifest_sha != manifests[slug]]
     versions, stopped = await _read_manifests(client, wanted, tally)
 
@@ -504,7 +525,7 @@ async def _read(
         if slug in versions:
             version = versions[slug]
             if version is None:
-                tally.skipped.append(slug)
+                tally.skipped.add(slug)
                 continue
             tally.read += 1
             if row is None:
@@ -536,8 +557,12 @@ async def _read(
             changed = True
 
     if stopped is not None:
-        # Part-way: what was read is kept, the tree sha stays where it was, and nothing is
-        # removed on the strength of a reading that did not finish.
+        # Once any rows have moved, they no longer represent the previous tree.
+        # Clear its SHA so a remote revert cannot short-circuit reconciliation.
+        if not tally.read and not changed:
+            return stopped.outcome, stopped.detail
+        state.tree_sha = None
+        state.snapshot_status = "partial"
         if changed:
             state.changed_at = now
         return stopped.outcome, (
@@ -545,12 +570,13 @@ async def _read(
             "were read and kept; the next check reads the rest."
         )
 
-    gone = [slug for slug in held if slug not in listed]
+    gone = held.keys() - manifests.keys() - index.keys() - tally.skipped
     if gone:
         await db.execute(delete(FleetMaintainedApp).where(FleetMaintainedApp.slug.in_(gone)))
         tally.removed = len(gone)
         changed = True
     state.tree_sha = tree_sha
+    state.snapshot_status = "partial" if tally.skipped else "complete"
     if changed or state.changed_at is None:
         state.changed_at = now
     return OUTCOME_OK, _skipped_sentence(tally.skipped)
@@ -585,6 +611,8 @@ def due(state: FleetCatalogState | None, now: datetime) -> bool:
     """Once a day after a check that got an answer, and within the hour after one that did not."""
     if state is None or state.checked_at is None:
         return True
+    if state.tree_sha is None and state.snapshot_status == "partial" and state.outcome not in FAILED:
+        return True  # upgrade invalidated the old listing, and its last check did not fail
     interval = _FAILURE_INTERVAL if state.outcome in FAILED else _SUCCESS_INTERVAL
     return now - state.checked_at >= interval
 

@@ -419,6 +419,7 @@ Endpoints declare `Depends(require(Permission.CONNECTION_WRITE))`. Roles are bun
 | Connection write | — | — | — | ✅ |
 | **Connection credential read** | — | — | — | ✅ |
 | Patch catalog sync | — | ✅ | — | ✅ |
+| Patch plan create / review / investigate | — | ✅ | — | ✅ |
 | Feature flag write | — | — | — | ✅ |
 | Account read | — | — | ✅ | ✅ |
 | Account write | — | — | — | ✅ |
