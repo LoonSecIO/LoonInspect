@@ -218,7 +218,7 @@ async def test_catalog_counts_use_the_same_device_scope_as_plan(db, inventory, a
     assert app["deviceCount"] == 1
 
 
-async def test_partial_jamf_matches_within_one_version_need_identity_review(db, inventory, flag_off):  # noqa: F811
+async def test_partial_jamf_matches_within_one_version_need_identity_review(db, inventory, flag_on):  # noqa: F811
     from app.core.patch_plans import build_snapshot
     from app.models.schema import JamfPatchTitle
     from app.schemas.patch_plans import BuildPlan
@@ -233,10 +233,14 @@ async def test_partial_jamf_matches_within_one_version_need_identity_review(db, 
     for row in rows:
         row.ea_assumed = False
         row.last_patch_check_at = datetime.now(UTC)
+        row.jamf_title_ids = None
+    await db.commit()
+    request = BuildPlan(appHashes=[app_hash], scope={"connectionId": source})
+    fleet_only = (await build_snapshot(db, request, "Test"))["applications"][0]
+    assert fleet_only["targetVersion"] == "2.0"
     rows[0].jamf_title_ids = [title_id]
     rows[1].jamf_title_ids = None
     await db.commit()
-    request = BuildPlan(appHashes=[app_hash], scope={"connectionId": source})
     partial = (await build_snapshot(db, request, "Test"))["applications"][0]
     assert partial["devices"] == 2
     assert partial["options"][0]["status"] == "identity_review"

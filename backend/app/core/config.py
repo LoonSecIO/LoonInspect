@@ -1,3 +1,10 @@
+"""Environment settings and validation shared by the API, scheduler and packaged Mac backend.
+
+Deployment defaults live here; docker-compose.yml passes them and app/serve.py consumes
+the listener settings. Tenant consent and permissions remain in their database-backed
+services, rather than becoming environment overrides.
+"""
+
 from __future__ import annotations
 
 import ipaddress
@@ -42,6 +49,18 @@ class Settings(BaseSettings):
     database_mode: Literal["bundled", "external"] = "bundled"
 
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    # MCP defaults to loopback. Hosted deployments explicitly name their public Host
+    # headers, including a port when non-standard; browser Origins are separate.
+    mcp_allowed_hosts: list[str] = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*", "[::1]", "[::1]:*"]
+    mcp_allowed_origins: list[str] = [
+        "http://127.0.0.1",
+        "http://127.0.0.1:*",
+        "http://localhost",
+        "http://localhost:*",
+        "http://[::1]",
+        "http://[::1]:*",
+    ]
 
     encryption_key: str | None = None
     # The key the database was written under before a rotation (#144), and nothing else. Set

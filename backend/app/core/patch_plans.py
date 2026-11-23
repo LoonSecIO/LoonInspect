@@ -189,7 +189,8 @@ async def build_snapshot(db, payload, organization):
             )
             if not conditional:
                 target = title.current_version
-        if any(option["status"] == "identity_review" for option in options):
+        jamf_identity_review = any(option["status"] == "identity_review" for option in options)
+        if jamf_identity_review:
             gaps.append(
                 "Jamf title matching is conditional or differs across devices or builds. "
                 "Verify application identity before selecting a target."
@@ -223,7 +224,14 @@ async def build_snapshot(db, payload, organization):
             gaps.append("Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.")
         elif not candidates:
             gaps.append("No matching Fleet title in the completed cached catalog.")
-        if target is None and complete and len(candidates) == 1 and not any(b.assumed for b in builds) and len(ids) <= 1:
+        if (
+            target is None
+            and not jamf_identity_review
+            and complete
+            and len(candidates) == 1
+            and not any(b.assumed for b in builds)
+            and len(ids) <= 1
+        ):
             target = candidates[0].latest_version
         gaps.extend(
             [

@@ -57,6 +57,9 @@ class Permission(StrEnum):
     # keep long-lived credentials off accounts with no automation story.
     TOKEN_CREATE = "token:create"
 
+    # Explicit opt-in on a finite-lived, narrowed API token for external AI clients.
+    MCP_CONNECT = "mcp:connect"
+
     # Where processed events get delivered (SIEM, warehouse, generic webhook). Split
     # read/write for the same reason as connections: an analyst should be able to see
     # that a destination exists and whether it's healthy without being able to point
@@ -101,6 +104,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.DEVICE_SYNC,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.MCP_CONNECT,
         Permission.DESTINATION_READ,
         Permission.SYSTEM_READ,
     },
@@ -113,6 +117,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
         Permission.ACCOUNT_READ,
         Permission.AUDIT_READ,
         Permission.TOKEN_CREATE,
+        Permission.MCP_CONNECT,
         Permission.DESTINATION_READ,
         Permission.SYSTEM_READ,
     },

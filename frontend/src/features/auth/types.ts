@@ -63,6 +63,7 @@ export const PERMISSIONS = {
   ACCOUNT_WRITE: "account:write",
   AUDIT_READ: "audit:read",
   TOKEN_CREATE: "token:create",
+  MCP_CONNECT: "mcp:connect",
   DESTINATION_READ: "destination:read",
   DESTINATION_WRITE: "destination:write",
   SYSTEM_READ: "system:read",

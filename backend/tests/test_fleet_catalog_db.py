@@ -402,6 +402,16 @@ async def test_an_index_only_title_makes_the_snapshot_partial_and_keeps_its_prev
 # --- who makes a check happen ---------------------------------------------------------------
 
 
+async def test_history_accepts_slugs_admitted_by_the_catalog(db, github, viewer, flag_on):  # noqa: F811
+    from app.core import fleet_catalog as fc
+
+    github.put("gamma@6+", "Gamma Variant", GAMMA, "6")
+    await fc.check(db, transport=github.transport)
+    response = await viewer.get("/api/fleet-catalog/gamma%406%2B/history")
+    assert response.status_code == 200, response.text
+    assert response.json()["slug"] == "gamma@6+"
+
+
 async def test_no_organization_with_the_flag_on_means_no_request_at_all(db, github, flag_off) -> None:
     from app.core import fleet_catalog as fc
 

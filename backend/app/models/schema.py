@@ -1371,6 +1371,9 @@ class ApiTokenTenant(Base):
 
     token_hash: Mapped[str] = mapped_column(String(64), ForeignKey("api_tokens.token_hash", ondelete="CASCADE"), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False)
+    # Tokens issued in another organization remain beside their owner's account,
+    # so disabling that account revokes every credential. NULL preserves old rows.
+    home_tenant_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

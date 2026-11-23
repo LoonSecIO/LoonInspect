@@ -65,4 +65,52 @@ describe("Installed Applications patch plans", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith("/application-patch-plans/saved-plan/research", expect.objectContaining({
       method: "POST", json: { installomator: true, provider: "openai_compatible" } })));
   });
+
+  it("keeps export blocked when notes change during a refresh of the same revision", async () => {
+    render(<MemoryRouter><PatchPlanWorkspace ref={createRef()} scope='{"match":"all","rules":[]}' selected={[]}
+      planId="saved-plan" onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>);
+    const owner = await screen.findByLabelText("Plan owner");
+    const original = request.getMockImplementation()!;
+    let finish!: (value: PatchPlan) => void;
+    const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+    request.mockImplementation((path, options) => path === "/application-patch-plans/saved-plan" && !options?.method
+      ? pending : original(path, options));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh plans and AI" }));
+    fireEvent.change(owner, { target: { value: "Unsaved owner" } });
+    await act(async () => { finish({ ...plan }); });
+    expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Unsaved owner");
+    expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("does not replace the selected plan when an earlier plan's save finishes", async () => {
+    const original = request.getMockImplementation()!;
+    let finish!: (value: PatchPlan) => void;
+    const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+    const other = { ...plan, id: "other-plan", title: "Another pilot" };
+    request.mockImplementation((path, options) => options?.method === "PATCH" ? pending
+      : path === "/application-patch-plans/other-plan" ? Promise.resolve(other) : original(path, options));
+    const actions = createRef<PatchPlanActions>();
+    const view = (id: string) => <MemoryRouter><PatchPlanWorkspace ref={actions} scope='{"match":"all","rules":[]}' selected={[]}
+      planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+    const rendered = render(view("saved-plan"));
+    fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Owner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save review notes" }));
+    rendered.rerender(view("other-plan"));
+    await screen.findByRole("heading", { name: "Another pilot" });
+    await act(async () => { finish({ ...plan, revision: 2 }); });
+    expect(screen.getByRole("heading", { name: "Another pilot" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("clears discarded notes when reopening a plan after switching away", async () => {
+    const actions = createRef<PatchPlanActions>();
+    const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace ref={actions} scope='{"match":"all","rules":[]}' selected={[]}
+      planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+    const rendered = render(view("saved-plan"));
+    fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Discarded owner" } });
+    rendered.rerender(view(null));
+    rendered.rerender(view("saved-plan"));
+    await waitFor(() => expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe(""));
+    expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });

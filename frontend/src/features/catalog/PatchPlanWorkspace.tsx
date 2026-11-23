@@ -27,11 +27,14 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
   const [title, setTitle] = useState("Application patch plan");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [reviewDirty, setReviewDirty] = useState(false);
+  const [reviewState, setReviewState] = useState({ key: "", dirty: false });
   const alive = useRef(true);
   const running = useRef(false);
   const panel = useRef<HTMLElement>(null);
   const shown = plan?.id === planId ? plan : undefined;
+  const reviewKey = shown ? `${shown.id}:${shown.revision}` : "";
+  const reviewDirty = reviewState.key === reviewKey && reviewState.dirty;
+  if (reviewState.key !== reviewKey) setReviewState({ key: reviewKey, dirty: false });
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -49,7 +52,6 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
       apiRequest<PatchPlan>(`${base}/${planId}`, { signal: controller.signal }).then(data => {
         if (controller.signal.aborted) return;
         setPlan(data);
-        setReviewDirty(false);
         if (data.researchStatus === "running") timer = setTimeout(poll, 2500);
       }).catch(e => { if (!controller.signal.aborted) setError(failure(e, "The plan could not be read. Check connectivity and refresh the plan.")); });
     };
@@ -146,7 +148,8 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
           {shown.researchStatus === "running" ? "Investigating in background…" : "Investigate patch methods"}</Button>}
         <p className="text-sm" role="status">Investigation: {shown.researchStatus.replaceAll("_", " ")}. {shown.research?.detail}</p>
       </div>
-      <PatchPlanReview key={`${shown.id}:${shown.revision}`} plan={shown} canWrite={canWrite} onDirty={setReviewDirty} onSaved={setPlan} />
+      <PatchPlanReview key={reviewKey} plan={shown} canWrite={canWrite}
+        onDirty={dirty => setReviewState({ key: reviewKey, dirty })} onSaved={setPlan} />
       {shown.snapshot.applications.map(app => {
         const research = shown.research?.applications?.find(r => r.appHash === app.appHash);
         const priorities = shown.research?.ai?.priorities?.[app.appHash];

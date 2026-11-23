@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
 import type { PatchPlan } from "./patchPlanTypes";
@@ -15,13 +15,16 @@ export function PatchPlanReview({ plan, canWrite, onDirty, onSaved }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   async function save() {
     setBusy(true); setError("");
     try {
       const result = await apiRequest<PatchPlan>(`/application-patch-plans/${plan.id}`, { method: "PATCH", json: { ...values, revision: plan.revision } });
+      if (!alive.current) return;
       onDirty(false); onSaved(result);
-    } catch (e) { setError(e instanceof ApiError && e.detail ? e.detail : "Review notes could not be saved. Check connectivity and retry."); }
-    finally { setBusy(false); }
+    } catch (e) { if (alive.current) setError(e instanceof ApiError && e.detail ? e.detail : "Review notes could not be saved. Check connectivity and retry."); }
+    finally { if (alive.current) setBusy(false); }
   }
   return <details className="rounded-md border p-4"><summary className="cursor-pointer font-medium">Operator review, ownership and approval</summary>
     <p className="my-3 text-sm text-muted-foreground">Record the decisions that make this plan ready for your change process. Saved notes are included in the PDF.</p>
