@@ -53,10 +53,11 @@ A nested example is `{ "match": "all", "rules": [{ "field": "managed", "value": 
 
 **Propose a group with AI** sends the operator's request, draft scope and bounded observed
 connection/group/EA names and IDs through the existing saved-provider, consent, disclosure
-and usage-accounting gates. It sends no device names, serial numbers or credentials.
+and usage-accounting gates. It adds no inventory device names, serial numbers or stored credentials.
 Each metadata category is limited to 100 entries and 3,500 serialized characters;
 matching names are preferred and truncation is disclosed. Group and EA references must
-be present in this supplied context. The selected connection cannot be changed by the model.
+be present in this supplied context. The selected connection cannot be changed by the model. Observed EA references are
+limited to that connection, so an ID from another Jamf instance cannot be borrowed.
 
 The model returns validated recursive JSON. Unsupported criteria, invented references,
 malformed output and partial answers cannot produce an applied filter. A proposal shows

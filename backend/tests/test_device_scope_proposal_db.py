@@ -64,3 +64,29 @@ async def test_proposal_consent_disclosure_count_and_no_plan_write(db, admin, in
         assert body["outcome"] == "unsupported" and body["scope"] is None
     finally:
         await _reset(db)
+
+
+async def test_scope_options_do_not_borrow_attribute_ids_from_another_jamf(db, admin, inventory):  # noqa: F811
+    from app.models.schema import Device, DeviceExtensionAttribute, InstalledApp
+
+    source, app_hash, _ = inventory
+    selected = await db.scalar(
+        select(Device.id).where(Device.mdm_connection_id == source, Device.external_id == "1", Device.platform == "macos")
+    )
+    other = await db.scalar(select(InstalledApp.device_id).where(InstalledApp.app_hash == app_hash, InstalledApp.version == "88"))
+    db.add_all(
+        [
+            DeviceExtensionAttribute(
+                device_id=selected, definition_id="19", name="Update Ring", values=["Pilot"], source="general"
+            ),
+            DeviceExtensionAttribute(
+                device_id=other, definition_id="19", name="Unrelated attribute", values=["Pilot"], source="general"
+            ),
+        ]
+    )
+    await db.commit()
+    response = await admin.get(
+        "/api/application-patch-plans/scope-options", params={"deviceScope": json.dumps({"connectionId": source})}
+    )
+    assert response.status_code == 200
+    assert response.json()["attributes"] == [{"id": "19", "name": "Update Ring"}]

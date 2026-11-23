@@ -19,7 +19,7 @@ from app.core.patch_plan_pdf import render_pdf
 from app.core.patch_plan_research import run_research
 from app.core.patch_plans import build_snapshot, plan_output
 from app.core.permissions import Permission
-from app.models.schema import ApplicationPatchPlan, DeviceExtensionAttribute, MdmConnection, ObservationSpan, Tenant
+from app.models.schema import ApplicationPatchPlan, Device, DeviceExtensionAttribute, MdmConnection, ObservationSpan, Tenant
 from app.schemas.patch_plans import BuildPlan, ProposeScope, ResearchPlan, ReviewPlan
 
 router = APIRouter(
@@ -48,14 +48,17 @@ async def scope_options(
             .limit(1500)
         )
     ).all()
-    attributes = (
-        await db.execute(
-            select(DeviceExtensionAttribute.definition_id, DeviceExtensionAttribute.name)
-            .distinct()
-            .order_by(DeviceExtensionAttribute.name)
-            .limit(1500)
-        )
-    ).all()
+    attribute_query = (
+        select(DeviceExtensionAttribute.definition_id, DeviceExtensionAttribute.name)
+        .join(Device, Device.id == DeviceExtensionAttribute.device_id)
+        .where(Device.mdm_provider == "jamf", Device.platform == "macos")
+        .distinct()
+        .order_by(DeviceExtensionAttribute.name)
+        .limit(1500)
+    )
+    if scope.connection_id is not None:
+        attribute_query = attribute_query.where(Device.mdm_connection_id == scope.connection_id)
+    attributes = (await db.execute(attribute_query)).all()
     return {
         "devices": await db.scalar(select(func.count()).select_from(population)),
         "connections": [{"id": row.id, "name": row.name} for row in sources],

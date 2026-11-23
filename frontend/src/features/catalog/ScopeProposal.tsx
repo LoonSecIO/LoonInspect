@@ -57,7 +57,7 @@ export function ScopeProposal({ scope, onLoad }: { scope: DeviceScope; onLoad: (
           </select>
           <Button disabled={busy || !question.trim() || !readScope(JSON.stringify(scope))} onClick={() => void propose()}>{busy ? "Proposing group…" : "Propose a group"}</Button>
         </div>
-        <p className="text-xs text-muted-foreground">Sends your request, draft conditions, and bounded connection/group/EA names and IDs to the selected service. Device names, serial numbers and credentials are excluded.</p>
+        <p className="text-xs text-muted-foreground">Sends your request, draft conditions, and bounded connection/group/EA names and IDs to the selected service. Inventory device names, serial numbers and stored credentials are excluded.</p>
       </> : <p className="text-sm">{status ? `AI unavailable: ${status.reason?.replaceAll("_", " ") ?? "check settings"}.` : "Checking AI services…"}
         {" "}<Link className="underline" to="/settings/ai">AI settings</Link>{" "}<Button size="sm" variant="ghost" onClick={() => setReload(n => n + 1)}>Check again</Button>
       </p>}
