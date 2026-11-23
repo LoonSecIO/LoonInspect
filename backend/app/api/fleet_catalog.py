@@ -253,7 +253,7 @@ async def refresh_catalog(db: AsyncSession = Depends(get_db)) -> FleetCatalogSta
 
 
 # Fleet's directory name for a title, as `app.core.fleet_catalog` admits it into a URL path.
-_SLUG = Path(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SLUG = Path(pattern=rf"^{fleet_catalog.SLUG_PATTERN}$")
 
 
 def _not_held(slug: str) -> HTTPException:

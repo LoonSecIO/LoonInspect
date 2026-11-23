@@ -1,0 +1,100 @@
+"""One device predicate for Installed Applications, patch plans, and audit exports."""
+
+from datetime import UTC, datetime, timedelta
+
+from fastapi import HTTPException
+from pydantic import ValidationError
+from sqlalchemy import and_, not_, or_, select
+
+from app.models.schema import Device, DeviceExtensionAttribute, ObservationEntry, ObservationSection, ObservationSpan
+from app.observations.departure import gone_for_good
+from app.schemas.patch_plans import DeviceScope
+
+
+def parse_scope(raw: str | None) -> DeviceScope:
+    try:
+        return DeviceScope.model_validate_json(raw) if raw else DeviceScope()
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(422, "The device filter is invalid. Check each condition or clear the filter and try again.") from exc
+
+
+def _group_sections():
+    span, section = ObservationSpan, ObservationSection
+    return (
+        select(section.id)
+        .join(span, span.section_digests["group_memberships"].astext == section.digest)
+        .where(
+            span.mdm_connection_id == Device.mdm_connection_id,
+            span.subject_id == Device.external_id,
+            span.subject_kind == "computer",
+            span.is_current.is_(True),
+            section.section == "group_memberships",
+        )
+        .correlate(Device)
+    )
+
+
+def rule_predicate(rule, now):
+    if rule.field in {"contact", "inventory"}:
+        stamp = Device.last_check_in if rule.field == "contact" else Device.last_inventory_at
+        if rule.operator == "unknown":
+            return or_(stamp.is_(None), stamp > now)
+        cutoff = now - timedelta(days=int(rule.value))
+        return stamp.between(cutoff, now) if rule.operator == "within" else stamp < cutoff
+    if rule.field == "managed":
+        return Device.managed.is_(None) if rule.operator == "unknown" else Device.managed.is_(rule.value == "true")
+    if rule.field == "ea":
+        ea = DeviceExtensionAttribute
+        known = select(ea.id).where(ea.device_id == Device.id, or_(ea.definition_id == rule.key, ea.name == rule.key))
+        if rule.operator == "unknown":
+            return ~known.where(ea.values != []).exists()
+        matching = known.where(ea.values.contains([rule.value])).exists()
+        return matching if rule.operator == "is" else and_(known.where(ea.values != []).exists(), ~matching)
+    if rule.field == "group":
+        entry, section = ObservationEntry, ObservationSection
+        known = _group_sections()
+        matching = (
+            known.join(entry, section.entry_digests.op("?")(entry.digest))
+            .where(
+                entry.kind == "group_membership",
+                entry.body["groupId"].astext == rule.value,
+            )
+            .exists()
+        )
+        membership = matching if rule.operator == "is" else and_(known.exists(), not_(matching))
+        return and_(Device.mdm_connection_id == int(rule.key), membership)
+    column = {
+        "site": Device.site,
+        "department": Device.department_id,
+        "building": Device.building_id,
+        "os_version": Device.os_version,
+    }[rule.field]
+    if rule.operator == "unknown":
+        return or_(column.is_(None), column == "")
+    if rule.operator == "contains":
+        return column.icontains(rule.value, autoescape=True)
+    return column == rule.value if rule.operator == "is" else and_(column.is_not(None), column != "", column != rule.value)
+
+
+def scoped_devices(scope: DeviceScope, now: datetime | None = None):
+    now = now or datetime.now(UTC)
+    stmt = select(Device.id, Device.mdm_connection_id, Device.external_id, Device.last_check_in, Device.last_inventory_at).where(
+        Device.platform == "macos",
+        Device.mdm_provider == "jamf",
+        ~gone_for_good(Device.mdm_connection_id, Device.external_id, at=now),
+    )
+    if scope.connection_id is not None:
+        stmt = stmt.where(Device.mdm_connection_id == scope.connection_id)
+    if scope.rules:
+        combine = and_ if scope.match == "all" else or_
+        stmt = stmt.where(combine(*(rule_predicate(rule, now) for rule in scope.rules)))
+    return stmt.cte("patch_plan_devices")
+
+
+def scope_description(scope: DeviceScope) -> list[str]:
+    lines = [f"Jamf connection: {scope.connection_id or 'all'}", f"Match {scope.match} conditions; current Jamf macOS inventory."]
+    for rule in scope.rules:
+        key = f" [{rule.key}]" if rule.key else ""
+        suffix = " days" if rule.field in {"contact", "inventory"} and rule.operator != "unknown" else ""
+        lines.append(f"{rule.field}{key} {rule.operator.replace('_', ' ')} {rule.value}{suffix}".strip())
+    return lines

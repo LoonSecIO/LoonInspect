@@ -18,6 +18,7 @@ ends with a reading order through the rest.
 | [`BRANCHING.md`](BRANCHING.md) | v1, enforcement partial | How work enters `main`: release milestones and labels (§1.1), branch names, commit subjects, and the control register CI enforces. |
 | [`alerts.md`](alerts.md) | v0, 2026-09-04 (#101) | Latches the product holds open while something is true, and what closes them. |
 | [`app-catalog.md`](app-catalog.md) | v0, 2026-08-22 (#67) | The tenant's distinct apps, first and last seen, and what Jamf says about each. |
+| [`application-patch-plans.md`](application-patch-plans.md) | 2026-11-22 | Installed-app device scopes, saved Jamf patch plans, background investigation and auditor PDF exports. |
 | [`baseline-rules.yml`](baseline-rules.yml) | catalogue v1, 2026-09-16 (#463) | The macOS baseline rule vocabulary the evidence report is printed from. Code reads this file. |
 | [`change-log.md`](change-log.md) | v0, 2026-08-22 (#61) | Which differences between two observations become change rows and events, at what level. |
 | [`compliance-evidence.md`](compliance-evidence.md) | built, ruled 2026-09-16 (#219 R5) | The evidence artefact an auditor is handed, and what it may claim. |

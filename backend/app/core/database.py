@@ -150,6 +150,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def _begin_snapshot(db: AsyncSession) -> None:
+    # Authentication may have written last-seen bookkeeping. Finish its transaction
+    # before requesting a snapshot on the same tenant-bound, pooled session.
+    await db.commit()
+    await db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+
+
+async def get_snapshot_db(db: AsyncSession = Depends(get_db)) -> AsyncGenerator[AsyncSession, None]:
+    """Keep cohort totals, installed versions and catalog evidence consistent across a crawl."""
+    await _begin_snapshot(db)
+    yield db
+
+
 async def get_vuln_read_db(db: AsyncSession = Depends(get_db)) -> AsyncGenerator[AsyncSession, None]:
     """Snapshot for authenticated read-only vulnerability routes in the v2 preview.
 
@@ -159,8 +172,7 @@ async def get_vuln_read_db(db: AsyncSession = Depends(get_db)) -> AsyncGenerator
     without blocking its writer or borrowing a second connection per request.
     """
     if settings.vuln_tenant_selection:
-        await db.commit()
-        await db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        await _begin_snapshot(db)
     yield db
 
 

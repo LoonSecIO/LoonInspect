@@ -545,3 +545,14 @@ The audit vocabulary adds `intelligence.activated`,
 `target_type: intelligence`. These record successful local administrator changes
 without activation secrets, bearer credentials or capability URLs. No inventory
 envelope, assessment vocabulary or posture key is redefined.
+
+### Installed application patch-plan audit actions
+
+The audit vocabulary adds four actions with `target_type: patch_plan` and a UUID
+`target_id`. `patch-plan.created` carries `applications` (integer), `revision`
+(integer) and `sha256` (string). `patch-plan.review.updated` and
+`patch-plan.exported` carry `revision` and `sha256`. `patch-plan.investigation.started`
+carries `provider` (the requested provider string, or null when AI was not requested).
+These events record local planning, review and export, not patch deployment or
+remediation. Operator notes, inventory rows and prompts are not copied into the audit
+event. Existing event families, envelopes and posture keys retain their meanings.

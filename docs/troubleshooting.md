@@ -71,6 +71,7 @@ they were written — §9 ends by saying the paths continue at §10.
 
 - **§28** ["Support does not show the Mac app version or build"](#28-support-does-not-show-the-mac-app-version-or-build)
 - **§29** ["Codex or Claude cannot use LoonInspect"](#29-codex-or-claude-cannot-use-looninspect)
+- **§30** [Installed application patch plans](#30-installed-application-patch-plans)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -3534,3 +3535,40 @@ Start in **Settings → AI connections**, with the intended organization selecte
     client name, tool name, time and request ID. Leave out tokens, raw tool results and
     fleet-identifying records. A disclosure entry records categories delivered to the
     client; it cannot identify which downstream model processed them.
+
+## 30. Installed application patch plans
+
+- **No applications match a device filter:** open **Devices → Applications → Installed
+  Apps**, check the connection and All/Any condition choice, and remove conditions one
+  at a time. Group IDs belong to a specific Jamf connection. Missing EA values, contact
+  dates or group observations are unknown; a negative filter does not treat them as a
+  confirmed non-match. Collect fresh inventory if the values are missing or stale.
+- **An application disappeared while building:** the selected app no longer has devices
+  in the applied scope. Refresh the list and select the current application identities.
+  Existing saved plans retain the inventory snapshot from when they were built.
+- **A plan says “requires investigation” or has conditional matches:** inspect each
+  source, its read date and the open review items. A public Jamf title or Fleet package
+  does not prove that a deployment policy exists in this Jamf instance. Validate the
+  bundle, version and installer before filling in the operator review notes.
+- **Installomator is unavailable or no label was found:** check outbound HTTPS to
+  `api.github.com` and `raw.githubusercontent.com`, including GitHub rate limits. A missing
+  name-derived label can be an alias; search the upstream project and review its script.
+  The investigation records a pinned source revision and never executes that script.
+- **AI is unavailable or returns an unusable result:** open **Settings → AI**, check the
+  enabled provider and loaded model, then send a test prompt. Check the AI feature flag
+  and inference consent in **Settings → Data Sharing**. For Ollama, use its endpoint
+  ending in `/v1`. Retry the investigation after fixing the provider. The plan retains
+  its source evidence when AI cannot select valid review priorities.
+- **Investigation is interrupted, fails or cannot start:** the application permits two
+  concurrent investigations per organization and bounds each to five minutes. Wait for
+  a running job to finish. After a restart, reload the plan; after six minutes it marks
+  the old job interrupted and allows a retry. Check the server log and connectivity to
+  the named source or AI service before retrying a failed job.
+- **PDF export or review save reports a changed revision:** reload the saved plan and
+  review the newer findings or notes before saving or exporting. Unsaved operator notes
+  disable export. The PDF represents the displayed saved revision and includes its
+  data checksum. It documents a proposed plan; approvals and deployment results must
+  be recorded separately. Analyst or Admin access is needed to build, investigate and
+  update a plan; Viewer and Auditor roles can read and export one.
+
+See [Application patch plans](application-patch-plans.md) for the complete workflow.
