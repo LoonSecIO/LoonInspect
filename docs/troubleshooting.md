@@ -3189,9 +3189,34 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    database needs and the one this app is (`backend_release` in
    `Contents/Resources/build-manifest.json`): put the later version back, or restore the copy of
    `pgdata` taken before the update ([`macos-app.md`](macos-app.md#backup)).
-6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
-   directory, the window's data and the three keychain items. It is the end of that instance's
-   data. A restorable database backup is `pgdata` copied while the app is quit plus the matching
+6. **Reinstalling still asks for the old account, or says the email/password is incorrect.**
+   Replacing or deleting the app leaves its local database and account intact. Use the account
+   created on this Mac; a different installation's password does not automatically apply here.
+   For a deliberate full reset, use
+   [`Uninstall-LoonInspect.command`](../macos/scripts/Uninstall-LoonInspect.command), as described
+   in [`macos/README.md`](../macos/README.md#where-it-keeps-things-and-how-to-start-over).
+   Run as your normal macOS user, without `sudo`; `--dry-run` lists the scope without changing
+   anything. Enter `ERASE LOONINSPECT` only when you intend to delete the local accounts,
+   connections, inventory, patch plans and history. The helper creates no backup.
+   - *No confirmation received* or *Cancelled* → nothing was changed. Run again when ready.
+   - *A LoonInspect service is still running* → quit every LoonInspect copy, or restart this
+     Mac without reopening it, then rerun. The helper has not deleted data.
+   - *Cannot access the LoonInspect Keychain item* → unlock the login Keychain and rerun.
+     A failure at this preflight has not deleted data. A later Keychain-removal error says
+     local data was already removed; resolve it and rerun before reinstalling.
+   - *Could not remove…*, a preference-clear error, or a verification error → check the named
+     folder's ownership and permissions, then rerun. Data might already be partially removed.
+     If `/Applications/LoonInspect.app` needs administrator access, move that copy to Trash
+     in Finder, which can request it, or ask your Mac administrator to remove it.
+   - *symbolic link*, *different bundle identifier*, *Cannot identify*, an invalid home folder,
+     or another owner → the helper refuses to guess a deletion target. Review that location;
+     remove a redirected or unidentifiable app copy manually and rerun. Do not use `sudo`
+     to bypass the current-user check.
+   - **UNINSTALL COMPLETE** → reinstall the release, open the new copy from Applications,
+     and create a new local administrator. Eject old disk images and avoid opening another
+     app copy while resetting. Exported PDFs, backups, other users and Jamf are untouched.
+
+   A restorable database backup is `pgdata` copied while the app is quit plus the matching
    `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain items.
    Copying a DMG to another Mac installs the software; it does not transfer that instance's data
    or its Keychain. See [`macos-app.md` › Backup](macos-app.md#backup).

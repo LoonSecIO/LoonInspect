@@ -223,18 +223,33 @@ the headless checks; running it briefly creates test windows.
 The app keeps its database and logs in `~/Library/Application Support/LoonInspect`, its three
 secrets in the login keychain under the service `LoonInspect`, and the port it chose in
 `run/port` there. The window's web view data, cache, frame and Check for Updates Daily choice are
-kept under the bundle identifier, `io.loonsec.looninspect`. To start over, quit it and remove them all:
+kept under the bundle identifier, `io.loonsec.looninspect`. **Deleting or replacing the app
+does not reset that data or its local account.** Each installation has its own accounts;
+credentials created on one Mac do not automatically sign in on another.
+
+For a deliberate clean reinstall, use [`scripts/Uninstall-LoonInspect.command`](scripts/Uninstall-LoonInspect.command).
+Run it as the macOS user who used the app, without `sudo`. Double-click the downloaded file,
+or run it in Terminal. Preview its exact deletion scope first if needed:
 
 ```sh
-rm -rf ~/Library/Application\ Support/LoonInspect \
-  ~/Library/WebKit/io.loonsec.looninspect ~/Library/Caches/io.loonsec.looninspect
-defaults delete io.loonsec.looninspect
-for a in ENCRYPTION_KEY postgres-looninspect_app postgres-looninspect; do
-  security delete-generic-password -s LoonInspect -a "$a"; done
+/bin/bash ~/Downloads/Uninstall-LoonInspect.command --dry-run
+/bin/bash ~/Downloads/Uninstall-LoonInspect.command
 ```
 
-The database is gone with the first line, and so is everything the instance held: do that only
-to start over. A backup is a copy of `pgdata` taken while the app is quit, plus the
+The helper requires `ERASE LOONINSPECT`, stops the app and waits for its services to exit,
+then permanently deletes this user's database, stored connection credentials, patch plans,
+audit history, web-view state, preferences and three Keychain items. It removes the identified
+LoonInspect app copies from `/Applications` and `~/Applications`. It creates no backup.
+Previously exported PDFs, downloaded installers, backups, other users, app copies in other
+locations, and remote Jamf data are outside its scope. Wait for **UNINSTALL COMPLETE**, then
+install the release again and create a new local administrator in first-time setup.
+If it stops, follow its message and [`troubleshooting.md` §25](../docs/troubleshooting.md#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start);
+do not assume a partially completed uninstall finished.
+
+The scoped-removal and refusal checks run with `python3 macos/tests/test_uninstall.py` from
+the repository root on macOS, using temporary files and fake services, never the real Keychain.
+
+A backup is a copy of `pgdata` taken while the app is quit, plus the
 matching `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain
 items. The encryption key is needed to read stored connection credentials; the database
 passwords must match the copied cluster. A different Mac or user account does not acquire
