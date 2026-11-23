@@ -58,5 +58,6 @@ async def disclose(db: AsyncSession, principal: Principal, tool: str, fields: tu
             },
         )
     )
+    # retention-clock: share-log — the existing 90-day disclosure-log clock also covers external MCP clients.
     await db.execute(delete(ShareLog).where(ShareLog.occurred_at < now - timedelta(days=90)))
     await db.commit()
