@@ -225,6 +225,9 @@ async def _webhook(db, connection, jamf: FakeJamf):
     from app.mdm.service import ingest_webhook
 
     _as_a_new_session_would(db)
+    # A previous run's bookkeeping rollback expires the connection too. A real
+    # webhook loads it in a new request; explicitly reload our shared fixture row.
+    await db.refresh(connection)
     return await ingest_webhook(
         db,
         connection,
@@ -310,6 +313,10 @@ async def test_a_reinstall_after_a_close_opens_a_second_row(db, connection, jamf
     for minute, act in ((6, _install), (7, _uninstall), (8, _install)):
         _at(jamf, minute)
         act(jamf)
+        # Run-close bookkeeping can roll back after observations commit. Exercise
+        # the resulting expiry before the next request reuses this fixture session.
+        await db.execute(select(1))
+        await db.rollback()
         await _webhook(db, connection, jamf)
 
     rows = await _alerts(db, connection.id)

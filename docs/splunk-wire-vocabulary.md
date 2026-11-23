@@ -526,6 +526,18 @@ than treating every manual completion as a fleet scan. Older events lacking this
 field retain their prior meaning. The targeted read uses the usual inventory,
 change, summary, and run-failure families; no device-event shape changes.
 
+### MCP connection audit actions
+
+The audit vocabulary adds `mcp.access.changed` for organization consent changes and
+`mcp.tool.called` for tool attempts. The existing audit envelope is unchanged. Tool
+events identify the connection through the API-token actor and the tool through
+`target_type: "mcp_tool"` and `target_id`; arguments, credentials and returned fleet
+values are omitted. Outcomes include `succeeded`, `refused`, `failed`, `timed_out`,
+`cancelled`, `timed_out_outcome_unknown` and `cancelled_outcome_unknown`. An unknown
+outcome means a dispatched write may still finish; it must not be counted as a
+prevented action. MCP disclosure categories are recorded separately in the `ai`
+share-log tier before a successful result is returned to the client.
+
 ### Paid-access administrator audit actions (#622)
 
 The audit vocabulary adds `intelligence.activated`,

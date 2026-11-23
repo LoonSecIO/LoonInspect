@@ -123,6 +123,8 @@ class AuditAction(StrEnum):
 
     TOKEN_CREATED = "token.created"
     TOKEN_REVOKED = "token.revoked"
+    MCP_ACCESS_CHANGED = "mcp.access.changed"
+    MCP_TOOL_CALLED = "mcp.tool.called"
 
     ACCOUNT_CREATED = "account.created"
     ACCOUNT_UPDATED = "account.updated"

@@ -52,6 +52,7 @@ ends with a reading order through the rest.
 | --- | --- | --- |
 | [`jamf-webhooks.md`](jamf-webhooks.md) | built, 2026-09-12 (#406) | Pointing Jamf Pro's webhooks at this instance, and what each event costs. |
 | [`macos-app.md`](macos-app.md) | built, 1.2.0 (2026-11-18) | LoonInspect as a signed macOS app with Postgres embedded: how it runs, where its data lives, how a release is notarized, how an update is taken, what it leaves out. |
+| [`mcp.md`](mcp.md) | implemented in development, default-off, 2026-11-22 | Connect Codex and Claude: organization consent, scoped credentials, local Mac pairing, hosted HTTPS, fleet tools and operating limits. |
 | [`releases/v1.2.0.md`](releases/v1.2.0.md) | draft for the v1.2.0 tag | The v1.2.0 release notes: the previous different value in Device history, the re-read of the published requirements, what a draft release now reports, the update from v1.1.0 and the way back, the flag gate as ruled, and the walk. |
 | [`releases/v1.1.0.md`](releases/v1.1.0.md) | published as v1.1.0 | The v1.1.0 release notes, which become the GitHub release's body: what is new since v1.0.0, how the container and the Mac app are updated, the flag verdicts, the way back. |
 | [`releases/README.md`](releases/README.md) | convention, 2026-11-18 (#811) | How a release's notes file is laid out: the header the draft leaves out, the body it copies, and the `*(filled in at the tag)*` marker the draft run lists and the publication check refuses. |

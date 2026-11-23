@@ -48,6 +48,7 @@ final class Supervisor: @unchecked Sendable {
     private(set) var port: Int?
     private var backendLogStart: UInt64 = 0
     private let launched = Date()
+    private let instanceID = UUID().uuidString
     private var secrets: Secrets?  // for restartBackend
     private var backendUpdateCheck: [String: String] = [:]  // what the running backend was told (updateCheckChanged)
     private var choiceObservation: NSKeyValueObservation?
@@ -89,6 +90,7 @@ final class Supervisor: @unchecked Sendable {
         onProgress?("Opening LoonInspect", "Preparing this Mac's workspace.")
         try prepareDirectories()
         try takeInstanceLock()
+        try? FileManager.default.removeItem(at: runDir.appendingPathComponent("mcp.json"))
         rotateLogs()
         log.info("launch: \(Bundle.main.bundlePath), version \(Self.version), data in \(support.path)")
         let fresh = !FileManager.default.fileExists(atPath: pgdata.appendingPathComponent("PG_VERSION").path)
@@ -109,6 +111,7 @@ final class Supervisor: @unchecked Sendable {
         onProgress?("Starting LoonInspect", "Loading the server and checking for database updates.")
         try startBackend(port: port, secrets: secrets)
         try waitUntilHealthy(port: port)
+        try publishMCPRuntime(port: port)
         onProgress?("Opening your workspace", "The server is ready.")
         log.info("healthy at http://127.0.0.1:\(port)/ \(since(launched)) after launch (\(fresh ? "first" : "warm") launch)")
         return port
@@ -347,6 +350,19 @@ final class Supervisor: @unchecked Sendable {
         return port
     }
 
+    /// Publish only a healthy instance. MCP clients verify this private descriptor against
+    /// the backend before sending their credentials to a remembered loopback port.
+    private func publishMCPRuntime(port: Int) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopping else { throw ShellFailure.stopping }
+        let descriptor: [String: Any] = ["schema": 1, "port": port, "pid": getpid(), "instance_id": instanceID]
+        let data = try JSONSerialization.data(withJSONObject: descriptor, options: .sortedKeys)
+        let url = runDir.appendingPathComponent("mcp.json")
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
     /// Binds 127.0.0.1:`port` (0 = any) the way uvicorn will, SO_REUSEADDR included, and
     /// returns the port bound. Released at once; the backend binds it a moment later.
     private func bindLoopback(_ port: Int) throws -> Int {
@@ -375,7 +391,7 @@ final class Supervisor: @unchecked Sendable {
     /// 127.0.0.1, and WebKit's handling of Secure cookies over http://127.0.0.1 is not one to
     /// lean on), and the update check as updateCheck says. All but the watchdog's LOON_SHELL_* names.
     static func backendEnvironment(inherited: [String: String], resources: URL, port: Int, socketDir: URL,
-                                   secrets: Secrets, checksDaily: Bool) -> [String: String] {
+                                   secrets: Secrets, checksDaily: Bool, instanceID: String? = nil) -> [String: String] {
         var env = baseEnvironment(inherited)
         env["PYTHONPATH"] = resources.appendingPathComponent("backend").path
         env["PYTHONNOUSERSITE"] = "1"
@@ -388,6 +404,7 @@ final class Supervisor: @unchecked Sendable {
         env["DATABASE_URL"] = "postgresql+asyncpg://\(appRole):\(secrets.appPassword)@/\(database)?host=\(socketDir.path)"
         env["ENCRYPTION_KEY"] = secrets.encryptionKey
         env["SECURE_COOKIES"] = "false"
+        if let instanceID { env["LOONINSPECT_INSTANCE_ID"] = instanceID }
         return env.merging(updateCheck(checksDaily: checksDaily, inherited: inherited)) { $1 }
     }
 
@@ -397,7 +414,7 @@ final class Supervisor: @unchecked Sendable {
         backendLogStart = (try? handle.seekToEnd()) ?? 0
         let inherited = ProcessInfo.processInfo.environment, checksDaily = checksForUpdatesDaily
         var env = Self.backendEnvironment(inherited: inherited, resources: resources, port: port, socketDir: socketDir,
-                                          secrets: secrets, checksDaily: checksDaily)
+                                          secrets: secrets, checksDaily: checksDaily, instanceID: instanceID)
         let from = inherited["UPDATE_CHECK"] == nil ? "Check for Updates Daily" : "the app's environment, over Check for Updates Daily"
         log.info("update check: the backend is told INSTANCE_KIND=mac-app and UPDATE_CHECK=\(env["UPDATE_CHECK"] ?? ""), from \(from)"
             + (inherited["UPDATE_CHECK_URL"] == nil ? "" : "; UPDATE_CHECK_URL is passed from the app's environment"))
@@ -521,6 +538,7 @@ final class Supervisor: @unchecked Sendable {
         backend = nil
         lock.unlock()
         guard let secrets, let port else { throw ShellFailure("The backend never started, so it cannot be restarted.") }
+        try? FileManager.default.removeItem(at: runDir.appendingPathComponent("mcp.json"))
         if let old, old.isRunning {
             log.info("restarting the backend (PID \(old.processIdentifier)) for Check for Updates Daily")
             old.terminate()
@@ -532,6 +550,7 @@ final class Supervisor: @unchecked Sendable {
         }
         try startBackend(port: port, secrets: secrets)
         try waitUntilHealthy(port: port)
+        try publishMCPRuntime(port: port)
         log.info("backend restarted, healthy at http://127.0.0.1:\(port)/")
     }
 
@@ -544,6 +563,7 @@ final class Supervisor: @unchecked Sendable {
         stopping = true
         let backend = self.backend, postgres = self.postgres, tool = self.tool, ownsData = instanceLock >= 0
         lock.unlock()
+        if ownsData { try? FileManager.default.removeItem(at: runDir.appendingPathComponent("mcp.json")) }
         // A first launch cut short. initdb answers SIGTERM by removing what it built once its
         // current step is done; a single-user postgres just exits.
         if let tool, tool.isRunning {

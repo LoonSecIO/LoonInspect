@@ -5886,6 +5886,143 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MCPScope": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "label",
+          "value"
+        ],
+        "title": "MCPScope",
+        "type": "object"
+      },
+      "MCPSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "aiFeaturesEnabled": {
+            "title": "Aifeaturesenabled",
+            "type": "boolean"
+          },
+          "canManage": {
+            "title": "Canmanage",
+            "type": "boolean"
+          },
+          "disclosure": {
+            "default": "Connected assistants can retrieve this organization's fleet data within the permissions you grant: device names, identifiers, serials, users, inventory and application details, vulnerability evidence, changes, alerts, run diagnostics, connection names and reports. The selected client may send those results to its model provider. LoonInspect cannot verify the client's downstream provider or model. Every permitted tool result records its connection and disclosed field categories in the share log; credentials and account-management tools are never exposed. Sync permissions also allow requests to Jamf.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "default": "/mcp",
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "requiredScopes": {
+            "default": [
+              "mcp:connect"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Requiredscopes",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/MCPScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "aiFeaturesEnabled",
+          "canManage",
+          "enabled",
+          "organizationId",
+          "scopes"
+        ],
+        "title": "MCPSettings",
+        "type": "object"
+      },
+      "MCPTest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "MCPTest",
+        "type": "object"
+      },
+      "MCPTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "title": "Organizationid",
+            "type": "string"
+          },
+          "toolCount": {
+            "title": "Toolcount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organizationId",
+          "toolCount"
+        ],
+        "title": "MCPTestResult",
+        "type": "object"
+      },
+      "MCPUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "MCPUpdate",
+        "type": "object"
+      },
       "MdmConnectionCreate": {
         "properties": {
           "baseUrl": {
@@ -12059,6 +12196,25 @@
       "get": {
         "description": "The caller's own tokens. There is no endpoint for reading anyone else's \u2014\nlisting another account's credentials isn't an admin convenience worth the blast\nradius, and revoking them belongs with account management.",
         "operationId": "list_tokens_api_auth_tokens_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -12073,6 +12229,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Tokens",
@@ -12082,6 +12248,25 @@
       },
       "post": {
         "operationId": "create_token_api_auth_tokens_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12131,6 +12316,23 @@
             "schema": {
               "title": "Token Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
             }
           }
         ],
@@ -14607,6 +14809,160 @@
         "summary": "Get Title",
         "tags": [
           "jamf-patch"
+        ]
+      }
+    },
+    "/api/mcp/settings": {
+      "get": {
+        "operationId": "get_settings_api_mcp_settings_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Expected-Tenant-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "operationId": "update_settings_api_mcp_settings_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Expected-Tenant-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Settings",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/test": {
+      "post": {
+        "operationId": "test_connection_api_mcp_test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Expected-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "X-Expected-Tenant-Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPTestResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Connection",
+        "tags": [
+          "mcp"
         ]
       }
     },
