@@ -5,9 +5,11 @@ import { useHasPermission } from "@/features/auth/store";
 import { DeviceScopeBuilder } from "@/features/catalog/DeviceScopeBuilder";
 import { PatchPlanWorkspace, type PatchPlanActions } from "@/features/catalog/PatchPlanWorkspace";
 import { defaultScope } from "@/features/catalog/patchPlanTypes";
+import { ApiError } from "@/config/api";
+import { ApplicationRiskCells } from "./ApplicationRiskCells";
 import { Input } from "@/components/ui/input";
 import { PATCH_STATE_COLORS } from "@/features/catalog/patchState";
-import { listApplications, type Application } from "@/features/devices/applicationsApi";
+import { listApplications, type Application, type ApplicationListResponse, type ApplicationScope, type RiskSeverity } from "@/features/devices/applicationsApi";
 import { listSyncStatus } from "@/features/mdm/api";
 import type { MdmSyncStatus } from "@/features/mdm/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -46,12 +48,22 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const q = useMemo(() => searchParams.get("q") ?? "", [searchParams]);
 
-  const [loaded, setLoaded] = useState<{ q: string; items: Application[]; total: number; statuses: MdmSyncStatus[] | null } | null>(null);
+  const bands = ["critical", "high", "medium", "low"] as const;
+  const severityKey = bands.filter(band => searchParams.getAll("severity").includes(band)).join(",");
+  const hasKev = searchParams.get("hasKev") === "true";
+  const page = Math.max(1, Math.min(1000000, Math.floor(Number(searchParams.get("page"))) || 1));
+  const applicationScope = useMemo<ApplicationScope>(() => ({ q, severities: severityKey ? severityKey.split(",") as RiskSeverity[] : [], hasKev }), [q, severityKey, hasKev]);
+  const filterKey = JSON.stringify([deviceScope, q, severityKey, hasKev]);
+  const queryKey = `${filterKey}:${page}`;
+  const [selectedFilter, setSelectedFilter] = useState(filterKey);
+  if (selectedFilter !== filterKey) { setSelectedFilter(filterKey); setSelected([]); }
+  const [loaded, setLoaded] = useState<{ queryKey: string; response: ApplicationListResponse; statuses: MdmSyncStatus[] | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState(q);
-  const [loadInputs, setLoadInputs] = useState({ q, t });
-  if (loadInputs.q !== q || loadInputs.t !== t) {
-    setLoadInputs({ q, t });
+  const loadDependencies = [q, deviceScope, t, queryKey, page, applicationScope, hasKev, severityKey] as const;
+  const [loadInputs, setLoadInputs] = useState(loadDependencies);
+  if (loadDependencies.some((input, index) => input !== loadInputs[index])) {
+    setLoadInputs(loadDependencies);
     setLoaded(null);
     setError(null);
   }
@@ -76,38 +88,60 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    listApplications({ q: q || undefined, pageSize: 200, deviceScope })
+    listApplications({ q: q || undefined, page, pageSize: 100, deviceScope, severities: applicationScope.severities, hasKev })
       .then(async (response) => {
         if (cancelled) return;
         // The four empty states need the sync status, and only the empty path reads it.
-        const statuses = response.items.length === 0 && !q ? await listSyncStatus().catch(() => null) : null;
+        const statuses = response.items.length === 0 && !q && !severityKey && !hasKev ? await listSyncStatus().catch(() => null) : null;
         if (cancelled) return;
-        setLoaded({ q, items: response.items, total: response.total, statuses });
+        setLoaded({ queryKey, response, statuses });
         setError(null);
       })
-      .catch(() => {
-        if (!cancelled) setError(t.applications.errorLoading);
+      .catch(e => {
+        if (!cancelled) setError(e instanceof ApiError && typeof e.detail === "string" ? e.detail : t.applications.errorLoading);
       });
     return () => {
       cancelled = true;
     };
-  }, [q, deviceScope, t]);
+  }, [q, deviceScope, t, queryKey, page, applicationScope, hasKev, severityKey]);
 
-  const current = loaded && loaded.q === q ? loaded : null;
+  const current = loaded && loaded.queryKey === queryKey ? loaded : null;
   const loading = current === null && error === null;
+  function changeRisk(change: (params: URLSearchParams) => void) {
+    setSearchParams(previous => { const next = new URLSearchParams(previous); change(next); next.delete("page"); return next; });
+  }
 
   return (
     <section className="space-y-4">
       <DeviceScopeBuilder value={deviceScope} onChange={value => {
-        const next = new URLSearchParams(searchParams); next.set("deviceScope", value); next.delete("plan"); setSearchParams(next);
+        const next = new URLSearchParams(searchParams); next.set("deviceScope", value); next.delete("plan"); next.delete("page"); setSearchParams(next);
       }} />
-      <PatchPlanWorkspace ref={planActions} scope={deviceScope} selected={selected} planId={searchParams.get("plan")}
+      <section className="space-y-3 rounded-lg border bg-card p-4" aria-label="Application scope">
+        <div><h2 className="font-semibold">Application scope</h2><p className="text-sm text-muted-foreground">Narrow the apps found on the devices above. Severity choices match any selected band; KEV adds another condition.</p></div>
+        <div className="flex flex-wrap items-end gap-3">
+          <Input aria-label="Application name or bundle ID" maxLength={255} data-page-search="" placeholder={t.applications.searchPlaceholder} value={draft} onChange={event => setDraft(event.target.value)} className="max-w-sm" />
+          <fieldset className="flex flex-wrap gap-2"><legend className="mb-1 text-xs text-muted-foreground">Has severity</legend>
+            {bands.map(band => <label key={band} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm capitalize">
+              <input type="checkbox" checked={applicationScope.severities.includes(band)} onChange={event => { const checked = event.currentTarget.checked; changeRisk(next => {
+                const values = next.getAll("severity").filter(value => value !== band); if (checked) values.push(band);
+                next.delete("severity"); values.forEach(value => next.append("severity", value));
+              }); }} />{band}</label>)}
+          </fieldset>
+          <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={hasKev} onChange={event => { const checked = event.currentTarget.checked; changeRisk(next => {
+            if (checked) next.set("hasKev", "true"); else next.delete("hasKev");
+          }); }} />Has KEV</label>
+          <Button variant="ghost" onClick={() => { setDraft(""); changeRisk(next => { next.delete("q"); next.delete("severity"); next.delete("hasKev"); }); }}>Clear app filters</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Known findings are the uncapped totals across assessed installed builds, counted once per device/build. The same CVE can appear in multiple builds. Average = known findings ÷ assessed devices; unknown builds are excluded.</p>
+        {current && <p className="text-xs text-muted-foreground">{current.response.corpusAsOf ? `Vulnerability source dated ${current.response.corpusAsOf} · release ${current.response.corpusRelease}` : "Vulnerability assessment is unavailable. Check data sharing and the vulnerability source; unknown coverage is shown as a dash."}</p>}
+      </section>
+      <PatchPlanWorkspace ref={planActions} scope={deviceScope} applicationScope={applicationScope} selected={selected} planId={searchParams.get("plan")}
         onClear={() => setSelected([])} onOpen={id => {
-          const next = new URLSearchParams(searchParams); if (id) next.set("plan", id); else next.delete("plan"); setSearchParams(next);
+          const next = new URLSearchParams(searchParams); if (id) next.set("plan", id); else next.delete("plan"); next.delete("page"); setSearchParams(next);
         }} />
-      <Input data-page-search="" placeholder={t.applications.searchPlaceholder} value={draft} onChange={(event) => setDraft(event.target.value)} className="max-w-sm" />
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
@@ -119,26 +153,29 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
               <th className="px-4 py-2 font-medium">{t.applications.tableVersions}</th>
               <th className="px-4 py-2 font-medium">{t.applications.tablePatch}</th>
               <th className="px-4 py-2 text-right font-medium">{t.applications.tableDevices}</th>
+              <th className="px-4 py-2 font-medium">Vulnerability coverage</th>
+              <th className="px-4 py-2 text-right font-medium">Known findings</th>
+              <th className="px-4 py-2 text-right font-medium">Avg / assessed device</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 6 : 5}>
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 9 : 8}>
                   {t.applications.loading}
                 </td>
               </tr>
             )}
-            {current && current.items.length === 0 && (
+            {current && current.response.items.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 6 : 5}>
-                  {current.statuses === null && !q
+                <td className="px-4 py-4 text-muted-foreground" colSpan={canPlan ? 9 : 8}>
+                  {severityKey || hasKev || deviceScope !== JSON.stringify(defaultScope) ? "No applications match this combination of device and application filters." : current.statuses === null && !q
                     ? t.applications.empty
                     : t.applications.emptyStates[emptyReason(q, current.statuses ?? [])]}
                 </td>
               </tr>
             )}
-            {current?.items.map((app) => (
+            {current?.response.items.map((app) => (
               <tr
                 key={app.appHash}
                 className="cursor-pointer border-b last:border-0 hover:bg-accent/40"
@@ -160,13 +197,18 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
                   <PatchSummary app={app} t={t} />
                 </td>
                 <td className="px-4 py-2 text-right font-medium tabular-nums">{app.deviceCount}</td>
+                <ApplicationRiskCells app={app} />
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {current && <p className="text-sm text-muted-foreground">{t.applications.total(current.total)}</p>}
+      {current && <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{t.applications.total(current.response.total)} · page {page}</p>
+        <div className="flex gap-2"><Button variant="outline" disabled={page <= 1} onClick={() => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("page", String(page - 1)); return next; })}>Previous</Button>
+          <Button variant="outline" disabled={page * current.response.pageSize >= current.response.total} onClick={() => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("page", String(page + 1)); return next; })}>Next</Button></div>
+      </div>}
     </section>
   );
 }

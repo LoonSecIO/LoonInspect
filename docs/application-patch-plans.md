@@ -10,25 +10,95 @@ Fleet's feature flag controls Fleet evidence only; planning works while Fleet is
 The shared server predicate selects current Jamf macOS inventory before counting apps,
 versions, devices or patch availability. It excludes departed computers and distinguishes
 unknown timestamps, EAs and group memberships from negative matches. Up to 20 conditions
-combine with **all** or **any**, inside the connection selection:
+combine with **AND** or **OR**, inside the connection selection. Brackets can nest
+up to four group levels (including the root), with at most ten groups total. Each
+indented bracket has a vertical line and its own AND/OR selector:
 
-- Managed status, including unknown.
-- Last contact or inventory within/older than 1–3650 days, or unknown/future dates.
+- Managed and Supervised independently, each Yes/No or unknown.
+- Last contact or inventory within/older than 1–3650 days, before/after a calendar date, or unknown/future dates.
 - Observed smart/static group membership, keyed by connection ID and Jamf group ID.
-- EA name/definition ID and exact value (including multi-value EAs), or unknown.
+- EA name/definition ID with is, is not, like, not like, matches regex, does not match regex, or unknown.
 - Site, department/building IDs and macOS version.
 
+**Advanced search** includes managed and unmanaged Macs unless a Managed rule narrows it.
+**Smart group style** (`mode: "smart_group"`) implicitly requires Managed = Yes outside
+all AND/OR brackets; Managed conditions are unavailable in this mode. Switching modes
+keeps existing rules for review and blocks Apply until Managed conditions are removed.
+Supervised is independent in both modes. Old JSON defaults to `advanced_search`.
+This is a local inventory scope, not creation or export of a Jamf group.
+
+Before/After uses `YYYY-MM-DD` and UTC calendar boundaries, excluding the selected day:
+before 2024-02-29 means earlier than midnight starting that day; after means midnight
+starting 2024-03-01 or later. Missing and future timestamps are unknown and excluded
+from these comparisons. Day windows remain relative to the query time.
+
+EA comparison labels follow [Jamf's criteria operators](https://learn.jamf.com/r/en-US/jamf-pro-documentation-11.16.0/Criteria_Operators).
+`like` / `not_like` use a case-insensitive literal substring (% and _ are ordinary characters).
+`matches_regex` / `does_not_match_regex` use case-insensitive PostgreSQL regular-expression
+search; add ^ and $ for whole-value matching. Advanced regex syntax can differ from
+Jamf's engine. Existing `is` / `is_not` retain exact, case-sensitive matching.
+A positive comparison matches any EA value; a negative comparison requires an observed,
+nonempty values list with no matching element. Missing/empty EAs match only unknown.
+Invalid regex is rejected before querying inventory, even when there are no devices.
+Regex-scoped database statements have a five-second limit (or a stricter configured
+limit); a timeout returns an explicit error, never a partial plan or empty-success result.
+
 `deviceScope` holds the validated JSON in the URL. Named filters are browser-local and
-partitioned by organization and account. A shared URL applies the recipient's current
+partitioned by organization and account. Saved filters and imported JSON load into the
+draft; **Apply device filter** commits the draft to the URL. Empty inner groups and
+invalid conditions block applying. **Save or inspect scope JSON** exposes the exact
+recursive JSON for copying or importing. A shared URL applies the recipient's current
 organization and permissions. A missing group-membership section cannot establish that
 a device is outside a group. Definition lists are suggestions; IDs can be entered directly.
+
+## Application risk scope
+
+Application scope combines name/bundle search with any selected severity (low, medium,
+high, critical), then ANDs **Has KEV** if checked. Risk filters run before pagination,
+inside the applied device scope. They require an available vulnerability corpus; an
+unavailable source produces an explicit error rather than a misleading empty list.
+
+**Known findings** sums the stored uncapped vulnerability counts once per device/build.
+Duplicate installation paths do not multiply a build's findings. This is exposure count,
+not unique CVEs across builds: a CVE can affect multiple installed builds. **Avg / assessed
+device** divides that total by distinct devices with at least one assessed build. Unknown,
+stale and malformed assessments do not contribute zeroes; partial coverage shows the
+assessed-device denominator. A covered zero is distinct from unknown. Severity and KEV
+counts use that same population. The page records the corpus date and release identifier.
+
+The list API accepts repeated `severity=high&severity=critical`, `hasKev=true`, and the
+existing `q`, `deviceScope`, `page` and `pageSize`. Old flat device JSON remains valid.
+A nested example is `{ "match": "all", "rules": [{ "field": "managed", "value": "true" },
+{ "match": "any", "rules": [{ "field": "contact", "operator": "within", "value": "14" },
+{ "field": "ea", "key": "Update Ring", "value": "Pilot" }] }] }`.
+
+## AI group proposals
+
+**Propose a group with AI** sends the operator's request, draft scope and bounded observed
+connection/group/EA names and IDs through the existing saved-provider, consent, disclosure
+and usage-accounting gates. It adds no inventory device names, serial numbers or stored credentials.
+Each metadata category is limited to 100 entries and 3,500 serialized characters;
+matching names are preferred and truncation is disclosed. Group and EA references must
+be present in this supplied context. The selected connection and search mode cannot be changed by the model. Observed EA references are
+limited to that connection, so an ID from another Jamf instance cannot be borrowed.
+
+The model returns validated recursive JSON. Unsupported criteria, invented references,
+malformed output and partial answers cannot produce an applied filter. A proposal shows
+a database-derived matched-device count. **Load proposal into builder** loads a draft;
+**Apply device filter** is still a separate operator action. Scope edits discard an
+outstanding proposal so a reply cannot overwrite a newer draft. Proposals take up to two
+minutes; leaving the builder discards the result. They do not create a Jamf smart group
+or save a patch plan. Named drafts remain browser-local.
 
 ## Plans and evidence
 
 `application_patch_plans` stores the report under forced PostgreSQL tenant isolation.
 Creation reads one database snapshot. App identities, installed version counts, selected
 scope, distinct affected Macs, source connections and inventory-date ranges are preserved
-even when live inventory changes. Proposed targets are recommendations for review.
+even when live inventory changes. The saved `applicationScope`, vulnerability counts,
+coverage, corpus date/release and nested device brackets appear in the plan and PDF.
+If a selected app no longer matches the application filters, creation refuses the stale
+selection and asks for a refresh; it does not silently omit the app. Proposed targets are recommendations for review.
 
 Jamf matches use the installed builds' recorded match IDs; conditional EA matches,
 multiple titles and matches missing from some builds require identity review. Public
@@ -78,9 +148,10 @@ to Admin and Analyst. Viewer and Auditor may read and export saved plans.
 | Method / path | Result |
 | --- | --- |
 | GET `/scope-options?deviceScope=…` | Observed filter choices and scoped device count |
+| POST `/propose-scope` | Propose validated scope JSON from `question`, current `scope`, and optional saved `provider` |
 | GET `/ai-status` | Saved provider availability without credentials |
 | GET `/` | Most recent 100 saved plans |
-| POST `/` | Save a plan for `appHashes` and validated `scope` |
+| POST `/` | Save a plan for `appHashes` and validated `scope` / `applicationScope` |
 | GET `/{id}` | Saved report data and checksum |
 | PATCH `/{id}` | Version-checked operator review notes |
 | POST `/{id}/research` | Start bounded background investigation |

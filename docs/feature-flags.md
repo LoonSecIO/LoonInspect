@@ -2,7 +2,7 @@
 
 Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
 condition per Kyle's instruction of 2026-09-27; the v1.1.0 gate ruled 2026-11-15 (#797); the
-v1.2.0 gate ruled 2026-11-19 (#813)**.
+v1.2.0 gate ruled 2026-11-19 (#813); v1.3.0 gate recorded 2026-11-23 (#867)**.
 Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
@@ -106,6 +106,27 @@ above, written at the first ruling, says twenty.
 | --- | --- | --- | --- | --- | --- |
 | `INSTANCE_KIND` | identity, a setting in `core/config.py` | #819 | `container` | **keep, permanent**: it says which shell runs the backend and is sent as the update check's `kind`, so it is an identity the shell sets, not something an operator switches. LoonInspect.app's shell sets `mac-app` (#820), and `docker-compose.yml` does not pass it, so a container started from that file is `container`. It turns nothing on or off, so there is nothing to promote or delete | never |
 | **Check for Updates Daily** (LoonInspect.app's menu; `CheckForUpdatesDaily` in the app's preferences) | operator switch, owned by the app's user | #820 | on | **keep, permanent**: the app's user has no `.env`, so this is how they set `UPDATE_CHECK` for the backend the app runs. It decides what that switch decides, whether the check asks and so whether the app is counted, and the reason that switch is kept for good holds for it | never |
+
+## The v1.3.0 gate
+
+Recorded 2026-11-23 for the requested release (#867). The inventory remains thirteen
+boolean environment settings, `DATABASE_MODE`, six registry keys, `INSTANCE_KIND`,
+and the Mac app's update preference: twenty-two registered controls. Keep every existing
+default and retirement condition. No preview is promoted and no control is deleted.
+Recent-activity polling and Ollama selection are saved operator configuration, not new
+feature flags. MCP retains its credential permissions and disclosure controls.
+
+| Switch | v1.3.0 verdict and reason | Retirement |
+| --- | --- | --- |
+| `INTELLIGENCE_ACCESS`, `CONTRIBUTION_RECEIPTS`, `VULN_TENANT_SELECTION`, `VULN_RELEASE_RETENTION` | **keep off**; v2 promotion remains gated by the previously recorded checks | v2.1, after promotion |
+| `INTELLIGENCE_SUBMISSIONS` | **keep off**; submission-through-publication validation is still required before promotion | one release after promotion |
+| `COMMUNITY_SHARING`, `UPDATE_CHECK`, `SCHEDULER_ENABLED`, `DEBUG`, `SECURE_COOKIES`, `SECURITY_HEADERS`, `ALLOW_INSECURE_MDM_BASE_URL`, `DATABASE_MODE`, `ai_features` | **keep**; permanent operator, deployment, security or AI master controls | never |
+| `ALLOW_INSECURE_DESTINATION_URL` | **keep off**; older destinations can still inherit its choice | v2.1 candidate after migration of inherited choices |
+| `jamf_patch`, `vulnerabilities` | **keep off**; lab/demo listing overrides still have a purpose | reconsider at v2.1 |
+| `patch_policy` | **keep off**; reference replay remains distinct from real-history policy analysis | reconsider when the lab reads real history |
+| `app_promotion` | **keep off**; no new end-to-end coverage evidence changes the previous condition | promote or delete after a title is walked to coverage |
+| `fleet_maintained_apps` | **keep off**; operator opt-in to the catalog source and its license remains required | verdict at v2.0.0 |
+| `INSTANCE_KIND`, **Check for Updates Daily** | **keep**; shell identity and the Mac user's update preference remain necessary | never |
 
 ## How a gate runs
 

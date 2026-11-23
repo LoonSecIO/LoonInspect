@@ -2,23 +2,10 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
 import { useAuthStore } from "@/features/auth/store";
-import { defaultScope, readScope, type DeviceScope, type ScopeField, type ScopeOperator, type ScopeOptions, type ScopeRule } from "./patchPlanTypes";
-
-const input = "rounded-md border border-input bg-background px-3 py-2 text-sm";
-const fields: [ScopeField, string][] = [["managed", "Managed"], ["group", "Jamf group"], ["contact", "Last contact"],
-  ["inventory", "Last inventory"], ["ea", "Extension attribute"], ["site", "Site"], ["department", "Department ID"],
-  ["building", "Building ID"], ["os_version", "macOS version"]];
-const labels: Record<ScopeOperator, string> = { is: "is", is_not: "is not", contains: "contains", within: "within days", older: "older than days", unknown: "unknown" };
-function operators(field: ScopeField): ScopeOperator[] {
-  if (field === "contact" || field === "inventory") return ["within", "older", "unknown"];
-  if (field === "managed") return ["is", "unknown"];
-  if (field === "group") return ["is", "is_not"];
-  if (field === "ea") return ["is", "is_not", "unknown"];
-  return ["is", "is_not", "contains", "unknown"];
-}
-function newRule(field: ScopeField): ScopeRule {
-  return { field, operator: operators(field)[0], value: field === "managed" ? "true" : field === "contact" || field === "inventory" ? "14" : "", key: "" };
-}
+import { changeScope, defaultScope, hasManagedRule, readScope, scopeSize, type DeviceScope } from "./deviceScope";
+import type { ScopeOptions } from "./patchPlanTypes";
+import { ScopeGroupEditor, scopeInput as input } from "./ScopeGroupEditor";
+import { ScopeProposal } from "./ScopeProposal";
 
 export function DeviceScopeBuilder({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const user = useAuthStore(s => s.user);
@@ -26,78 +13,89 @@ export function DeviceScopeBuilder({ value, onChange }: { value: string; onChang
   const [draft, setDraft] = useState<DeviceScope>(() => readScope(value) ?? defaultScope);
   const [options, setOptions] = useState<ScopeOptions>();
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [optionsInput, setOptionsInput] = useState(value);
+  if (optionsInput !== value) { setOptionsInput(value); setOptions(undefined); setError(""); }
   const [name, setName] = useState("");
+  const [jsonDraft, setJsonDraft] = useState("");
   const [saved, setSaved] = useState<{ name: string; scope: DeviceScope }[]>(() => {
     try {
       const items = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
-      return Array.isArray(items) ? items.filter(i => typeof i?.name === "string" && readScope(JSON.stringify(i.scope))).slice(0, 20) : [];
+      return Array.isArray(items) ? items.flatMap(item => {
+        const scope = readScope(JSON.stringify(item?.scope));
+        return typeof item?.name === "string" && scope ? [{ name: item.name, scope }] : [];
+      }).slice(0, 20) : [];
     } catch { return []; }
   });
   useEffect(() => {
     const controller = new AbortController();
     apiRequest<ScopeOptions>(`/application-patch-plans/scope-options?deviceScope=${encodeURIComponent(value)}`, { signal: controller.signal })
       .then(data => { if (!controller.signal.aborted) setOptions(data); })
-      .catch(e => { if (!controller.signal.aborted) setError(e instanceof ApiError && e.detail ? e.detail : "Device scope could not be read. Check connectivity and try again."); });
+      .catch(e => { if (!controller.signal.aborted) setError(e instanceof ApiError && e.detail ? e.detail : "Device scope could not be read. Check connectivity and reload."); });
     return () => controller.abort();
   }, [value]);
-  function update(index: number, change: Partial<ScopeRule>) {
-    setDraft({ ...draft, rules: draft.rules.map((r, i) => i === index ? { ...r, ...change } : r) });
-  }
+  const valid = readScope(JSON.stringify(draft));
+  const dirty = JSON.stringify(valid) !== JSON.stringify(readScope(value));
+  const size = scopeSize(draft);
   function save() {
     const title = name.trim();
     if (!title) { setError("Name this filter before saving it."); return; }
-    const next = [...saved.filter(s => s.name !== title), { name: title, scope: draft }].slice(-20);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); setSaved(next); setName(""); setError(""); }
-    catch { setError("This browser could not save the filter. Apply it and keep the page URL to reuse it."); }
+    if (!valid) { setError("Complete the conditions and remove any empty nested groups before saving."); return; }
+    const next = [...saved.filter(s => s.name !== title), { name: title, scope: valid }].slice(-20);
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); setSaved(next); setName(""); setError(""); setNotice("Filter saved on this browser. Apply it when ready."); }
+    catch { setError("This browser could not save the filter. Copy its JSON to keep it."); }
   }
-  return <section className="space-y-3 rounded-lg border bg-card p-4" aria-label="Device scope">
-    <div className="flex flex-wrap items-center justify-between gap-3">
+  function loadJson() {
+    const parsed = readScope(jsonDraft);
+    if (!parsed) { setError("This JSON is not a valid device filter. Check field names and values, use at most 20 conditions and four group levels, and remove empty nested groups."); return; }
+    setDraft(parsed); setError(""); setNotice("JSON loaded into the draft. Review the brackets and apply when ready.");
+  }
+  return <section className="space-y-4 rounded-lg border bg-card p-4" aria-label="Device scope">
+    <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="font-semibold">Device scope</h2><p className="text-sm text-muted-foreground">
         {options ? `${options.devices.toLocaleString()} current Jamf Macs match the applied filter.` : "Choose which devices contribute installed applications and patch plans."}
       </p></div>
-      <label className="text-sm">Jamf connection <select className={input} aria-label="Jamf connection" value={draft.connectionId ?? ""}
+      <label className="grid gap-1 text-xs text-muted-foreground">Jamf connection <select className={input} aria-label="Jamf connection" value={draft.connectionId ?? ""}
         onChange={e => setDraft({ ...draft, connectionId: e.target.value ? Number(e.target.value) : null })}>
         <option value="">All connections</option>{options?.connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select></label>
     </div>
-    <div className="flex flex-wrap items-center gap-2 text-sm">Match
-      <select aria-label="Combine conditions" className={input} value={draft.match} onChange={e => setDraft({ ...draft, match: e.target.value as "all" | "any" })}>
-        <option value="all">all conditions</option><option value="any">any condition</option>
-      </select><span className="text-muted-foreground">within the selected connection</span>
+    <div className="space-y-2">
+      <div role="group" aria-label="Search mode" className="inline-flex flex-wrap gap-1 rounded-lg border p-1">
+        {([['advanced_search', 'Advanced search'], ['smart_group', 'Smart group style']] as const).map(([mode, label]) =>
+          <Button key={mode} size="sm" variant={(draft.mode ?? "advanced_search") === mode ? "default" : "ghost"} aria-pressed={(draft.mode ?? "advanced_search") === mode}
+            onClick={() => { setDraft({ ...draft, mode }); setNotice(""); }}>{label}</Button>)}
+      </div>
+      <p className="text-xs text-muted-foreground">{draft.mode === "smart_group" ? "Smart group style includes managed devices automatically. Supervised remains a separate condition. This is a local scope; no Jamf group is created." : "Advanced search includes managed and unmanaged devices unless you add a Managed condition."}</p>
+      {draft.mode === "smart_group" && hasManagedRule(draft) && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">Remove Managed conditions or switch to Advanced search. Your existing rules have been kept for review.</p>}
     </div>
-    {draft.rules.map((rule, i) => <div key={i} className="flex flex-wrap items-center gap-2">
-      <select aria-label={`Condition ${i + 1} field`} className={input} value={rule.field} onChange={e => update(i, newRule(e.target.value as ScopeField))}>
-        {fields.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select>
-      {rule.field === "ea" && <input aria-label={`Condition ${i + 1} attribute`} className={input} list="patch-scope-attributes" placeholder="EA name or definition ID" value={rule.key} onChange={e => update(i, { key: e.target.value })} />}
-      <select aria-label={`Condition ${i + 1} comparison`} className={input} value={rule.operator} onChange={e => update(i, { operator: e.target.value as ScopeOperator })}>
-        {operators(rule.field).map(op => <option key={op} value={op}>{labels[op]}</option>)}
-      </select>
-      {rule.operator !== "unknown" && (rule.field === "group" ? <>
-        <select aria-label={`Condition ${i + 1} group`} className={`${input} max-w-full`} value={rule.key && rule.value ? `${rule.key}:${rule.value}` : ""}
-          onChange={e => { const [key, value] = e.target.value.split(":"); update(i, { key: key ?? "", value: value ?? "" }); }}>
-          <option value="">Select observed group</option>{options?.groups.filter(g => !draft.connectionId || g.connectionId === draft.connectionId).map(g =>
-            <option key={`${g.connectionId}:${g.id}`} value={`${g.connectionId}:${g.id}`}>{g.name} · connection {g.connectionId} · #{g.id}</option>)}
-        </select>
-        <input className={`${input} w-32`} aria-label={`Condition ${i + 1} group connection ID`} placeholder="Connection ID" value={rule.key} onChange={e => update(i, { key: e.target.value })} />
-        <input className={`${input} w-28`} aria-label={`Condition ${i + 1} group ID`} placeholder="Group ID" value={rule.value} onChange={e => update(i, { value: e.target.value })} />
-      </> : rule.field === "managed" ? <select aria-label={`Condition ${i + 1} value`} className={input} value={rule.value} onChange={e => update(i, { value: e.target.value })}>
-        <option value="true">Yes</option><option value="false">No</option>
-      </select> : <input className={input} aria-label={`Condition ${i + 1} value`} placeholder="Value" value={rule.value} onChange={e => update(i, { value: e.target.value })} />)}
-      <Button variant="ghost" onClick={() => setDraft({ ...draft, rules: draft.rules.filter((_, index) => index !== i) })} aria-label={`Remove condition ${i + 1}`}>Remove</Button>
-    </div>)}
+    <ScopeGroupEditor mode={draft.mode} group={draft} connectionId={draft.connectionId} options={options} size={size}
+      onChange={(path, change) => { setDraft(current => changeScope(current, path, change)); setNotice(""); }} />
     <datalist id="patch-scope-attributes">{options?.attributes.map(a => <option key={`${a.id}:${a.name}`} value={a.name}>{a.id}</option>)}</datalist>
-    <div className="flex flex-wrap gap-2">
-      <Button variant="outline" disabled={draft.rules.length >= 20} onClick={() => setDraft({ ...draft, rules: [...draft.rules, newRule("managed")] })}>Add condition</Button>
-      <Button onClick={() => onChange(JSON.stringify(draft))}>Apply device filter</Button>
+    <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+      <Button disabled={!valid} onClick={() => { if (valid) onChange(JSON.stringify(valid)); }}>Apply device filter</Button>
       <Button variant="ghost" onClick={() => { setDraft(defaultScope); onChange(JSON.stringify(defaultScope)); }}>Clear filter</Button>
-      <input className={input} aria-label="Filter name" placeholder="Name this filter" value={name} maxLength={80} onChange={e => setName(e.target.value)} />
-      <Button variant="outline" onClick={save}>Save filter</Button>
-      {saved.length > 0 && <select className={input} aria-label="Saved filters" value="" onChange={e => { const item = saved[Number(e.target.value)]; if (item) { setDraft(item.scope); onChange(JSON.stringify(item.scope)); } }}>
-        <option value="">Saved filters on this browser</option>{saved.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}
-      </select>}
+      <span className="text-xs text-muted-foreground">{size.conditions}/20 conditions · {size.groups}/10 groups{dirty ? " · draft changes" : " · applied"}</span>
     </div>
-    <p className="text-sm text-muted-foreground">Unknown contact dates and unobserved EA or group membership do not count as a negative match.</p>
+    {!valid && <p role="status" className="text-sm text-amber-700 dark:text-amber-300">Complete each condition and remove empty nested groups before applying. Up to four group levels are supported.</p>}
+    <ScopeProposal key={JSON.stringify(draft)} scope={draft} onLoad={scope => { setDraft(scope); setError(""); setNotice("AI proposal loaded as a draft. Review and apply the device filter when ready."); }} />
+    <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Save or inspect scope JSON</summary>
+      <div className="mt-3 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <input className={input} aria-label="Filter name" placeholder="Name this filter" value={name} maxLength={80} onChange={e => setName(e.target.value)} />
+          <Button variant="outline" disabled={!valid} onClick={save}>Save filter</Button>
+          {saved.length > 0 && <select className={input} aria-label="Saved filters" value="" onChange={e => { const item = saved[Number(e.target.value)]; if (item) { setDraft(item.scope); setNotice("Saved filter loaded as a draft. Apply it when ready."); } }}>
+            <option value="">Saved filters on this browser</option>{saved.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}
+          </select>}
+        </div>
+        <textarea aria-label="Current scope JSON" className={`${input} max-h-72 w-full font-mono text-xs`} rows={8} readOnly value={JSON.stringify(draft, null, 2)} />
+        <Button size="sm" variant="outline" onClick={() => { (navigator.clipboard ? navigator.clipboard.writeText(JSON.stringify(draft, null, 2)) : Promise.reject()).then(() => setNotice("Scope JSON copied.")).catch(() => setError("Clipboard access was refused. Select and copy the JSON text above.")); }}>Copy JSON</Button>
+        <label className="grid gap-1 text-sm">Import scope JSON<textarea aria-label="Import scope JSON" className={`${input} w-full font-mono text-xs`} rows={3} maxLength={12000} value={jsonDraft} onChange={e => setJsonDraft(e.target.value)} /></label>
+        <Button size="sm" variant="outline" disabled={!jsonDraft.trim()} onClick={loadJson}>Load JSON into builder</Button>
+      </div>
+    </details>
+    <p className="text-xs text-muted-foreground">Brackets define each group. Unknown contact dates and unobserved EA or group membership do not count as a negative match.</p>
+    {notice && <p role="status" className="text-sm">{notice}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </section>;
 }

@@ -39,6 +39,7 @@ def render_pdf(plan):
             keepWithNext=True,
         )
     )
+    styles.add(ParagraphStyle("PlanEvidenceSource", parent=styles["PlanSmall"], keepWithNext=True))
     styles.add(ParagraphStyle("PlanCell", parent=styles["Plan"], fontSize=8, leading=11, spaceAfter=0, alignment=TA_LEFT))
 
     def p(value, style="Plan"):
@@ -101,7 +102,15 @@ def render_pdf(plan):
             [190, 40, 110, 164],
         ),
         p("Device scope", "PlanHeading"),
-        *[p(line) for line in snapshot["scopeDescription"]],
+        *[
+            Paragraph(
+                escape(line.lstrip()),
+                ParagraphStyle("PlanScope", parent=styles["Plan"], leftIndent=(len(line) - len(line.lstrip())) * 8),
+            )
+            for line in snapshot["scopeDescription"]
+        ],
+        p("Application scope", "PlanHeading"),
+        *[p(line) for line in snapshot.get("applicationScopeDescription", ["Not recorded in this plan revision."])],
         p("Inventory sources", "PlanHeading"),
     ]
     for source in snapshot["sources"]:
@@ -112,6 +121,30 @@ def render_pdf(plan):
                 f"Unknown dates: {source['unknownInventoryDates']}."
             )
         )
+    if "vulnerabilitySource" in snapshot:
+        source = snapshot["vulnerabilitySource"]
+        story += [
+            p("Vulnerability evidence", "PlanHeading"),
+            p(
+                f"Source date: {source['asOf'] or 'unavailable'}; corpus release: {source['release'] or 'unavailable'}.",
+                "PlanEvidenceSource",
+            ),
+            table(
+                [["Application", "Known findings / KEV", "Avg / assessed device", "Assessment coverage"]]
+                + [
+                    [
+                        app["name"],
+                        f"{risk['counts']['total']} / {risk['counts']['kev']}" if risk["counts"] is not None else "Unknown",
+                        f"{risk['averagePerAssessedDevice']:.2f}" if risk["averagePerAssessedDevice"] is not None else "Unknown",
+                        f"{risk['assessment']}: {risk['assessedDeviceCount']}/{app['devices']} devices assessed; "
+                        f"{risk['unknownBuildCount']} unknown builds",
+                    ]
+                    for app in apps
+                    if (risk := app.get("vulnerabilities"))
+                ],
+                [160, 90, 90, 164],
+            ),
+        ]
     review = snapshot.get("operatorReview") or {}
     story.append(p("Operator review and rollout ownership", "PlanHeading"))
     for key, label in [

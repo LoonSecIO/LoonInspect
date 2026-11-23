@@ -100,6 +100,7 @@ SUBMISSION = {"kind": "coverage", "appName": "Route Sweep", "platform": "macos",
 # required body and no entry sends `{}`. Harmless to the own lane's tenant: renames none of its rows, and
 # sets nothing the other lanes rely on.
 BODIES: dict[str, dict] = {
+    "POST /api/application-patch-plans/propose-scope": {"question": "Managed Macs"},
     "POST /api/application-patch-plans": {"appHashes": ["0" * 32], "title": "route sweep patch plan"},
     "PATCH /api/application-patch-plans/{plan_id}": {"revision": 1, "owner": "route sweep"},
     "POST /api/auth/setup": {"claimToken": "x", "email": "setup@sweep.example.com", "displayName": "s", "password": PASSWORD},
@@ -161,6 +162,7 @@ STOPS = {
         *("PUT /api/system/ai/configs/{provider}", "DELETE /api/system/ai/configs/{provider}"),
         *("POST /api/system/data-sharing/exclusion-ranking", "POST /api/changes/prompt"),
         "POST /api/settings/patching-policy/rule/draft",
+        "POST /api/application-patch-plans/propose-scope",
     ],
     "no vulnerability corpus is loaded": ["POST /api/vulnerabilities/prompt", "GET /api/vulnerabilities/{vuln_id}"],
     "the paid preview is off": [

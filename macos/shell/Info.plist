@@ -22,7 +22,7 @@
 	     the pull request that prepares a release moves it, as backend/app/core/version.py's RELEASE
 	     is moved for the image. CFBundleVersion is the build number, stamped at build time. -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.0</string>
+	<string>1.3.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
