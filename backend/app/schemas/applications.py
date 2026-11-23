@@ -1,11 +1,35 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
 class _CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+Severity = Literal["low", "medium", "high", "critical"]
+
+
+class ApplicationScope(_CamelModel):
+    model_config = ConfigDict(extra="forbid")
+    q: str = Field(default="", max_length=255)
+    severities: list[Severity] = Field(default_factory=list, max_length=4)
+    has_kev: bool = False
+
+
+class ApplicationRisk(_CamelModel):
+    """Known findings per installed build, with an explicit assessed-device denominator."""
+
+    assessment: Literal["off", "unknown_app", "partial", "covered"]
+    counts: dict[str, int] | None = None
+    assessed_device_count: int = 0
+    devices_with_unknown_builds: int = 0
+    assessed_build_count: int = 0
+    unknown_build_count: int = 0
+    average_per_assessed_device: float | None = None
 
 
 class ApplicationOut(_CamelModel):
@@ -28,6 +52,7 @@ class ApplicationOut(_CamelModel):
     # bill, it is no answer, and the page says which by comparing the two.
     matched_device_count: int = 0
     patch_available_device_count: int = 0
+    vulnerabilities: ApplicationRisk | None = None
 
 
 class ApplicationListResponse(_CamelModel):
@@ -39,3 +64,5 @@ class ApplicationListResponse(_CamelModel):
     total: int
     page: int
     page_size: int
+    corpus_as_of: str | None = None
+    corpus_release: str | None = None

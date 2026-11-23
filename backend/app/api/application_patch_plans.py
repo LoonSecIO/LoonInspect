@@ -14,12 +14,13 @@ from app.core.audit import audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import bound_tenant_id, get_db, get_snapshot_db
 from app.core.device_scope import parse_scope, scoped_devices
+from app.core.device_scope_proposal import propose_scope
 from app.core.patch_plan_pdf import render_pdf
 from app.core.patch_plan_research import run_research
 from app.core.patch_plans import build_snapshot, plan_output
 from app.core.permissions import Permission
 from app.models.schema import ApplicationPatchPlan, DeviceExtensionAttribute, MdmConnection, ObservationSpan, Tenant
-from app.schemas.patch_plans import BuildPlan, ResearchPlan, ReviewPlan
+from app.schemas.patch_plans import BuildPlan, ProposeScope, ResearchPlan, ReviewPlan
 
 router = APIRouter(
     prefix="/api/application-patch-plans",
@@ -66,6 +67,12 @@ async def scope_options(
 @router.get("/ai-status")
 async def ai_status(db: AsyncSession = Depends(get_db)):
     return await prompt_status(db)
+
+
+@router.post("/propose-scope")
+async def propose_group(payload: ProposeScope, db: AsyncSession = Depends(get_db)) -> dict:
+    options = await scope_options(payload.scope.model_dump_json(by_alias=True), db)
+    return await propose_scope(db, payload, options)
 
 
 @router.get("")

@@ -556,3 +556,13 @@ carries `provider` (the requested provider string, or null when AI was not reque
 These events record local planning, review and export, not patch deployment or
 remediation. Operator notes, inventory rows and prompts are not copied into the audit
 event. Existing event families, envelopes and posture keys retain their meanings.
+
+### Device-scope AI proposal audit action
+
+`device-scope.proposal` records `outcome` (`proposed`, `unsupported`, `unusable`, `error`)
+and `provider`. Completed attempts carry requested `model`; `proposed` adds the
+inventory-derived integer `matched_devices`, `unusable` adds integer `latency_ms`, and
+`error` adds `error_kind`. This action has no saved-scope target. It contains no prompt,
+model response, device identifiers or generated filter. The AI disclosure log records
+feature `device_scope_proposal` with fields `query_text`, `current_device_scope`,
+`connection_names`, `group_names_and_ids`, `extension_attribute_names_and_ids`.

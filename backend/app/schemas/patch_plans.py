@@ -5,12 +5,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.ai.providers import Provider
+from app.schemas.applications import ApplicationScope
+
 
 class ReportModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
 
 
 class ScopeRule(ReportModel):
+    model_config = ConfigDict(extra="forbid")
     field: Literal["managed", "contact", "inventory", "group", "ea", "site", "department", "building", "os_version"]
     operator: Literal["is", "is_not", "contains", "within", "older", "unknown"] = "is"
     value: str = Field(default="", max_length=255)
@@ -39,21 +43,56 @@ class ScopeRule(ReportModel):
             raise ValueError("The activity window must be between 1 and 3650 days.")
         if self.field in {"ea", "group"} and not self.key.strip():
             raise ValueError("Select an extension attribute or the group's Jamf connection.")
-        if self.field == "group" and (not self.key.isdigit() or int(self.key) < 1):
+        if self.field == "group" and (not self.key.isdigit() or not 1 <= int(self.key) <= 2147483647):
             raise ValueError("A group needs its Jamf connection ID.")
         return self
 
 
+class ScopeGroup(ReportModel):
+    """A nonempty bracket inside a device scope; the connection remains at the root."""
+
+    model_config = ConfigDict(extra="forbid")
+    match: Literal["all", "any"] = "all"
+    rules: list["ScopeRule | ScopeGroup"] = Field(min_length=1, max_length=20)
+
+
 class DeviceScope(ReportModel):
     model_config = ConfigDict(extra="forbid")
-    connection_id: int | None = Field(default=None, ge=1)
+    connection_id: int | None = Field(default=None, ge=1, le=2147483647)
     match: Literal["all", "any"] = "all"
-    rules: list[ScopeRule] = Field(default_factory=list, max_length=20)
+    rules: list[ScopeRule | ScopeGroup] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="before")
+    @classmethod
+    def bound_tree(cls, value):
+        """Bound the whole tree before recursively parsing it, including invalid input."""
+        if not isinstance(value, dict):
+            return value
+        pending, conditions, groups = [(value, 1)], 0, 0
+        while pending:
+            node, depth = pending.pop()
+            if not isinstance(node, dict):
+                continue
+            if "rules" in node:
+                groups += 1
+                if depth > 4 or groups > 10:
+                    raise ValueError("Use at most four group levels and ten AND/OR groups.")
+                children = node["rules"]
+                if isinstance(children, list):
+                    if len(children) > 20:
+                        raise ValueError("Use at most twenty conditions across the device filter.")
+                    pending.extend((child, depth + 1) for child in children)
+            else:
+                conditions += 1
+                if conditions > 20:
+                    raise ValueError("Use at most twenty conditions across the device filter.")
+        return value
 
 
 class BuildPlan(ReportModel):
     model_config = ConfigDict(extra="forbid")
     scope: DeviceScope = Field(default_factory=DeviceScope)
+    application_scope: ApplicationScope = Field(default_factory=ApplicationScope)
     app_hashes: list[str] = Field(min_length=1, max_length=50)
     title: str = Field(default="Application patch plan", min_length=1, max_length=160)
 
@@ -70,6 +109,13 @@ class BuildPlan(ReportModel):
 class ResearchPlan(ReportModel):
     provider: str | None = None
     installomator: bool = True
+
+
+class ProposeScope(ReportModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=2000)
+    scope: DeviceScope = Field(default_factory=DeviceScope)
+    provider: Provider | None = None
 
 
 class ReviewPlan(ReportModel):

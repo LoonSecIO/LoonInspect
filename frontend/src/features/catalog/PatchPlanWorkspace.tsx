@@ -5,6 +5,7 @@ import { apiRequest, ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { readScope, type PatchPlan, type PlanSummary } from "./patchPlanTypes";
 import { PatchPlanReview } from "./PatchPlanReview";
+import type { ApplicationScope } from "@/features/devices/applicationsApi";
 
 const base = "/application-patch-plans";
 const input = "rounded-md border border-input bg-background px-3 py-2 text-sm";
@@ -13,9 +14,10 @@ export type PatchPlanActions = { build: (hashes: string[]) => void };
 function failure(e: unknown, fallback: string) { return e instanceof ApiError && e.detail ? e.detail : fallback; }
 function stamp(value: string | null | undefined) { return value ? new Date(value).toLocaleString() : "Not recorded"; }
 
-export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onClear }: {
+export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, planId, onOpen, onClear }: {
   ref: Ref<PatchPlanActions>; scope: string; selected: string[]; planId: string | null;
   onOpen: (id: string) => void; onClear: () => void;
+  applicationScope?: ApplicationScope;
 }) {
   const canWrite = useHasPermission("patch:plan-write");
   const [plan, setPlan] = useState<PatchPlan>();
@@ -65,13 +67,14 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
     running.current = true;
     setBusy("Building plan…"); setError("");
     try {
-      const data = await apiRequest<PatchPlan>(base, { method: "POST", json: { scope: deviceScope, appHashes: hashes, title } });
+      const data = await apiRequest<PatchPlan>(base, { method: "POST", json: { scope: deviceScope, appHashes: hashes, title,
+        ...(applicationScope ? { applicationScope } : {}) } });
       if (!alive.current) return;
       setPlan(data); onOpen(data.id); setRefresh(n => n + 1); onClear();
       panel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) { if (alive.current) setError(failure(e, "The plan could not be built. Refresh inventory and try again.")); }
     finally { running.current = false; if (alive.current) setBusy(""); }
-  }, [scope, title, onOpen, onClear]);
+  }, [scope, applicationScope, title, onOpen, onClear]);
   useImperativeHandle(ref, () => ({ build: hashes => { void build(hashes); } }), [build]);
   async function investigate() {
     if (!shown || running.current) return;
@@ -129,7 +132,9 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
         <p className="text-sm text-muted-foreground">Prepared by {shown.createdBy} · inventory snapshot {stamp(shown.snapshot.asOf)}</p>
       </header>
       <details className="rounded-md border p-3"><summary className="cursor-pointer font-medium">Device scope and source inventory</summary>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{shown.snapshot.scopeDescription.map((s, i) => <li key={i}>{s}</li>)}</ul>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{shown.snapshot.scopeDescription.map((s, i) => <li key={i} className="whitespace-pre-wrap">{s}</li>)}</ul>
+        {shown.snapshot.applicationScopeDescription && <p className="mt-3 text-sm">Application scope: {shown.snapshot.applicationScopeDescription.join(" · ")}</p>}
+        {shown.snapshot.vulnerabilitySource && <p className="mt-2 break-all text-xs text-muted-foreground">Vulnerability source: {shown.snapshot.vulnerabilitySource.asOf ?? "Not recorded"} · release {shown.snapshot.vulnerabilitySource.release ?? "unavailable"}</p>}
         {shown.snapshot.sources.map(s => <p key={s.connectionId} className="mt-2 text-sm">{s.mdm} · {s.name} · {s.devices} Macs. Inventory: {stamp(s.oldestInventoryAt)} to {stamp(s.newestInventoryAt)}. Unknown dates: {s.unknownInventoryDates}.</p>)}
       </details>
       <div className="overflow-x-auto rounded-md border"><table className="w-full text-left text-sm"><thead className="bg-muted/30"><tr>
@@ -156,6 +161,7 @@ export function PatchPlanWorkspace({ ref, scope, selected, planId, onOpen, onCle
         return <details key={app.appHash} id={`plan-app-${app.appHash}`} open={shown.snapshot.applications.length === 1} className="rounded-md border p-4">
           <summary className="cursor-pointer font-semibold">{app.name} · {app.devices} Macs · patch methods and rollout</summary>
           <p className="mt-3 text-sm text-muted-foreground">Installed: {app.versions.map(v => `${v.version} (${v.devices} Macs, ${v.relation.replaceAll("_", " ")})`).join("; ")}</p>
+          {app.vulnerabilities && <p className="mt-2 text-sm">Known findings: {app.vulnerabilities.counts?.total ?? "unknown"} · KEV: {app.vulnerabilities.counts?.kev ?? "unknown"} · average per assessed device: {app.vulnerabilities.averagePerAssessedDevice?.toFixed(2) ?? "unknown"}. Coverage: {app.vulnerabilities.assessment.replaceAll("_", " ")} · {app.vulnerabilities.assessedDeviceCount}/{app.devices} devices assessed · {app.vulnerabilities.unknownBuildCount} unknown builds.</p>}
           <div className="my-4 grid gap-3 lg:grid-cols-2">{app.options.map(o => <article key={`${o.source}:${o.reference}`} className="space-y-2 rounded-md bg-muted/30 p-3 text-sm">
             <p className="font-semibold">{o.source} · {o.title}</p><p>{o.status.replaceAll("_", " ")} · target {o.targetVersion}</p><p>{o.detail}</p>
             <a href={o.url} target="_blank" rel="noreferrer" className="underline">View source</a>

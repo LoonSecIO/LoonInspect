@@ -1025,6 +1025,28 @@
       "ApplicationListResponse": {
         "description": "The list envelope every paged endpoint shares (#137): the page's rows, the count\nacross every page, and the page and page size that produced them, echoed so a client\nnever has to remember what it asked for.",
         "properties": {
+          "corpusAsOf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusasof"
+          },
+          "corpusRelease": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusrelease"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ApplicationOut"
@@ -1086,6 +1108,16 @@
           "versionCount": {
             "title": "Versioncount",
             "type": "integer"
+          },
+          "vulnerabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationRisk"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1096,6 +1128,103 @@
           "versionCount"
         ],
         "title": "ApplicationOut",
+        "type": "object"
+      },
+      "ApplicationRisk": {
+        "description": "Known findings per installed build, with an explicit assessed-device denominator.",
+        "properties": {
+          "assessedBuildCount": {
+            "default": 0,
+            "title": "Assessedbuildcount",
+            "type": "integer"
+          },
+          "assessedDeviceCount": {
+            "default": 0,
+            "title": "Assesseddevicecount",
+            "type": "integer"
+          },
+          "assessment": {
+            "enum": [
+              "off",
+              "unknown_app",
+              "partial",
+              "covered"
+            ],
+            "title": "Assessment",
+            "type": "string"
+          },
+          "averagePerAssessedDevice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Averageperassesseddevice"
+          },
+          "counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts"
+          },
+          "devicesWithUnknownBuilds": {
+            "default": 0,
+            "title": "Deviceswithunknownbuilds",
+            "type": "integer"
+          },
+          "unknownBuildCount": {
+            "default": 0,
+            "title": "Unknownbuildcount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assessment"
+        ],
+        "title": "ApplicationRisk",
+        "type": "object"
+      },
+      "ApplicationScope": {
+        "additionalProperties": false,
+        "properties": {
+          "hasKev": {
+            "default": false,
+            "title": "Haskev",
+            "type": "boolean"
+          },
+          "q": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Q",
+            "type": "string"
+          },
+          "severities": {
+            "items": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Severities",
+            "type": "array"
+          }
+        },
+        "title": "ApplicationScope",
         "type": "object"
       },
       "AuthStatusOut": {
@@ -1140,6 +1269,9 @@
             "minItems": 1,
             "title": "Apphashes",
             "type": "array"
+          },
+          "applicationScope": {
+            "$ref": "#/components/schemas/ApplicationScope"
           },
           "scope": {
             "$ref": "#/components/schemas/DeviceScope"
@@ -4277,6 +4409,7 @@
           "connectionId": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
                 "minimum": 1.0,
                 "type": "integer"
               },
@@ -4297,7 +4430,14 @@
           },
           "rules": {
             "items": {
-              "$ref": "#/components/schemas/ScopeRule"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ScopeRule"
+                },
+                {
+                  "$ref": "#/components/schemas/ScopeGroup"
+                }
+              ]
             },
             "maxItems": 20,
             "title": "Rules",
@@ -8807,6 +8947,35 @@
         "title": "PromptWhenOut",
         "type": "object"
       },
+      "ProposeScope": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DeviceScope"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "ProposeScope",
+        "type": "object"
+      },
       "Provider": {
         "enum": [
           "apple_fm",
@@ -9554,7 +9723,44 @@
         "title": "RunSummaryOut",
         "type": "object"
       },
+      "ScopeGroup": {
+        "additionalProperties": false,
+        "description": "A nonempty bracket inside a device scope; the connection remains at the root.",
+        "properties": {
+          "match": {
+            "default": "all",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ScopeRule"
+                },
+                {
+                  "$ref": "#/components/schemas/ScopeGroup"
+                }
+              ]
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rules"
+        ],
+        "title": "ScopeGroup",
+        "type": "object"
+      },
       "ScopeRule": {
+        "additionalProperties": false,
         "properties": {
           "field": {
             "enum": [
@@ -11995,6 +12201,49 @@
         ]
       }
     },
+    "/api/application-patch-plans/propose-scope": {
+      "post": {
+        "operationId": "propose_group_api_application_patch_plans_propose_scope_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeScope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Propose Group Api Application Patch Plans Propose Scope Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Group",
+        "tags": [
+          "application-patch-plans"
+        ]
+      }
+    },
     "/api/application-patch-plans/scope-options": {
       "get": {
         "operationId": "scope_options_api_application_patch_plans_scope_options_get",
@@ -12253,7 +12502,7 @@
     },
     "/api/applications": {
       "get": {
-        "description": "Applications grouped by app_hash, ordered by how many devices have them.\n\nPaged by `page` and `pageSize` (at most 500) and searched by `q`, like every other\nlist; the response echoes the page it served.\n\nOne query. The per-version breakdown this used to fetch for the page (~4 s of the\nrequest's database time at the 40k target) existed only to fill an expansion the\nApplications table no longer has; the version spread lives on the application record\npage, read from the catalog by `appHash` (#299).",
+        "description": "Applications and known vulnerability findings within the selected device population.\n\nSeverity selections match any selected band; KEV and name narrow that result further.\nTotals count findings once per device/build, not unique CVEs across different builds.\nUnknown builds contribute no zeroes to the average over assessed devices. Filters and\npagination share one repeatable-read aggregate, including when a page has no rows.",
         "operationId": "list_applications_api_applications_get",
         "parameters": [
           {
@@ -12288,6 +12537,42 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "critical"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 4,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hasKev",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Haskev",
+              "type": "boolean"
             }
           },
           {

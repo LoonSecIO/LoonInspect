@@ -8,7 +8,7 @@ from sqlalchemy import and_, not_, or_, select
 
 from app.models.schema import Device, DeviceExtensionAttribute, ObservationEntry, ObservationSection, ObservationSpan
 from app.observations.departure import gone_for_good
-from app.schemas.patch_plans import DeviceScope
+from app.schemas.patch_plans import DeviceScope, ScopeGroup
 
 
 def parse_scope(raw: str | None) -> DeviceScope:
@@ -76,6 +76,13 @@ def rule_predicate(rule, now):
     return column == rule.value if rule.operator == "is" else and_(column.is_not(None), column != "", column != rule.value)
 
 
+def group_predicate(group, now):
+    combine = and_ if group.match == "all" else or_
+    return combine(
+        *(group_predicate(node, now) if isinstance(node, ScopeGroup) else rule_predicate(node, now) for node in group.rules)
+    )
+
+
 def scoped_devices(scope: DeviceScope, now: datetime | None = None):
     now = now or datetime.now(UTC)
     stmt = select(Device.id, Device.mdm_connection_id, Device.external_id, Device.last_check_in, Device.last_inventory_at).where(
@@ -86,15 +93,25 @@ def scoped_devices(scope: DeviceScope, now: datetime | None = None):
     if scope.connection_id is not None:
         stmt = stmt.where(Device.mdm_connection_id == scope.connection_id)
     if scope.rules:
-        combine = and_ if scope.match == "all" else or_
-        stmt = stmt.where(combine(*(rule_predicate(rule, now) for rule in scope.rules)))
+        stmt = stmt.where(group_predicate(scope, now))
     return stmt.cte("patch_plan_devices")
 
 
 def scope_description(scope: DeviceScope) -> list[str]:
     lines = [f"Jamf connection: {scope.connection_id or 'all'}", f"Match {scope.match} conditions; current Jamf macOS inventory."]
-    for rule in scope.rules:
+
+    def describe(rule, depth):
+        indent = "  " * depth
+        if isinstance(rule, ScopeGroup):
+            lines.append(f"{indent}{'AND' if rule.match == 'all' else 'OR'} (")
+            for child in rule.rules:
+                describe(child, depth + 1)
+            lines.append(f"{indent})")
+            return
         key = f" [{rule.key}]" if rule.key else ""
         suffix = " days" if rule.field in {"contact", "inventory"} and rule.operator != "unknown" else ""
-        lines.append(f"{rule.field}{key} {rule.operator.replace('_', ' ')} {rule.value}{suffix}".strip())
+        lines.append(indent + f"{rule.field}{key} {rule.operator.replace('_', ' ')} {rule.value}{suffix}".strip())
+
+    for rule in scope.rules:
+        describe(rule, 0)
     return lines

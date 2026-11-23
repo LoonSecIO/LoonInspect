@@ -10,8 +10,11 @@ from fastapi import HTTPException
 from sqlalchemy import distinct, func, select
 
 from app.core import fleet_catalog
+from app.core.application_risk import application_rows, application_scope_description, risk_output
 from app.core.config import settings
 from app.core.device_scope import scope_description, scoped_devices
+from app.core.vuln_library import earned_corpus, loaded_epoch_signature
+from app.core.vuln_read import NO_ANSWER, corpus_as_of
 from app.mdm.patch.requirements import compare_versions, version_tuple
 from app.models.schema import Device, FleetCatalogState, FleetMaintainedApp, InstalledApp, JamfPatchTitle, MdmConnection
 
@@ -108,6 +111,19 @@ async def build_snapshot(db, payload, organization):
         raise HTTPException(
             409, "Some selected applications are no longer installed in this device scope. Refresh the list and rebuild."
         )
+    corpus = await earned_corpus(db)
+    stamp = corpus_as_of(corpus)
+    epoch = loaded_epoch_signature() if stamp is not None else None
+    if (payload.application_scope.severities or payload.application_scope.has_kev) and epoch is None:
+        raise HTTPException(409, NO_ANSWER)
+    risk_rows = (
+        await db.execute(
+            application_rows(payload.scope, payload.application_scope, epoch, app_hashes=payload.app_hashes, now=now)
+        )
+    ).all()
+    if {row.app_hash for row in risk_rows} != set(payload.app_hashes):
+        raise HTTPException(409, "Some selected apps no longer match the application filters. Refresh the list and rebuild.")
+    risks = {row.app_hash: risk_output(row, available=epoch is not None).model_dump(by_alias=True) for row in risk_rows}
     jamf_ids = {key for row in rows for group in row.titles or [] for key in group}
     jamf = {t.id: t for t in await db.scalars(select(JamfPatchTitle).where(JamfPatchTitle.id.in_(jamf_ids)))}
     fleet_on = await fleet_catalog.enabled(db)
@@ -245,6 +261,7 @@ async def build_snapshot(db, payload, organization):
                 "name": first.name,
                 "bundleId": first.bundle_id,
                 "devices": app_counts[app_hash],
+                "vulnerabilities": risks[app_hash],
                 "status": "draft" if options else "investigation_required",
                 "targetVersion": target,
                 "versions": [
@@ -273,6 +290,9 @@ async def build_snapshot(db, payload, organization):
         "asOf": now.isoformat(),
         "scope": payload.scope.model_dump(by_alias=True),
         "scopeDescription": scope_description(payload.scope),
+        "applicationScope": payload.application_scope.model_dump(by_alias=True),
+        "applicationScopeDescription": application_scope_description(payload.application_scope),
+        "vulnerabilitySource": {"asOf": iso(stamp), "release": epoch},
         "scopedDevices": await db.scalar(select(func.count()).select_from(devices)),
         "applicationDevices": await db.scalar(select(func.count(distinct(selected.subquery().c.device_id)))),
         "sources": sources,
@@ -281,6 +301,8 @@ async def build_snapshot(db, payload, organization):
         "limitations": [
             "This report documents proposed patch work. It does not attest that deployment or remediation has occurred.",
             "Inventory and catalog dates describe held evidence, not a live device check.",
+            "Known findings are uncapped counts once per assessed device/build, not unique CVEs across builds. "
+            "Average = known findings / distinct assessed devices. Unknown or stale builds contribute no zeroes.",
             "Public catalog coverage does not prove a deployment policy is configured in Jamf.",
         ],
     }

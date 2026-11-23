@@ -3,15 +3,17 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import distinct, func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.application_risk import application_rows, risk_output
 from app.core.auth import Principal, current_principal, require
-from app.core.database import get_db
-from app.core.device_scope import parse_scope, scoped_devices
+from app.core.database import get_snapshot_db
+from app.core.device_scope import parse_scope
 from app.core.permissions import Permission
-from app.models.schema import InstalledApp
-from app.schemas.applications import ApplicationListResponse, ApplicationOut
+from app.core.vuln_library import earned_corpus, loaded_epoch_signature
+from app.core.vuln_read import NO_ANSWER, corpus_as_of
+from app.schemas.applications import ApplicationListResponse, ApplicationOut, ApplicationScope, Severity
 
 router = APIRouter(
     prefix="/api/applications",
@@ -38,68 +40,38 @@ def _refuse_retired_parameters(request: Request) -> None:
 
 @router.get("", response_model=ApplicationListResponse, dependencies=[Depends(_refuse_retired_parameters)])
 async def list_applications(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_snapshot_db),
     principal: Principal = Depends(current_principal),
     device_scope: Annotated[str | None, Query(alias="deviceScope", max_length=12000)] = None,
     q: str | None = Query(default=None, max_length=255),
+    severity: Annotated[list[Severity] | None, Query(max_length=4)] = None,
+    has_kev: Annotated[bool, Query(alias="hasKev")] = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=100, ge=1, le=500, alias="pageSize"),
 ) -> ApplicationListResponse:
-    """Applications grouped by app_hash, ordered by how many devices have them.
+    """Applications and known vulnerability findings within the selected device population.
 
-    Paged by `page` and `pageSize` (at most 500) and searched by `q`, like every other
-    list; the response echoes the page it served.
-
-    One query. The per-version breakdown this used to fetch for the page (~4 s of the
-    request's database time at the 40k target) existed only to fill an expansion the
-    Applications table no longer has; the version spread lives on the application record
-    page, read from the catalog by `appHash` (#299).
+    Severity selections match any selected band; KEV and name narrow that result further.
+    Totals count findings once per device/build, not unique CVEs across different builds.
+    Unknown builds contribute no zeroes to the average over assessed devices. Filters and
+    pagination share one repeatable-read aggregate, including when a page has no rows.
     """
-    device_count = func.count(distinct(InstalledApp.device_id)).label("device_count")
-    # #313: the patch answer at this grain, off the columns the catalog copies onto every
-    # row (docs/app-catalog.md §1) — two filtered counts in the same scan, no join, nothing
-    # judged. Distinct devices, like `device_count`, so a Mac carrying two builds of one app
-    # is one Mac in both.
-    matched_device_count = (
-        func.count(distinct(InstalledApp.device_id))
-        .filter(InstalledApp.jamf_title_ids.is_not(None))
-        .label("matched_device_count")
-    )
-    patch_available_device_count = (
-        func.count(distinct(InstalledApp.device_id))
-        .filter(InstalledApp.patch_available.is_(True))
-        .label("patch_available_device_count")
-    )
-
-    # name and bundle_id are inputs to app_hash, so every row in a group carries the
-    # same pair — min() just picks it without needing them in the GROUP BY.
-    grouped = (
-        select(
-            InstalledApp.app_hash,
-            func.min(InstalledApp.name).label("name"),
-            func.min(InstalledApp.bundle_id).label("bundle_id"),
-            device_count,
-            func.count(distinct(InstalledApp.version_hash)).label("version_count"),
-            matched_device_count,
-            patch_available_device_count,
-        )
-        .group_by(InstalledApp.app_hash)
-        .order_by(device_count.desc(), func.min(InstalledApp.name))
-    )
-
-    if device_scope is not None:
-        if Permission.DEVICE_READ not in principal.permissions:
-            raise HTTPException(403, "Device read permission is required to filter applications by device.")
-        population = scoped_devices(parse_scope(device_scope))
-        grouped = grouped.join(population, population.c.id == InstalledApp.device_id)
-    if q:
-        pattern = f"%{q}%"
-        grouped = grouped.having(func.min(InstalledApp.name).ilike(pattern) | func.min(InstalledApp.bundle_id).ilike(pattern))
-
-    total = await db.scalar(select(func.count()).select_from(grouped.subquery()))
-
-    page_rows = (await db.execute(grouped.limit(page_size).offset((page - 1) * page_size))).all()
-
+    if device_scope is not None and Permission.DEVICE_READ not in principal.permissions:
+        raise HTTPException(403, "Device read permission is required to filter applications by device.")
+    scope = parse_scope(device_scope) if device_scope is not None else None
+    app_scope = ApplicationScope(q=q or "", severities=severity or [], hasKev=has_kev)
+    corpus = await earned_corpus(db)
+    stamp = corpus_as_of(corpus)
+    epoch = loaded_epoch_signature() if stamp is not None else None
+    if (severity or has_kev) and epoch is None:
+        raise HTTPException(409, NO_ANSWER)
+    grouped = application_rows(scope, app_scope, epoch).cte("scoped_applications").prefix_with("MATERIALIZED")
+    page_query = select(grouped).order_by(grouped.c.device_count.desc(), grouped.c.name, grouped.c.app_hash)
+    page_rows = page_query.limit(page_size).offset((page - 1) * page_size).subquery()
+    totals = select(func.count().label("application_total")).select_from(grouped).subquery()
+    rows = (
+        await db.execute(select(totals.c.application_total, page_rows).select_from(totals.outerjoin(page_rows, true())))
+    ).all()
     return ApplicationListResponse(
         items=[
             ApplicationOut(
@@ -110,10 +82,14 @@ async def list_applications(
                 version_count=row.version_count,
                 matched_device_count=row.matched_device_count,
                 patch_available_device_count=row.patch_available_device_count,
+                vulnerabilities=risk_output(row, available=epoch is not None),
             )
-            for row in page_rows
+            for row in rows
+            if row.app_hash is not None
         ],
-        total=total or 0,
+        total=rows[0].application_total,
+        corpus_as_of=stamp.isoformat() if stamp else None,
+        corpus_release=epoch,
         page=page,
         page_size=page_size,
     )

@@ -3571,4 +3571,25 @@ Start in **Settings → AI connections**, with the intended organization selecte
   be recorded separately. Analyst or Admin access is needed to build, investigate and
   update a plan; Viewer and Auditor roles can read and export one.
 
+- **Risk filters show an unavailable-source error.** Check the vulnerability source and
+  data-sharing settings. Until a corpus is available, clear severity/KEV filters to browse
+  inventory. Unknown or stale builds show a dash, not zero. Partial averages use only
+  assessed devices; inspect the coverage denominator and source date beside the table.
+- **Selected apps no longer match the application filters.** Inventory or vulnerability
+  evidence changed after selection. Refresh the list, reselect the apps, and build again.
+- **Apply device filter is disabled.** Complete each value, remove empty inner brackets,
+  and keep within 20 conditions, ten groups and four group levels. The JSON importer uses
+  the same vocabulary; unsupported fields are rejected without replacing the draft.
+- **AI cannot propose the group.** Open Settings > AI, verify the selected provider/model
+  and inference consent, then use **Check again**. The error names an unavailable service,
+  unfinished response, invalid JSON, or unavailable group/EA reference. Try a shorter
+  request using the observed group or EA name, or build the conditions manually.
+- **AI says the request is unsupported.** No filter changed. Criteria such as installed
+  software or FileVault are not device-scope fields in this builder. Unsupported portions
+  are not silently dropped. A bounded metadata notice means only some group/EA names fit;
+  select the Jamf connection and name the intended group, or enter its IDs manually.
+- **The proposal did not change the app list.** Review its JSON and matched-device count,
+  choose **Load proposal into builder**, then **Apply device filter**. Imported and saved
+  filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
+
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
