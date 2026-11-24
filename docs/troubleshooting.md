@@ -3697,39 +3697,6 @@ Start in **Settings → AI connections**, with the intended organization selecte
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
 
 
-## Patch Plans navigation and unsaved review notes
-
-Open **Patch Plans** from the main navigation, or use **Plan application** in Installed
-Apps or Catalog. Existing saved `?plan=` links redirect to `/patch-plans?plan=...`.
-An account needs both application and device read access to open the page. Creating,
-investigating and saving still require patch-plan write access; read-only accounts can
-open saved plans and export the saved revision.
-
-If **Browser storage is unavailable** appears, the draft remains in this tab's memory
-through navigation, but closing the tab loses it. Save the review notes before closing,
-or copy them somewhere appropriate if saving fails. Do not clear browser storage to
-resolve a save failure. A draft from an older revision is shown as a conflict: compare
-it with the saved report, copy any notes you need, then choose **Discard draft** and edit
-the latest revision. Export stays disabled while notes are unsaved, so the PDF cannot
-silently omit the visible review. **View current installed apps in this scope** opens
-current inventory with the saved report's scope, without changing that report.
-
-Changing organization asks for confirmation before changing the session when this tab
-has unsaved review notes. Cancel keeps the current organization. Browser-stored drafts
-remain attached to their original organization, account and plan; copy or save any
-memory-only notes before confirming, because the switch reloads the page. A failed
-switch keeps the current page and its warning before closing or reloading.
-
-If unsaved review notes are gone after signing back in, check whether the account used
-**Sign out**: it discards every unsaved review note in the tab without asking, so the next
-person on a shared browser cannot read them or meet their prompts. Save review notes before
-signing out. A session that expired on its own keeps the draft for the same account.
-
-If **device scope is invalid** appears when building from a planning link, return to
-**Choose installed apps**, apply valid device filters and select the apps again. No plan
-is created from the invalid scope.
-
-
 ## 31. Change filters do not find an OS version or time window
 
 1. **An OS version typed into search finds nothing.** Device search finds a device's name,
@@ -3765,3 +3732,36 @@ is created from the invalid scope.
    does not read as zero changes. Correct the field/time message or retry loading the page.
    If valid filters still fail, report the visible error, app version and a synthetic example;
    remove personal values from the shared query before posting it publicly.
+
+
+## Patch Plans navigation and unsaved review notes
+
+Open **Patch Plans** from the main navigation, or use **Plan application** in Installed
+Apps or Catalog. Existing saved `?plan=` links redirect to `/patch-plans?plan=...`.
+An account needs both application and device read access to open the page. Creating,
+investigating and saving still require patch-plan write access; read-only accounts can
+open saved plans and export the saved revision.
+
+If **Browser storage is unavailable** appears, the draft remains in this tab's memory
+through navigation, but closing the tab loses it. Save the review notes before closing,
+or copy them somewhere appropriate if saving fails. Do not clear browser storage to
+resolve a save failure. A draft from an older revision is shown as a conflict: compare
+it with the saved report, copy any notes you need, then choose **Discard draft** and edit
+the latest revision. Export stays disabled while notes are unsaved, so the PDF cannot
+silently omit the visible review. **View current installed apps in this scope** opens
+current inventory with the saved report's scope, without changing that report.
+
+Changing organization asks for confirmation before changing the session when this tab
+has unsaved review notes. Cancel keeps the current organization. Browser-stored drafts
+remain attached to their original organization, account and plan; copy or save any
+memory-only notes before confirming, because the switch reloads the page. A failed
+switch keeps the current page and its warning before closing or reloading.
+
+If unsaved review notes are gone after signing back in, check whether the account used
+**Sign out**: it discards every unsaved review note in the tab without asking, so the next
+person on a shared browser cannot read them or meet their prompts. Save review notes before
+signing out. A session that expired on its own keeps the draft for the same account.
+
+If **device scope is invalid** appears when building from a planning link, return to
+**Choose installed apps**, apply valid device filters and select the apps again. No plan
+is created from the invalid scope.
