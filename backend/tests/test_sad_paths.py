@@ -38,6 +38,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, text
 
+from app.core.logging import ConsoleFormatter, JsonFormatter
 from tests.jamf_fake import HOST, FakeJamf
 
 pytestmark = [
@@ -46,6 +47,12 @@ pytestmark = [
 ]
 
 _SECRET = "sad-path-webhook-secret"
+
+
+def _assert_database_diagnostic(message: str | None) -> None:
+    assert message and "SQLSTATE 22012" in message and "Check database health" in message
+    for withheld in ("division by zero", "SELECT 1/0", "[SQL:", "[parameters:"):
+        assert withheld not in message
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -239,7 +246,7 @@ async def test_generic_sweep_failure_lands_a_terminal_sync_status(db, jamf: Fake
 
     assert result.ok is False
     assert result.connection_id == connection_id
-    assert result.error and "division by zero" in result.error
+    _assert_database_diagnostic(result.error)
 
     state = (await db.execute(select(MdmSyncState).where(MdmSyncState.mdm_connection_id == connection_id))).scalar_one()
     await db.refresh(state)
@@ -247,14 +254,17 @@ async def test_generic_sweep_failure_lands_a_terminal_sync_status(db, jamf: Fake
 
     run = await _latest_run(db, connection_id)
     assert run.status == "failed"
-    assert run.error and "division by zero" in run.error
+    _assert_database_diagnostic(run.error)
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
     assert alarms[0].payload["connectionID"] == connection_id
+    _assert_database_diagnostic(alarms[0].payload["error"])
 
     records = [record for record in caplog.records if record.getMessage() == "jamf sweep failed"]
     assert len(records) == 1
     assert records[0].connection_id == connection_id
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        _assert_database_diagnostic(formatter.format(records[0]))
 
     await db.refresh(sweep)
     assert sweep.last_run_status == "failed"
@@ -285,19 +295,22 @@ async def test_generic_catalog_failure_is_logged_with_the_connection_id(
 
     assert result.ok is False
     assert result.connection_id == connection_id
-    assert result.error and "division by zero" in result.error
+    _assert_database_diagnostic(result.error)
 
     run = await _latest_run(db, connection_id)
     assert run.lock_class == "catalog"
     assert run.status == "failed"
-    assert run.error and "division by zero" in run.error
+    _assert_database_diagnostic(run.error)
     alarms = await _events(db, "run.failed", run.id)
     assert len(alarms) == 1
     assert alarms[0].payload["connectionID"] == connection_id
+    _assert_database_diagnostic(alarms[0].payload["error"])
 
     records = [record for record in caplog.records if record.getMessage() == "jamf catalog refresh failed"]
     assert len(records) == 1
     assert records[0].connection_id == connection_id
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        _assert_database_diagnostic(formatter.format(records[0]))
 
     await db.refresh(catalog)
     assert catalog.last_run_status == "failed"

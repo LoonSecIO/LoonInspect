@@ -5,9 +5,9 @@ import type { DeviceChange, UserFilter } from "@/features/changes/types";
  *  feed's URL into Slack. So the URL carries `user=u_…`, the keyed token the backend stamps
  *  beside the names, and the page turns it back into a name only on screen. */
 
-/** The backend's shape (`app.changes.person_token`). Only the prefix matters here: this decides
- *  what to *show*, and what to *match* is the server's business. */
-const isToken = (value: string) => value.startsWith("u_");
+/** Match the backend's full token contract (`app.changes.person_token`), so literal
+ *  usernames beginning with u_ remain editable text and are labelled as text. */
+export const isPersonToken = (value: string): boolean => value.length === 18 && /^u_[A-Za-z0-9_-]{16}$/.test(value);
 
 /** What a click on a row's person applies: the token, never the name. A row derived before the
  *  stamp existed carries none, and then there is nothing to press. */
@@ -40,6 +40,6 @@ export interface UserChipWords { named: (name: string) => string; matching: (val
  *  flight) reads as the page's words
  *  for a person it cannot name, the empty table below saying the rest. */
 export function userChipLabel(applied: string, resolved: UserFilter | null | undefined, words: UserChipWords): string {
-  if (!isToken(applied)) return words.matching(applied);
+  if (!isPersonToken(applied)) return words.matching(applied);
   return resolved?.token === applied && resolved.display ? words.named(resolved.display) : words.unresolved;
 }

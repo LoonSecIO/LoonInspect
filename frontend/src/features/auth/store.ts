@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { setUnauthorizedHandler } from "@/config/api";
 import * as authApi from "@/features/auth/api";
 import type { AuthStatus, AuthUser, MfaChallenge, PermissionName, SetupInput } from "@/features/auth/types";
+import { clearReviewDrafts } from "@/features/catalog/patchPlanDraft";
 
 interface AuthStore {
   status: AuthStatus;
@@ -78,7 +79,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
       await authApi.logout();
     } finally {
       // Local state clears even if the request failed, so a user who clicked "sign
-      // out" is never left looking at a signed-in UI.
+      // out" is never left looking at a signed-in UI. Unsaved patch-plan review notes go
+      // with the account that typed them: the next person in this tab neither reads them
+      // nor gets their prompts. The 401 handler below keeps them for a returning user.
+      clearReviewDrafts();
       set({ status: "unauthenticated", user: null });
     }
   }

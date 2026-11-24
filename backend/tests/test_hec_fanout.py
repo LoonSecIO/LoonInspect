@@ -646,7 +646,8 @@ async def test_a_failed_request_fails_the_whole_delivery_and_stops_sending(paylo
     *requests, verdict = await _deliver(_splunk_destination(), payload, _second_fails)
     ok, error = verdict.verdict
     assert ok is False and error is not None
-    assert error.startswith("HTTP 400") and "invalid-event-number" in error
+    assert error.startswith("HTTP 400") and "Response body withheld" in error
+    assert "invalid-event-number" not in error
     assert len(requests) == 2, "stop at the first failure; the delivery row is what retries"
 
 

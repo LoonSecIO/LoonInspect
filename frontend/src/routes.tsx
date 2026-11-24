@@ -13,6 +13,7 @@ import { DevicesPage } from "@/features/devices/DevicesPage";
 import { OsPosturePage } from "@/features/osPosture/OsPosturePage";
 import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
+import { PatchPlansPage } from "@/features/catalog/PatchPlansPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { ApplicationRecordPage } from "@/features/devices/ApplicationRecordPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
@@ -22,6 +23,7 @@ import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
+import { AIActivityPage } from "@/features/ai/AIActivityPage";
 import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { McpSettingsPage } from "@/features/mcp/McpSettingsPage";
@@ -50,6 +52,11 @@ export function AppRoutes() {
         <Route path="/" element={<App />}>
         <Route index element={<OverviewPage />} />
         <Route path="devices" element={<DevicesPage />} />
+        <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+          <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+            <Route path="patch-plans" element={<PatchPlansPage />} />
+          </Route>
+        </Route>
         <Route path="devices/applications" element={<ApplicationsPage />}>
           <Route index element={<ApplicationsOverviewPage />} />
           <Route path="catalog" element={<CatalogPage />} />
@@ -100,6 +107,8 @@ export function AppRoutes() {
         {/* SYSTEM_READ to match the backend's GET gate and the sidebar item — the
             page itself hides its write controls without SYSTEM_WRITE. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
+          {/* History remains readable with inference disabled; the live panel explains that state. */}
+          <Route path="settings/ai/activity" element={<AIActivityPage />} />
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
           <Route path="settings/intelligence-access" element={<IntelligenceAccessPage />} />
         </Route>

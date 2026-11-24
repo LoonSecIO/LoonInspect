@@ -62,6 +62,8 @@ CLOCKS: tuple[_Clock, ...] = (
     _Clock("alerts", MACHINERY, setting="RUN_RETENTION_DAYS"),
     _Clock("share_log", MACHINERY, fixed_days=90),
     _Clock("ai_usage_daily", MACHINERY, fixed_days=90),
+    _Clock("ai_usage_attempts", MACHINERY, fixed_days=90),
+    _Clock("ai_usage_work", MACHINERY, fixed_days=90),
     _Clock("inventory_summary_jobs", MACHINERY, fixed_days=8),
     _Clock("inventory_summary_metrics", MACHINERY, fixed_days=1),
     _Clock("submission_cases", MACHINERY),

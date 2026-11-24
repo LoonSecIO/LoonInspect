@@ -1041,6 +1041,9 @@ class AIProviderConfig(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_id_column()
     # app.ai.providers.Provider: apple_fm | openai_compatible | anthropic
     ollama_policy: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    service_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, server_default=text("gen_random_uuid()"))
+    service_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    service_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     provider: Mapped[str] = mapped_column(String(32))
     # app.ai.providers.HostReach; NULL is the card's default reach.
     host_reach: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -2306,6 +2309,77 @@ class AIUsageDaily(Base):
     provider_reports: Mapped[int] = mapped_column(BigInteger, server_default="0")
     queue_wait_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
     max_queue_wait_ms: Mapped[int] = mapped_column(BigInteger, server_default="0")
+
+
+class AIUsageWork(Base):
+    """Logical AI work facts, including waiting and work that made no inference call."""
+
+    __tablename__ = "ai_usage_work"
+    __table_args__ = (
+        Index("ix_ai_work_window", "tenant_id", "arrived_at"),
+        Index("ix_ai_work_finished", "tenant_id", "finished_at"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    feature: Mapped[str] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(String(32))
+    service_id: Mapped[str] = mapped_column(String(64))
+    service_label: Mapped[str] = mapped_column(String(80))
+    service_kind: Mapped[str] = mapped_column(String(24))
+    requested: Mapped[str] = mapped_column(String(200), server_default="")
+    arrived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str] = mapped_column(String(32), server_default="waiting")
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AIUsageAttempt(Base):
+    """Inference lifecycle facts produced by the existing usage recorder, without payloads."""
+
+    __tablename__ = "ai_usage_attempts"
+    __table_args__ = (
+        Index("ix_ai_attempt_window", "tenant_id", "started_at"),
+        Index("ix_ai_attempt_finished", "tenant_id", "finished_at"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    work_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    feature: Mapped[str] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(String(32))
+    service_id: Mapped[str] = mapped_column(String(64))
+    service_label: Mapped[str] = mapped_column(String(80))
+    service_kind: Mapped[str] = mapped_column(String(24))
+    requested: Mapped[str] = mapped_column(String(200), server_default="")
+    reported: Mapped[str] = mapped_column(String(200), server_default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(64), server_default="waiting")
+    legacy_outcome: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    work_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, server_default="1")
+    fallback: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wait_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    request_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    total_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    cached_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    provider_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
+class AIUsageCoverage(Base):
+    """Durable measurement boundary and recovered telemetry-write failure indication."""
+
+    __tablename__ = "ai_usage_coverage"
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    first_measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    degraded_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_gap_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class InventorySummaryMetric(Base):

@@ -25,10 +25,8 @@ or named in the attack-surface review (``docs/ai-threat-model.md``) rather than 
   (``think: false`` was ignored), so the request carries that field when asked.
 - **The key never appears anywhere but the wire.** Not in an exception, not in a log
   line, not in the reply. Errors describe the response, never the request.
-- **What a caller-chosen server says back is bounded**, the way
-  ``app.api.connections._upstream_detail`` bounds a Jamf test: a JSON error message
-  truncated to ``_DETAIL_MAX_CHARS``; for anything else the status, the content type
-  and the size only.
+- **Failures expose status and next checks, never upstream text.** An error body or
+  transport exception can echo the saved key or prompt, even when it is valid JSON.
 """
 
 from __future__ import annotations
@@ -40,12 +38,13 @@ import time
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
 
 from app.ai.providers import Wire
+from app.core.outbound_errors import http_failure, transport_failure
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,6 @@ MAX_RESPONSE_BYTES = 1_048_576
 MAX_CONCURRENT_CALLS = 2
 MAX_MODELS_LISTED = 500
 MAX_MODEL_ID_CHARS = 200
-_DETAIL_MAX_CHARS = 300
 
 OUTCOME_ANSWERED = "answered"
 OUTCOME_EMPTY = "empty"
@@ -102,6 +100,7 @@ class CompletionResult:
     input_tokens: int | None = None
     cached_tokens: int | None = None
     provider_ms: int | None = None
+    activity: Any = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -339,6 +338,7 @@ async def _request(
     transport: httpx.AsyncBaseTransport | None,
     timeout_seconds: float,
     connect_ip: str | None = None,
+    on_dispatch: Callable[[], None] | None = None,
 ) -> _Reply:
     """One exchange with a caller-chosen server, bounded four ways (module docstring)."""
     limits = httpx.Timeout(_READ_TIMEOUT_SECONDS, connect=_CONNECT_TIMEOUT_SECONDS)
@@ -355,61 +355,36 @@ async def _request(
                 httpx.AsyncClient(
                     timeout=limits, transport=transport, follow_redirects=False, trust_env=connect_ip is None
                 ) as client,
-                client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response,
             ):
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > MAX_RESPONSE_BYTES:
-                        raise AdapterError(
-                            "too_large",
-                            f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
-                        )
-                    chunks.append(chunk)
-                return _Reply(
-                    status=response.status_code,
-                    content_type=response.headers.get("content-type", ""),
-                    body=b"".join(chunks),
-                )
+                if on_dispatch:
+                    on_dispatch()
+                async with client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response:
+                    chunks: list[bytes] = []
+                    size = 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > MAX_RESPONSE_BYTES:
+                            raise AdapterError(
+                                "too_large",
+                                f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
+                            )
+                        chunks.append(chunk)
+                    return _Reply(
+                        status=response.status_code,
+                        content_type=response.headers.get("content-type", ""),
+                        body=b"".join(chunks),
+                    )
     except TimeoutError as exc:
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
         raise AdapterError("timeout", f"the endpoint stalled ({type(exc).__name__})") from exc
     except httpx.HTTPError as exc:
-        # ConnectError, RemoteProtocolError, UnsupportedProtocol… — the endpoint was
-        # never reached or hung up. The exception text names the host, never a header.
-        raise AdapterError("unreachable", f"could not reach the endpoint: {exc}") from exc
+        raise AdapterError("unreachable", transport_failure(exc)) from exc
 
 
 def _status_message(reply: _Reply) -> str:
-    """What of a rejection may be shown: a JSON error message, truncated; otherwise the
-    status, the declared type and the size."""
-    status_line = f"HTTP {reply.status}"
-    hint = {
-        401: "the endpoint rejected the key",
-        403: "the endpoint refused the request: the key, the route, or the name it arrived under",
-        404: "no such route or model at this URL",
-        429: "the endpoint is rate-limiting this key",
-        529: "the endpoint is overloaded",
-    }.get(reply.status)
-    if hint is None and 300 <= reply.status < 400:
-        hint = "the endpoint redirected, and redirects are not followed"
-    prefix = f"{status_line}: {hint}" if hint else status_line
-    if "json" in reply.content_type.split(";")[0].lower():
-        try:
-            body = json.loads(reply.body)
-        except ValueError:
-            body = None
-        message: Any = None
-        if isinstance(body, dict):
-            error = body.get("error")
-            message = error.get("message") if isinstance(error, dict) else error
-        if isinstance(message, str) and message.strip():
-            return f"{prefix} — {message.strip()[:_DETAIL_MAX_CHARS]}"
-        return prefix
-    declared = reply.content_type or "of no declared type"
-    return f"{prefix}. The response was {declared}, {len(reply.body)} bytes; not shown."
+    """A viewer may read this error, but may not read the administrator's saved key."""
+    return http_failure(reply.status)
 
 
 def _json_or_raise(reply: _Reply) -> Any:
@@ -418,9 +393,9 @@ def _json_or_raise(reply: _Reply) -> Any:
     try:
         return json.loads(reply.body)
     except ValueError as exc:
-        declared = reply.content_type or "of no declared type"
         raise AdapterError(
-            "malformed", f"HTTP {reply.status} but the body was not JSON ({declared}, {len(reply.body)} bytes)"
+            "malformed",
+            f"HTTP {reply.status} but the body was not JSON ({len(reply.body)} bytes). Check the endpoint's API format.",
         ) from exc
 
 
@@ -475,32 +450,40 @@ async def _serial_complete(req, exchange):
 async def complete(
     wire: Wire, req: CompletionRequest, *, transport=None, timeout_seconds=DEFAULT_TIMEOUT_SECONDS
 ) -> CompletionResult:
-    """Share one Apple FM lane with interactive calls; timeout includes the meter wait."""
-    started = None
+    """Share one Apple FM lane; the inference deadline includes local lane and wire-slot waits."""
+    started = time.monotonic()
     result = None
     outcome = "interrupted"
+    status = None
+    meter = req.record_usage
 
     async def exchange():
-        nonlocal started
-        started = time.monotonic()
-        return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+        return await _complete_unmetered(
+            wire, req, transport=transport, timeout_seconds=timeout_seconds, on_dispatch=getattr(meter, "dispatch", None)
+        )
 
     try:
+        if hasattr(meter, "start"):
+            await meter.start(timeout_seconds)
         async with asyncio.timeout(timeout_seconds):
             result = await _serial_complete(req, exchange) if req.serial else await exchange()
             outcome = result.outcome
+            result = replace(result, activity=meter)
             return result
     except TimeoutError as exc:
         outcome = "timeout"
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
     except AdapterError as exc:
         outcome = exc.kind
+        status = exc.status
         raise
     finally:
         # Finish metering outside the request deadline and serial lane. A slow database
         # write must not turn a completed inference into a retry or block the next caller.
-        if started is not None and req.record_usage:
-            await req.record_usage(outcome, result, int((time.monotonic() - started) * 1000))
+        if hasattr(meter, "finish_attempt"):
+            await meter.finish_attempt(outcome, result, status=status)
+        elif meter:
+            await meter(outcome, result, int((time.monotonic() - started) * 1000))
 
 
 async def _complete_unmetered(
@@ -509,6 +492,7 @@ async def _complete_unmetered(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    on_dispatch: Callable[[], None] | None = None,
 ) -> CompletionResult:
     """One prompt, one reply, one of five failures. ``transport`` exists so a test can
     stand in for the server, the way ``app.core.sharing.post_exchange`` allows."""
@@ -521,6 +505,7 @@ async def _complete_unmetered(
         transport=transport,
         timeout_seconds=timeout_seconds,
         connect_ip=req.connect_ip,
+        on_dispatch=on_dispatch,
     )
     logger.info("ai wire: %s POST %s -> %s", wire.value, httpx.URL(url).host, reply.status)
     return parse_response(wire, _json_or_raise(reply))

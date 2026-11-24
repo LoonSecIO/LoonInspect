@@ -30,7 +30,7 @@ import time
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adapters import MAX_MODEL_ID_CHARS, AdapterError, CompletionRequest, complete, list_models
@@ -51,8 +51,9 @@ from app.ai.providers import (
     presented_host,
 )
 from app.core.ai import AIConsentMissing, AIFeaturesDisabled, require_ai
+from app.core.ai_activity import activity_report, live_report
 from app.core.ai_configs import SavedConfig, delete_config, keeps_key, list_configs, save_config, saved_config
-from app.core.ai_usage import RETENTION_DAYS, recorder, usage_report
+from app.core.ai_usage import RETENTION_DAYS, accepted, recorder, usage_report
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
@@ -361,7 +362,14 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
-        record_usage=recorder(db, AI_TEST_BOX_FEATURE, payload.provider.value, model),
+        record_usage=recorder(
+            db,
+            AI_TEST_BOX_FEATURE,
+            payload.provider.value,
+            model,
+            config=payload,
+            fallback="fallback" in selection.get("reason", ""),
+        ),
         serial=payload.provider is Provider.apple_fm,
         base_url=base_url,
         model=model,
@@ -400,6 +408,7 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
         )
 
     latency_ms = int((time.monotonic() - started) * 1000)
+    await accepted(result, "completed" if result.outcome == "answered" else "unusable")
     audit(
         AuditAction.AI_TEST_SENT,
         target_type="ai_endpoint",
@@ -429,6 +438,9 @@ async def test_endpoint(payload: AITestIn, db: AsyncSession = Depends(get_db)) -
 def config_out(config: SavedConfig) -> AIConfigOut:
     return AIConfigOut(
         provider=config.provider,
+        service_id=str(config.service_id) if config.service_id else None,
+        service_label=config.service_label,
+        service_kind=config.service_kind,
         host_reach=config.host_reach,
         base_url=config.base_url,
         model=config.model,
@@ -486,6 +498,8 @@ async def save_provider_config(
         clear_key=payload.clear_key,
         updated_by=principal.account.email,
         ollama_policy=payload.ollama_policy.model_dump() if payload.ollama_policy else None,
+        service_label=payload.service_label,
+        service_kind=payload.service_kind,
     )
     audit(
         AuditAction.AI_CONFIG_SAVED,
@@ -521,6 +535,34 @@ async def historical_usage(start: date | None = None, end: date | None = None, d
     if end < start or end > today or (end - start).days >= RETENTION_DAYS:
         raise HTTPException(422, "Choose a UTC date range of 1–90 days ending today or earlier.")
     return await usage_report(db, start, end)
+
+
+@router.get("/activity", dependencies=[Depends(require(Permission.SYSTEM_READ))])
+async def ai_activity(
+    start: date | None = None,
+    end: date | None = None,
+    service: str | None = Query(None, max_length=64),
+    provider: str | None = Query(None, max_length=32),
+    purpose: str | None = Query(None, max_length=64),
+    model: str | None = Query(None, max_length=200),
+    outcome: str | None = Query(None, max_length=64),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read metadata-only activity, including retained history while AI is disabled."""
+    today = datetime.now(UTC).date()
+    end = end or today
+    start = start or end - timedelta(days=29)
+    if end < start or end > today or (end - start).days >= RETENTION_DAYS:
+        raise HTTPException(422, "Choose a UTC date range of 1–90 days ending today or earlier.")
+    return await activity_report(
+        db, start, end, service=service, provider=provider, purpose=purpose, model=model, outcome=outcome
+    )
+
+
+@router.get("/activity/live", dependencies=[Depends(require(Permission.SYSTEM_READ))])
+async def ai_activity_live(db: AsyncSession = Depends(get_db)):
+    """Current measured workload, independent of historical filters and provider configuration writes."""
+    return await live_report(db)
 
 
 @router.post("/ollama/preview", dependencies=[Depends(require(Permission.SYSTEM_WRITE))])

@@ -406,3 +406,29 @@ async def test_rejected_id_logs_metadata_without_its_value(db, connection, jamf,
     assert diagnostic.id_present and diagnostic.id_type == "str" and diagnostic.id_length == len(value)
     assert value not in caplog.text
     assert await _runs(db, connection.id) == []
+
+
+async def test_database_failure_is_sanitized_in_webhook_run_and_log(db, connection, jamf, monkeypatch, caplog):
+    from sqlalchemy import text
+
+    from app.core.logging import ConsoleFormatter, JsonFormatter
+    from app.mdm import service
+    from app.models.schema import RunLogLine
+
+    marker = "synthetic-webhook-private-value-7da41e"
+
+    async def failing_ingest(db_, *args, **kwargs):
+        await db_.execute(text("SELECT CAST(CAST(:private_payload AS TEXT) AS INTEGER)"), {"private_payload": marker})
+
+    monkeypatch.setattr(service, "ingest_computer", failing_ingest)
+    response = await _post(connection.id, jamf.real["id"])
+    assert response.status_code == 500
+    (run,) = await _runs(db, connection.id)
+    assert run.status == "failed"
+    assert "SQLSTATE 22P02" in run.error and "Check database health" in run.error
+    lines = (await db.scalars(select(RunLogLine).where(RunLogLine.run_id == run.id))).all()
+    assert lines
+    assert marker not in json.dumps([{"message": row.message, "fields": row.fields} for row in lines])
+    assert marker not in response.text and marker not in run.error
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        assert all(marker not in formatter.format(record) for record in caplog.records)

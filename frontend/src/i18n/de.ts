@@ -1,12 +1,14 @@
 import { historyGerman } from "@/features/devices/historyCopy";
 import { patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { mcpGerman } from "@/features/mcp/copy";
+import { aiActivityGerman } from "@/features/ai/activityCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
   deviceHistory: historyGerman,
   patchPolicy: patchPolicyGerman,
   mcp: mcpGerman,
+  aiActivity: aiActivityGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
@@ -350,6 +352,7 @@ export const de: Translations = {
     reload: "Seite neu laden"
   },
   nav: {
+    patchPlans: "Patch-Pläne",
     overview: "Übersicht",
     devices: "Geräte",
     applications: "Anwendungen",
@@ -365,6 +368,7 @@ export const de: Translations = {
     dataSharing: "Datenfreigabe",
     intelligenceAccess: "Informationszugang",
     ai: "KI",
+    aiActivity: "KI-Aktivität",
     apiTokens: "API-Token",
     aiConnections: "KI-Verbindungen",
     accounts: "Konten",
@@ -1159,6 +1163,7 @@ export const de: Translations = {
     eyebrow: "Geräte",
     title: "Anwendungen",
     description: "Über Ihre Flotte installierte Anwendungen, aggregiert aus dem synchronisierten Geräteinventar.",
+    tabPatchPlans: "Patch-Pläne",
     tabInstalled: "Installierte Apps",
     tableName: "Name",
     tableBundleId: "Bundle-ID",
@@ -2076,12 +2081,47 @@ export const de: Translations = {
     }
   },
   changes: {
+    historical: {
+      subjectKind: "Objekttyp",
+      subjectKinds: { computer: "Computer", computer_group: "Computergruppe" } as Record<string, string>,
+      title: "Geräteeigenschaften zum Beobachtungszeitpunkt",
+      hint: "Diese Filter verwenden die mit jeder Änderung gespeicherten Werte. Fehlende historische Eigenschaften bleiben unbekannt und passen zu keinem Filter; aktuelle Gerätedaten werden nicht eingesetzt.",
+      connection: "Verbindungs-ID",
+      model: "Modell enthält",
+      osVersion: "Beobachtete Betriebssystemversion beginnt mit",
+      fileVault: "FileVault-Status",
+      site: "Standort-ID",
+      department: "Abteilungs-ID",
+      managed: "Von Jamf verwaltet",
+      user: "Zugewiesener Benutzer enthält",
+      any: "Alle",
+      yes: "Ja",
+      no: "Nein",
+      field: "Geändertes Feld",
+      anyField: "Alle Felder",
+      changedTo: "Geändert auf exakt",
+      scalarHint: "Abschnitt und einzelnes Feld auswählen. Benannte Einträge wie Apps werden über die Objektsuche oben gefiltert.",
+      start: "Beobachtet ab (einschließlich)",
+      end: "Beobachtet bis (ausschließlich)",
+      zone: "Zeiten verwenden die Browser-Zeitzone:",
+      invalidTime: "Dieses Zeitfenster kann nicht angewendet werden. Gültige Ortszeiten eingeben; bei der Zeitumstellung übersprungene Zeiten existieren nicht. Angezeigte Zeitzone prüfen.",
+      reversed: "Dieses Zeitfenster kann nicht angewendet werden: Das Ende muss nach dem Anfang liegen. Beobachtungszeitraum anpassen.",
+      example: "Beispiel: OS geändert auf 27.2.1",
+      exampleHint: "Setzt Betriebssystem → OS-Version → exakt 27.2.1 und behält Zeitfenster und historische Gerätefilter bei. Objekt-, Stufen- und Beobachtungslink-Filter werden entfernt.",
+      observationHint: "Gezählt werden beobachtete Übergänge, keine Installationszeitpunkte oder einzelnen Personen. Wiederholte Übergänge zählen in der Gerätezahl einmal je Gerät. Eine erste Beobachtung belegt keine vorherige Änderung; Aufbewahrung und Änderungsrichtlinie begrenzen die Abdeckung.",
+      policyError: "Die Feldauswahl konnte nicht geladen werden. Änderungsrichtlinie erneut laden; bestehende Filter gelten weiterhin.",
+      retry: "Feldauswahl erneut laden",
+      apply: "Feld-, Zeit- und Gerätefilter anwenden",
+      resolvedUser: "Zugewiesener Benutzer aus geteiltem Link",
+      fieldRequired: "Vor Eingabe eines Zielwertes ein einzelnes Feld im ausgewählten Abschnitt wählen."
+    },
+    matching: (changes: number, devices: number) => `${changes} passende Änderungen · ${devices} verschiedene Geräte`,
     title: "Änderungen",
     description:
       "Das Änderungsprotokoll jedes Geräts zwischen zwei Beobachtungszeiträumen. Enthalten ist, was Ihre Änderungsverfolgung als relevant eingestuft hat.",
-    search: "Suche",
+    search: "Gerätesuche",
     searchPlaceholder: "Gerätename, Seriennummer oder Jamf-ID",
-    artifact: "Auf ein Objekt filtern",
+    artifact: "Objektsuche",
     artifactPlaceholder: "App-Name, Bundle-ID, Benutzername, Gruppe…",
     artifactHint: "App, Konto, Gruppe oder Profil – keine Pfade und nicht die Werte selbst.",
     filterTo: (name: string) => `Auf ${name} filtern`,

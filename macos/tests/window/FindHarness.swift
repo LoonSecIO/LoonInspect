@@ -162,7 +162,19 @@ enum FindHarness {
 
         _ = try await web.evaluateJavaScript("history.pushState({}, '', '/fixture-next-page'); document.getElementById('dynamic').textContent='replacement page'")
         try await wait("route changes recheck the retained query") { status.stringValue.hasPrefix("No matches on this page.") }
-        print("PASS: client-side page navigation rechecks the retained query")
+        // Replay a delayed notification for the DOM that the route search already searched.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            web.evaluateJavaScript("window.webkit.messageHandlers.pageFind.postMessage('changed'); true", in: nil, in: .defaultClient) { result in
+                continuation.resume(with: result.map { _ in () })
+            }
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        try check(status.stringValue.hasPrefix("No matches on this page."), "A delayed notification invalidated a result for unchanged content")
+        _ = try await web.evaluateJavaScript("document.getElementById('dynamic').textContent='newly loaded result'")
+        try await wait("a later mutation still invalidates the route result") { status.stringValue.hasPrefix("Page content changed.") }
+        try action("Find Next")
+        try await wait("the later revision is searchable") { status.stringValue.hasPrefix("Match found.") }
+        print("PASS: route searches ignore delayed notifications for searched content and still invalidate later mutations")
 
         _ = try await web.evaluateJavaScript("document.getElementById('page-query').setAttribute('data-page-search','')")
         try await wait("page-search control is offered again") { !pageSearch.isHidden }

@@ -1,4 +1,5 @@
 import {
+  Activity,
   AppWindow,
   Database,
   FileCheck,
@@ -47,6 +48,8 @@ export interface NavItem {
   end: boolean;
   /** Omitted where every role can see the page. */
   permission?: PermissionName;
+  /** Every permission required by a compound read surface. */
+  permissions?: readonly PermissionName[];
   /** Listed only while this feature flag is on (Settings › AI, #319). Where `requires` is
    *  declared too the flag is that requirement's OVERRIDE and not a second condition —
    *  see `visibleNavigation`. */
@@ -71,6 +74,8 @@ export const navigationItems: NavItem[] = [
       { labelKey: "changes", icon: History, to: "/devices/changes", end: false }
     ]
   },
+  { labelKey: "patchPlans", icon: ListChecks, to: "/patch-plans", end: false,
+    permissions: [PERMISSIONS.APP_READ, PERMISSIONS.DEVICE_READ] },
   // Top-level, between Devices and Settings, and pointing at its own first child the way
   // Settings points at Connections (#529). `Posture`, not `Risks`: risk is a judgement this
   // product does not make — absent-not-zero counts, no ratios stored — and a section called
@@ -180,11 +185,13 @@ export const navigationItems: NavItem[] = [
       // appears only once the `ai_features` switch is on (#319). It is judged against the
       // shared set the toggle writes into (#402), so the flag adds or removes it at once,
       // and a read that failed leaves it hidden, as it always has.
+      // Operational history stays visible with inference disabled.
+      { labelKey: "aiActivity", icon: Activity, to: "/settings/ai/activity", end: false, permission: PERMISSIONS.SYSTEM_READ },
       {
         labelKey: "ai",
         icon: FlaskConical,
         to: "/settings/ai",
-        end: false,
+        end: true,
         permission: PERMISSIONS.SYSTEM_READ,
         flag: "ai_features"
       },
@@ -244,6 +251,7 @@ export function visibleNavigation(
   const granted = new Set(permissions ?? []);
   const allowed = (item: NavItem) => {
     if (item.permission && !granted.has(item.permission)) return false;
+    if (item.permissions?.some(permission => !granted.has(permission))) return false;
     const flagOn = item.flag !== undefined && enabledFlags.has(item.flag);
     // A `requires` entry is listed when the data answers **or** the flag overrides it. The
     // flag is not a second condition: an entry that followed both would be hidden for
