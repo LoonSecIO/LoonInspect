@@ -240,6 +240,40 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert ENVELOPE not in body["event"]
 
 
+async def test_a_mac_still_being_saved_elsewhere_is_logged_as_retryable(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """Another write (a webhook, in production) holds one Mac past the five-second lock
+    wait when the sweep reaches it. Postgres refuses the wait (55P03) and lock_device
+    replaces that error with its retry sentence; the run log must keep that sentence,
+    not diagnose the hidden lock error as a database health or migration failure."""
+    from app.core.database import bound_tenant_id, session_for_tenant
+    from app.core.runs import TRIGGER_MANUAL
+    from app.mdm import service
+    from app.mdm.collections import run_one_collection
+    from app.models.schema import RunLogLine
+
+    real_lock = service.lock_device
+    seen = {"calls": 0}
+
+    async def held_elsewhere(db_, connection_id, platform, device_id):
+        seen["calls"] += 1
+        if seen["calls"] != 2:
+            return await real_lock(db_, connection_id, platform, device_id)
+        async with session_for_tenant(bound_tenant_id(db_)) as holder:
+            await real_lock(holder, connection_id, platform, device_id)
+            await real_lock(db_, connection_id, platform, device_id)
+
+    monkeypatch.setattr(service, "lock_device", held_elsewhere)
+    sweep = await _sweep_collection(db, connection)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
+
+    assert result.ok is True and result.devices_failed == 1 and seen["calls"] == 2
+    run = await _latest_run(db, connection.id)
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id))).scalars().all()
+    (failure,) = [line.fields["error"] for line in lines if line.message == "device failed; sweep continues"]
+    assert failure.startswith("IngestBusy: Another inventory read is still being saved for this Mac. Retry shortly")
+    assert "The database operation failed" not in failure
+
+
 async def test_failures_past_the_threshold_fail_the_run_and_stop_it(db, jamf: FakeJamf, connection, monkeypatch) -> None:
     """A fleet-wide outage: every device fails. The run must stop just past the
     tolerance — not iterate the remaining fleet — and be failed with the count in its

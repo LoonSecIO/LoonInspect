@@ -12,6 +12,8 @@ def database_error_message(exc: BaseException) -> str | None:
 
     Driver messages can contain the rejected value even when SQLAlchemy hides bound
     parameters. Wrappers and exception groups keep the same rule for their causes.
+    A context hidden by `raise ... from None` is skipped, as Python's traceback skips
+    it: that error was replaced by a fixed sentence such as a retry instruction.
     """
     pending = [exc]
     seen: set[int] = set()
@@ -28,7 +30,8 @@ def database_error_message(exc: BaseException) -> str | None:
                 f"The database operation failed ({identity}). Check database health and that this build's migrations "
                 "completed. If it repeats, report the run or request ID and the error type/code."
             )
-        pending.extend(cause for cause in (current.__cause__, current.__context__) if cause is not None)
+        context = None if current.__suppress_context__ else current.__context__
+        pending.extend(cause for cause in (current.__cause__, context) if cause is not None)
         if isinstance(current, BaseExceptionGroup):
             pending.extend(current.exceptions)
     return None

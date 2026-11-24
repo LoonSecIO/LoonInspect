@@ -5,11 +5,12 @@ from __future__ import annotations
 import io
 import logging
 import sys
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-from sqlalchemy.exc import StatementError
+from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from uvicorn import Config
 from uvicorn.lifespan.on import LifespanOn
 
@@ -17,6 +18,8 @@ from app.core.database import engine
 from app.core.diagnostics import database_error_message, error_text
 from app.core.logging import ConsoleFormatter, ContextFilter, JsonFormatter
 from app.core.middleware import RequestContextMiddleware
+from app.core.runs import AcquisitionBusy
+from app.mdm.concurrency import IngestBusy, lock_device
 from app.mdm.jamf.errors import fetch_error
 
 SECRET = "synthetic-db-secret-7da41e"
@@ -100,6 +103,61 @@ def test_group_and_cyclic_context_do_not_reintroduce_database_values():
         for message in (database_error_message(exc), error_text(exc), fetch_error(exc)):
             assert all(value not in message for value in MARKERS)
             assert "StatementError; SQLSTATE 22001" in message
+
+
+class LockNotAvailable(Exception):
+    sqlstate = "55P03"
+
+
+class UniqueViolation(Exception):
+    sqlstate = "23505"
+
+
+async def _ingest_busy() -> IngestBusy:
+    """lock_device's own translation of Postgres refusing a contended lock wait."""
+
+    class ContendedSession:
+        def __init__(self):
+            self.info = {"tenant_id": str(uuid.uuid4())}
+
+        async def scalar(self, *args, **kwargs):
+            return False
+
+        @asynccontextmanager
+        async def begin_nested(self):
+            raise DBAPIError("SELECT pg_advisory_xact_lock(:key)", {"key": SECRET}, LockNotAvailable(PERSON))
+            yield
+
+    with pytest.raises(IngestBusy) as caught:
+        await lock_device(ContendedSession(), 1, "macos", "1")
+    return caught.value
+
+
+def _acquisition_busy() -> AcquisitionBusy:
+    """The shape runs.acquire raises when an active-run conflict has no visible holder."""
+    try:
+        try:
+            raise IntegrityError(f"INSERT INTO runs VALUES ('{PROMPT}')", {"secret": SECRET}, UniqueViolation(PERSON))
+        except IntegrityError:
+            raise AcquisitionBusy(1, "sweep") from None
+    except AcquisitionBusy as exc:
+        return exc
+
+
+@pytest.mark.parametrize("busy", ["ingest", "acquisition"])
+async def test_a_suppressed_database_context_keeps_the_retry_instruction(busy):
+    # `raise ... from None` hides the database error from Python's own traceback, and
+    # the operator's sentence is the retry instruction, not a database health check.
+    exc = await _ingest_busy() if busy == "ingest" else _acquisition_busy()
+    assert isinstance(exc.__context__, DBAPIError) and exc.__suppress_context__
+    assert database_error_message(exc) is None
+    for message in (error_text(exc), fetch_error(exc)):
+        assert message == str(exc) and "Retry shortly" in message
+    record = logging.LogRecord("test", logging.ERROR, __file__, 1, "operation failed", (), (type(exc), exc, exc.__traceback__))
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        rendered = formatter.format(record)
+        assert "Retry shortly" in rendered and "The database operation failed" not in rendered
+        assert all(value not in rendered for value in MARKERS)
 
 
 def test_driver_code_is_allowlisted_and_parameters_hidden():
