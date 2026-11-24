@@ -35,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.provenance import source_url
 from app.core.user_agent import build_user_agent
 from app.mdm.patch.matching import reset_catalog_cache
 from app.mdm.patch.requirements import bundle_ids_named, detection_for
@@ -71,13 +72,13 @@ DETAIL_CONCURRENCY = 8
 
 # What an operator reads when `JAMF_PATCH_BASE_URL` names something that is not an
 # address. What failed, why, and what to check, in the words they typed
-# (`docs/diagnosability.md` rule 3): the variable's name, the value it holds, the shape it
+# (`docs/diagnosability.md` rule 3): the variable's name, the shape it
 # must have, and the fact that removing it is a fix. Without it the value reaches httpx as
 # `UnsupportedProtocol` from inside a scheduled job — a traceback that never names the
 # setting that caused it.
 JAMF_PATCH_BASE_URL_UNUSABLE = (
-    "The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to {value!r}, "
-    "which is not an address this container can dial — it must begin with https:// (or http://). "
+    "The Jamf patch catalog cannot be refreshed: JAMF_PATCH_BASE_URL is set to an unusable value "
+    "(value withheld) — it must begin with https:// (or http://). "
     "Correct it, or remove it from the environment to use the default "
     "https://jamf-patch.jamfcloud.com/v1, and restart the app "
     "(docs/troubleshooting.md section 6)."
@@ -96,8 +97,8 @@ class JamfPatchCatalogUnconfigured(RuntimeError):
 # answered a status that is not the catalog, or it answered something that is not the
 # catalog. Three sentences with the same three parts as the one above (`docs/diagnosability.md`
 # rule 3): what failed, why — the host, and what it did — and what to check, which is this
-# container's outbound path to that host and nothing of theirs, since no credential of the
-# operator's is involved. Each ends the same way because each leaves the same state: nothing
+# container's outbound path to that host. A configured mirror can carry credentials, so
+# display URLs and errors must withhold them. Each leaves the same state: nothing
 # written, the rows already synced answering, the next refresh trying again. Before these the
 # Sync button answered a bare 500 and the hourly job a traceback, and neither named the host.
 _CATALOG_KEPT = (
@@ -106,8 +107,8 @@ _CATALOG_KEPT = (
 )
 JAMF_PATCH_CATALOG_UNREACHABLE = (
     "The Jamf patch catalog cannot be refreshed: {host} did not answer ({error}). This container dials it "
-    "directly, so check the container's outbound access to that host — DNS, a proxy or egress firewall in "
-    "the way, or TLS interception." + _CATALOG_KEPT
+    "directly, so check JAMF_PATCH_BASE_URL and the container's outbound access to that host — DNS, a proxy "
+    "or egress firewall in the way, or TLS interception." + _CATALOG_KEPT
 )
 JAMF_PATCH_CATALOG_REFUSED = (
     "The Jamf patch catalog cannot be refreshed: {host} answered {status} instead of the catalog. Check what "
@@ -119,9 +120,6 @@ JAMF_PATCH_CATALOG_NOT_A_CATALOG = (
     "this container and that host — a proxy or a captive portal — is answering in its place; check what {url} "
     "returns from this container." + _CATALOG_KEPT
 )
-# How much of the underlying error a sentence carries: its type, which the step-through names, and the
-# first line of what it said — for httpx that is the OS's own words (`[Errno 111] Connection refused`).
-_ERROR_MAX_CHARS = 200
 
 
 class JamfPatchCatalogUnreachable(RuntimeError):
@@ -134,10 +132,8 @@ class JamfPatchCatalogUnreachable(RuntimeError):
 
 
 def _named(error: BaseException) -> str:
-    """`ConnectError: [Errno 111] Connection refused`: the type, and the words behind it when there are any."""
-    text = str(error).strip()
-    name = type(error).__name__
-    return f"{name}: {text.splitlines()[0]}"[:_ERROR_MAX_CHARS] if text else name
+    """Keep the transport category; its text can repeat the credential-bearing URL."""
+    return type(error).__name__
 
 
 class CatalogSource(Protocol):
@@ -175,11 +171,11 @@ class JamfApiCatalogSource:
         configured = base_url or settings.jamf_patch_base_url
         address = configured.rstrip("/")
         if not address.startswith(("https://", "http://")):
-            raise JamfPatchCatalogUnconfigured(JAMF_PATCH_BASE_URL_UNUSABLE.format(value=configured))
+            raise JamfPatchCatalogUnconfigured(JAMF_PATCH_BASE_URL_UNUSABLE)
         self._base_url = address
         # The word the sentences use for the server: its host, which is what an operator checks
         # DNS and a proxy's allow-list for, not the path.
-        self._host = urlsplit(address).hostname or address
+        self._host = urlsplit(source_url(address)).hostname or "the configured host"
 
     async def summaries(self) -> list[dict]:
         """The one read the sync cannot do without, so the one that answers for the server
@@ -187,22 +183,25 @@ class JamfApiCatalogSource:
         sentence for that way; the definitions' reads below stay bare, because `_fetch_details`
         skips a failed title rather than failing the sync."""
         url = f"{self._base_url}/software"
+        display_url = source_url(url) or "the configured catalog address"
         try:
             response = await self._client.get(url)
             response.raise_for_status()
             summaries = response.json()
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
-            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_REFUSED.format(host=self._host, status=status, url=url)) from exc
-        except httpx.RequestError as exc:
+            raise JamfPatchCatalogUnreachable(
+                JAMF_PATCH_CATALOG_REFUSED.format(host=self._host, status=status, url=display_url)
+            ) from None
+        except (httpx.RequestError, httpx.InvalidURL) as exc:
             # ConnectError, ConnectTimeout, ReadTimeout, ProxyError, a TLS failure — every way a
             # request ends without an answer.
-            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_UNREACHABLE.format(host=self._host, error=_named(exc))) from exc
-        except ValueError as exc:
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_UNREACHABLE.format(host=self._host, error=_named(exc))) from None
+        except ValueError:
             # A 2xx whose body is not JSON: a captive portal's page, a proxy's block page.
-            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=url)) from exc
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=display_url)) from None
         if not isinstance(summaries, list):
-            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=url))
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=display_url))
         return summaries
 
     async def detail(self, title_id: str) -> dict:

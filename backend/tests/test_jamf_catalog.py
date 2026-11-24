@@ -479,12 +479,12 @@ class TestACatalogOutOfReach:
         error = await self._summaries(refused)
 
         message = str(error)
-        assert f"{self.HOST} did not answer (ConnectError: [Errno -2] Name or service not known)" in message
+        assert f"{self.HOST} did not answer (ConnectError)" in message
         for check in ("outbound access", "DNS", "proxy", "egress firewall", "TLS interception"):
             assert check in message
         self._ends_on_the_state_it_leaves(message)
-        # The httpx error is kept behind the sentence, for anyone who turns the traceback on.
-        assert isinstance(error.__cause__, httpx.ConnectError)
+        # Even an explicit traceback must not repeat credentials from a transport URL.
+        assert error.__cause__ is None and error.__suppress_context__
 
     async def test_an_error_with_no_words_is_named_by_its_type_alone(self) -> None:
         """A timeout often has nothing to say; `(ConnectTimeout: )` would read as a sentence cut off."""
@@ -494,14 +494,15 @@ class TestACatalogOutOfReach:
 
         assert f"{self.HOST} did not answer (ConnectTimeout)." in str(await self._summaries(timed_out))
 
-    async def test_an_errors_words_are_cut_to_their_first_line_and_a_bound(self) -> None:
-        """What goes under a button is one line of the OS's words, not a page of them."""
+    async def test_an_errors_words_are_withheld(self) -> None:
+        """Transport text can contain a configured mirror's credentials."""
 
         def verbose(request: httpx.Request) -> httpx.Response:
             raise httpx.ProxyError("line one " + "x" * 400 + "\nline two", request=request)
 
         message = str(await self._summaries(verbose))
-        assert "ProxyError: line one " in message
+        assert "ProxyError" in message
+        assert "line one" not in message
         assert "line two" not in message
         assert "x" * 200 not in message
 
@@ -514,7 +515,7 @@ class TestACatalogOutOfReach:
         assert f"Check what {self.URL} returns from this container" in message  # the one thing to look at
         assert "proxy answering in Jamf's place, or an outage at Jamf" in message  # the two usual causes
         self._ends_on_the_state_it_leaves(message)
-        assert isinstance(error.__cause__, httpx.HTTPStatusError)
+        assert error.__cause__ is None and error.__suppress_context__
 
     @pytest.mark.parametrize(
         "answer",
@@ -605,7 +606,7 @@ class TestAnAddressThatIsNotAnAddress:
 
         message = str(raised.value)
         assert "JAMF_PATCH_BASE_URL" in message  # what to change
-        assert repr(value) in message  # what it holds now
+        assert "value withheld" in message
         assert "https://" in message  # what it must look like
         assert "https://jamf-patch.jamfcloud.com/v1" in message  # what removing it restores
         assert "docs/troubleshooting.md" in message  # where the step-through is

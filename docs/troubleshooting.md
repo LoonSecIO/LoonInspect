@@ -1073,11 +1073,13 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
+     The value itself is withheld because a private mirror address can contain credentials.
    - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com did not answer
-     (ConnectError: …)` — or `ConnectTimeout`, `ReadTimeout`, `ProxyError` in the brackets
+     (ConnectError)` — or `ConnectTimeout`, `ReadTimeout`, `ProxyError` in the brackets
      → this container could not reach the patch server: the name did not resolve, or a
-     proxy, an egress firewall or TLS interception stood in the way, and the words in the
-     brackets are the operating system's own and say which. Ask the container itself. The
+     proxy, an egress firewall or TLS interception stood in the way. The brackets name the
+     transport category; raw exception text is withheld because it can contain a mirror's
+     credentials. Check `JAMF_PATCH_BASE_URL` and ask the container itself. The
      shipped image carries no `curl`, so ask with Python, which honours the same
      `HTTPS_PROXY` the app does:
 
@@ -1086,7 +1088,7 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      ```
 
      `200 b'[{"…` is the catalog, and the next press will work; anything else is the
-     network's answer, in the same words the sentence used — fix that, not the app. The
+     network's answer — fix that, not the app. The
      sentence says what it leaves behind, and it is true: nothing was written, the titles
      already synced keep answering, and the hourly refresh keeps trying. (The hourly
      refresh prints the sentence rather than a traceback for the same reason the button
@@ -1103,6 +1105,13 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      not with the catalog` → something between this container and the host — a proxy or
      a captive portal — put a page where the catalog should be. The probe prints the first
      bytes of what it got; `<html` or `<!DOCTYPE` names the proxy, and the fix is on it.
+   Catalog diagnostics and patch-plan source links omit URL userinfo, query and fragment.
+   The deployment still uses its original configured URL for fetching. A link that needs
+   authentication or query routing may therefore stop at the mirror's public address;
+   check that configuration privately. An unparseable source URL is withheld entirely.
+   Older plan snapshots remain stored unchanged, while API/PDF/AI presentation applies
+   this rule. The report checksum covers the sanitized displayed body; see
+   [patch-plan report integrity](application-patch-plans.md#auditor-pdf-and-api).
    - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"`, or
      `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`, ending in a
      traceback that is not one of the connection names above → a failure of a kind the
