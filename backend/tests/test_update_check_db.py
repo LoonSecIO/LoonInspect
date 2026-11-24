@@ -271,7 +271,7 @@ async def test_deciding_the_notice_leaves_no_tenant_bound(db) -> None:
 
 
 @pytest.mark.parametrize("shape", ["github", "service"])
-@pytest.mark.parametrize("failure", ["nested_json", "grouped_port", "proxy_import"])
+@pytest.mark.parametrize("failure", ["nested_json", "grouped_port", "proxy_import", "ca_bundle"])
 async def test_provider_failures_store_unreachable_and_the_hourly_retry(github, monkeypatch, caplog, shape, failure):
     from app.core.config import settings
     from app.core.update_check import tick
@@ -285,6 +285,8 @@ async def test_provider_failures_store_unreachable_and_the_hourly_retry(github, 
             raise ExceptionGroup(marker, [OverflowError(marker)])
         if failure == "proxy_import":
             raise ImportError(marker)
+        if failure == "ca_bundle":  # what building the real client raises for SSL_CERT_FILE naming no file
+            raise FileNotFoundError(2, "No such file or directory", f"/{marker}/ca.pem")
         return httpx.Response(200, text="[" * 100_000 + marker)
 
     github.handler = answer

@@ -104,6 +104,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable, sync_catalog
 from app.models.schema import MdmConnection, UserSession
+from app.summaries.diagnostics import safe_exception
 from app.summaries.service import run_worker as inventory_summary_worker
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -289,17 +290,23 @@ async def update_check_tick() -> None:
     try:
         await update_check()
     except SQLAlchemyError:
+        # Both lines begin `update check could not run`: the Updates block's *Owed now* hint
+        # and docs/troubleshooting.md §10 send the operator to that phrase.
         logger.exception(
-            "update check could not read or save its database state; Settings › Support › Updates keeps the last answer "
-            "stored. Check database health and connectivity (docker compose ps db for the bundled database)"
+            "update check could not run: it could not read or save its database state; Settings › Support › Updates "
+            "keeps the last answer stored. Check database health and connectivity (docker compose ps db for the "
+            "bundled database)"
         )
     except Exception as exc:
         # An unexpected provider/plugin failure can still carry a URL or credential.
-        # Keep its type, not the exception text or chained traceback.
+        # Keep its type and its frames' file:line:function, never the exception text,
+        # locals or chained traceback.
         logger.error(
             "update check could not run because of an unexpected internal failure (%s); Settings › Support › Updates "
-            "keeps the last answer stored. Report this error type and the build shown in Settings › Support",
+            "keeps the last answer stored. Report this error type, the stack locations logged with it, and the build "
+            "shown in Settings › Support",
             type(exc).__name__,
+            extra=safe_exception(exc),
         )
 
 

@@ -1431,11 +1431,18 @@ slot says why.
      **Proxy transport unavailable:** this build does not include SOCKS support; use
      an HTTP proxy or remove the unsupported proxy setting. **JSON nesting limit:**
      the provider or an intervening proxy returned an excessively nested response;
-     correct its response format. Addresses, proxy credentials and response text are
+     correct its response format. **TLS trust store could not be loaded:** the file
+     `SSL_CERT_FILE` names is missing, unreadable or not a PEM bundle; correct the
+     mount or the path ([`splunk-setup.md`](splunk-setup.md) §5 builds the bundle).
+     Addresses, proxy credentials and response text are
      withheld from these diagnostics. Recreate the container after changing its
-     environment (`docker compose up -d`); a restart does not re-read `.env`.
-   - `update check could not read or save its database state` → check database health
-     and connectivity. `unexpected internal failure` → report the error type and
+     environment (`docker compose up -d`); a restart does not re-read `.env`. No route
+     to the provider, or an answer that is not JSON (a captive portal's page), logs
+     this line only at `LOG_LEVEL=DEBUG`: an offline or air-gapped instance meets it
+     every hour, and *The update check got no answer it could read* above is its step-through.
+   - `update check could not run: it could not read or save its database state` → check database health
+     and connectivity. `update check could not run because of an unexpected internal failure` → report the
+     error type, the stack locations logged with it (file, line and function only), and the
      build shown in Settings › Support. These leave the last stored answer in place;
      provider failures above instead store `unreachable` and the next hourly retry.
    - *The provider refused the check* → the container log says which, once per attempt.

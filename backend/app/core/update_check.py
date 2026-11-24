@@ -34,9 +34,11 @@ now, logged once per attempt, and asked again an hour later.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import secrets
+import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -164,34 +166,61 @@ def _unreadable(address: str) -> str | None:
     return None if port is None or 0 <= port <= 65535 else "its port is not one a host has"
 
 
-def _provider_fault(exc: Exception) -> str | None:
-    """Classify only expected provider/transport failures, without quoting their values.
+# What loading the CA bundle named by SSL_CERT_FILE raises when the client is built: a missing
+# path, a directory, an unreadable file, or one that is not PEM (ssl.SSLError). A connect or
+# handshake failure never arrives as one of these: httpx raises its own ConnectError for those.
+# A bad SSL_CERT_DIR raises nothing here (httpx 0.28.1 ignores it or reads it lazily).
+_TRUST_STORE_FAULTS = (ssl.SSLError, FileNotFoundError, IsADirectoryError, NotADirectoryError, PermissionError)
+
+
+def _provider_fault(exc: Exception) -> tuple[int, str] | None:
+    """Classify only expected provider/transport failures, without quoting their values: the level to log it at, and why.
 
     AnyIO can group a socket failure. Every leaf must be recognized so an unrelated
     programming error still reaches the scheduler's internal-failure diagnostic.
+
+    Debug, not warning, for no route to the provider and for an answer that is not JSON (a
+    captive portal's page): an offline or air-gapped deployment hits these on every hourly
+    retry forever, and that is a configuration, not a fault. The Updates block on Settings >
+    Support says `unreachable` to the operator who goes looking. A setting that can never
+    work (a proxy, a CA bundle) or an answer no parser can hold is a warning.
     """
     if isinstance(exc, ExceptionGroup):
         faults = [_provider_fault(child) for child in exc.exceptions]
-        return faults[0] if faults and all(faults) else None
+        known = [fault for fault in faults if fault is not None]
+        return max(known) if known and len(known) == len(faults) else None
     if isinstance(exc, RecursionError):
-        return "the provider response exceeds the JSON nesting limit; check the provider or proxy response format"
+        return logging.WARNING, (
+            "the provider response exceeds the JSON nesting limit; check the provider or proxy response format"
+        )
     if isinstance(exc, OverflowError):
-        return "a redirect or proxy port is outside the supported range; check redirect targets and proxy port settings"
+        return logging.WARNING, (
+            "a redirect or proxy port is outside the supported range; check redirect targets and proxy port settings"
+        )
     if isinstance(exc, ImportError):
-        return "the configured proxy transport is unavailable; check HTTPS_PROXY/ALL_PROXY and use a supported HTTP proxy"
+        return logging.WARNING, (
+            "the configured proxy transport is unavailable; check HTTPS_PROXY/ALL_PROXY and use a supported HTTP proxy"
+        )
     if isinstance(exc, httpx.InvalidURL):
-        return "a redirect or proxy address is invalid; check redirect targets and proxy settings"
+        return logging.WARNING, "a redirect or proxy address is invalid; check redirect targets and proxy settings"
+    if isinstance(exc, json.JSONDecodeError | UnicodeDecodeError):
+        return logging.DEBUG, "the provider's answer is not JSON; check that no proxy or captive portal answers for it"
     if isinstance(exc, ValueError):
-        return "the provider response or proxy configuration is unreadable; check JSON responses and proxy settings"
+        return logging.WARNING, (
+            "the provider response or proxy configuration is unreadable; check JSON responses and proxy settings"
+        )
     if isinstance(exc, httpx.HTTPError):
-        return "the provider could not be reached; check network access, TLS and proxy settings"
+        return logging.DEBUG, "the provider could not be reached; check network access, TLS and proxy settings"
+    if isinstance(exc, _TRUST_STORE_FAULTS):
+        return logging.WARNING, "the TLS trust store could not be loaded; check that SSL_CERT_FILE names a readable PEM bundle"
     return None
 
 
 def _record_provider_fault(exc: Exception) -> bool:
     if (fault := _provider_fault(exc)) is None:
         return False
-    logger.warning("update check unreachable: %s; the check will retry in an hour", fault)
+    level, why = fault
+    logger.log(level, "update check unreachable: %s; the check will retry in an hour", why)
     return True
 
 
