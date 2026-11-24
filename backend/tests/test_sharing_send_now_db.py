@@ -176,8 +176,7 @@ async def test_a_failed_send_is_still_an_answer_and_says_why(client, db, clean, 
     exchange = response.json()["exchange"]
     assert exchange["outcome"] == "failed"
     assert "answered HTTP 403" in exchange["error"]
-    assert "refused access" in exchange["error"]
-    assert "Check the key's permissions and the configured endpoint" in exchange["error"]
+    assert "No collector takes the exchange at that address. Check SHARING_ENDPOINT." in exchange["error"]
     assert "Response body withheld" in exchange["error"]
     assert exchange["error"].endswith("Tried 4 times.")
     assert len(collector.received) == 4

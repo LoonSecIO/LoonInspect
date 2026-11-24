@@ -425,8 +425,11 @@ directly.*
    Upstream response bodies are withheld from delivery errors because they can echo
    credentials or inventory. Use the HTTP status and the stated next check. For an
    Elastic item rejection, check index mappings and write permissions in the receiver's
-   service logs; an HTTP 200 can still contain a rejected item. Connection failures name
-   DNS/network, connection-refused or TLS checks without copying credential-bearing URLs.
+   service logs; an HTTP 200 can still contain a rejected item. A connection failure says
+   which, without copying credential-bearing URLs: *Connection refused…* (nothing
+   listening at that address and port), *The endpoint's host name did not resolve…* (the
+   name or DNS), *TLS certificate verification failed…* ([`splunk-setup.md`](splunk-setup.md)
+   §5), or *Connection failed…* for anything else.
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
@@ -835,27 +838,28 @@ and step 2 ends with how to tell that apart from a broken exchange.
      same line is reportable state **M**. From any other host, a `403` or `404` means
      there is no collector at that path: check `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
-     and the text after the colon names the next checks. For DNS, `docker
-     compose exec app getent hosts <host>` prints nothing when the container cannot
-     resolve it. `Connection refused` is nothing listening at that address.
-     `TLS certificate verification failed` means the certificate or trust chain needs
-     checking; a TLS-inspecting proxy may need an exemption for this host.
+     and the text after the colon says how. `The endpoint's host name did not resolve` is
+     DNS — `docker compose exec app getent hosts <host>` prints nothing when the container
+     cannot resolve it. `Connection refused` is nothing listening at that address.
+     `TLS certificate verification failed` is something between this container and the
+     collector presenting its own certificate, usually a TLS-inspecting proxy: exempt the
+     host from inspection. `Connection failed` is none of those three: check egress to
+     that host.
    - `No answer from <host> within 10 seconds.` → an egress firewall dropping the
      connection, or the collector down; the probe above tells them apart. An air-gapped
      instance with sharing on reads this every day, and that is a supported configuration.
    - `<host> answered 200 with a body that is not JSON …`, or `answered HTTP 302`
-     → something other than the collector answered: a
-     proxy or a captive portal. The probe above shows who.
+     (*Something other than the collector answered …*) → a proxy or a captive portal.
+     The probe above shows who.
    Response text, redirect targets and raw transport exceptions are withheld from the
-   share log. Check the collector's service logs for details, without copying submitted
-   payloads or credentials into support reports.
-   - `answered HTTP 400` or `answered HTTP 413` → the collector refused the request's
-     format or size. Its response text is withheld. Check `SHARING_ENDPOINT` and report
-     the HTTP status to support so the collector's service logs can be checked.
-     Reportable state **M**: the container built something the collector will not take.
-   - `answered HTTP 429` or `answered HTTP 5…` → the collector is throttling or unwell.
-     Check its availability and service logs; the next exchange tries again. The same
-     line for more than a day is reportable state **M**.
+   share log, because they can echo what was sent. The probe above prints what answers
+   at that address to a body of `{}`, which carries nothing of the fleet.
+   - `answered HTTP 400` or `answered HTTP 413` (*The collector refused what this
+     container sent. Report the status to support (state M).*) → reportable state **M**:
+     the container built something the collector will not take, which is ours to fix.
+   - `answered HTTP 429` or `answered HTTP 5…` (*The collector is throttling or
+     unavailable …*) → nothing to fix on this side; the next exchange tries again. The
+     same line for more than a day is reportable state **M**.
 
 7. **A build says how many findings it has, and the line beside it says *updating to
    …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
@@ -1593,7 +1597,8 @@ field that left, `query_text`.
      page opened. Step 1.
    - *No AI provider is saved …* or *… is not saved in Settings › AI* → the card was removed after
      the page opened. Save it again and reload.
-   - *Connection failed* or *Connection refused* → the app could not open a connection to the saved Base URL. For
+   - *Connection refused*, *Connection failed* or *The endpoint's host name did not resolve* → the app could not
+     open a connection to the saved Base URL; *refused* is nothing listening at its port. For
      Apple's model on the same Mac, on the Mac: `curl -s http://127.0.0.1:1976/health` prints
      `fm serve is running` when it is; if not, run `fm serve` in Terminal. From the container:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('http://host.docker.internal:1976/health', timeout=5).read())"`.
@@ -2797,14 +2802,15 @@ that log, then repeat the act.
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
-2. ***"…(HTTP 400)…response text was withheld"***: check the submitted fields, particularly a URL naming an IP
-   address or a `.local` host, or a hidden character (step 10), and the service's logs. Upstream errors
-   are withheld because they can echo a case's private key, contact or submitted content. Nothing was stored there:
+2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
+   address or a `.local` host; a hidden character is caught here first, step 10). The quote never repeats a
+   case key or what was written in the URL, text or contact fields: those read *[case key withheld]* and
+   *[withheld]*. Nothing was stored there:
    send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
-3. ***"…HTTP 503…"***: check with support whether the service has opened submissions and is available;
-   repeat the act once support confirms it. ***"…HTTP 503… Try again after … UTC"*** can mean the day's 100
+3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
+   repeat the act once support says it has. ***"…HTTP 503… Try again after … UTC"***: the day's 100
    new cases, shared by every instance, are spent; repeat the act after that time, under the case's key.
 4. ***"…a fresh one (HTTP 409)"***: the key collided, and so did the fresh one minted in its place: **Y**.
 5. ***"…HTTP 429"*** or ***"Asked too soon…"***: a case's status is read once a minute at most, and not

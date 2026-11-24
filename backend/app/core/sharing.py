@@ -497,7 +497,8 @@ def _failure_sentence(exc: Exception) -> str:
         host = "the configured host"
     tried = f" Tried {len(_RETRY_DELAYS) + 1} times."
     if isinstance(exc, httpx.HTTPStatusError):
-        return f"The collector at {host} answered {http_failure(exc.response.status_code)}" + tried
+        status = exc.response.status_code
+        return f"The collector at {host} answered {http_failure(status, _collector_hint(status))}" + tried
     if isinstance(exc, httpx.TimeoutException):
         return f"No answer from {host} within {_TIMEOUT_SECONDS:g} seconds." + tried
     if isinstance(exc, httpx.ConnectError):
@@ -510,6 +511,24 @@ def _failure_sentence(exc: Exception) -> str:
         )
     detail = transport_failure(exc) if isinstance(exc, httpx.HTTPError) else "Check the collector and server logs."
     return f"The exchange to {host} failed. {detail}" + tried
+
+
+def _collector_hint(status: int) -> str:
+    """The next check for a refused exchange, in this path's words (troubleshooting.md §5, step 6).
+
+    The generic hints name a key and a batch size; the exchange sends neither, and the
+    collector's service logs are LoonSec's, not the operator's.
+    """
+    if 300 <= status < 400:
+        return (
+            "Something other than the collector answered, usually a proxy or captive portal; redirects are not followed. "
+            "Check who answers at SHARING_ENDPOINT."
+        )
+    if status in (401, 403, 404):
+        return "No collector takes the exchange at that address. Check SHARING_ENDPOINT."
+    if status == 429 or status >= 500:
+        return "The collector is throttling or unavailable. Nothing to fix here; the next exchange tries again."
+    return "The collector refused what this container sent. Report the status to support (state M)."
 
 
 def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:

@@ -79,9 +79,12 @@ def test_the_payload_is_exactly_the_contracts_fields_and_carries_no_count():
     ("act", "state", "answer", "after", "says"),
     [
         ("send", "pending", (202, ACK), "received", None),
-        ("send", "pending", (400, {"error": "versions must list 1 to 20 strings."}), "pending", "response text was withheld"),
-        pytest.param("send", "pending", (400, {"error": URL_RULE}), "pending", "response text was withheld", id="url-rule"),
-        pytest.param("send", "pending", (400, {"error": "x" * 5000}), "pending", "response text was withheld", id="long-error"),
+        ("send", "pending", (400, {"error": "versions must list 1 to 20 strings."}), "pending", 'It said: "versions'),
+        pytest.param("send", "pending", (400, {"error": URL_RULE}), "pending", f'"{URL_RULE}" Nothing', id="url-rule"),
+        pytest.param("send", "pending", (400, {"error": "x" * 5000}), "pending", f'"{"x" * submissions.SAID}…"', id="cut"),
+        pytest.param(
+            "send", "pending", (503, {"error": "Submissions are not enabled."}), "pending", 'enabled." Try again later', id="off"
+        ),
         ("send", "pending", (400, {"error": "Two\nlines."}), "pending", "(HTTP 400). Nothing was stored"),
         ("send", "pending", (429, {"message": "Too Many Requests"}), "pending", "HTTP 429. Try again later"),
         ("send", "pending", (503, {"error": "Today's budget is spent."}, {"Retry-After": "120"}), "pending", "Try again after"),
