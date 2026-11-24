@@ -3478,8 +3478,10 @@ existing permission, feature-flag and consent checks.
    maintenance enabled: it then expires abandoned interactive work in bounded batches,
    records unfinished attempts as interrupted, and clears their active counts. It does
    not retry inference. Missing dispatch/duration evidence after a crash stays unknown.
-   Inventory jobs retain their existing lease/expiry recovery. The initial partial interval says Collecting
-   a baseline. A queue count alone is not evidence of overload, and no ETA is inferred.
+   Inventory jobs retain their existing lease/expiry recovery. Reclaiming a lease
+   records an unfinished prior attempt as Interrupted before retrying or dropping the
+   job; recorded dispatch is preserved, while lost request durations stay unknown.
+   The initial partial interval says Collecting a baseline. A queue count alone is not evidence of overload, and no ETA is inferred.
 4. **Separate attempts from useful work.** Rate limits mean a 429 refusal; inspect
    provider capacity/reset and inventory retries. Authentication/access refusals call
    for checking the configured credential and provider permissions. Request timeouts

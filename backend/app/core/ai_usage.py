@@ -418,6 +418,39 @@ async def queue_event(
         )
 
 
+async def interrupt_attempts(db, work_ids, at):
+    """Finalize unfinished attempts when their owning worker abandons/reclaims work.
+
+    Preserve any observed dispatch; a crash supplies no finish duration. The daily
+    mirror and conditional finalization commit together, once, in the caller's
+    transaction. Callers already own the job lease or have applied deadline + grace.
+    """
+    if not work_ids:
+        return 0
+    # Match the recorder's lock order (attempt, then work) and finalize only once.
+    attempts = (
+        await db.scalars(
+            update(Attempt)
+            .where(Attempt.work_id.in_(work_ids), Attempt.finished_at.is_(None))
+            .values(outcome="interrupted", legacy_outcome="interrupted", finished_at=at)
+            .returning(Attempt)
+        )
+    ).all()
+    for attempt in attempts:
+        await add(
+            db,
+            feature=attempt.feature,
+            provider=attempt.provider,
+            requested=attempt.requested,
+            reported=attempt.reported,
+            kind="call",
+            outcome="interrupted",
+            at=at,
+        )
+    # The owner updates Work, then Coverage: keep the recorder's lock order.
+    return len(attempts)
+
+
 async def expire_abandoned(db, at):
     """Scheduled metadata maintenance expires interactive work after deadline + grace.
 
@@ -438,26 +471,7 @@ async def expire_abandoned(db, at):
     ).all()
     if not ids:
         return
-    # Match the recorder's lock order (attempt, then work) and finalize only once.
-    attempts = (
-        await db.scalars(
-            update(Attempt)
-            .where(Attempt.work_id.in_(ids), Attempt.finished_at.is_(None))
-            .values(outcome="interrupted", legacy_outcome="interrupted", finished_at=at)
-            .returning(Attempt)
-        )
-    ).all()
-    for attempt in attempts:
-        await add(
-            db,
-            feature=attempt.feature,
-            provider=attempt.provider,
-            requested=attempt.requested,
-            reported=attempt.reported,
-            kind="call",
-            outcome="interrupted",
-            at=at,
-        )
+    await interrupt_attempts(db, ids, at)
     await db.execute(
         update(Work)
         .where(Work.id.in_(ids), Work.outcome.in_(("waiting", "running", "validating")))

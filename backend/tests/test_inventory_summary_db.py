@@ -718,3 +718,104 @@ async def test_loaded_model_change_partitions_the_summary_cache(summary_db):
     ]
     calls = (await db.execute(select(AIUsageDaily.requested, AIUsageDaily.reported).where(AIUsageDaily.kind == "call"))).all()
     assert set(calls) == {("gemma", "gemma-reported"), ("qwen", "qwen-reported")}
+
+
+async def seed_abandoned_summary_attempt(db, *, dispatched):
+    from app.ai.providers import Provider
+    from app.core.ai_configs import get_config
+    from app.core.ai_usage import recorder
+    from app.models.schema import InventorySummaryJob as Job
+    from app.summaries.service import collect, now
+
+    await emit(db, snapshot())
+    await collect(db)
+    source = await emit(db, snapshot(version="2"))
+    await collect(db)
+    job = await db.scalar(select(Job).where(Job.source_id == source))
+    job.status, job.attempts = "processing", 1
+    job.next_attempt_at = now() - timedelta(seconds=1)
+    job.requested_model = "system"
+    config = await get_config(db, Provider.apple_fm)
+    await db.commit()
+    meter = recorder(db, "inventory_summary", "apple_fm", "system", config=config, work_id=job.id)
+    await meter.start(60)
+    if dispatched:
+        meter.dispatch()
+        await meter.dispatch_task
+    return job, meter
+
+
+@pytest.mark.parametrize("dispatched", [False, True])
+async def test_reclaimed_summary_lease_accounts_for_old_attempt_and_current_dispatch(summary_db, dispatched):
+    from app.core.ai_activity import activity_report, live_report
+    from app.core.database import session_for_tenant
+    from app.models.schema import AIUsageAttempt as Attempt
+    from app.summaries.service import now, work_one
+
+    db, tenant = summary_db
+    job, old = await seed_abandoned_summary_attempt(db, dispatched=dispatched)
+    expiry = job.expires_at
+    observed = []
+
+    async def response(request):
+        # Dispatch progress is an asynchronous metadata write, so let it settle before
+        # reading live status. The request itself remains in flight in this handler.
+        import asyncio
+
+        for _ in range(40):
+            async with session_for_tenant(tenant) as reading:
+                live = await live_report(reading)
+            if live["inventory"]["running"] == 1:
+                observed.append(live)
+                break
+            await asyncio.sleep(0.01)
+        assert (live["inventory"]["waiting"], live["inventory"]["running"]) == (0, 1)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Chrome updated to version 2."}}]})
+
+    await work_one(tenant, transport=httpx.MockTransport(response))
+    await db.refresh(job)
+    assert job.status == "completed" and job.expires_at == expiry and job.attempts == 2
+    assert observed
+    previous = await db.get(Attempt, old.id, populate_existing=True)
+    assert previous.outcome == "interrupted" and previous.finished_at is not None
+    assert (previous.dispatched_at is not None) is dispatched
+    assert previous.request_ms is None and previous.total_ms is None
+    report = await activity_report(db, now().date(), now().date())
+    assert report["totals"]["attempts"] == 2
+    assert report["totals"]["dispatches"] == 1 + int(dispatched)
+    assert report["totals"]["dispatchReports"] == 1 + int(dispatched)
+    assert report["totals"]["retries"] == report["totals"]["usefulResults"] == 1
+    assert report["coverage"]["legacyAttempts"] == 0
+    assert (report["work"]["arrivals"], report["work"]["completed"]) == (1, 1)
+    assert not await work_one(tenant, transport=httpx.MockTransport(lambda r: pytest.fail("completed job retried")))
+    await old.finish_attempt("timeout", None)
+    assert (await activity_report(db, now().date(), now().date()))["totals"]["attempts"] == 2
+
+
+@pytest.mark.parametrize("stop", ["expired", "configuration_changed", "consent_missing"])
+async def test_reclaimed_summary_terminal_refusal_closes_unfinished_attempt_without_dispatch(summary_db, stop):
+    from app.core.ai_activity import activity_report
+    from app.core.sharing import get_or_create_settings
+    from app.models.schema import AIUsageAttempt as Attempt
+    from app.models.schema import InventorySummarySettings as Settings
+    from app.summaries.service import now, work_one
+
+    db, tenant = summary_db
+    job, old = await seed_abandoned_summary_attempt(db, dispatched=True)
+    if stop == "expired":
+        job.expires_at = now() - timedelta(seconds=1)
+    elif stop == "configuration_changed":
+        (await db.scalar(select(Settings))).preprompt = "Synthetic changed preference"
+    else:
+        (await get_or_create_settings(db)).ai_inference = False
+    await db.commit()
+    await work_one(tenant, transport=httpx.MockTransport(lambda r: pytest.fail("refused job dialled a provider")))
+    await db.refresh(job)
+    assert job.reason == stop and job.status == "dropped"
+    previous = await db.get(Attempt, old.id, populate_existing=True)
+    assert previous.outcome == "interrupted" and previous.finished_at is not None
+    assert previous.dispatched_at is not None and previous.request_ms is None
+    report = await activity_report(db, now().date(), now().date())
+    assert report["totals"]["attempts"] == report["totals"]["dispatches"] == 1
+    assert report["totals"]["usefulResults"] == 0 and report["totals"]["retries"] == 0
+    assert report["work"]["expired" if stop == "expired" else "skipped"] == 1

@@ -18,7 +18,7 @@ from app.api.ai import judged_endpoint
 from app.changes.derive import load_policy
 from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, saved_config
-from app.core.ai_usage import accepted, prune, queue_event, recorder
+from app.core.ai_usage import accepted, interrupt_attempts, prune, queue_event, recorder
 from app.core.auth import as_utc
 from app.core.ollama import select_model
 from app.core.outbox import enqueue_event
@@ -331,6 +331,10 @@ async def work_one(tenant_id, *, transport=None):
         )
         if not job:
             return False
+        # The eligible job is locked and any processing lease has expired. Close a
+        # crashed worker's prior attempt before retry, cache reuse or terminal refusal;
+        # otherwise it disappears from history and can keep this retry looking queued.
+        await interrupt_attempts(db, [job.id], clock)
         if as_utc(job.expires_at) <= clock:
             await finish(db, job, "dropped", reason="expired")
             return True
