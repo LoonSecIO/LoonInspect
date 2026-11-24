@@ -12,8 +12,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import CondPageBreak, LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
+from app.core.patch_plans import report_presentation
+
 
 def render_pdf(plan):
+    plan = report_presentation(plan)
     buffer = BytesIO()
     fonts = Path(reportlab.__file__).parent / "fonts"
     if "PlanSans" not in pdfmetrics.getRegisteredFontNames():
@@ -162,9 +165,9 @@ def render_pdf(plan):
         p("Evidence limitations", "PlanHeading"),
         *[p(line) for line in snapshot["limitations"]],
         p("Report integrity", "PlanHeading"),
-        p(f"SHA-256 of the saved report data: {plan['sha256']}", "PlanSmall"),
+        p(f"SHA-256 of the displayed report data: {plan['sha256']}", "PlanSmall"),
         p(
-            "The checksum identifies this report's data revision. It is not a digital signature or proof of deployment.",
+            "The checksum identifies the displayed report data. It is not a digital signature or proof of deployment.",
             "PlanSmall",
         ),
     ]
@@ -199,7 +202,8 @@ def render_pdf(plan):
                 p(f"{option['source']}: {option['title']} - {option['status'].replace('_', ' ')}", "PlanHeading"),
                 p(f"Target: {option['targetVersion']}. {option['detail']}"),
                 p(
-                    f"Source: {option['url']}\nRead: {option['observedAt'] or 'unknown'}\nRevision: {option['sourceRevision']}",
+                    f"Source: {option['url'] or 'URL withheld; check the configured catalog address'}\n"
+                    f"Read: {option['observedAt'] or 'unknown'}\nRevision: {option['sourceRevision']}",
                     "PlanSmall",
                 ),
             ]

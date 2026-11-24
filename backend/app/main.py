@@ -31,6 +31,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.routing import Route
 
 from app.alerts.service import purge_closed_alerts
@@ -82,6 +83,7 @@ from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, unscoped_session
+from app.core.diagnostics import database_error_message
 from app.core.fleet_catalog import tick as fleet_catalog_check
 from app.core.fleet_history import run_worker as fleet_history_worker
 from app.core.logging import configure_logging
@@ -103,6 +105,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable, sync_catalog
 from app.models.schema import MdmConnection, UserSession
+from app.summaries.diagnostics import safe_exception
 from app.summaries.service import run_worker as inventory_summary_worker
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -287,10 +290,24 @@ async def update_check_tick() -> None:
     """The update check (#819): looks every minute; `app.core.update_check.due` decides from its row."""
     try:
         await update_check()
-    except Exception:
+    except SQLAlchemyError:
+        # Both lines begin `update check could not run`: the Updates block's *Owed now* hint
+        # and docs/troubleshooting.md §10 send the operator to that phrase.
         logger.exception(
-            "update check could not run; Settings › Support › Updates keeps the last answer stored and a later "
-            "minute tries again. Check the database container is healthy (docker compose ps db)"
+            "update check could not run: it could not read or save its database state; Settings › Support › Updates "
+            "keeps the last answer stored. Check database health and connectivity (docker compose ps db for the "
+            "bundled database)"
+        )
+    except Exception as exc:
+        # An unexpected provider/plugin failure can still carry a URL or credential.
+        # Keep its type and its frames' file:line:function, never the exception text,
+        # locals or chained traceback.
+        logger.error(
+            "update check could not run because of an unexpected internal failure (%s); Settings › Support › Updates "
+            "keeps the last answer stored. Report this error type, the stack locations logged with it, and the build "
+            "shown in Settings › Support",
+            type(exc).__name__,
+            extra=safe_exception(exc),
         )
 
 
@@ -527,6 +544,25 @@ async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Keep database values out of Starlette's preformatted startup/shutdown failures."""
+    phase = "startup"
+    try:
+        async with _application_lifespan(app) as state:
+            phase = "shutdown"
+            yield state
+    except Exception as exc:
+        safe = database_error_message(exc)
+        if safe is None:
+            raise
+        # Starlette serializes lifespan failures before Uvicorn logs them, so that
+        # message never reaches our exception formatter. Log safe stack locations
+        # here, then give Starlette only the safe diagnosis with its cause hidden.
+        logger.exception("application %s failed: %s", phase, safe)
+        raise RuntimeError(f"Application {phase} failed. {safe}") from None
+
+
+@asynccontextmanager
+async def _application_lifespan(app: FastAPI):
     # Deliberately called again here, not just at import. fastapi-cli imports this
     # module to resolve the app object *before* uvicorn applies its own dictConfig,
     # so the import-time call gets overwritten and uvicorn's loggers come back with
