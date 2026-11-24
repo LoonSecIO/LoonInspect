@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +63,7 @@ _LOCKOUT_BASE_SECONDS = 60
 _LOCKOUT_MAX_SECONDS = 3600
 # Bounds the exponent so a long-running attack can't ask Python to compute 2**900.
 _LOCKOUT_MAX_EXPONENT = 16
+_EMAIL_IDENTIFIER = TypeAdapter(EmailStr)
 
 
 def _client_ip(request: Request) -> str:
@@ -98,8 +100,36 @@ def _account_out(
     )
 
 
+def _canonical_identifier(identifier: str) -> str:
+    """The EmailStr spelling setup and account creation store, or the identifier itself."""
+    try:
+        return _EMAIL_IDENTIFIER.validate_python(identifier).lower()
+    except ValidationError:
+        # Environment bootstrap accepts private domains and other stored identifiers.
+        return identifier
+
+
+async def _account_for_login(db: AsyncSession, identifier: str) -> Account | None:
+    """Resolve one stored identifier before checking credentials."""
+    candidates = [identifier]
+    canonical = _canonical_identifier(identifier)
+    if canonical != identifier:
+        candidates.append(canonical)
+    accounts = {account.email: account for account in await db.scalars(select(Account).where(Account.email.in_(candidates)))}
+    # Exact storage wins, including a raw environment identifier. Only its absence
+    # permits the EmailStr normalization used by setup and account creation; a wrong
+    # password, disabled account or MFA requirement must never try a second account.
+    return next((accounts[email] for email in candidates if email in accounts), None)
+
+
 async def _get_attempt(db: AsyncSession, identifier: str, ip: str) -> LoginAttempt | None:
-    result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == identifier, LoginAttempt.ip == ip))
+    # The row is keyed on the canonical spelling, worked out from the identifier alone.
+    # Keying a matched account on its stored spelling and a miss on the entered one would
+    # let a second spelling of an address (a display name, a decomposed accent) answer
+    # 429 for an address that exists and 401 for one that does not: an enumeration
+    # oracle. The second-factor steps pass the stored spelling and reach the same row.
+    key = _canonical_identifier(identifier)
+    result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == key, LoginAttempt.ip == ip))
     return result.scalar_one_or_none()
 
 
@@ -116,7 +146,7 @@ async def _record_failure(db: AsyncSession, identifier: str, ip: str) -> None:
         # not. The tenant is the column's own default, as on every ORM insert.
         await db.execute(
             pg_insert(LoginAttempt)
-            .values(identifier=identifier, ip=ip, failure_count=0, last_failure_at=now)
+            .values(identifier=_canonical_identifier(identifier), ip=ip, failure_count=0, last_failure_at=now)
             .on_conflict_do_nothing(constraint="uq_login_attempt_identifier_ip")
         )
         attempt = await _get_attempt(db, identifier, ip)
@@ -250,6 +280,9 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> AccountOut:
     email = payload.email.strip().lower()
+    account = await _account_for_login(db, email)
+    # Logged and audited as the lockout row's key, whether or not an account matched.
+    email = _canonical_identifier(email)
     ip = _client_ip(request)
     now = datetime.now(UTC)
 
@@ -270,9 +303,6 @@ async def login(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed attempts. Try again later.",
         )
-
-    result = await db.execute(select(Account).where(Account.email == email))
-    account = result.scalar_one_or_none()
 
     identity = None
     if account is not None:

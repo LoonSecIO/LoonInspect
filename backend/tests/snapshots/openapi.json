@@ -6084,7 +6084,8 @@
       "LoginRequest": {
         "properties": {
           "email": {
-            "format": "email",
+            "maxLength": 320,
+            "minLength": 1,
             "title": "Email",
             "type": "string"
           },
