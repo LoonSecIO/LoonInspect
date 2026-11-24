@@ -164,7 +164,7 @@ async def test_ai_prompt_uses_safe_options_even_for_a_historical_snapshot(monkey
     monkeypatch.setattr(
         patch_plan_research, "judged_endpoint", AsyncMock(return_value=(Wire.openai_chat, config.base_url, config.base_url, None))
     )
-    monkeypatch.setattr(patch_plan_research, "select_model", AsyncMock())
+    monkeypatch.setattr(patch_plan_research, "select_model", AsyncMock(return_value={"reason": "pinned"}))
     monkeypatch.setattr(patch_plan_research, "selected", lambda _: "synthetic")
     consent = AsyncMock()
     monkeypatch.setattr(patch_plan_research, "require_ai", consent)
