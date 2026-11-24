@@ -5,10 +5,13 @@ from __future__ import annotations
 import io
 import logging
 import sys
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
 from sqlalchemy.exc import StatementError
+from uvicorn import Config
+from uvicorn.lifespan.on import LifespanOn
 
 from app.core.database import engine
 from app.core.diagnostics import database_error_message, error_text
@@ -119,3 +122,66 @@ def test_non_database_diagnostics_remain_actionable():
         record = logging.LogRecord("test", logging.ERROR, __file__, 1, "operation failed", (), sys.exc_info())
     for formatter in (JsonFormatter(), ConsoleFormatter()):
         assert message in formatter.format(record)
+
+
+@pytest.mark.parametrize("formatter", [JsonFormatter, ConsoleFormatter])
+@pytest.mark.parametrize("phase", ["startup", "shutdown"])
+@pytest.mark.parametrize("wrapped", ["direct", "cause", "group", "non_database"])
+async def test_lifespan_database_failures_are_safe_before_uvicorn_formats_them(formatter, phase, wrapped, monkeypatch):
+    from app import main
+
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(formatter())
+    for name in ("app.main", "uvicorn.error"):
+        logger = logging.getLogger(name)
+        monkeypatch.setattr(logger, "handlers", [handler])
+        monkeypatch.setattr(logger, "propagate", False)
+        monkeypatch.setattr(logger, "disabled", False)
+        monkeypatch.setattr(logger, "level", logging.INFO)
+
+    unrelated_message = "The TLS certificate is unreadable. Check its configured path."
+
+    def fail():
+        if wrapped == "non_database":
+            raise ValueError(unrelated_message)
+        try:
+            raise database_failure()
+        except StatementError as exc:
+            if wrapped == "cause":
+                raise RuntimeError(f"wrapper repeated {SECRET}") from exc
+            if wrapped == "group":
+                raise ExceptionGroup(PROMPT, [ValueError(PERSON), exc]) from None
+            raise
+
+    @asynccontextmanager
+    async def synthetic_lifecycle(app):
+        if phase == "startup":
+            fail()
+        yield
+        if phase == "shutdown":
+            fail()
+
+    # Keep the real app lifespan wrapper and Starlette/Uvicorn protocol; replace
+    # database, worker and provider work so this test never accesses a service.
+    monkeypatch.setattr(main, "_application_lifespan", synthetic_lifecycle)
+    server = LifespanOn(Config(main.app, lifespan="on", log_config=None))
+    await server.startup()
+    if phase == "shutdown":
+        assert not server.startup_failed
+        await server.shutdown()
+    assert server.should_exit
+    assert server.startup_failed if phase == "startup" else server.shutdown_failed
+
+    rendered = output.getvalue()
+    assert all(value not in rendered for value in MARKERS)
+    if wrapped == "non_database":
+        assert unrelated_message in rendered and "ValueError" in rendered
+        assert "The database operation failed" not in rendered
+    else:
+        assert f"Application {phase} failed." in rendered
+        assert "StatementError; SQLSTATE 22001" in rendered
+        assert "Check database health" in rendered
+        assert "Database failure stack (values withheld)" in rendered
+        assert "test_database_diagnostics.py" in rendered
+        assert "[SQL:" not in rendered and "[parameters:" not in rendered

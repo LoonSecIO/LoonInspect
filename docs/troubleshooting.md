@@ -537,6 +537,11 @@ the run `jobID`, the token's index settings, and the search you ran.
      SQL text, bound values and database server detail are withheld from these error
      diagnostics because they can contain inventory or credentials; application stack
      locations remain available. Bound parameters are also hidden in SQL debug logs.
+     *Application startup failed* with this diagnosis means initialization stopped;
+     fix the database health or migration problem before restarting the app.
+     *Application shutdown failed* with this diagnosis means shutdown cleanup failed;
+     check database health and the adjacent safe stack locations before restarting.
+     Startup and shutdown tracebacks follow the same value-withholding rule.
    - `password authentication failed for user "looninspect_app"` → `POSTGRES_APP_PASSWORD`
      in `.env` is not the one the database was created with; the database keeps the
      first. Put the original back ([`operations.md`](operations.md) §3 shows the role the
