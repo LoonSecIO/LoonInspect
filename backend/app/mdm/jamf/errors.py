@@ -2,6 +2,8 @@
 
 import httpx
 
+from app.core.diagnostics import database_error_message
+
 
 class JamfResponseError(httpx.HTTPError):
     """Jamf answered successfully, but the body is not the requested resource."""
@@ -25,6 +27,8 @@ def json_object(response: httpx.Response, operation: str) -> dict:
 
 def fetch_error(exc: BaseException) -> str:
     """A failed webhook must have a useful message even when a socket error has none."""
+    if safe := database_error_message(exc):
+        return safe
     if str(exc).strip():
         return str(exc)
     if isinstance(exc, httpx.TimeoutException):
