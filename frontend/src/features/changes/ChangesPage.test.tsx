@@ -139,6 +139,40 @@ describe("Changes deterministic filters", () => {
     expect(screen.queryByText(/matching changes/)).toBeNull();
     expect(screen.queryByText("Synthetic Mac")).toBeNull();
   });
+  it("keeps u_ usernames and token-shaped text literal while editing the assigned-user draft", async () => {
+    open(); await waitFor(() => expect(listChanges).toHaveBeenCalledTimes(1));
+    const input = screen.getByLabelText("Assigned user contains") as HTMLInputElement;
+    for (const character of "u_admin") {
+      const value = input.value + character;
+      fireEvent.change(input, { target: { value } });
+      expect(input.value).toBe(value);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Apply field, time and device filters" }));
+    await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0].user).toBe("u_admin"));
+    expect(screen.getByText("Assigned user matching “u_admin”")).toBeTruthy();
+    const appliedInput = screen.getByLabelText("Assigned user contains") as HTMLInputElement;
+    const literal = "u_1234567890123456";
+    fireEvent.change(appliedInput, { target: { value: literal } });
+    expect(appliedInput.value).toBe(literal);
+  });
+  it("does not reuse another token's resolved name while the next query waits or fails", async () => {
+    const previous = "u_0000000000000000", current = "u_1111111111111111";
+    let rejectPending: (reason: Error) => void = () => {};
+    const pending = new Promise<never>((_, reject) => { rejectPending = reject; });
+    vi.mocked(listChanges).mockImplementation(async filters => filters.user === previous
+      ? { items: [], total: 0, devicesTotal: 0, page: 1, pageSize: 50, userFilter: { token: previous, display: "Previous Person" } }
+      : pending);
+    render(<LocaleProvider><MemoryRouter initialEntries={[
+      `/devices/changes?user=${current}`, `/devices/changes?user=${previous}`
+    ]} initialIndex={1}><Navigation /><ChangesPage /></MemoryRouter></LocaleProvider>);
+    await waitFor(() => expect((screen.getByLabelText("Assigned user contains") as HTMLInputElement).value).toBe("Previous Person"));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0].user).toBe(current));
+    expect((screen.getByLabelText("Assigned user contains") as HTMLInputElement).value).toBe("Assigned user from shared link");
+    rejectPending(new ApiError(503, "Synthetic query unavailable."));
+    await screen.findByText("Synthetic query unavailable.");
+    expect((screen.getByLabelText("Assigned user contains") as HTMLInputElement).value).toBe("Assigned user from shared link");
+  });
   it("offers retry when the policy read fails", async () => {
     vi.mocked(getChangePolicy).mockRejectedValueOnce(new Error("offline"));
     open("?section=operating_system");

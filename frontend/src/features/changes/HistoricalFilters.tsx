@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { localTime, timeBound } from "@/features/changes/filters";
+import { isPersonToken } from "@/features/changes/personToken";
 import { browserZone } from "@/features/changes/prompt";
 import type { ChangeFilters, ChangePolicy, UserFilter } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -23,12 +24,18 @@ export function HistoricalFilters({ filters, policy, policyError, userFilter, on
     managed: filters.managed ?? "", user: filters.user ?? ""
   }));
   const [error, setError] = useState<string | null>(null);
+  const [userEdited, setUserEdited] = useState(false);
   const fields = policy?.sections.find(section => section.section === filters.section)?.fields.filter(field => field.scalar) ?? [];
   function edit(key: keyof typeof draft, value: string) {
     setDraft(previous => ({ ...previous, [key]: value, ...(key === "field" ? { changedTo: "" } : {}) }));
     setError(null);
+    if (key === "user") setUserEdited(true);
     onDirty();
   }
+  // Only an unchanged applied token gets a readable alias. Once the operator edits,
+  // keep their literal draft, and never borrow a name from a different query's reply.
+  const resolvedUser = userFilter?.token === draft.user ? userFilter.display : null;
+  const userValue = !userEdited && isPersonToken(draft.user) ? resolvedUser || words.resolvedUser : draft.user;
   function apply(example = false) {
     let since: string | undefined, until: string | undefined;
     try { since = timeBound(draft.since, filters.since); until = timeBound(draft.until, filters.until); }
@@ -80,7 +87,7 @@ export function HistoricalFilters({ filters, policy, policyError, userFilter, on
           <input className={inputClasses} type="number" min="1" step="1" value={draft.connectionId} onChange={event => edit("connectionId", event.target.value)} />
         </label>
         {DEVICE_TEXT_KEYS.map(key => <label key={key} className="space-y-1 text-sm"><span className="block">{words[key]}</span>
-          <input className={inputClasses} value={key === "user" && draft.user.startsWith("u_") ? userFilter?.display ?? words.resolvedUser : draft[key]}
+          <input className={inputClasses} value={key === "user" ? userValue : draft[key]}
             onChange={event => edit(key, event.target.value)} />
         </label>)}
         <label className="space-y-1 text-sm"><span className="block">{words.fileVault}</span>
