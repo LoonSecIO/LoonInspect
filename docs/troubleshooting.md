@@ -3255,6 +3255,16 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
     - A dimmed Find menu means the app is starting, restarting, or showing recovery. Wait for
       the page or follow the startup/recovery steps above. After recovery, retry ⌘F.
 
+
+11. **Back or Forward is dimmed, or the title bar uses the wrong theme.** These buttons use the
+    current app window's history; a new window need not have a previous page. Wait for loading
+    or recovery to finish, then try **View → Back** (⌘[) or **Forward** (⌘]). A trackpad gesture
+    also depends on the macOS trackpad settings. The title bar follows the workspace's Appearance
+    choice, even if macOS uses a different theme. Change Appearance in the app; if the page changes
+    but the native bar does not, report the app build and the chosen app/macOS themes. **Reload
+    Window** keeps the current route and query. Save important work before reloading or quitting;
+    a page's explicit confirmation sheet does not guarantee a browser unload warning.
+
 ## 26. "A promoted application is not being sent, or Promote is refused"
 
 A promotion (#793, [`data-sharing.md`](data-sharing.md#promoted-applications)) is an administrator's
