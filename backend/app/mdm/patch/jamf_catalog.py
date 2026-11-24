@@ -120,6 +120,12 @@ JAMF_PATCH_CATALOG_NOT_A_CATALOG = (
     "this container and that host — a proxy or a captive portal — is answering in its place; check what {url} "
     "returns from this container." + _CATALOG_KEPT
 )
+# How much of the underlying error a sentence carries: its type, which the step-through names, and the
+# first line of what it said — for httpx that is the OS's own words (`[Errno 111] Connection refused`,
+# `[SSL: CERTIFICATE_VERIFY_FAILED] …`), which tell DNS from a refusal from TLS interception. The words
+# are dropped, leaving the type alone, when the configured address holds something to withhold (a
+# username, password, query or fragment) and for `InvalidURL`, whose words quote the address itself.
+_ERROR_MAX_CHARS = 200
 
 
 class JamfPatchCatalogUnreachable(RuntimeError):
@@ -131,9 +137,12 @@ class JamfPatchCatalogUnreachable(RuntimeError):
     """
 
 
-def _named(error: BaseException) -> str:
-    """Keep the transport category; its text can repeat the credential-bearing URL."""
-    return type(error).__name__
+def _named(error: BaseException, *, words: bool) -> str:
+    """`ConnectError: [Errno 111] Connection refused`: the type, and the words behind it when there are
+    any and they may be shown."""
+    text = str(error).strip()
+    name = type(error).__name__
+    return f"{name}: {text.splitlines()[0]}"[:_ERROR_MAX_CHARS] if text and words else name
 
 
 class CatalogSource(Protocol):
@@ -176,6 +185,9 @@ class JamfApiCatalogSource:
         # The word the sentences use for the server: its host, which is what an operator checks
         # DNS and a proxy's allow-list for, not the path.
         self._host = urlsplit(source_url(address)).hostname or "the configured host"
+        # Whether an error's own words may be shown: only when the address has nothing in it that
+        # `source_url` would take out, as the default never does.
+        self._shows_words = source_url(address) == address
 
     async def summaries(self) -> list[dict]:
         """The one read the sync cannot do without, so the one that answers for the server
@@ -196,7 +208,8 @@ class JamfApiCatalogSource:
         except (httpx.RequestError, httpx.InvalidURL) as exc:
             # ConnectError, ConnectTimeout, ReadTimeout, ProxyError, a TLS failure — every way a
             # request ends without an answer.
-            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_UNREACHABLE.format(host=self._host, error=_named(exc))) from None
+            error = _named(exc, words=self._shows_words and not isinstance(exc, httpx.InvalidURL))
+            raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_UNREACHABLE.format(host=self._host, error=error)) from None
         except ValueError:
             # A 2xx whose body is not JSON: a captive portal's page, a proxy's block page.
             raise JamfPatchCatalogUnreachable(JAMF_PATCH_CATALOG_NOT_A_CATALOG.format(host=self._host, url=display_url)) from None
