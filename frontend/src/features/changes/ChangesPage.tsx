@@ -68,15 +68,24 @@ export function ChangesPage() {
   // Forward to the address the choice produced shows it again, because it is again true.
   const [changeReset, setChangeReset] = useState<{ section: string; at: string } | null>(null);
   const pageSize = 50;
+  const [historyVisit, setHistoryVisit] = useState(0);
+  // Back can cancel a pending router transition before the new query renders. The
+  // restored query then equals the old one, so URL-based keys alone retain edited drafts.
+  // Native history visits still reset those drafts to the applied query, without a fetch.
+  useEffect(() => {
+    const visit = () => { setHistoryVisit(value => value + 1); setFilterDraftDirty(false); };
+    window.addEventListener("popstate", visit);
+    return () => window.removeEventListener("popstate", visit);
+  }, []);
 
   // The two text boxes are drafts — typed, then applied. They still have to follow the URL
   // when something else moves it: the back button, and a click on an identity in the table
   // below, which sets `artifact` without going through the box. Adjusted during render
   // rather than from an effect (React's own "adjusting state when a prop changes"), so the
   // box never paints a frame still showing the filter that was just replaced.
-  const applied = { q: filters.q ?? "", artifact: filters.artifact ?? "" };
+  const applied = { q: filters.q ?? "", artifact: filters.artifact ?? "", historyVisit };
   const [lastApplied, setLastApplied] = useState(applied);
-  if (lastApplied.q !== applied.q || lastApplied.artifact !== applied.artifact) {
+  if (lastApplied.q !== applied.q || lastApplied.artifact !== applied.artifact || lastApplied.historyVisit !== historyVisit) {
     setLastApplied(applied);
     setDraftQuery(applied.q);
     setDraftArtifact(applied.artifact);
@@ -357,7 +366,7 @@ export function ChangesPage() {
         )}
       </form>
 
-      <HistoricalFilters key={`${searchParams.toString()}:${promptSession}`} filters={filters} policy={policy}
+      <HistoricalFilters key={`${searchParams.toString()}:${promptSession}:${historyVisit}`} filters={filters} policy={policy}
         policyError={policyError} userFilter={userFilter} onApply={update} onDirty={() => setFilterDraftDirty(true)}
         onRetry={() => setPolicyRetry(value => value + 1)} />
       <p className="text-sm text-muted-foreground">{tc.historical.observationHint}</p>

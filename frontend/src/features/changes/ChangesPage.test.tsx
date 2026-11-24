@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation, useNavigate } from "react-router";
+import { BrowserRouter, MemoryRouter, useLocation, useNavigate } from "react-router";
+import { Suspense, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/config/api";
 import { LocaleProvider } from "@/i18n/LocaleContext";
@@ -33,7 +34,7 @@ beforeEach(() => {
   vi.mocked(listChanges).mockImplementation(async (filters: ChangeFilters) => ({ items: filters.changedTo ? [row] : [], total: filters.changedTo ? 51 : 0,
     devicesTotal: filters.changedTo ? 3 : 0, page: filters.page ?? 1, pageSize: 50, userFilter: null }));
 });
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); vi.resetAllMocks(); });
 
 describe("Changes deterministic filters", () => {
   it("answers exact OS changed-to with AI disabled, local bounds, evidence, counts and browser history", async () => {
@@ -62,6 +63,39 @@ describe("Changes deterministic filters", () => {
     expect((screen.getByLabelText("Observed until (exclusive)") as HTMLInputElement).value).toBe(localTime(applied.until).replace(/:00\.000$/, ""));
     fireEvent.click(screen.getByRole("button", { name: "Forward" }));
     await waitFor(() => expect(screen.getByTestId("query").textContent).toBe(""));
+  });
+  it("restores drafts when browser Back cancels a filter render before it commits", async () => {
+    const initial = "/devices/changes?section=operating_system&field=version&changedTo=27.2.1&q=Original";
+    window.history.replaceState(null, "", initial);
+    let holdIntermediate = true;
+    let release = () => {};
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    function PendingNavigation({ children }: { children: ReactNode }) {
+      // Hold the intermediate navigation to reproduce Back arriving before React commits it.
+      const location = useLocation();
+      if (holdIntermediate && new URLSearchParams(location.search).get("changedTo") === "27.2.10") throw pending;
+      return children;
+    }
+    render(<LocaleProvider><BrowserRouter><Suspense fallback={<p>Pending navigation</p>}>
+      <PendingNavigation><ChangesPage /></PendingNavigation>
+    </Suspense></BrowserRouter></LocaleProvider>);
+    await screen.findByText("51 matching changes · 3 distinct devices");
+    fireEvent.change(screen.getByLabelText("Changed to exactly"), { target: { value: "27.2.10" } });
+    fireEvent.change(screen.getByLabelText("Device search"), { target: { value: "Unapplied device" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply field, time and device filters" }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("changedTo")).toBe("27.2.10"));
+    expect(vi.mocked(listChanges).mock.calls.every(([filters]) => filters.changedTo === "27.2.1")).toBe(true);
+    window.history.back();
+    await waitFor(() => expect(window.location.pathname + window.location.search).toBe(initial));
+    await waitFor(() => expect((screen.getByLabelText("Changed to exactly") as HTMLInputElement).value).toBe("27.2.1"));
+    expect((screen.getByLabelText("Device search") as HTMLInputElement).value).toBe("Original");
+    expect(screen.getByText("51 matching changes · 3 distinct devices")).toBeTruthy();
+    expect(listChanges).toHaveBeenCalledTimes(1);
+    holdIntermediate = false;
+    release();
+    window.history.forward();
+    await waitFor(() => expect((screen.getByLabelText("Changed to exactly") as HTMLInputElement).value).toBe("27.2.10"));
+    await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0]).toMatchObject({ changedTo: "27.2.10", q: "Original" }));
   });
   it("preserves an empty exact target from a shared link when applying device filters", async () => {
     open("?section=operating_system&field=version&changedTo=");

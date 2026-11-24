@@ -3621,7 +3621,9 @@ See [Application patch plans](application-patch-plans.md) for the complete workf
    section cannot be used as a scalar target. If field choices failed to load, use
    **Retry field choices**; if this continues, report the visible error and app version.
    A section change clears the previous field/target together. Clear also removes every
-   applied filter, including filters carried only by a shared link.
+   applied filter, including filters carried only by a shared link. Browser Back/Forward
+   restores the URL's applied filters and discards unapplied drafts, including when Back
+   cancels a filter change before its results render.
 3. **The time window is refused or selects the wrong day.** Check the timezone printed
    below the inputs. Start is inclusive and end is exclusive; end must be later. A clock
    time skipped at the start of daylight saving is not valid. Use absolute ISO instants
