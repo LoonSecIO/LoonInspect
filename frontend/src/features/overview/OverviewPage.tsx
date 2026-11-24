@@ -1,3 +1,4 @@
+import { AIActivityEntry } from "@/features/ai/AIActivityEntry";
 import { InventorySummaryMetrics } from "@/features/ai/InventorySummaries";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -82,6 +83,10 @@ function BaselineLine({ run }: { run: Run | null }) {
  * it; nothing here has to move for them to.
  */
 export function OverviewPage() {
+  return <div className="space-y-6"><AIActivityEntry /><OverviewContent /></div>;
+}
+
+function OverviewContent() {
   const { t } = useLocale();
   // Everything the stepper checks is CONNECTION_READ-gated server-side, and the optional
   // step needs DESTINATION_READ on top. Asking anyway would spend three 403s to learn

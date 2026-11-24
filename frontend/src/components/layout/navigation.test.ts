@@ -59,6 +59,7 @@ describe("visibleNavigation", () => {
       "apiTokens",
       "aiConnections",
       "dataSharing",
+      "aiActivity",
       "destinations",
       "accounts",
       "myAccount",
@@ -72,11 +73,13 @@ describe("visibleNavigation", () => {
     // The permission alone: no top-level /ai exists until the switch is on (#319).
     expect(settingsChildren(visibleNavigation([PERMISSIONS.SYSTEM_READ], NO_FLAGS))).toEqual([
       "dataSharing",
+      "aiActivity",
       "myAccount"
     ]);
     // Both.
     expect(settingsChildren(visibleNavigation([PERMISSIONS.SYSTEM_READ], AI_ON))).toEqual([
       "dataSharing",
+      "aiActivity",
       "ai",
       "myAccount"
     ]);

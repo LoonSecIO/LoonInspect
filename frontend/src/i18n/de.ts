@@ -365,6 +365,7 @@ export const de: Translations = {
     dataSharing: "Datenfreigabe",
     intelligenceAccess: "Informationszugang",
     ai: "KI",
+    aiActivity: "KI-Aktivität",
     apiTokens: "API-Token",
     aiConnections: "KI-Verbindungen",
     accounts: "Konten",

@@ -23,7 +23,10 @@ async def summary_db(tenant_ready):
     from app.core.sharing import get_or_create_settings
     from app.models.schema import (
         AIProviderConfig,
+        AIUsageAttempt,
+        AIUsageCoverage,
         AIUsageDaily,
+        AIUsageWork,
         DataSharingSettings,
         EventOutbox,
         FeatureFlag,
@@ -57,6 +60,9 @@ async def summary_db(tenant_ready):
             await db.rollback()
             for model in (
                 AIUsageDaily,
+                AIUsageAttempt,
+                AIUsageWork,
+                AIUsageCoverage,
                 InventorySummaryJob,
                 InventorySummaryMetric,
                 InventorySummaryState,

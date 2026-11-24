@@ -22,6 +22,7 @@ import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
+import { AIActivityPage } from "@/features/ai/AIActivityPage";
 import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { McpSettingsPage } from "@/features/mcp/McpSettingsPage";
@@ -100,6 +101,8 @@ export function AppRoutes() {
         {/* SYSTEM_READ to match the backend's GET gate and the sidebar item — the
             page itself hides its write controls without SYSTEM_WRITE. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
+          {/* History remains readable with inference disabled; the live panel explains that state. */}
+          <Route path="settings/ai/activity" element={<AIActivityPage />} />
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
           <Route path="settings/intelligence-access" element={<IntelligenceAccessPage />} />
         </Route>

@@ -437,3 +437,30 @@ async def test_an_auditor_may_list_but_not_save(accounts, db, clean):
         assert (await auditor.put("/api/system/ai/configs/apple_fm", json=APPLE_FM)).status_code == 403
     finally:
         await auditor.aclose()
+
+
+async def test_activity_retained_history_readable_while_disabled_and_permissions_still_apply(accounts, db, clean):
+    from datetime import UTC, datetime, timedelta
+
+    auditor = await _signed_in(*AUDITOR)
+    viewer = await _signed_in(*VIEWER)
+    try:
+        for path in ("/api/system/ai/activity", "/api/system/ai/activity/live"):
+            response = await auditor.get(path)
+            assert response.status_code == 200
+            body = response.json()
+            assert body["aiEnabled"] is False and body["usageEnabled"] is True
+            assert (await viewer.get(path)).status_code == 403
+        assert (await auditor.get("/api/system/ai/activity/live")).json()["state"] == "disabled"
+        assert (await auditor.put("/api/system/ai/configs/apple_fm", json=APPLE_FM)).status_code == 403
+        today = datetime.now(UTC).date()
+        for query in (
+            {"start": str(today), "end": str(today - timedelta(days=1))},
+            {"start": str(today - timedelta(days=90)), "end": str(today)},
+            {"end": str(today + timedelta(days=1))},
+            {"service": "x" * 65},
+        ):
+            assert (await auditor.get("/api/system/ai/activity", params=query)).status_code == 422
+    finally:
+        await auditor.aclose()
+        await viewer.aclose()

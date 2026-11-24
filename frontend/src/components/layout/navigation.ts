@@ -1,4 +1,5 @@
 import {
+  Activity,
   AppWindow,
   Database,
   FileCheck,
@@ -180,11 +181,13 @@ export const navigationItems: NavItem[] = [
       // appears only once the `ai_features` switch is on (#319). It is judged against the
       // shared set the toggle writes into (#402), so the flag adds or removes it at once,
       // and a read that failed leaves it hidden, as it always has.
+      // Operational history stays visible with inference disabled.
+      { labelKey: "aiActivity", icon: Activity, to: "/settings/ai/activity", end: false, permission: PERMISSIONS.SYSTEM_READ },
       {
         labelKey: "ai",
         icon: FlaskConical,
         to: "/settings/ai",
-        end: false,
+        end: true,
         permission: PERMISSIONS.SYSTEM_READ,
         flag: "ai_features"
       },

@@ -402,6 +402,7 @@ export const en = {
     dataSharing: "Data Sharing",
     intelligenceAccess: "Intelligence Access",
     ai: "AI",
+    aiActivity: "AI Activity",
     apiTokens: "API Tokens",
     aiConnections: "AI connections",
     accounts: "Accounts",

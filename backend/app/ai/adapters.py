@@ -40,7 +40,7 @@ import time
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
@@ -102,6 +102,7 @@ class CompletionResult:
     input_tokens: int | None = None
     cached_tokens: int | None = None
     provider_ms: int | None = None
+    activity: Any = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -339,6 +340,7 @@ async def _request(
     transport: httpx.AsyncBaseTransport | None,
     timeout_seconds: float,
     connect_ip: str | None = None,
+    on_dispatch: Callable[[], None] | None = None,
 ) -> _Reply:
     """One exchange with a caller-chosen server, bounded four ways (module docstring)."""
     limits = httpx.Timeout(_READ_TIMEOUT_SECONDS, connect=_CONNECT_TIMEOUT_SECONDS)
@@ -355,23 +357,25 @@ async def _request(
                 httpx.AsyncClient(
                     timeout=limits, transport=transport, follow_redirects=False, trust_env=connect_ip is None
                 ) as client,
-                client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response,
             ):
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > MAX_RESPONSE_BYTES:
-                        raise AdapterError(
-                            "too_large",
-                            f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
-                        )
-                    chunks.append(chunk)
-                return _Reply(
-                    status=response.status_code,
-                    content_type=response.headers.get("content-type", ""),
-                    body=b"".join(chunks),
-                )
+                if on_dispatch:
+                    on_dispatch()
+                async with client.stream(method, url, headers=headers, json=json_body, extensions=extensions) as response:
+                    chunks: list[bytes] = []
+                    size = 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > MAX_RESPONSE_BYTES:
+                            raise AdapterError(
+                                "too_large",
+                                f"the reply exceeded {MAX_RESPONSE_BYTES // 1024} KiB and was cut off",
+                            )
+                        chunks.append(chunk)
+                    return _Reply(
+                        status=response.status_code,
+                        content_type=response.headers.get("content-type", ""),
+                        body=b"".join(chunks),
+                    )
     except TimeoutError as exc:
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
@@ -475,32 +479,40 @@ async def _serial_complete(req, exchange):
 async def complete(
     wire: Wire, req: CompletionRequest, *, transport=None, timeout_seconds=DEFAULT_TIMEOUT_SECONDS
 ) -> CompletionResult:
-    """Share one Apple FM lane with interactive calls; timeout includes the meter wait."""
-    started = None
+    """Share one Apple FM lane; the inference deadline includes local lane and wire-slot waits."""
+    started = time.monotonic()
     result = None
     outcome = "interrupted"
+    status = None
+    meter = req.record_usage
 
     async def exchange():
-        nonlocal started
-        started = time.monotonic()
-        return await _complete_unmetered(wire, req, transport=transport, timeout_seconds=timeout_seconds)
+        return await _complete_unmetered(
+            wire, req, transport=transport, timeout_seconds=timeout_seconds, on_dispatch=getattr(meter, "dispatch", None)
+        )
 
     try:
+        if hasattr(meter, "start"):
+            await meter.start(timeout_seconds)
         async with asyncio.timeout(timeout_seconds):
             result = await _serial_complete(req, exchange) if req.serial else await exchange()
             outcome = result.outcome
+            result = replace(result, activity=meter)
             return result
     except TimeoutError as exc:
         outcome = "timeout"
         raise AdapterError("timeout", f"no complete reply within {timeout_seconds:g} s") from exc
     except AdapterError as exc:
         outcome = exc.kind
+        status = exc.status
         raise
     finally:
         # Finish metering outside the request deadline and serial lane. A slow database
         # write must not turn a completed inference into a retry or block the next caller.
-        if started is not None and req.record_usage:
-            await req.record_usage(outcome, result, int((time.monotonic() - started) * 1000))
+        if hasattr(meter, "finish_attempt"):
+            await meter.finish_attempt(outcome, result, status=status)
+        elif meter:
+            await meter(outcome, result, int((time.monotonic() - started) * 1000))
 
 
 async def _complete_unmetered(
@@ -509,6 +521,7 @@ async def _complete_unmetered(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    on_dispatch: Callable[[], None] | None = None,
 ) -> CompletionResult:
     """One prompt, one reply, one of five failures. ``transport`` exists so a test can
     stand in for the server, the way ``app.core.sharing.post_exchange`` allows."""
@@ -521,6 +534,7 @@ async def _complete_unmetered(
         transport=transport,
         timeout_seconds=timeout_seconds,
         connect_ip=req.connect_ip,
+        on_dispatch=on_dispatch,
     )
     logger.info("ai wire: %s POST %s -> %s", wire.value, httpx.URL(url).host, reply.status)
     return parse_response(wire, _json_or_raise(reply))

@@ -16,7 +16,7 @@ from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import list_configs
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
@@ -112,20 +112,19 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         prompt = build_prompt([group.model_dump() for group in candidates.groups])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    model = selected(
-        await select_model(
-            db,
-            provider=payload.provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base_url,
-            destination=destination,
-            host=host_header,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-            connect_ip=address,
-        )
+    selection = await select_model(
+        db,
+        provider=payload.provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base_url,
+        destination=destination,
+        host=host_header,
+        key=config.api_key_encrypted,
+        transport=transport_override,
+        connect_ip=address,
     )
+    model = selected(selection)
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
@@ -135,7 +134,9 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
         result = await complete(
             wire,
             CompletionRequest(
-                record_usage=recorder(db, FEATURE, payload.provider.value, model),
+                record_usage=recorder(
+                    db, FEATURE, payload.provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+                ),
                 base_url=base_url,
                 model=model,
                 prompt=prompt,
@@ -168,6 +169,7 @@ async def rank(payload: RankingIn, db: AsyncSession = Depends(get_db)) -> Rankin
             ),
         ) from exc
     labels = interpret(result.content, len(candidates.groups)) if result.outcome == OUTCOME_ANSWERED else None
+    await accepted(result, "completed" if labels is not None else "unusable")
     audit(
         AuditAction.AI_EXCLUSION_RANKING,
         outcome="ranked" if labels else "unparseable",

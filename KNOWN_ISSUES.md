@@ -21,7 +21,7 @@ record: outbox events after 7 days (`event_outbox_retention_days`, or 30 under
 lines after 30 (`run_retention_days`), the closed alert latches that ride that same
 setting, the audit log by daily file rotation keeping `audit_retention_days` files, the
 share log of what left the box after 90 days, terminal inventory summary jobs and cached
-prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), AI usage aggregates (90 UTC days), the URL, text and
+prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), AI usage aggregates and lifecycle metadata (90 UTC days), the URL, text and
 contact written on a coverage request or match report 90 days after its case closes, and expired or revoked sessions a day after
 they die. The change log is not one of them by default: nothing deletes a
 `device_changes` row while `CHANGE_LOG_RETENTION_DAYS` is `0`, which it is unless you set
