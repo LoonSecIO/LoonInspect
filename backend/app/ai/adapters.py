@@ -25,10 +25,8 @@ or named in the attack-surface review (``docs/ai-threat-model.md``) rather than 
   (``think: false`` was ignored), so the request carries that field when asked.
 - **The key never appears anywhere but the wire.** Not in an exception, not in a log
   line, not in the reply. Errors describe the response, never the request.
-- **What a caller-chosen server says back is bounded**, the way
-  ``app.api.connections._upstream_detail`` bounds a Jamf test: a JSON error message
-  truncated to ``_DETAIL_MAX_CHARS``; for anything else the status, the content type
-  and the size only.
+- **Failures expose status and next checks, never upstream text.** An error body or
+  transport exception can echo the saved key or prompt, even when it is valid JSON.
 """
 
 from __future__ import annotations
@@ -46,6 +44,7 @@ from typing import Any
 import httpx
 
 from app.ai.providers import Wire
+from app.core.outbound_errors import http_failure, transport_failure
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,6 @@ MAX_RESPONSE_BYTES = 1_048_576
 MAX_CONCURRENT_CALLS = 2
 MAX_MODELS_LISTED = 500
 MAX_MODEL_ID_CHARS = 200
-_DETAIL_MAX_CHARS = 300
 
 OUTCOME_ANSWERED = "answered"
 OUTCOME_EMPTY = "empty"
@@ -381,39 +379,12 @@ async def _request(
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as exc:
         raise AdapterError("timeout", f"the endpoint stalled ({type(exc).__name__})") from exc
     except httpx.HTTPError as exc:
-        # ConnectError, RemoteProtocolError, UnsupportedProtocol… — the endpoint was
-        # never reached or hung up. The exception text names the host, never a header.
-        raise AdapterError("unreachable", f"could not reach the endpoint: {exc}") from exc
+        raise AdapterError("unreachable", transport_failure(exc)) from exc
 
 
 def _status_message(reply: _Reply) -> str:
-    """What of a rejection may be shown: a JSON error message, truncated; otherwise the
-    status, the declared type and the size."""
-    status_line = f"HTTP {reply.status}"
-    hint = {
-        401: "the endpoint rejected the key",
-        403: "the endpoint refused the request: the key, the route, or the name it arrived under",
-        404: "no such route or model at this URL",
-        429: "the endpoint is rate-limiting this key",
-        529: "the endpoint is overloaded",
-    }.get(reply.status)
-    if hint is None and 300 <= reply.status < 400:
-        hint = "the endpoint redirected, and redirects are not followed"
-    prefix = f"{status_line}: {hint}" if hint else status_line
-    if "json" in reply.content_type.split(";")[0].lower():
-        try:
-            body = json.loads(reply.body)
-        except ValueError:
-            body = None
-        message: Any = None
-        if isinstance(body, dict):
-            error = body.get("error")
-            message = error.get("message") if isinstance(error, dict) else error
-        if isinstance(message, str) and message.strip():
-            return f"{prefix} — {message.strip()[:_DETAIL_MAX_CHARS]}"
-        return prefix
-    declared = reply.content_type or "of no declared type"
-    return f"{prefix}. The response was {declared}, {len(reply.body)} bytes; not shown."
+    """A viewer may read this error, but may not read the administrator's saved key."""
+    return http_failure(reply.status)
 
 
 def _json_or_raise(reply: _Reply) -> Any:
@@ -422,9 +393,9 @@ def _json_or_raise(reply: _Reply) -> Any:
     try:
         return json.loads(reply.body)
     except ValueError as exc:
-        declared = reply.content_type or "of no declared type"
         raise AdapterError(
-            "malformed", f"HTTP {reply.status} but the body was not JSON ({declared}, {len(reply.body)} bytes)"
+            "malformed",
+            f"HTTP {reply.status} but the body was not JSON ({len(reply.body)} bytes). Check the endpoint's API format.",
         ) from exc
 
 

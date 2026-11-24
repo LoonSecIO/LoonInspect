@@ -74,6 +74,9 @@ export function filtersFromPrompt(filters: PromptFilters): Partial<ChangeFilters
     managed: blankToUndefined(filters.managed),
     minLevel: undefined,
     since: blankToUndefined(filters.since),
+    until: undefined,
+    field: undefined,
+    changedTo: undefined,
     // The six hidden keys the bar cannot set, cleared like the rest: a question asked from a
     // feed that a link had narrowed by trigger or by span must answer for the fleet.
     trigger: undefined,
@@ -97,6 +100,9 @@ const COMPARED_KEYS = [
   "section",
   "change",
   "since",
+  "until",
+  "field",
+  "changedTo",
   ...HIDDEN_KEYS,
   "connectionId",
   "subjectId",
@@ -111,7 +117,7 @@ const COMPARED_KEYS = [
  */
 export function stillShowing(applied: Partial<ChangeFilters>, current: ChangeFilters): boolean {
   const norm = (value: string | number | undefined) => (value === "" ? undefined : value);
-  return COMPARED_KEYS.every((key) => norm(applied[key]) === norm(current[key]));
+  return COMPARED_KEYS.every((key) => key === "changedTo" ? applied[key] === current[key] : norm(applied[key]) === norm(current[key]));
 }
 
 /**

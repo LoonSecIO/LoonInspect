@@ -1,0 +1,27 @@
+<!doctype html>
+<html data-loon-theme="light">
+<meta charset="utf-8">
+<title>Isolated navigation fixture</title>
+<style>html[data-loon-theme="dark"] { color-scheme: dark; background: #0b1120; color: #e2e8f0; } html[data-loon-theme="light"] { color-scheme: light; background: #f8fafc; color: #0f172a; } body { font: 16px system-ui; margin: 24px; } a, button { margin-right: 12px; } textarea { display: block; } iframe { width: 20px; height: 20px; }</style>
+<body data-request="__REQUEST__">
+<h1>Disposable native-navigation fixture</h1>
+<p id="route"></p>
+<a id="next-route" href="/navigation/two?filter=alpha#details">Next SPA route</a>
+<a id="branch-route" href="/navigation/branch?filter=gamma">Branch SPA history</a>
+<button id="replace-query">Replace query</button>
+<label>Unsaved review note<textarea id="review-note"></textarea></label>
+<p id="find-text">history fixture needle</p>
+<iframe id="child-theme" title="Isolated child theme"></iframe>
+<script>
+const render = () => { document.getElementById('route').textContent = location.pathname + location.search + location.hash; };
+document.querySelectorAll('a').forEach(link => link.onclick = event => {
+  event.preventDefault(); history.pushState({}, '', link.getAttribute('href')); render();
+});
+document.getElementById('replace-query').onclick = () => {
+  history.replaceState({}, '', '/navigation/two?filter=beta#details'); render();
+};
+addEventListener('popstate', render);
+render();
+</script>
+</body>
+</html>

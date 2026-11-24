@@ -104,9 +104,12 @@ def test_describe_lists_every_rule_with_default_and_override_state() -> None:
     document = policy.describe()
     assert document["version"] == p.CHANGE_POLICY_VERSION
     by_key = {f["key"]: f for s in document["sections"] for f in s["fields"]}
+    assert by_key["definition.criteria"]["scalar"] is False
+    assert by_key["disk_encryption.fileVault2EnabledUserNames"]["scalar"] is False
     assert by_key["purchasing.poNumber"] == {
         "key": "purchasing.poNumber",
         "field": "poNumber",
+        "scalar": True,
         "label": "PO number",
         "level": "low",
         "why": "Procurement metadata.",

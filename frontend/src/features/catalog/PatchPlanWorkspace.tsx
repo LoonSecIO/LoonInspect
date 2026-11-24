@@ -2,8 +2,10 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
-import { useHasPermission } from "@/features/auth/store";
+import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { readScope, type PatchPlan, type PlanSummary } from "./patchPlanTypes";
+import { readReviewDraft, REVIEW_DRAFT_PREFIX } from "./patchPlanDraft";
+import { planInventoryHref } from "./patchPlanNavigation";
 import { PatchPlanReview } from "./PatchPlanReview";
 import type { ApplicationScope } from "@/features/devices/applicationsApi";
 
@@ -15,10 +17,11 @@ function failure(e: unknown, fallback: string) { return e instanceof ApiError &&
 function stamp(value: string | null | undefined) { return value ? new Date(value).toLocaleString() : "Not recorded"; }
 
 export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, planId, onOpen, onClear }: {
-  ref: Ref<PatchPlanActions>; scope: string; selected: string[]; planId: string | null;
+  ref?: Ref<PatchPlanActions>; scope: string; selected: string[]; planId: string | null;
   onOpen: (id: string) => void; onClear: () => void;
   applicationScope?: ApplicationScope;
 }) {
+  const user = useAuthStore(state => state.user);
   const canWrite = useHasPermission("patch:plan-write");
   const [plan, setPlan] = useState<PatchPlan>();
   const [plans, setPlans] = useState<PlanSummary[]>([]);
@@ -35,8 +38,9 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
   const panel = useRef<HTMLElement>(null);
   const shown = plan?.id === planId ? plan : undefined;
   const reviewKey = shown ? `${shown.id}:${shown.revision}` : "";
+  const draftKey = `${REVIEW_DRAFT_PREFIX}${user?.tenant?.id}.${user?.id}.${planId}`;
   const reviewDirty = reviewState.key === reviewKey && reviewState.dirty;
-  if (reviewState.key !== reviewKey) setReviewState({ key: reviewKey, dirty: false });
+  if (reviewState.key !== reviewKey) setReviewState({ key: reviewKey, dirty: !!shown && canWrite && !!readReviewDraft(draftKey) });
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
@@ -62,7 +66,11 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
   }, [planId, refresh]);
   const build = useCallback(async (hashes: string[]) => {
     const deviceScope = readScope(scope);
-    if (!deviceScope || !hashes.length || running.current) return;
+    if (!hashes.length || running.current) return;
+    if (!deviceScope) {
+      setError("The plan cannot be built because its device scope is invalid. Choose installed apps and apply the device filters again.");
+      return;
+    }
     if (hashes.length > 50) { setError("Select up to 50 applications per report."); return; }
     running.current = true;
     setBusy("Building plan…"); setError("");
@@ -70,11 +78,11 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
       const data = await apiRequest<PatchPlan>(base, { method: "POST", json: { scope: deviceScope, appHashes: hashes, title,
         ...(applicationScope ? { applicationScope } : {}) } });
       if (!alive.current) return;
-      setPlan(data); onOpen(data.id); setRefresh(n => n + 1); onClear();
+      setPlan(data); onOpen(data.id); setRefresh(n => n + 1);
       panel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (e) { if (alive.current) setError(failure(e, "The plan could not be built. Refresh inventory and try again.")); }
     finally { running.current = false; if (alive.current) setBusy(""); }
-  }, [scope, applicationScope, title, onOpen, onClear]);
+  }, [scope, applicationScope, title, onOpen]);
   useImperativeHandle(ref, () => ({ build: hashes => { void build(hashes); } }), [build]);
   async function investigate() {
     if (!shown || running.current) return;
@@ -128,6 +136,7 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
     {shown && <div className="space-y-5">
       <header className="border-t pt-4"><p className="text-sm font-medium text-muted-foreground">{shown.snapshot.organization} · revision {shown.revision} · {shown.snapshot.status}</p>
         <h3 className="mt-1 text-xl font-semibold">{shown.title}</h3>
+        <Link className="text-sm underline" to={planInventoryHref(shown)}>View current installed apps in this scope</Link>
         <p className="mt-2 text-sm">{shown.snapshot.applications.length} apps have documented plans, covering {shown.snapshot.applicationDevices} distinct Macs in a scope of {shown.snapshot.scopedDevices} Macs.</p>
         <p className="text-sm text-muted-foreground">Prepared by {shown.createdBy} · inventory snapshot {stamp(shown.snapshot.asOf)}</p>
       </header>
@@ -153,7 +162,7 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
           {shown.researchStatus === "running" ? "Investigating in background…" : "Investigate patch methods"}</Button>}
         <p className="text-sm" role="status">Investigation: {shown.researchStatus.replaceAll("_", " ")}. {shown.research?.detail}</p>
       </div>
-      <PatchPlanReview key={reviewKey} plan={shown} canWrite={canWrite}
+      <PatchPlanReview key={reviewKey} plan={shown} canWrite={canWrite} draftKey={draftKey}
         onDirty={dirty => setReviewState({ key: reviewKey, dirty })} onSaved={setPlan} />
       {shown.snapshot.applications.map(app => {
         const research = shown.research?.applications?.find(r => r.appHash === app.appHash);
@@ -164,7 +173,8 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
           {app.vulnerabilities && <p className="mt-2 text-sm">Known findings: {app.vulnerabilities.counts?.total ?? "unknown"} · KEV: {app.vulnerabilities.counts?.kev ?? "unknown"} · average per assessed device: {app.vulnerabilities.averagePerAssessedDevice?.toFixed(2) ?? "unknown"}. Coverage: {app.vulnerabilities.assessment.replaceAll("_", " ")} · {app.vulnerabilities.assessedDeviceCount}/{app.devices} devices assessed · {app.vulnerabilities.unknownBuildCount} unknown builds.</p>}
           <div className="my-4 grid gap-3 lg:grid-cols-2">{app.options.map(o => <article key={`${o.source}:${o.reference}`} className="space-y-2 rounded-md bg-muted/30 p-3 text-sm">
             <p className="font-semibold">{o.source} · {o.title}</p><p>{o.status.replaceAll("_", " ")} · target {o.targetVersion}</p><p>{o.detail}</p>
-            <a href={o.url} target="_blank" rel="noreferrer" className="underline">View source</a>
+            {o.url ? <a href={o.url} target="_blank" rel="noreferrer" className="underline">View source</a>
+              : <p>Source URL withheld. Check the configured catalog address.</p>}
             <p className="break-all text-muted-foreground">Read {stamp(o.observedAt)} · revision {o.sourceRevision}</p>
           </article>)}</div>
           {research && <article className="mb-4 space-y-2 rounded-md border p-3 text-sm"><p className="font-semibold">Installomator · {research.status.replaceAll("_", " ")}</p>

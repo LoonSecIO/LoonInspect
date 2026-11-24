@@ -29,8 +29,9 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
                 try await exerciseLateStartup()
                 try await exerciseUpdateCheckSwitch()
                 try await exerciseFind()
+                try await exerciseNavigation()
                 windows.forEach { $0.orderOut(nil) }
-                print("PASS: real-AppDelegate window, lifecycle and Find regression checks complete")
+                print("PASS: real-AppDelegate window, lifecycle, Find and navigation regression checks complete")
                 fflush(stdout)
                 exit(0)
             } catch {
@@ -72,6 +73,7 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
         }
         windows.append(window)
         window.orderOut(nil)
+        try NavigationHarness.assertDisabled(delegate: delegate, web: web, reason: "startup")
         try check(!web.configuration.websiteDataStore.isPersistent, "WebKit data store must be ephemeral")
         try check(window.frameAutosaveName.isEmpty, "Window-frame autosaving must be disabled")
         return (delegate, web, status)
@@ -101,6 +103,7 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
         try check(!before.isEmpty, "Dummy server response marker missing")
         delegate.webView(web, didFailProvisionalNavigation: nil, withError: pageError(route))
         try check(web.isHidden && !status.isHidden && heading(status) == "The window could not load", "Page failure did not present recovery")
+        try NavigationHarness.assertDisabled(delegate: delegate, web: web, reason: "page recovery")
         try check(delegate.validateMenuItem(menuItem("reload")), "Recovery reload should remain enabled")
         guard let reload = views(status).compactMap({ $0 as? NSButton }).first(where: { $0.title == "Reload Window" }) else {
             throw HarnessFailure.failed("Actual recovery button missing")
@@ -119,6 +122,7 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
 
         supervisor.onUnexpectedExit?("Fixture service stopped.")
         try await eventually("failed service is stopped") { supervisor.stopCount == 1 && !status.isHidden }
+        try NavigationHarness.assertDisabled(delegate: delegate, web: web, reason: "service failure")
         try check(heading(status) == "The local service stopped", "Runtime failure used a startup heading")
         try check(!delegate.validateMenuItem(menuItem("reload")), "Reload enabled after service stopped")
         try check(!delegate.validateMenuItem(menuItem("openInBrowser")), "Browser enabled after service stopped")
@@ -149,6 +153,13 @@ final class HarnessRunner: NSObject, NSApplicationDelegate {
         let (delegate, web, status) = try launch(Supervisor(port: port, directory: directory))
         try await eventually("find fixture loads") { web.url != nil && !web.isLoading && !web.isHidden && status.isHidden }
         try await FindHarness.run(delegate: delegate, web: web)
+    }
+
+    private func exerciseNavigation() async throws {
+        let supervisor = Supervisor(port: port, directory: directory)
+        let (delegate, web, status) = try launch(supervisor)
+        try await eventually("initial navigation page loads") { web.url != nil && !web.isLoading && !web.isHidden && status.isHidden }
+        try await NavigationHarness.run(delegate: delegate, web: web, supervisor: supervisor)
     }
 
     private func exerciseUpdateCheckSwitch() async throws {

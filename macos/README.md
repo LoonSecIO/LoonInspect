@@ -206,7 +206,7 @@ The backend test suite's `tests/test_mcp_bridge.py` checks MCP identity validati
 runtime files, credential transport, cancellation, response limits and failure handling
 against mock HTTP peers, without reading a real Keychain or contacting a fleet.
 
-For window recovery and native Find in Page, run `python3 macos/tests/window/run.py --source-dir .` from the repository
+For window recovery, native navigation/appearance and Find in Page, run `python3 macos/tests/window/run.py --source-dir .` from the repository
 on a Mac with a logged-in graphical session. It compiles the actual delegate and views against
 fake services, serves a disposable loopback page, uses nonpersistent WebKit storage, and disables
 frame autosaving. It checks cancellation, reload, failed service cleanup, late startup
@@ -217,6 +217,30 @@ matches, rapid edits, selection and focus, explicit page/AI handoffs without sub
 content and routes, and minimum-window layout. The actual frontend tests also hold AI target
 availability to the existing flag, consent, and provider gates. This GUI harness is separate from
 the headless checks; running it briefly creates test windows.
+
+Navigation checks exercise real WebKit same-document history, toolbar buttons, menu keyboard
+shortcuts, query/hash restoration, replacement entries, preserved unsaved input, route-only
+Find updates, reload/restart, local page confirmations and light/dark appearance. They verify
+that window controls and toolbar bounds remain usable at the minimum size and that recovery
+disables navigation. The harness checks the native gesture setting; a physical trackpad swipe
+still needs a manual check on a Mac with that input device.
+
+To compile without opening test windows, add `--compile-only`. To validate in a Mac VM
+without installing Xcode tools there, retain the harness bundle on the build Mac:
+
+```sh
+python3 macos/tests/window/run.py --source-dir . --build-app /tmp/WindowRegression.app
+```
+
+Copy that bundle, `macos/tests/window/run.py`, `find-fixture.html`, and
+`navigation-fixture.html` to the guest; keep the script and fixtures together. Then run
+`python3 run.py --prebuilt-app /path/to/WindowRegression.app --report /tmp/window-report.json`
+in its logged-in graphical session. The build targets the build Mac's architecture with a
+macOS 13 minimum; the guest must support that architecture. `--build-app` compiles only,
+and `--prebuilt-app` needs Python but does not invoke Xcode. The bundle records SHA-256 hashes
+of the production sources, harness sources, and executable in
+`Contents/Resources/validation-build.json`; the runner checks the executable hash before
+launch and includes those hashes and the served fixture hashes in the report.
 
 ## Where it keeps things, and how to start over
 

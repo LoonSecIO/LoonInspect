@@ -48,6 +48,8 @@ export interface NavItem {
   end: boolean;
   /** Omitted where every role can see the page. */
   permission?: PermissionName;
+  /** Every permission required by a compound read surface. */
+  permissions?: readonly PermissionName[];
   /** Listed only while this feature flag is on (Settings › AI, #319). Where `requires` is
    *  declared too the flag is that requirement's OVERRIDE and not a second condition —
    *  see `visibleNavigation`. */
@@ -72,6 +74,8 @@ export const navigationItems: NavItem[] = [
       { labelKey: "changes", icon: History, to: "/devices/changes", end: false }
     ]
   },
+  { labelKey: "patchPlans", icon: ListChecks, to: "/patch-plans", end: false,
+    permissions: [PERMISSIONS.APP_READ, PERMISSIONS.DEVICE_READ] },
   // Top-level, between Devices and Settings, and pointing at its own first child the way
   // Settings points at Connections (#529). `Posture`, not `Risks`: risk is a judgement this
   // product does not make — absent-not-zero counts, no ratios stored — and a section called
@@ -247,6 +251,7 @@ export function visibleNavigation(
   const granted = new Set(permissions ?? []);
   const allowed = (item: NavItem) => {
     if (item.permission && !granted.has(item.permission)) return false;
+    if (item.permissions?.some(permission => !granted.has(permission))) return false;
     const flagOn = item.flag !== undefined && enabledFlags.has(item.flag);
     // A `requires` entry is listed when the data answers **or** the flag overrides it. The
     // flag is not a second condition: an entry that followed both would be hidden for

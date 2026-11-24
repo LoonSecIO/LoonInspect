@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useHasPermission } from "@/features/auth/store";
 import { DeviceScopeBuilder } from "@/features/catalog/DeviceScopeBuilder";
-import { PatchPlanWorkspace, type PatchPlanActions } from "@/features/catalog/PatchPlanWorkspace";
+import { patchPlanHref } from "@/features/catalog/patchPlanNavigation";
 import { defaultScope } from "@/features/catalog/patchPlanTypes";
 import { ApiError } from "@/config/api";
 import { ApplicationRiskCells } from "./ApplicationRiskCells";
@@ -36,13 +36,13 @@ function emptyReason(q: string, statuses: MdmSyncStatus[]): EmptyReason {
 export function ApplicationsOverviewPage() {
   const [params] = useSearchParams();
   const scope = params.get("deviceScope") ?? JSON.stringify(defaultScope);
+  if (params.get("plan")) return <Navigate replace to={patchPlanHref(params)} />;
   return <InstalledApplications key={scope} deviceScope={scope} />;
 }
 
 function InstalledApplications({ deviceScope }: { deviceScope: string }) {
   const canPlan = useHasPermission("patch:plan-write");
   const [selected, setSelected] = useState<string[]>([]);
-  const planActions = useRef<PatchPlanActions>(null);
   const { t } = useLocale();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -135,11 +135,11 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
         <p className="text-xs text-muted-foreground">Known findings are the uncapped totals across assessed installed builds, counted once per device/build. The same CVE can appear in multiple builds. Average = known findings ÷ assessed devices; unknown builds are excluded.</p>
         {current && <p className="text-xs text-muted-foreground">{current.response.corpusAsOf ? `Vulnerability source dated ${current.response.corpusAsOf} · release ${current.response.corpusRelease}` : "Vulnerability assessment is unavailable. Check data sharing and the vulnerability source; unknown coverage is shown as a dash."}</p>}
       </section>
-      <PatchPlanWorkspace ref={planActions} scope={deviceScope} applicationScope={applicationScope} selected={selected} planId={searchParams.get("plan")}
-        onClear={() => setSelected([])} onOpen={id => {
-          const next = new URLSearchParams(searchParams); if (id) next.set("plan", id); else next.delete("plan"); next.delete("page"); setSearchParams(next);
-        }} />
-
+      {canPlan && <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={!selected.length || selected.length > 50} onClick={() => navigate(patchPlanHref(searchParams, selected))}>Plan for {selected.length} selected apps</Button>
+        {selected.length > 0 && <Button variant="ghost" onClick={() => setSelected([])}>Clear selection</Button>}
+        {selected.length > 50 && <p role="status" className="text-sm">Select up to 50 applications per report.</p>}
+      </div>}
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
@@ -184,7 +184,7 @@ function InstalledApplications({ deviceScope }: { deviceScope: string }) {
                 {canPlan && <td className="px-4 py-2" onClick={e => e.stopPropagation()}><div className="flex items-center gap-2">
                   <input type="checkbox" aria-label={`Select ${app.name} for a patch plan`} checked={selected.includes(app.appHash)}
                     onChange={e => setSelected(current => e.target.checked ? [...current, app.appHash] : current.filter(hash => hash !== app.appHash))} />
-                  <Button variant="outline" size="sm" onClick={() => planActions.current?.build([app.appHash])}>Build a patch plan</Button>
+                  <Button variant="outline" size="sm" onClick={() => navigate(patchPlanHref(searchParams, [app.appHash]))}>Plan application</Button>
                 </div></td>}
                 <td className="px-4 py-2 font-medium">
                   <Link to={`/devices/applications/${app.appHash}`} className="hover:underline" onClick={(event) => event.stopPropagation()}>

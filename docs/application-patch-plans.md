@@ -1,8 +1,24 @@
 # Installed application patch plans
 
-Devices > Applications > Installed Apps is the primary entry. Select up to 50 applications
-or choose **Build a patch plan** on one row. Catalog also offers the same workflow, and
-Installed Fleet catalog titles link to Installed Apps for planning.
+**Patch Plans** is a top-level navigation entry at `/patch-plans`. Open a saved report
+directly, or start in Devices > Applications > Installed Apps: select up to 50 applications
+and choose **Plan for selected apps**, or **Plan application** on one row. The device
+scope and application search, severity bands and KEV filter travel with that selection.
+Catalog also offers a contextual planning action; neither inventory page loads the full
+planning workspace. Installed Fleet catalog titles link to Installed Apps for planning.
+
+Saved plans use `/patch-plans?plan=<id>`. Existing `?plan=` links from Installed Apps
+and Catalog redirect to the same report. Refresh and Back/Forward preserve the selected
+plan. **View current installed apps in this scope** returns to live inventory using the
+report's saved device and application scope; it does not change the saved evidence.
+
+Unsaved operator notes are scoped to organization, account and plan in this browser tab.
+They survive navigation and are restored when the plan is reopened. **Sign out** discards
+them without asking, so the next person to sign in on this tab cannot read them; save the
+notes first. An expired session keeps them for the same account. A draft from an older
+revision is marked as a conflict and cannot overwrite newer saved notes; copy the notes
+you need, then discard the draft. Browser storage failures retain an in-memory draft and
+show a warning to save before closing the tab; closing/reloading asks before losing notes.
 Fleet's feature flag controls Fleet evidence only; planning works while Fleet is off.
 
 ## Device scope
@@ -106,6 +122,13 @@ Jamf title presence does not establish a configured package or deployment policy
 Fleet bundle matches retain manifest blob revisions and read dates. A disabled or
 incomplete Fleet cache is not evidence that a product lacks coverage.
 
+Source links omit URL usernames/passwords, query strings and fragments. A configured
+Jamf mirror may need those components to fetch its catalog; they stay in transport
+configuration and never belong in report provenance or the AI's catalog options.
+Unparseable source URLs are withheld. The source's title, reference, revision and read
+date remain available; ask the deployment administrator to check the configured
+catalog address if a displayed link cannot open an authenticated mirror.
+
 Each application has a proposed Jamf rollout covering identity, target verification,
 package/policy association, pilot, recovery, phased rollout and fresh-inventory checks.
 Operators can record ownership, maintenance window, pilot criteria, recovery, exceptions
@@ -138,8 +161,15 @@ bounded application investigation, not the full loonSupport service or a deploym
 and running investigation disable the button. The server refuses a stale requested
 revision with 409. The report identifies its organization, preparer, scope, application
 coverage, evidence dates, source URLs/revisions, review notes, gaps, AI provenance, and
-SHA-256 of the canonical report data. It states that a plan is not completion evidence.
+SHA-256 of the canonical displayed report data. It states that a plan is not completion evidence.
 The checksum is an identifier, not a signature. PDFs use no-store responses.
+
+The same URL redaction applies when reading or exporting older saved plans and when
+sending their catalog options to AI. Stored snapshots and revision numbers are not
+rewritten. A historical report's displayed checksum changes if sensitive URL components
+are removed: the checksum describes exactly the sanitized API body (excluding the
+`sha256` field), and the PDF shows that same checksum. Repeated reads are stable. Old
+exports and the underlying stored snapshots are not cleaned by this presentation rule.
 
 All routes are under `/api/application-patch-plans` and require `app:read` and `device:read`.
 Creation, review updates and investigation additionally require `patch:plan-write`, granted
