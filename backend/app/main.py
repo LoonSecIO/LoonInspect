@@ -31,6 +31,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.routing import Route
 
 from app.alerts.service import purge_closed_alerts
@@ -287,10 +288,18 @@ async def update_check_tick() -> None:
     """The update check (#819): looks every minute; `app.core.update_check.due` decides from its row."""
     try:
         await update_check()
-    except Exception:
+    except SQLAlchemyError:
         logger.exception(
-            "update check could not run; Settings › Support › Updates keeps the last answer stored and a later "
-            "minute tries again. Check the database container is healthy (docker compose ps db)"
+            "update check could not read or save its database state; Settings › Support › Updates keeps the last answer "
+            "stored. Check database health and connectivity (docker compose ps db for the bundled database)"
+        )
+    except Exception as exc:
+        # An unexpected provider/plugin failure can still carry a URL or credential.
+        # Keep its type, not the exception text or chained traceback.
+        logger.error(
+            "update check could not run because of an unexpected internal failure (%s); Settings › Support › Updates "
+            "keeps the last answer stored. Report this error type and the build shown in Settings › Support",
+            type(exc).__name__,
         )
 
 

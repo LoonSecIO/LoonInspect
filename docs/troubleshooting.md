@@ -1425,6 +1425,19 @@ slot says why.
    - *Owed now* under *Next check*, still there a minute later → no process runs the scheduler
      (`scheduler_enabled` is `true` on a container's `starting` line), or that container's log
      says `update check could not run` and why.
+   - `update check unreachable` in the log names the provider-side failure and the
+     check retries in an hour. **Redirect or proxy port outside the supported range:**
+     correct the provider's redirect target or the port in `HTTPS_PROXY` / `ALL_PROXY`.
+     **Proxy transport unavailable:** this build does not include SOCKS support; use
+     an HTTP proxy or remove the unsupported proxy setting. **JSON nesting limit:**
+     the provider or an intervening proxy returned an excessively nested response;
+     correct its response format. Addresses, proxy credentials and response text are
+     withheld from these diagnostics. Recreate the container after changing its
+     environment (`docker compose up -d`); a restart does not re-read `.env`.
+   - `update check could not read or save its database state` → check database health
+     and connectivity. `unexpected internal failure` → report the error type and
+     build shown in Settings › Support. These leave the last stored answer in place;
+     provider failures above instead store `unreachable` and the next hourly retry.
    - *The provider refused the check* → the container log says which, once per attempt.
      `update check refused (429) by LoonSec's update service` is that service's limit, shared
      by every instance: the check asks again in an hour, and there is nothing to change here.

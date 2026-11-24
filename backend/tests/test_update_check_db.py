@@ -268,3 +268,33 @@ async def test_deciding_the_notice_leaves_no_tenant_bound(db) -> None:
     await connection.run_sync(migration._an_account_exists)
     assert await connection.scalar(text("SELECT current_setting(:guc, true)"), {"guc": TENANT_GUC}) == ""
     await db.rollback()
+
+
+@pytest.mark.parametrize("shape", ["github", "service"])
+@pytest.mark.parametrize("failure", ["nested_json", "grouped_port", "proxy_import"])
+async def test_provider_failures_store_unreachable_and_the_hourly_retry(github, monkeypatch, caplog, shape, failure):
+    from app.core.config import settings
+    from app.core.update_check import tick
+
+    marker = "synthetic-private-provider-diagnostic-836"
+    if shape == "service":
+        monkeypatch.setattr(settings, "update_check_url", "https://127.0.0.1:1/v1/update")
+
+    def answer(request):
+        if failure == "grouped_port":
+            raise ExceptionGroup(marker, [OverflowError(marker)])
+        if failure == "proxy_import":
+            raise ImportError(marker)
+        return httpx.Response(200, text="[" * 100_000 + marker)
+
+    github.handler = answer
+    with caplog.at_level("WARNING", logger="app.core.update_check"):
+        assert await tick(DUE) is True
+    row, served = await _row(), await _served()
+    assert row.reason == served.reason == "unreachable"
+    assert row.update_available is None and served.update_available is None
+    assert row.checked_at == DUE and row.next_check_at == DUE + HOUR
+    assert len(github.requests) == 1
+    records = [record for record in caplog.records if record.name == "app.core.update_check"]
+    assert len(records) == 1 and "update check unreachable" in records[0].getMessage()
+    assert marker not in caplog.text and "database" not in records[0].getMessage()
