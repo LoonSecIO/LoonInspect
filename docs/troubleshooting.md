@@ -530,6 +530,13 @@ the run `jobID`, the token's index settings, and the search you ran.
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §3).
    - `app` restarting or unhealthy with `db` healthy → step 2.
 2. **The app's log.** `docker compose logs app --tail 100`:
+   - *The database operation failed* in a run or request log → check database health,
+     free storage and whether startup migrations completed for the running build. The
+     error retains its type and, when supplied by the database, a five-character
+     `SQLSTATE` code. Report those with the run's `jobID` or request ID if it repeats.
+     SQL text, bound values and database server detail are withheld from these error
+     diagnostics because they can contain inventory or credentials; application stack
+     locations remain available. Bound parameters are also hidden in SQL debug logs.
    - `password authentication failed for user "looninspect_app"` → `POSTGRES_APP_PASSWORD`
      in `.env` is not the one the database was created with; the database keeps the
      first. Put the original back ([`operations.md`](operations.md) §3 shows the role the
