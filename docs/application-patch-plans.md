@@ -13,7 +13,9 @@ plan. **View current installed apps in this scope** returns to live inventory us
 report's saved device and application scope; it does not change the saved evidence.
 
 Unsaved operator notes are scoped to organization, account and plan in this browser tab.
-They survive navigation and are restored when the plan is reopened. A draft from an older
+They survive navigation and are restored when the plan is reopened. **Sign out** discards
+them without asking, so the next person to sign in on this tab cannot read them; save the
+notes first. An expired session keeps them for the same account. A draft from an older
 revision is marked as a conflict and cannot overwrite newer saved notes; copy the notes
 you need, then discard the draft. Browser storage failures retain an in-memory draft and
 show a warning to save before closing the tab; closing/reloading asks before losing notes.

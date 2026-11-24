@@ -3631,6 +3631,11 @@ remain attached to their original organization, account and plan; copy or save a
 memory-only notes before confirming, because the switch reloads the page. A failed
 switch keeps the current page and its warning before closing or reloading.
 
+If unsaved review notes are gone after signing back in, check whether the account used
+**Sign out**: it discards every unsaved review note in the tab without asking, so the next
+person on a shared browser cannot read them or meet their prompts. Save review notes before
+signing out. A session that expired on its own keeps the draft for the same account.
+
 If **device scope is invalid** appears when building from a planning link, return to
 **Choose installed apps**, apply valid device filters and select the apps again. No plan
 is created from the invalid scope.

@@ -1,4 +1,6 @@
 export type ReviewDraft = { revision: number; values: Record<string, string> };
+/** Every draft key starts with this, followed by organization, account and plan. */
+export const REVIEW_DRAFT_PREFIX = "looninspect.patch-review.";
 
 // A tab that refuses browser storage still keeps notes through client-side navigation.
 const memory = new Map<string, ReviewDraft | null>();
@@ -33,6 +35,18 @@ export function forgetReviewDraft(key: string): boolean {
   catch { memory.set(key, null); return false; }
 }
 
+/** An explicit sign-out leaves no account's notes in this tab and disarms their unload and
+ *  organization-switch prompts for whoever signs in next. A 401 does not call this, so a
+ *  user whose session expired gets their draft back after signing in again. */
+export function clearReviewDrafts(): void {
+  pending.clear(); memory.clear(); syncWarning();
+  let keys: string[];
+  try { keys = Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i) ?? "").filter(key => key.startsWith(REVIEW_DRAFT_PREFIX)); }
+  catch { return; /* No readable browser store: the drafts lived only in memory, cleared above. */ }
+  for (const key of keys) {
+    try { sessionStorage.removeItem(key); } catch { memory.set(key, null); }
+  }
+}
 
 /** A tenant switch changes the server session before reloading, so any cancellation belongs before that request. */
 export function confirmReviewDraftSessionChange(): boolean {

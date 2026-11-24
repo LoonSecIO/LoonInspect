@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
 import { useAuthStore, useHasPermission } from "@/features/auth/store";
 import { readScope, type PatchPlan, type PlanSummary } from "./patchPlanTypes";
-import { readReviewDraft } from "./patchPlanDraft";
+import { readReviewDraft, REVIEW_DRAFT_PREFIX } from "./patchPlanDraft";
 import { planInventoryHref } from "./patchPlanNavigation";
 import { PatchPlanReview } from "./PatchPlanReview";
 import type { ApplicationScope } from "@/features/devices/applicationsApi";
@@ -38,7 +38,7 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
   const panel = useRef<HTMLElement>(null);
   const shown = plan?.id === planId ? plan : undefined;
   const reviewKey = shown ? `${shown.id}:${shown.revision}` : "";
-  const draftKey = `looninspect.patch-review.${user?.tenant?.id}.${user?.id}.${planId}`;
+  const draftKey = `${REVIEW_DRAFT_PREFIX}${user?.tenant?.id}.${user?.id}.${planId}`;
   const reviewDirty = reviewState.key === reviewKey && reviewState.dirty;
   if (reviewState.key !== reviewKey) setReviewState({ key: reviewKey, dirty: !!shown && canWrite && !!readReviewDraft(draftKey) });
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
