@@ -32,16 +32,9 @@ FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
         "label": "Posture › Vulnerabilities",
         "description": ("Show Posture › Vulnerabilities even before a vulnerability corpus is answering for this organization."),
     },
-    # Lists the first slice of the Patch Policy Lab (#614), off by default. In `vulnerabilities`'
-    # voice: the flag decides what is listed and does not open the route, which is open either way.
-    "patch_policy": {
-        "label": "Posture › Patch policy (reference)",
-        "description": (
-            "Show Posture › Patch policy: a reference replay of a hypothetical Mac under a patch "
-            "policy, drawn from a file that ships with the build. It is not this organization's "
-            "exposure, and it reads no inventory."
-        ),
-    },
+    # `patch_policy` (#614) was here until 2026-11-24, when it was promoted and removed: Posture ›
+    # Patch policy is listed for every app:read holder (docs/feature-flags.md). A row an
+    # organization stored for it is ignored, as every key outside this registry is.
     APP_PROMOTION_FLAG: {
         "label": "Promote applications",
         "description": (

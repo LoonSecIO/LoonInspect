@@ -397,7 +397,7 @@ export const en = {
     osPosture: "macOS versions",
     vulnerabilities: "Vulnerabilities",
     compliance: "Compliance",
-    // #614. A reference replay, listed only while its flag is on; the page says what it is not.
+    // #614. A reference replay, listed for every app:read holder; the page says what it is not.
     patchPolicy: "Patch policy",
     settings: "Settings",
     connections: "Connections",

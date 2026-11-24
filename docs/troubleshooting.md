@@ -2952,10 +2952,13 @@ slider. It is not this organization's exposure. It reads no inventory, sends not
 nothing; the replay is a file that ships inside the build, the same for every organization. The page
 is at `/posture/patch-policy` and needs **app:read**, which every role holds.
 
-1. **The entry is not in the sidebar.** It is listed only while the **Posture › Patch policy
-   (reference)** flag is on (Settings › Feature Flags, an administrator), and the flag is off by
-   default. The address opens either way, so a link somebody sent works while the entry is hidden.
-   A session reads the flags once, at sign-in: after turning the flag on, reload (§18 step 3).
+1. **The entry is not in the sidebar.** It is listed under Posture, last, for every account that
+   holds **app:read**, with nothing to switch on. Settings › Support names the build: one made
+   before 2026-11-24 lists it only while the **Posture › Patch policy (reference)** flag is on
+   (Settings › Feature Flags, an administrator), so turn that on and reload (§18 step 3), or update.
+   On a later build there is no such flag, and a missing entry means the account lacks app:read:
+   `GET /api/auth/me` lists the account's permissions. The address opens either way for an
+   account that holds it, so a link somebody sent still works.
 2. **Only Wireshark can be picked; every other app reads *No reference replay yet*.** Not a fault.
    An app is selectable once a replay file for it ships with the build, and today one does. *No
    reference replay yet* means nobody has replayed that app. It never means the app has no
