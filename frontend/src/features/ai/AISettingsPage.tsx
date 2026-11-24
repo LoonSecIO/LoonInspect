@@ -1,5 +1,5 @@
 import { previewSelection, type Selection } from "./api";
-import { HistoricalUsage } from "./HistoricalUsage";
+import { AIActivityEntry } from "./AIActivityEntry";
 import { InventorySummarySettings } from "@/features/ai/InventorySummaries";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -82,6 +82,8 @@ export function AISettingsPage() {
   const [provider, setProvider] = useState<Provider>("apple_fm");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [serviceLabel, setServiceLabel] = useState("");
+  const [serviceKind, setServiceKind] = useState<"auto" | "openai" | "ollama" | "compatible">("auto");
   const [preferLoaded, setPreferLoaded] = useState(false);
   const [preferences, setPreferences] = useState("");
   const [fallback, setFallback] = useState("");
@@ -230,6 +232,8 @@ export function AISettingsPage() {
     setProvider(next);
     setBaseUrl(kept?.baseUrl ?? defaults.baseUrl);
     setModel(kept?.model ?? defaults.model);
+    setServiceLabel(kept?.serviceLabel ?? "");
+    setServiceKind(kept?.serviceKind ?? "auto");
     setPreferLoaded(Boolean(kept?.ollamaPolicy));
     setPreferences((kept?.ollamaPolicy?.preferences??[]).join(", "));
     setFallback(kept?.ollamaPolicy?.fallback??"");
@@ -278,6 +282,8 @@ export function AISettingsPage() {
     setConfigNotice(null);
     try {
       const config = await saveConfig(provider, {
+        serviceLabel,
+        ...(provider === "openai_compatible" ? { serviceKind } : {}),
         ollamaPolicy,
         hostReach: entry?.usesHostReach ? "docker_desktop" : "custom",
         baseUrl,
@@ -488,7 +494,7 @@ export function AISettingsPage() {
         </div>
       </div>
 
-      <HistoricalUsage />
+      <AIActivityEntry />
       <InventorySummarySettings />
 
       {detection && (
@@ -569,6 +575,19 @@ export function AISettingsPage() {
             <span>{t.ai.otherRuntimes}</span>
           </p>
         )}
+      </div>
+
+      <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-2">
+        <label className="space-y-1 text-sm"><span className="font-medium">{de ? "Dienstname für KI-Aktivität" : "Service label for AI Activity"}</span>
+          <Input value={serviceLabel} maxLength={64} disabled={!canWrite || cardsLocked} placeholder={de ? "Automatischer Name" : "Automatic label"} onChange={event => setServiceLabel(event.target.value)} />
+          <span className="block text-xs text-muted-foreground">{de ? "Optionaler kurzer Name, keine URL. Neue Aufrufe erhalten diesen Namen; ältere behalten ihren bisherigen Namen." : "Optional short name, without a URL. New calls use this label; historical calls keep their recorded label."}</span>
+        </label>
+        {provider === "openai_compatible" && <label className="space-y-1 text-sm"><span className="block font-medium">{de ? "Art des Dienstes" : "Service type"}</span>
+          <select className="rounded-md border bg-background p-2" value={serviceKind} disabled={!canWrite || cardsLocked} onChange={event => setServiceKind(event.target.value as typeof serviceKind)}>
+            <option value="auto">{de ? "Automatisch" : "Automatic"}</option><option value="openai">OpenAI</option><option value="ollama">Ollama</option>
+            <option value="compatible">{de ? "Anderer kompatibler Dienst" : "Another compatible service"}</option>
+          </select><span className="block text-xs text-muted-foreground">{de ? "Ordnet zukünftige Aufrufe zu. Ändert weder die URL noch das Protokoll." : "Attributes future calls. Does not change the endpoint or protocol."}</span>
+        </label>}
       </div>
 
       <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-2">

@@ -16,7 +16,7 @@ from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config
 from app.core.ai import AIRefused, require_ai
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.database import session_for_tenant
 from app.core.ollama import select_model, selected
 from app.core.patch_plans import checksum
@@ -151,19 +151,18 @@ async def ai_priorities(db, snapshot, requested_provider):
         config.base_url,
         carries_key=bool(config.api_key_encrypted),
     )
-    model = selected(
-        await select_model(
-            db,
-            provider=provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base,
-            destination=destination,
-            host=host,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-        )
+    selection = await select_model(
+        db,
+        provider=provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base,
+        destination=destination,
+        host=host,
+        key=config.api_key_encrypted,
+        transport=transport_override,
     )
+    model = selected(selection)
     await require_ai(
         db,
         feature=FEATURE,
@@ -204,10 +203,13 @@ async def ai_priorities(db, snapshot, requested_provider):
         serial=provider is Provider.apple_fm,
         background=True,
         reasoning_effort=None if provider is Provider.apple_fm else config.reasoning_effort,
-        record_usage=recorder(db, FEATURE, provider.value, model),
+        record_usage=recorder(
+            db, FEATURE, provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+        ),
     )
     result = await complete(wire, request, timeout_seconds=120, transport=transport_override)
     priorities = parse_priorities(result.content, [a["appHash"] for a in facts]) if result.outcome == OUTCOME_ANSWERED else None
+    await accepted(result, "completed" if priorities else "unusable")
     return {
         "status": "completed" if priorities else "unusable",
         "provider": provider.value,

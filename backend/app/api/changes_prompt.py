@@ -61,7 +61,7 @@ from app.api.ai import APPLE_FM_SYSTEM_ONLY, CARD_LABELS, judged_endpoint
 from app.api.changes import CHANGE_KINDS, change_conditions
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, list_configs
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.crypto import StoredValueUnknownKeyId, StoredValueUnreadable
@@ -459,26 +459,27 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
 
     # The gate, before anything is dialled. Its refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence.
-    model = selected(
-        await select_model(
-            db,
-            provider=provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base_url,
-            destination=destination,
-            host=host_header,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-        )
+    selection = await select_model(
+        db,
+        provider=provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base_url,
+        destination=destination,
+        host=host_header,
+        key=config.api_key_encrypted,
+        transport=transport_override,
     )
+    model = selected(selection)
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
-        record_usage=recorder(db, FEATURE, provider.value, model),
+        record_usage=recorder(
+            db, FEATURE, provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+        ),
         serial=provider is Provider.apple_fm,
         base_url=base_url,
         model=model,
@@ -522,6 +523,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     answered = result.outcome == OUTCOME_ANSWERED
     interpretation = interpret(question, result.content, datetime.now(UTC), payload.zone) if answered else None
     if interpretation is None or not interpretation.parsed:
+        await accepted(result, "unusable")
         # empty | budget_exhausted_thinking from the adapter, or an answer holding no
         # filter object: either way nothing is applied, and the page keeps its filters.
         kind = result.outcome if interpretation is None else "malformed"
@@ -543,6 +545,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # as every control unset, which is the whole log, and the page listed every device. No
     # summary is counted: there are no filters to count for, and nothing will run.
     if interpretation.invalid:
+        await accepted(result, "unsupported")
         _audited("invalid", provider, destination, latency_ms, reason=interpretation.invalid)
         return PromptOut(
             outcome="invalid",
@@ -568,6 +571,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     repairs = [str(repair) for repair in interpretation.repairs] + moved
     since = interpretation.since_asked
     summary = await _summary(db, interpretation.filters, dimensions, since.at if since else None)
+    await accepted(result)
     _audited(outcome, provider, destination, latency_ms, repairs=len(repairs), window=since is not None)
     return PromptOut(
         outcome=outcome,

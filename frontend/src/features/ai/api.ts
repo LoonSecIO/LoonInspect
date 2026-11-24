@@ -95,6 +95,9 @@ export interface ModelsResponse {
 /** A card's settings as saved on this server — what the Changes Prompt bar dials. The
  *  key never comes back; `hasKey` is the only thing the page learns about it. */
 export interface SavedConfig {
+  serviceLabel?: string | null;
+  serviceKind?: "auto" | "openai" | "ollama" | "compatible" | null;
+  serviceId?: string | null;
   ollamaPolicy?: OllamaPolicy | null;
   provider: Provider;
   hostReach: HostReach | null;
@@ -113,6 +116,8 @@ export interface SavedConfigsResponse {
 
 /** `apiKey` omitted or null keeps the stored key; `clearKey` removes it. */
 export interface SaveConfigRequest {
+  serviceLabel?: string;
+  serviceKind?: "auto" | "openai" | "ollama" | "compatible" | null;
   ollamaPolicy?: OllamaPolicy | null;
   hostReach?: HostReach | null;
   baseUrl: string;

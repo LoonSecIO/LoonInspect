@@ -3545,9 +3545,86 @@ In Connections → Collections add a **Recent Jamf activity** collection. Set th
 
 Open **Daily coverage** beside the daily crawl. A covered miss means the crawl first recorded a changed section with an inventory report time inside a completed, comparable poll window. Jamf can expose that inventory later than its report time. Open the poll or crawl log and the device history to investigate. Pending, failed or partial crawls have incomplete coverage. A baseline, a contact without changed inventory, and an uncovered time interval each have a separate meaning.
 
-### AI usage gaps or a growing queue
+### AI Activity: missing usage or work falling behind
 
-In Settings → AI select a UTC range that includes the first measured date. Review the reporting-call counts next to the token totals. A provider that omits usage can still return a successful answer. Compare arrivals to completed jobs and cache hits, then look for retries, high queue age, and expired jobs. If calls succeed while the counters stay empty, check the server log for “AI usage could not be saved” and verify the database migration.
+Open **Overview → AI Activity**, or **Settings → AI Activity**. Its historical range is
+UTC, inclusive, and limited to 90 days. **Live workload** always describes the current
+15-minute interval; changing the historical range does not change the live interval.
+The view requires `system:read`; it remains readable with AI disabled so retained
+history and the disabled state are available. Provider setup and inference keep their
+existing permission, feature-flag and consent checks.
+
+1. **Check freshness first.** Read the live as-of time. A failed read, or a reading this
+   browser received at least 45 seconds ago, is measurement unavailable, not a healthy
+   empty queue. Use Refresh, then check the
+   app/API connection and `docker compose logs app`. A server warning beginning
+   “AI usage could not be saved” means some metadata was lost; its parenthesis says why.
+   “the write took longer than 2 seconds” means database load or latency: check the
+   database's health and response time. Any other text there is an error type, such as
+   `ProgrammingError`: check that startup migrations completed, and if they did, report
+   the error type with the line's `stack`. No prompts or response bodies belong in that warning.
+   A recovered write preserves the gap marker. Historical periods intersecting the
+   known gap remain marked incomplete; the live verdict recovers after a complete
+   subsequent 15-minute interval. A process that dies before persisting a failure
+   marker cannot report that lost measurement later.
+2. **Check whether work can run.** Not running means AI or inference consent is off,
+   or nothing is processing inventory work: the container answering has
+   `SCHEDULER_ENABLED` off, an inventory summary has waited over two minutes, and no
+   inventory attempt has started for five. A web-only container beside one that runs the
+   scheduler shows the other verdicts while that one starts attempts. Read
+   `scheduler_enabled` on each container's `starting` line,
+   `docker compose logs app | grep scheduler_enabled`; one must say `true`. No provider configured
+   means an administrator must save and test one in Settings → AI. The panel states
+   which condition applies. Read-only operators ask an administrator to change setup.
+3. **Read the evidence behind the verdict.** Backlog growing means there is waiting
+   work and more logical arrivals than useful completions in the same complete
+   15-minute interval. Work waiting too long means the oldest waiting age exceeds
+   120 seconds. Check provider tests, worker availability and FM's shared local lane.
+   Work appears stalled means active work exceeded its declared deadline; verify the
+   worker and provider before retrying. Interactive work stays visibly stalled for a
+   120-second grace after its deadline. Restart a stopped worker and keep scheduled
+   maintenance enabled: it then expires abandoned interactive work in bounded batches,
+   records unfinished attempts as interrupted, and clears their active counts. It does
+   not retry inference. Missing dispatch/duration evidence after a crash stays unknown.
+   Inventory jobs retain their existing lease/expiry recovery. Reclaiming a lease
+   records an unfinished prior attempt as Interrupted before retrying or dropping the
+   job; recorded dispatch is preserved, while lost request durations stay unknown.
+   The initial partial interval says Collecting a baseline. A queue count alone is not evidence of overload, and no ETA is inferred.
+4. **Separate attempts from useful work.** Rate limits mean a 429 refusal; inspect
+   provider capacity/reset and inventory retries. Authentication/access refusals call
+   for checking the configured credential and provider permissions. Request timeouts
+   call for checking provider availability and response time. A waiting timeout means
+   no request was handed to the HTTP transport. Unusable replies were rejected by the
+   requesting feature. Expired inventory work needs fresh inventory; it is not silently
+   counted as completed. An answered attempt is useful only when its feature accepts it.
+5. **Read coverage before comparing totals.** A retry adds an attempt to one logical
+   job. A cache hit adds useful work but no provider dispatch. A selected fallback is
+   marked on its actual attempt; it does not manufacture an extra call. Historical
+   attempt totals/trends use the UTC day of finalization. Logical arrivals use arrival
+   time; completions, cache hits, skips and failures use their terminal time. A job
+   arriving before the range can finish inside it. Work filters include matching attempts, so a job
+   may have a successful final outcome after its selected failed attempt.
+   Tokens/provider execution time omitted by the provider are unknown, with reporting
+   counts shown; a reported zero is a measured zero. Wait, HTTP request and total times
+   are separate averages in milliseconds. Old daily records lack those boundaries and
+   useful-result/dispatch information; no latency percentile is derived from sums.
+6. **Check attribution and unmeasured work.** Current configured services are separate
+   from service names saved with historical attempts. An administrator can set a safe
+   service name/type on the compatible-provider card. Renaming/changing its endpoint
+   creates a new service identity. Unsaved test calls have a separate opaque identity
+   labeled “test endpoint,” even when testing the same address as a saved service.
+   Existing ambiguous daily rows stay legacy/unknown;
+   a model name does not prove OpenAI. Patch investigations show current source-research
+   activity separately, with partial coverage before inference. Model discovery/control
+   calls, requests refused before inference, unchanged inventory that creates no job,
+   and other clients using the provider are outside the inference totals. A process
+   running an older version can contribute daily totals without granular live facts.
+
+No calls in a readable selected period differs from no matching filters; reset filters
+or choose a range at/after the first measured date. Granular history begins when the new
+recorder first saves data. The 90-day retention applies to metadata, including when AI
+is off; the existing scheduled maintenance must be running to prune it. See
+[AI Activity](ai-activity.md) for field definitions and coverage.
 
 ### Ollama model selection
 
