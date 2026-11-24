@@ -631,7 +631,12 @@ the run `jobID`, the token's index settings, and the search you ran.
    recreate accounts or reset passwords. Keep the existing volumes and instance key.
    Surrounding spaces and letter case are ignored just as at bootstrap. A 401 still
    means invalid credentials or an inactive account; a 429 means wait for the lockout
-   to expire. Creating a new account through the wizard or Settings › Accounts keeps
+   to expire. Internationalized addresses created through the wizard or Accounts keep
+   their existing email normalization at sign-in. If both the entered spelling and
+   its normalized spelling belong to separate accounts, the entered spelling selects
+   its own account; its password, active status and MFA requirements still apply.
+   Alternate spellings that select one account share its lockout counter. Creating a
+   new account through the wizard or Settings › Accounts keeps
    its existing mail-address validation; that creation policy is separate from
    authenticating an account already stored by environment bootstrap.
 6. Healthy and signed in, and something else is unreadable → reportable **G**.

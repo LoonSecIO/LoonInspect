@@ -507,7 +507,7 @@ def test_session_expiry_follows_the_configured_lifetime(monkeypatch) -> None:
     assert session_expiry(now) is None
 
 
-@pytest.mark.parametrize("email", ["", "   ", "x" * 321, None, 42])
+@pytest.mark.parametrize("email", ["", "   ", "x" * 321, "\u0130" * 161, "\x00", "admin@\x00example.com", None, 42])
 def test_login_identifier_is_bounded_to_the_stored_account_column(email):
     from pydantic import ValidationError
 

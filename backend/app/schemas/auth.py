@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 from pydantic.alias_generators import to_camel
 
 from app.core.permissions import Role
@@ -87,6 +87,16 @@ class LoginRequest(_CamelModel):
     # Not length-validated here: a rejected login must not reveal whether the failure
     # was policy or credentials. The DoS cap lives in verify_password().
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _stored_identifier(cls, value: str) -> str:
+        value = value.lower()
+        if "\x00" in value:
+            raise ValueError("Account identifier must not contain a null character")
+        if len(value) > 320:
+            raise ValueError("Account identifier must contain at most 320 characters after lowercasing")
+        return value
 
 
 class SetupRequest(_CamelModel):

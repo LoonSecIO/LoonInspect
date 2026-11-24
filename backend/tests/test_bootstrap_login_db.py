@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -12,10 +13,11 @@ from fastapi import FastAPI
 from sqlalchemy import delete, select
 
 from app.api.auth import _LOCKOUT_THRESHOLD, router
-from app.core import bootstrap
+from app.core import bootstrap, mfa
 from app.core.config import settings
 from app.core.database import get_db, session_for_tenant, unscoped_session
 from app.models.schema import Account, AccountRole, AuthIdentity, LoginAttempt, Tenant, UserSession
+from app.schemas.accounts import AccountCreateRequest
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="needs Postgres; set RUN_DB_TESTS=1"),
@@ -109,3 +111,74 @@ async def test_private_domain_login_retains_lockout_and_inactive_account_checks(
     async with session_for_tenant(tenant_id) as db:
         attempt = (await db.scalars(select(LoginAttempt).where(LoginAttempt.identifier == email))).one()
         assert attempt.failure_count == _LOCKOUT_THRESHOLD and attempt.locked_until is not None
+
+
+async def _create_from_accounts_schema(tenant_id, email, password=PASSWORD):
+    payload = AccountCreateRequest(email=email, display_name="Canonical email test", password=password)
+    async with session_for_tenant(tenant_id) as db:
+        account, _ = await bootstrap.create_account(
+            db, email=payload.email, display_name=payload.display_name, password=payload.password
+        )
+        await db.commit()
+        return account.id, account.email
+
+
+@pytest.mark.parametrize("email", ["admin@xn--bcher-kva.de", "cafe\u0301@example.com"])
+async def test_creation_normalization_still_applies_to_sign_in_and_lockout(install, email):
+    tenant_id, client = install
+    account_id, stored = await _create_from_accounts_schema(tenant_id, email)
+    assert stored != email
+    signed = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert signed.status_code == 200 and signed.json()["id"] == account_id
+    client.cookies.clear()
+
+    # Both spellings address the same account and must exhaust one shared counter.
+    for attempt in range(_LOCKOUT_THRESHOLD):
+        entered = email if attempt % 2 else stored
+        failed = await client.post("/api/auth/login", json={"email": entered, "password": "incorrect-password"})
+        assert failed.status_code == 401
+    for entered in (email, stored):
+        locked = await client.post("/api/auth/login", json={"email": entered, "password": PASSWORD})
+        assert locked.status_code == 429
+    assert "loon_session" not in client.cookies
+    async with session_for_tenant(tenant_id) as db:
+        attempt = (await db.scalars(select(LoginAttempt))).one()
+        assert attempt.identifier == stored and attempt.failure_count == _LOCKOUT_THRESHOLD
+
+
+@pytest.mark.parametrize("email", ["admin@xn--bcher-kva.de", "cafe\u0301@example.com"])
+async def test_raw_environment_identifier_remains_signable_when_it_has_a_canonical_form(install, monkeypatch, email):
+    tenant_id, client = install
+    account_id = await _bootstrap(tenant_id, monkeypatch, email)
+    signed = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert signed.status_code == 200 and signed.json()["id"] == account_id
+    assert signed.json()["email"] == email
+
+
+@pytest.mark.parametrize("state", ["active", "disabled", "mfa"])
+async def test_exact_identifier_wins_without_trying_a_second_accounts_credentials(install, monkeypatch, state):
+    tenant_id, client = install
+    email = "admin@xn--bcher-kva.de"
+    exact_id = await _bootstrap(tenant_id, monkeypatch, email)
+    other_password = "different-canonical-account-password"
+    other_id, canonical = await _create_from_accounts_schema(tenant_id, email, other_password)
+    assert other_id != exact_id and canonical != email
+    async with session_for_tenant(tenant_id) as db:
+        exact = await db.get(Account, exact_id)
+        if state == "disabled":
+            exact.status = "disabled"
+        elif state == "mfa":
+            db.add(AuthIdentity(account_id=exact_id, provider=mfa.PROVIDER, subject=exact_id, confirmed_at=datetime.now(UTC)))
+        await db.commit()
+
+    # The canonical account's valid password cannot rescue this exact account.
+    failed = await client.post("/api/auth/login", json={"email": email, "password": other_password})
+    assert failed.status_code == 401 and "loon_session" not in client.cookies
+    signed = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    if state == "active":
+        assert signed.status_code == 200 and signed.json()["id"] == exact_id
+    elif state == "disabled":
+        assert signed.status_code == 401 and "loon_session" not in client.cookies
+    else:
+        assert signed.status_code == 202 and "loon_session" not in client.cookies
+        assert mfa.challenge_account_id(signed.json()["challenge"]) == exact_id

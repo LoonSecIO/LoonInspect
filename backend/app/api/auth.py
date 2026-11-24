@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,6 +63,7 @@ _LOCKOUT_BASE_SECONDS = 60
 _LOCKOUT_MAX_SECONDS = 3600
 # Bounds the exponent so a long-running attack can't ask Python to compute 2**900.
 _LOCKOUT_MAX_EXPONENT = 16
+_EMAIL_IDENTIFIER = TypeAdapter(EmailStr)
 
 
 def _client_ip(request: Request) -> str:
@@ -96,6 +98,24 @@ def _account_out(
         tenants=tenants,
         mfa_enrolment_required=mfa_enrolment_required,
     )
+
+
+async def _account_for_login(db: AsyncSession, identifier: str) -> Account | None:
+    """Resolve one stored identifier before checking credentials or its shared lockout."""
+    candidates = [identifier]
+    try:
+        canonical = _EMAIL_IDENTIFIER.validate_python(identifier).lower()
+    except ValidationError:
+        # Environment bootstrap accepts private domains and other stored identifiers.
+        pass
+    else:
+        if canonical != identifier:
+            candidates.append(canonical)
+    accounts = {account.email: account for account in await db.scalars(select(Account).where(Account.email.in_(candidates)))}
+    # Exact storage wins, including a raw environment identifier. Only its absence
+    # permits the EmailStr normalization used by setup and account creation; a wrong
+    # password, disabled account or MFA requirement must never try a second account.
+    return next((accounts[email] for email in candidates if email in accounts), None)
 
 
 async def _get_attempt(db: AsyncSession, identifier: str, ip: str) -> LoginAttempt | None:
@@ -250,6 +270,10 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> AccountOut:
     email = payload.email.strip().lower()
+    account = await _account_for_login(db, email)
+    if account is not None:
+        # All spellings that resolve to this account share the same lockout row.
+        email = account.email
     ip = _client_ip(request)
     now = datetime.now(UTC)
 
@@ -270,9 +294,6 @@ async def login(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many failed attempts. Try again later.",
         )
-
-    result = await db.execute(select(Account).where(Account.email == email))
-    account = result.scalar_one_or_none()
 
     identity = None
     if account is not None:
