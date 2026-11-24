@@ -1,5 +1,7 @@
 # Snowflake destination
 
+**Status:** implemented in development; live gate pending, 2026-11-23 (#848).
+
 The native destination writes whole LoonInspect events to Snowflake using Snowpipe
 Streaming Named Channels. It stores inventory snapshots, changes and run events in
 one table, with a deduplicated analyst view. You control the Snowflake account,

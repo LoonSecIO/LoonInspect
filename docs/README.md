@@ -58,6 +58,7 @@ ends with a reading order through the rest.
 | [`releases/v1.1.0.md`](releases/v1.1.0.md) | published as v1.1.0 | The v1.1.0 release notes, which become the GitHub release's body: what is new since v1.0.0, how the container and the Mac app are updated, the flag verdicts, the way back. |
 | [`releases/README.md`](releases/README.md) | convention, 2026-11-18 (#811) | How a release's notes file is laid out: the header the draft leaves out, the body it copies, and the `*(filled in at the tag)*` marker the draft run lists and the publication check refuses. |
 | [`operations.md`](operations.md) | runbook, revised 2026-09-16 | Backup, restore, upgrade, rollback — every command run before it was written down. |
+| [`snowflake-setup.md`](snowflake-setup.md) | implemented in development; live gate pending, 2026-11-23 (#848) | Create scoped Snowflake access, configure native event delivery, query deduplicated observations, and validate recovery against a test account. |
 | [`splunk-setup.md`](splunk-setup.md) | runbook, revised 2026-09-16 | Sending events to Splunk: HEC, tokens, sourcetypes, what a dead letter means. |
 | [`troubleshooting.md`](troubleshooting.md) | ruled, 2026-09-10 (#290) | The step-throughs, written with only what a fresh operator has. |
 
