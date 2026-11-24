@@ -328,18 +328,30 @@ async def test_a_blocked_url_is_refused_before_the_gate(client, db, clean, endpo
     assert await _ai_rows(db) == []
 
 
-async def test_an_upstream_failure_is_reported_in_the_reply_and_the_attempt_is_on_record(client, db, clean, endpoint):
+async def test_an_upstream_failure_is_reported_in_the_reply_and_the_attempt_is_on_record(client, db, clean, endpoint, caplog):
     await _switches(db, flag=True, consent=True)
+    marker = "private-upstream-test-box-detail"
     endpoint.status = 500
-    endpoint.body = {"error": {"message": "boom"}}
-    response = await client.post("/api/system/ai/test", json=_body())
+    endpoint.body = {"error": {"message": f"{marker}: {KEY}"}}
+    with caplog.at_level(logging.DEBUG):
+        response = await client.post("/api/system/ai/test", json=_body(apiKey=KEY))
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "error"
     assert body["error"]["kind"] == "http_status"
     assert body["error"]["status"] == 500
-    assert "boom" in body["error"]["message"]
-    assert len(await _ai_rows(db)) == 1
+    assert "HTTP 500" in body["error"]["message"]
+    assert "Check its availability and service logs" in body["error"]["message"]
+    assert "Response body withheld" in body["error"]["message"]
+    rows = await _ai_rows(db)
+    assert len(rows) == len(endpoint.requests) == 1
+    assert rows[0].payload == {"feature": "ai_test_box", "fields": ["prompt_text"], "model": "qwen3.5:2b-mlx"}
+    assert rows[0].occurred_at <= endpoint.called_at
+    assert endpoint.requests[0].headers["authorization"] == f"Bearer {KEY}"
+    for private in (marker, KEY):
+        assert private not in response.text
+        assert private not in caplog.text
+        assert private not in repr(rows[0].payload)
 
 
 async def test_an_auditor_may_read_the_table_but_not_send(accounts, db, clean):
@@ -438,17 +450,31 @@ async def test_a_permitted_listing_writes_an_empty_disclosure_and_returns_the_mo
     assert rows[0].occurred_at <= endpoint.called_at
 
 
-async def test_a_listing_failure_is_reported_not_raised(client, db, clean, endpoint):
+async def test_a_listing_failure_is_reported_not_raised(client, db, clean, endpoint, caplog):
     await _switches(db, flag=True, consent=True)
+    marker = "private-upstream-model-list-detail"
     endpoint.status = 401
-    endpoint.body = {"error": {"message": "invalid x-api-key", "type": "authentication_error"}}
-    response = await client.post(
-        "/api/system/ai/models", json={"provider": "anthropic", "baseUrl": "https://api.anthropic.com", "apiKey": KEY}
-    )
+    endpoint.body = {"error": {"message": f"{marker}: {KEY}", "type": "authentication_error"}}
+    with caplog.at_level(logging.DEBUG):
+        response = await client.post(
+            "/api/system/ai/models", json={"provider": "anthropic", "baseUrl": "https://api.anthropic.com", "apiKey": KEY}
+        )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["models"] == []
+    assert body["error"]["kind"] == "http_status"
     assert body["error"]["status"] == 401
-    assert "rejected the key" in body["error"]["message"]
+    assert "HTTP 401" in body["error"]["message"]
+    assert "rejected authentication" in body["error"]["message"]
+    assert "Check the saved key and its expiry" in body["error"]["message"]
+    assert "Response body withheld" in body["error"]["message"]
     assert str(endpoint.requests[0].url) == "https://api.anthropic.com/v1/models?limit=500"
     assert endpoint.requests[0].headers["x-api-key"] == KEY
+    rows = await _ai_rows(db)
+    assert len(rows) == len(endpoint.requests) == 1
+    assert rows[0].payload == {"feature": "ai_model_listing", "fields": []}
+    assert rows[0].occurred_at <= endpoint.called_at
+    for private in (marker, KEY):
+        assert private not in response.text
+        assert private not in caplog.text
+        assert private not in repr(rows[0].payload)

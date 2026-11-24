@@ -48,7 +48,11 @@ COPY --from=ghcr.io/astral-sh/uv:0.9.30 /uv /uvx /bin/
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
-COPY backend/ ./
+# Only runtime inputs cross this boundary. A broad backend COPY also ships tests,
+# fixtures, capture scripts and any new local files not yet in .dockerignore.
+COPY backend/app/ ./app/
+COPY backend/migrations/ ./migrations/
+COPY backend/alembic.ini backend/README.md ./
 # The baseline rule catalogue, read at request time by the evidence report (#472). `app.baseline.catalogue`
 # looks beside the backend root, which is /app here, so it lands at /app/docs/.
 COPY docs/baseline-rules.yml ./docs/baseline-rules.yml
