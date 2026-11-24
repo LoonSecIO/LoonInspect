@@ -11,6 +11,7 @@ app="$build/LoonInspect.app"
 die() { echo "package-dmg: $*" >&2; exit 1; }
 
 [ -d "$app" ] || die "no $app; run macos/scripts/build-app.sh first"
+[ -x "$app/Contents/Resources/LoonInspect-Uninstall" ] || die "the standalone uninstall helper is missing; rebuild the app before packaging"
 version=$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")
 identity=$("$macos/scripts/sign-identity.sh")
 dmg="$build/LoonInspect-$version-arm64.dmg"
@@ -20,6 +21,8 @@ rm -rf "$stage" "$dmg"
 mkdir -p "$stage"
 # ditto, not cp: it keeps the bundle's extended attributes, and with them the signature's seal.
 ditto "$app" "$stage/LoonInspect.app"
+ditto "$app/Contents/Resources/LoonInspect-Uninstall" "$stage/LoonInspect-Uninstall"
+cp "$app/Contents/Resources/Uninstall-README.txt" "$stage/Uninstall-README.txt"
 ln -s /Applications "$stage/Applications"
 hdiutil create -quiet -volname "LoonInspect $version" -srcfolder "$stage" -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "$dmg"
 rm -rf "$stage"

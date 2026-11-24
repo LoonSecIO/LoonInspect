@@ -343,6 +343,25 @@ assistant. Keep the original database and Keychain backup until the restored ins
 verified. This procedure backs up the database; preserve `data/` and `logs/` separately if their
 audit and diagnostic history is needed.
 
+## Clean uninstall and reinstall
+
+Replacing or deleting the app preserves its local account, inventory and Keychain secrets.
+A reinstall normally returns to the previous sign-in screen. For a deliberate full reset,
+use the standalone **LoonInspect-Uninstall** helper supplied on the disk image, or the copy in
+`LoonInspect.app/Contents/Resources` from the ZIP. Run with `--dry-run` first, then
+`--uninstall` from Terminal and review both confirmations. Never run it with `sudo`.
+
+This permanently removes the previewed local runtime data and this user's app credentials in
+login Keychain, after stopping verified app services and taking the instance lock. It is not
+password recovery. Back up the stopped database and matching Keychain items as described above
+before confirming if anything must be recoverable; the helper creates no backup. Keep backups
+and exported evidence outside every previewed removal directory. Unknown sibling files,
+other users, remote Jamf, custom app locations and app bundles owned by another user remain.
+Other keychains and macOS-managed temporary WebKit caches are outside the helper's scope.
+After removal, install/open the signed app and complete first-time setup with a new account.
+See [the exact helper boundaries](../macos/README.md#where-it-keeps-things-and-how-to-start-over)
+and [failure recovery](troubleshooting.md#macos-clean-uninstall-and-reinstall).
+
 ## What it leaves out
 
 - **It runs only while it is open**, and a sleeping Mac pauses it (KNOWN_ISSUES.md §10). A

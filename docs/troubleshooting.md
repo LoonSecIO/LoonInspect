@@ -3278,9 +3278,20 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    database needs and the one this app is (`backend_release` in
    `Contents/Resources/build-manifest.json`): put the later version back, or restore the copy of
    `pgdata` taken before the update ([`macos-app.md`](macos-app.md#backup)).
-6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
-   directory, the window's data and the three keychain items. It is the end of that instance's
-   data. A restorable database backup is `pgdata` copied while the app is quit plus the matching
+6. **Reinstalling still asks for the old account, or says the email/password is incorrect.**
+   Replacing or deleting the app leaves its local database and account intact. Use the account
+   created on this Mac; a different installation's password does not automatically apply here.
+   For a deliberate full reset, use the standalone **LoonInspect-Uninstall** helper in the v1.4
+   disk image or app's `Contents/Resources`, as described in
+   [`macos/README.md`](../macos/README.md#where-it-keeps-things-and-how-to-start-over).
+   Run as your normal macOS user, without `sudo`; the default/`--dry-run` lists the scope without
+   changing anything. `--uninstall` requires a backup decision and typed user-specific confirmation.
+   Follow [clean-uninstall troubleshooting](#macos-clean-uninstall-and-reinstall) for refusals or
+   partial completion. Shared app bundles owned by someone else remain: ask the Mac administrator
+   to remove those separately if needed. After **Local reset complete**, reinstall and create a
+   new local administrator. Eject old disk images and avoid opening another copy during reset.
+
+   A restorable database backup is `pgdata` copied while the app is quit plus the matching
    `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain items.
    Copying a DMG to another Mac installs the software; it does not transfer that instance's data
    or its Keychain. See [`macos-app.md` › Backup](macos-app.md#backup).
@@ -3852,3 +3863,38 @@ signing out. A session that expired on its own keeps the draft for the same acco
 If **device scope is invalid** appears when building from a planning link, return to
 **Choose installed apps**, apply valid device filters and select the apps again. No plan
 is created from the invalid scope.
+
+
+## macOS clean uninstall and reinstall
+
+**Reinstall still asks for the old account:** ordinary app replacement preserves the local
+instance. Use the existing account, restore its backup, or choose a deliberate full reset with
+**LoonInspect-Uninstall** on the disk image. Reset permanently removes local accounts and
+inventory; it is not password recovery. See [Backup](macos-app.md#backup) before proceeding.
+
+1. Run the helper with `--dry-run` in Terminal. Review the exact current-user paths, Keychain
+   services and retained files. No services or files change during preview.
+2. Save a stopped database copy and its matching three Keychain secrets if recovery matters.
+   Move needed backups and exports outside all listed removal directories. The helper never
+   creates a backup or exports a secret. Run `--uninstall`, choose the backup acknowledgement,
+   and type the user-specific deletion confirmation. Cancel or a mismatched response changes
+   nothing. Do not use `sudo`, pipe confirmations or remove refusal checks.
+3. **Login Keychain locked/unavailable:** unlock it in Keychain Access and retry. The preflight
+   fails before services or data change. An access refusal during deletion can leave a partial
+   removal; allow the appropriate item deletion, preview again and retry.
+4. **Services did not stop / database live / instance locked:** quit LoonInspect and MCP clients,
+   wait for shutdown, then retry. If an orphan remains, restart this Mac or open and quit the
+   app cleanly. The helper never force-kills a PID from a database file.
+5. **Symbolic link / ownership / changed path / app signature:** inspect the exact reported path.
+   A corrupt or unrecognized app bundle is refused before data/key deletion; verify its origin
+   before removing it separately. An ad-hoc but valid development signature is accepted. Move the link
+   aside without deleting its destination, or resolve ownership through the responsible Mac
+   administrator. Generate a fresh preview. Shared app bundles are retained for their owner;
+   do not broaden deletion to another user's directory.
+6. **Removal may be partial:** read the last completed path, correct the reported access issue,
+   then preview and retry. Missing already-removed items are allowed. Unknown sibling files,
+   backups, exports outside the listed directories, other Keychain services and remote Jamf
+   data remain. A retained custom app copy may be removed separately after checking its identity.
+7. Open the newly installed signed app. It should show first-time setup, where you create a new
+   local account. Recreate connections and MCP tokens as needed. If old data reappears, verify
+   which macOS user and app installation you opened; do not delete a different user's data.
