@@ -1032,8 +1032,10 @@ expiry or disabling sharing does not make a tenant's releases eligible for clean
 The patch catalog is the list of titles every Applications surface is matched against. It
 is one list for the whole container — not per connection and not per organization — and
 it refreshes hourly on its own. **Devices › Applications › Jamf Patch** shows it, with a
-**Sync now** button that performs the same refresh immediately. The refresh dials a public
-Jamf server; no credential of yours is involved, so nothing here is a permissions problem.
+**Sync now** button that performs the same refresh immediately. By default the refresh dials
+a public Jamf server without your credentials. If `JAMF_PATCH_BASE_URL` names a private mirror,
+check that mirror’s authentication and access requirements as well as connectivity. The probes
+below target the public default; a successful public probe does not verify a configured mirror.
 
 1. **Untick *Only titles with devices*, then press Sync now and watch the table's *Synced*
    column.** The box is ticked by default and hides every title whose *Devices with app*
