@@ -128,7 +128,7 @@ async def _run_failed_events(db, run_id) -> list:
     return [row for row in rows if row.payload.get("jobID") == str(run_id)]
 
 
-async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, connection, monkeypatch, caplog) -> None:
     """The headline case: device two of five dies of a real aborted transaction, the
     other four are processed, and the run finishes `succeeded` with the failure on the
     row, in the log with the device's identity, and on the wire."""
@@ -147,7 +147,10 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
             seen["victim"] = raw.get("id")
             # A genuine Postgres error, mid-transaction: until the sweep rolls back,
             # every subsequent statement on this session is InFailedSQLTransaction.
-            await db_.execute(text("SELECT 1/0"))
+            await db_.execute(
+                text("SELECT CAST(CAST(:private_payload AS TEXT) AS INTEGER)"),
+                {"private_payload": "synthetic-sweep-private-value-7da41e"},
+            )
         return await real_ingest(db_, connection_, raw, **kwargs)
 
     monkeypatch.setattr(service, "ingest_computer", failing_second_device)
@@ -175,7 +178,13 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert len(failure_lines) == 1
     assert failure_lines[0].level == "warning"
     assert failure_lines[0].fields["jamfId"] == seen["victim"]
-    assert "division by zero" in failure_lines[0].fields["error"]
+    assert "SQLSTATE 22P02" in failure_lines[0].fields["error"]
+    assert "Check database health" in failure_lines[0].fields["error"]
+    assert "synthetic-sweep-private-value-7da41e" not in json.dumps(failure_lines[0].fields)
+    from app.core.logging import ConsoleFormatter, JsonFormatter
+
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        assert all("synthetic-sweep-private-value-7da41e" not in formatter.format(record) for record in caplog.records)
 
     # And on the wire: one run.completed, same accounting, exactly the ruled fields.
     events = await _run_completed_events(db, run.id)
@@ -229,6 +238,40 @@ async def test_one_dead_device_does_not_kill_the_sweep(db, jamf: FakeJamf, conne
     assert "host" not in body
     # And the reserved key is transport only: it must never reach a customer's index.
     assert ENVELOPE not in body["event"]
+
+
+async def test_a_mac_still_being_saved_elsewhere_is_logged_as_retryable(db, jamf: FakeJamf, connection, monkeypatch) -> None:
+    """Another write (a webhook, in production) holds one Mac past the five-second lock
+    wait when the sweep reaches it. Postgres refuses the wait (55P03) and lock_device
+    replaces that error with its retry sentence; the run log must keep that sentence,
+    not diagnose the hidden lock error as a database health or migration failure."""
+    from app.core.database import bound_tenant_id, session_for_tenant
+    from app.core.runs import TRIGGER_MANUAL
+    from app.mdm import service
+    from app.mdm.collections import run_one_collection
+    from app.models.schema import RunLogLine
+
+    real_lock = service.lock_device
+    seen = {"calls": 0}
+
+    async def held_elsewhere(db_, connection_id, platform, device_id):
+        seen["calls"] += 1
+        if seen["calls"] != 2:
+            return await real_lock(db_, connection_id, platform, device_id)
+        async with session_for_tenant(bound_tenant_id(db_)) as holder:
+            await real_lock(holder, connection_id, platform, device_id)
+            await real_lock(db_, connection_id, platform, device_id)
+
+    monkeypatch.setattr(service, "lock_device", held_elsewhere)
+    sweep = await _sweep_collection(db, connection)
+    result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
+
+    assert result.ok is True and result.devices_failed == 1 and seen["calls"] == 2
+    run = await _latest_run(db, connection.id)
+    lines = (await db.execute(select(RunLogLine).where(RunLogLine.run_id == run.id))).scalars().all()
+    (failure,) = [line.fields["error"] for line in lines if line.message == "device failed; sweep continues"]
+    assert failure.startswith("IngestBusy: Another inventory read is still being saved for this Mac. Retry shortly")
+    assert "The database operation failed" not in failure
 
 
 async def test_failures_past_the_threshold_fail_the_run_and_stop_it(db, jamf: FakeJamf, connection, monkeypatch) -> None:
@@ -450,7 +493,7 @@ async def test_a_failing_tier_read_is_reported_as_a_failed_sweep(db, jamf: FakeJ
     result = await run_one_collection(db, sweep, trigger=TRIGGER_MANUAL)
 
     assert result.ok is False
-    assert result.error and "division by zero" in result.error
+    assert result.error and "SQLSTATE 22012" in result.error
     assert not jamf.requests, "the sweep failed before it dialled Jamf"
 
     run = await _latest_run(db, connection.id)

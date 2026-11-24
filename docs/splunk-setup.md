@@ -153,10 +153,12 @@ fails**, and this is the error stored on the destination row and shown in the
 destinations table:
 
 ```
-[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1010)
+TLS certificate verification failed. Check the endpoint certificate, hostname and trust chain.
 ```
 
-(reproduced against a self-signed HTTPS listener using the same client the outbox uses.)
+(reproduced against a self-signed HTTPS listener using the same client the outbox uses.
+A row last written by an older build may still read `[SSL: CERTIFICATE_VERIFY_FAILED]
+certificate verify failed: self-signed certificate`; the next failed attempt replaces it.)
 
 There is no "skip certificate validation" setting. An unverified TLS session is encrypted
 but unauthenticated, and whatever is on the other end of it is being handed a write
@@ -494,17 +496,20 @@ the third returns that device's app count for that pull, and the same search und
 
 ## 9. When nothing arrives
 
-The destinations table is the first place to look: it shows the last delivery error
-verbatim (first 500 characters of what Splunk said), pending and failed counts, and last
-success/failure times. Every failed attempt is also logged, not just the tenth.
+The destinations table is the first place to look: it shows the last delivery error,
+pending and failed counts, and last success/failure times. Every failed attempt is also
+logged, not just the tenth. The error is the HTTP status or the kind of connection
+failure and the next check; what Splunk said in its response is withheld, because a
+receiver's answer can echo the token or the events. Splunk's own reason for a refusal is
+in its `splunkd.log`, under `HttpInputDataHandler`.
 
 | What you see | What it usually is |
 | --- | --- |
-| `[SSL: CERTIFICATE_VERIFY_FAILED] …` | §5. The certificate, not the token. |
+| `TLS certificate verification failed…` | §5. The certificate, not the token. |
 | `HTTP 401` / `HTTP 403` | The token — wrong value, disabled token, or the global *All Tokens* switch still off. |
-| `HTTP 400` naming the index | The token is not allowed to write the index it was asked for. |
+| `HTTP 400` | Usually the token is not allowed to write the index it was asked for (§2), or the URL's path is not `/services/collector/event` (§3). `splunkd.log` names which. |
 | `HTTP 413` | One request exceeded the receiver's body limit. Lower `SPLUNK_HEC_MAX_REQUEST_BYTES` (§6) below the HEC input's `max_content_length`, or `RECORD_FANOUT_MAX_REQUEST_BYTES` for the other three types; the snapshot is then sent as more, smaller requests. |
-| Connection refused / timeout | Reachability. From inside the container, not from your laptop — see §3. |
+| `Connection refused…`, `The endpoint's host name did not resolve…`, `Connection failed…` or `The endpoint timed out…` | Reachability: the port, the name, the network. From inside the container, not from your laptop — see §3. |
 | No error, and no `device.inventory.changed` | Nothing changed. A sweep where no app changed on any device emits no delta, by design — one `device.inventory` snapshot per device and the sweep's own `run.completed` event still arrive. No snapshot either means the destination is subscribed to other event types only. |
 | Events stop after a while | Ten failed attempts dead-letter a delivery; fix the cause and the *next* events flow on their own. The dead-lettered ones wait: the Destinations page shows how many gave up, and **Redrive** returns them to the queue (`POST /api/destinations/{id}/redrive`). Delivery is at-least-once, so events Splunk already indexed before the outage arrive again — dedup as above, on `deviceMeta.eventID` plus the item's identity. Dead letters are kept for `DEAD_LETTER_RETENTION_DAYS` (30); an outage left longer than that has lost the events the purge took. **Re-emit inventory** on the Connections page (`POST /api/mdm/connections/{id}/re-emit`, `destination:write`) closes that gap: the current snapshot of every device on the connection, regardless of change, to the one destination that was down or to all — a newer observation under a new `jobID`, not a duplicate, so the dedup above keeps the latest. About 30 KB a device; the outbox paces it. |
 

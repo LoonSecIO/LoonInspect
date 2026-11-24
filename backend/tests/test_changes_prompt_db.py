@@ -952,20 +952,30 @@ async def test_a_refusal_beside_filters_still_runs_nothing(client, db, clean, se
 async def test_an_endpoint_failure_is_an_outcome_not_an_error(client, db, clean, seeded, endpoint, audit_records):
     await _switches(db, flag=True, consent=True)
     await _saved(db)
+    marker = "private-upstream-changes-prompt-detail"
     endpoint.status = 500
-    endpoint.body = {"error": {"message": "boom"}}
+    endpoint.body = {"error": {"message": f"{marker}: {KEY}"}}
     response = await _ask(client)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "error"
     assert body["error"]["kind"] == "http_status"
     assert body["error"]["status"] == 500
-    assert "boom" in body["error"]["message"]
+    assert "HTTP 500" in body["error"]["message"]
+    assert "Check its availability and service logs" in body["error"]["message"]
+    assert "Response body withheld" in body["error"]["message"]
     assert body["filters"] is None and body["summary"] is None
     # The attempt is on record: the row went in before the byte left.
-    assert len(await _ai_rows(db)) == 1
+    rows = await _ai_rows(db)
+    assert len(rows) == len(endpoint.requests) == 1
+    assert rows[0].payload == {"feature": "changes_prompt", "fields": ["query_text"], "model": "system"}
+    assert rows[0].occurred_at <= endpoint.called_at
     asked = [r for r in audit_records if r["action"] == "ai.changes-prompt.sent"]
     assert [(r["outcome"], r["metadata"]["error_kind"]) for r in asked] == [("error", "http_status")]
+    for private in (marker, KEY):
+        assert private not in response.text
+        assert private not in repr(rows[0].payload)
+        assert private not in json.dumps(audit_records)
 
 
 async def test_an_unreachable_endpoint_is_an_outcome_not_an_error(client, db, clean, seeded, endpoint):

@@ -33,6 +33,7 @@ from app.changes.derive import collecting_departures, derive_and_record
 from app.core.config import settings
 from app.core.content_keys import app_bundle_key, app_full_key, app_title_key
 from app.core.context import get_request_id
+from app.core.diagnostics import error_text
 from app.core.findings import reconcile_device_findings
 from app.core.hashing import compute_app_hash, compute_version_hash
 from app.core.outbox import enqueue_event
@@ -392,7 +393,7 @@ async def sweep_jamf_connection(
         return ConnectionSyncResult(
             connection_id=connection_id,
             ok=False,
-            error=str(exc),
+            error=error_text(exc),
             collection_id=collection_id,
             observations={"requests": client.request_count} if client else {},
         )
@@ -491,7 +492,7 @@ async def run_jamf_catalog(
             "jamf catalog refresh failed",
             extra={"connection_id": connection_id, "collection_id": collection_id, "trigger": trigger},
         )
-        return ConnectionSyncResult(connection_id=connection_id, ok=False, error=str(exc), collection_id=collection_id)
+        return ConnectionSyncResult(connection_id=connection_id, ok=False, error=error_text(exc), collection_id=collection_id)
 
     logger.info(
         "jamf catalog refreshed",
@@ -793,7 +794,7 @@ async def _stream_jamf_fleet(
                 # two the loop keeps using, or the next attribute read raises instead
                 # of lazily refreshing (asyncio).
                 await db.refresh(connection)
-                failure = f"{type(exc).__name__}: {exc}"[:_FAILURE_ERROR_CHARS]
+                failure = f"{type(exc).__name__}: {error_text(exc)}"[:_FAILURE_ERROR_CHARS]
                 logger.warning(
                     "device failed; sweep continues",
                     extra={
@@ -1130,7 +1131,11 @@ async def ingest_webhook(db: AsyncSession, connection: MdmConnection, payload: d
             await close(ok=False, error=str(exc), standing=True)
             raise
         except Exception as exc:
-            await close(ok=committed, error=None if committed else fetch_error(exc), alarm=not isinstance(exc, IngestBusy))
+            # IngestBusy is an internal, fixed retry instruction translated from a
+            # lock/constraint failure. Keep that instruction without rendering its
+            # private database cause; generic failures still use safe diagnostics.
+            error = None if committed else str(exc) if isinstance(exc, IngestBusy) else fetch_error(exc)
+            await close(ok=committed, error=error, alarm=not isinstance(exc, IngestBusy))
             if committed:
                 logger.warning("Inventory was saved; closing bookkeeping failed. Check this run's log.", exc_info=True)
                 return result
