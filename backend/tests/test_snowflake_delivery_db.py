@@ -360,3 +360,36 @@ async def test_regular_outbox_stops_draining_at_unresolved_batch(db, secret, fak
     rows = await deliveries(db)
     assert all(row.status == "pending" for row in rows)
     assert [row.attempt_count for row in rows] == [1, 1, 0, 0, 0]
+
+
+async def test_regular_outbox_honors_pending_batch_backoff_before_later_rows(db, secret, fake, monkeypatch):
+    from app.core import outbox
+
+    target = await destination(db, secret)
+    monkeypatch.setattr(worker, "MAX_BATCH_ROWS", 1)
+    await events(db, target, {"value": "held"}, {"value": "queued-behind"})
+    fake.delay = True
+    await outbox.deliver_pending(db)
+    rows = await deliveries(db)
+    assert rows[0].next_attempt_at > datetime.now(UTC)
+    requests_before = len(fake.requests)
+
+    # The later row is due, but cannot bring the unresolved batch forward.
+    await outbox.deliver_pending(db)
+    assert len(fake.requests) == requests_before
+    assert [row.attempt_count for row in rows] == [1, 0]
+
+    # Once its own retry is due, reconcile the first batch and drain the next row.
+    fake.flush()
+    fake.delay = False
+    monkeypatch.setattr(outbox, "_TICK_LIMIT", 1)
+    rows[0].next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+    rows[1].next_attempt_at = datetime.now(UTC) - timedelta(minutes=1)
+    await db.commit()
+    # The later queued row fills this tick's selection; it must not block recovery.
+    await outbox.deliver_pending(db)
+    assert [row.status for row in rows] == ["delivered", "pending"]
+    await outbox.deliver_pending(db)
+    assert [row.status for row in rows] == ["delivered", "delivered"]
+    assert [row.attempt_count for row in rows] == [1, 1]
+    assert len(fake.appends) == 2

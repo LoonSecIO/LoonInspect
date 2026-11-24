@@ -184,6 +184,17 @@ async def deliver_destination(
     """Run one bounded batch while the caller holds this tenant's outbox advisory lock."""
     source_id = await source_namespace(db)
     batch = (await db.execute(select(SnowflakeBatch).where(SnowflakeBatch.destination_id == destination.id))).scalar_one_or_none()
+    if batch is not None and eligible_ids is not None:
+        # Later queued rows can select this destination while its active batch backs
+        # off. Once due, recover it even if those older rows filled the tick selection.
+        retry_at = await db.scalar(
+            select(OutboxDelivery.next_attempt_at)
+            .where(OutboxDelivery.id.in_(batch.delivery_ids))
+            .order_by(OutboxDelivery.next_attempt_at)
+            .limit(1)
+        )
+        if retry_at is not None and retry_at > datetime.now(UTC):
+            return 0
     if batch is None:
         batch = await _new_batch(db, destination, source_id, eligible_ids)
     if batch is None:
@@ -253,7 +264,7 @@ async def deliver_destination(
 
 
 async def drain_destination(db: AsyncSession, destination: Destination, eligible_ids: list[int]) -> None:
-    """Drain only this tick's selected rows, stopping on unresolved evidence or the time budget."""
+    """Recover a due frozen batch, then drain selected rows within the time budget."""
     remaining = len(eligible_ids)
     deadline = time.monotonic() + DRAIN_SECONDS
     while remaining > 0 and time.monotonic() < deadline:

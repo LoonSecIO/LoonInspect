@@ -145,10 +145,13 @@ unknown. No missing report date, OS build, or collection is interpreted as compl
 
 Each scheduler tick flushes available rows; it does not wait for a full batch.
 Batches are at most **250 events and 3 MiB of encoded NDJSON**, including newlines.
-One row larger than that limit is a visible dead letter, never truncated. A tick can
-drain consecutive resolved batches within its selected 1,000 deliveries and a 20-second
-per-destination network drain budget shared across discovery, DNS, authentication and
-channel requests (local database commits and brief polling waits can finish afterward).
+One row larger than that limit is a visible dead letter, never truncated. A tick selects
+at most 1,000 due deliveries and handles at most four Snowflake destinations. It can
+first recover an already-frozen batch whose retry is due, even when older queued rows
+filled the selection. New batches use only the selected rows. Consecutive resolved
+batches share a 20-second per-destination network drain budget across discovery, DNS,
+authentication and channel requests (local database commits and brief polling waits
+can finish afterward).
 It stops when a batch remains unresolved. The normal
 scheduler checks every 30 seconds, while network work, a backlog or disabled workers
 can extend latency. These are configured bounds, not measured throughput claims.
@@ -164,7 +167,8 @@ and replay one event at a time to identify rejected rows. Stable source keys and
 
 An unresolved acknowledgement stays queued until reconciled; it does not exhaust
 ten attempts and get purged. Fix the visible destination error, then automatic
-retries continue with a bounded delay up to five minutes. Definitively rejected or
+retries continue with a bounded delay up to five minutes. Newer queued events do not
+bring an unresolved batch's scheduled retry forward. Definitively rejected or
 oversized events use ordinary dead-letter retention and **Redrive** after the cause
 is fixed. Pending queues can consume local storage during a prolonged outage.
 Disabling stops delivery while retaining the queue. Deleting a destination removes
