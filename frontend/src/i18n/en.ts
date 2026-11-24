@@ -385,6 +385,7 @@ export const en = {
     reload: "Reload the page"
   },
   nav: {
+    patchPlans: "Patch Plans",
     overview: "Overview",
     devices: "Devices",
     applications: "Applications",
@@ -1256,6 +1257,7 @@ export const en = {
     eyebrow: "Devices",
     title: "Applications",
     description: "Applications installed across your fleet, aggregated from synced device inventory.",
+    tabPatchPlans: "Patch Plans",
     tabInstalled: "Installed Apps",
     tableName: "Name",
     tableBundleId: "Bundle ID",
@@ -2254,15 +2256,50 @@ export const en = {
     }
   },
   changes: {
+    historical: {
+      subjectKind: "Subject type",
+      subjectKinds: { computer: "Computer", computer_group: "Computer group" } as Record<string, string>,
+      title: "Device attributes at the observation",
+      hint: "These filters use values recorded with each change. Missing historical attributes remain unknown and do not match a filter; current device state is never substituted.",
+      connection: "Connection ID",
+      model: "Model contains",
+      osVersion: "Observed OS version starts with",
+      fileVault: "FileVault state",
+      site: "Site ID",
+      department: "Department ID",
+      managed: "Managed by Jamf",
+      user: "Assigned user contains",
+      any: "Any",
+      yes: "Yes",
+      no: "No",
+      field: "Changed field",
+      anyField: "Any field",
+      changedTo: "Changed to exactly",
+      scalarHint: "Choose a section and scalar field. Named entries such as applications use the named-entry search above.",
+      start: "Observed from (inclusive)",
+      end: "Observed until (exclusive)",
+      zone: "Times use your browser timezone:",
+      invalidTime: "This time window cannot be applied. Enter valid local times; a time skipped by daylight saving does not exist. Check the displayed timezone.",
+      reversed: "This time window cannot be applied: the end must be later than the start. Adjust the observation window.",
+      example: "Example: OS changed to 27.2.1",
+      exampleHint: "Sets Operating system → OS version → exactly 27.2.1, keeping the time window and historical device filters. Named-entry, level and observation-link filters are cleared.",
+      observationHint: "Counts are observed transitions, not installation timestamps or unique people. Repeated transitions count once per device in the device total. A first observation cannot establish a prior change; retained history and tracking policy limit coverage.",
+      policyError: "Changed-field choices could not be loaded. Retry loading the change policy; existing filters still apply.",
+      retry: "Retry field choices",
+      apply: "Apply field, time and device filters",
+      resolvedUser: "Assigned user from shared link",
+      fieldRequired: "Choose a scalar field in the selected section before entering a target value."
+    },
+    matching: (changes: number, devices: number) => `${changes} matching changes · ${devices} distinct devices`,
     title: "Changes",
     // No claim here that the page cannot keep. The second sentence used to promise
     // "every row links back to the two observations it was derived from" — there has
     // never been such a link, on this page or any other (#307).
     description:
       "The change log for each device, between observation periods. Every row is one your change-tracking policy decided mattered.",
-    search: "Search",
+    search: "Device search",
     searchPlaceholder: "Device name, serial, or Jamf id",
-    artifact: "Filter to one thing",
+    artifact: "Named-entry search",
     artifactPlaceholder: "App name, bundle id, username, group…",
     // What the parameter accepts, and what it refuses. `artifact` matches four
     // expressions and paths is not one of them, deliberately (`api/changes.py`) — so the

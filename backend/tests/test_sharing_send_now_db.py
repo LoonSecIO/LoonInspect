@@ -164,10 +164,10 @@ async def test_send_now_answers_with_the_row_it_wrote_and_the_row_is_what_left(c
 
 
 async def test_a_failed_send_is_still_an_answer_and_says_why(client, db, clean, monkeypatch) -> None:
-    """The default endpoint with no collector behind it answers API Gateway's 403 today.
-    That is a 200 from Send now — the row is the answer — whose error is a sentence the
-    page can show, and the settings the page re-reads carry the same sentence."""
-    collector = Collector(status=403, body=b'{"message":"Missing Authentication Token"}')
+    """Send now records the failed attempt and safe next check, withholding the collector's body."""
+    marker = "private-upstream-sharing-detail"
+    key = "synthetic-upstream-sharing-key"
+    collector = Collector(status=403, body=json.dumps({"message": f"{marker}: {key}"}).encode())
     monkeypatch.setattr("app.api.system.transport_override", httpx.MockTransport(collector))
 
     response = await client.post("/api/system/data-sharing/send")
@@ -175,14 +175,22 @@ async def test_a_failed_send_is_still_an_answer_and_says_why(client, db, clean, 
     assert response.status_code == 200, response.text
     exchange = response.json()["exchange"]
     assert exchange["outcome"] == "failed"
-    assert "answered 403 Forbidden" in exchange["error"]
-    assert "Missing Authentication Token" in exchange["error"]
+    assert "answered HTTP 403" in exchange["error"]
+    assert "No collector takes the exchange at that address. Check SHARING_ENDPOINT." in exchange["error"]
+    assert "Response body withheld" in exchange["error"]
     assert exchange["error"].endswith("Tried 4 times.")
     assert len(collector.received) == 4
     assert response.json()["settings"]["lastExchangeError"] == exchange["error"]
 
+    (row,) = await _exchange_rows(db)
+    assert (row.trigger, row.outcome) == ("manual", "failed")
+    assert row.error == exchange["error"]
     audited = _audit_events("sharing.exchange.sent")
     assert audited[-1]["outcome"] == "failure"
+    for private in (marker, key):
+        assert private not in response.text
+        assert private not in row.error
+        assert private not in json.dumps(audited[-1])
 
 
 async def test_an_off_tier_is_refused_and_nothing_is_written(client, db, clean, monkeypatch) -> None:

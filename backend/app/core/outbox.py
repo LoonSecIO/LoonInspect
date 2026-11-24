@@ -32,6 +32,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.egress import BlockedDestinationUrl, refuse_destination_resolution, refuse_insecure_destination_scheme
 from app.core.hec_fanout import fan_out
+from app.core.outbound_errors import http_failure, transport_failure
 from app.core.scheduling import Schedule, next_due
 from app.core.wire import ENVELOPE, hec_event
 from app.core.wire_vocabulary import (
@@ -474,9 +475,9 @@ def _elastic_bulk_error(response: httpx.Response) -> str | None:
     try:
         body = response.json()
     except ValueError:
-        return f"bulk response was not JSON: {response.text[:200]}"
+        return "bulk response was not JSON. Check the configured Elastic endpoint and proxy; response body withheld."
     if not isinstance(body, dict):
-        return f"bulk response was not an object: {response.text[:200]}"
+        return "bulk response was not an object. Check the configured Elastic endpoint; response body withheld."
     if not body.get("errors"):
         return None
     for item in body.get("items") or []:
@@ -485,9 +486,10 @@ def _elastic_bulk_error(response: httpx.Response) -> str | None:
         result = next(iter(item.values()), None) if isinstance(item, dict) else None
         if not isinstance(result, dict) or not result.get("error"):
             continue
-        error = result["error"]
-        detail = f"{error.get('type', 'error')}: {error.get('reason', '')}" if isinstance(error, dict) else str(error)
-        return f"bulk item rejected (status {result.get('status')}): {detail}"
+        code = result.get("status")
+        status = code if type(code) is int and 100 <= code <= 599 else None
+        detail = http_failure(status) if status is not None else "Check Elastic mappings and permissions; response body withheld."
+        return f"bulk item rejected (status {status if status is not None else 'unknown'}): {detail}"
     return "bulk response reported errors=true"
 
 
@@ -518,9 +520,9 @@ async def _attempt_elastic_delivery(
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+            return False, http_failure(exc.response.status_code)
         except httpx.HTTPError as exc:
-            return False, str(exc)[:500]
+            return False, transport_failure(exc)
 
         error = _elastic_bulk_error(response)
         if error is not None:
@@ -727,9 +729,9 @@ async def _attempt_hec_delivery(
             response = await client.post(destination.url, content=body, headers=headers, timeout=10)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+            return False, http_failure(exc.response.status_code)
         except httpx.HTTPError as exc:
-            return False, str(exc)[:500]
+            return False, transport_failure(exc)
     return True, None
 
 
@@ -757,9 +759,9 @@ async def _attempt_record_delivery(
             response = await client.post(destination.url, content=body, headers=headers, timeout=10)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+            return False, http_failure(exc.response.status_code)
         except httpx.HTTPError as exc:
-            return False, str(exc)[:500]
+            return False, transport_failure(exc)
     return True, None
 
 
@@ -790,9 +792,9 @@ async def _attempt_delivery(client: httpx.AsyncClient, destination: Destination,
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        return False, f"HTTP {exc.response.status_code}: {exc.response.text[:500]}"
+        return False, http_failure(exc.response.status_code)
     except httpx.HTTPError as exc:
-        return False, str(exc)[:500]
+        return False, transport_failure(exc)
     return True, None
 
 

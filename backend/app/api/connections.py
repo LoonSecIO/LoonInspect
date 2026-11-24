@@ -28,6 +28,7 @@ from app.core.auth import Principal, current_principal, require
 from app.core.config import settings
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
+from app.core.diagnostics import error_text
 from app.core.egress import BlockedBaseUrl, refuse_blocked_resolution, validate_mdm_base_url
 from app.core.permissions import Permission
 from app.core.runs import (
@@ -695,7 +696,7 @@ async def _run_connection_sync(connection_id: int, actor: Actor, tenant_id: uuid
                     # already passed to this worker before finish reads ORM state.
                     reloaded = await db.get(Run, job_id)
                     if reloaded is not None:
-                        await finish(db, reloaded, ok=False, error=str(exc))
+                        await finish(db, reloaded, ok=False, error=error_text(exc))
                     raise
                 await finish(db, run, **sync_result_kwargs(result))
     finally:
@@ -917,7 +918,7 @@ async def _run_connection_re_emit(
                     # already passed to this worker before finish reads ORM state.
                     reloaded = await db.get(Run, job_id)
                     if reloaded is not None:
-                        await finish(db, reloaded, ok=False, error=str(exc))
+                        await finish(db, reloaded, ok=False, error=error_text(exc))
                     raise
                 await finish(
                     db,

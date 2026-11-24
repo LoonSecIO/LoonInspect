@@ -121,7 +121,7 @@ def _span(connection_id: int, subject_id: str, *, observed_at: datetime, collect
     )
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def seeded(accounts):
     """One connection of this file's own. Two minis both named "Kyle's Mac mini" (the
     typographic apostrophe), one of which added Wireshark and one of which updated it an
@@ -637,7 +637,7 @@ async def test_a_word_for_management_state_and_a_department_name_are_read_too(cl
 
 async def test_a_department_read_as_a_profile_is_moved_and_its_guessed_section_cleared(client, db, clean, seeded, endpoint):
     """#450, as it happened on the demo pod: asked "What changed on Macs in Engineering :
-    Product?", the model put the department in Filter to one thing and chose Configuration
+    Product?", the model put the department in Named-entry search and chose Configuration
     profiles beside it — zero rows. No item has that name and Jamf's catalog does, so it is
     read as the department, and the section it only chose from the misread goes too. One
     correction of one reading: applied, not proposed."""
@@ -830,7 +830,7 @@ async def test_an_apple_card_saved_naming_another_model_is_refused_before_the_ga
 
 # The whitelist's refusal, as the page shows it: what a name may hold, never what this one held.
 REFUSED_FILTER = (
-    "Dropped the model's value for Filter to one thing: a name here takes only letters and digits in any script, "
+    "Dropped the model's value for Named-entry search: a name here takes only letters and digits in any script, "
     "spaces, and . _ @ ' ’ ( ) + / - & # ! , : — it held another character."
 )
 
@@ -891,7 +891,7 @@ async def test_a_repair_that_narrows_is_still_applied(client, db, clean, seeded,
     body = (await _ask(client, "what happened on VKM73DMG47")).json()
     assert body["outcome"] == "applied"
     assert body["filters"] == _filters(q="VKM73DMG47")
-    assert body["repairs"] == ["Filled Search with the one serial-number-shaped word in the question."]
+    assert body["repairs"] == ["Filled Device search with the one serial-number-shaped word in the question."]
     assert body["widening"] == []
     assert "302" in _mine(body["summary"], seeded)
     assert _asked(audit_records) == [("applied", 1)]
@@ -952,20 +952,30 @@ async def test_a_refusal_beside_filters_still_runs_nothing(client, db, clean, se
 async def test_an_endpoint_failure_is_an_outcome_not_an_error(client, db, clean, seeded, endpoint, audit_records):
     await _switches(db, flag=True, consent=True)
     await _saved(db)
+    marker = "private-upstream-changes-prompt-detail"
     endpoint.status = 500
-    endpoint.body = {"error": {"message": "boom"}}
+    endpoint.body = {"error": {"message": f"{marker}: {KEY}"}}
     response = await _ask(client)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "error"
     assert body["error"]["kind"] == "http_status"
     assert body["error"]["status"] == 500
-    assert "boom" in body["error"]["message"]
+    assert "HTTP 500" in body["error"]["message"]
+    assert "Check its availability and service logs" in body["error"]["message"]
+    assert "Response body withheld" in body["error"]["message"]
     assert body["filters"] is None and body["summary"] is None
     # The attempt is on record: the row went in before the byte left.
-    assert len(await _ai_rows(db)) == 1
+    rows = await _ai_rows(db)
+    assert len(rows) == len(endpoint.requests) == 1
+    assert rows[0].payload == {"feature": "changes_prompt", "fields": ["query_text"], "model": "system"}
+    assert rows[0].occurred_at <= endpoint.called_at
     asked = [r for r in audit_records if r["action"] == "ai.changes-prompt.sent"]
     assert [(r["outcome"], r["metadata"]["error_kind"]) for r in asked] == [("error", "http_status")]
+    for private in (marker, KEY):
+        assert private not in response.text
+        assert private not in repr(rows[0].payload)
+        assert private not in json.dumps(audit_records)
 
 
 async def test_an_unreachable_endpoint_is_an_outcome_not_an_error(client, db, clean, seeded, endpoint):

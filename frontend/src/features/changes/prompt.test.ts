@@ -89,7 +89,7 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
 
   it("names every other key as undefined, so update() clears the window and the device", () => {
     const next = filtersFromPrompt(WIRESHARK);
-    for (const key of ["minLevel", "since", "connectionId", "subjectId", "subjectKind"] as const) {
+    for (const key of ["minLevel", "since", "until", "field", "changedTo", "connectionId", "subjectId", "subjectKind"] as const) {
       expect(next).toHaveProperty(key, undefined);
     }
     // What the page's update() does with it: a spread over the current filters.
@@ -112,6 +112,9 @@ describe("filtersFromPrompt replaces the page's filters, never merges into them"
       change: undefined,
       minLevel: undefined,
       since: undefined,
+      until: undefined,
+      field: undefined,
+      changedTo: undefined,
       connectionId: undefined,
       subjectId: undefined,
       subjectKind: undefined,

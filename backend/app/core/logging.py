@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import traceback
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.core.context import get_actor, get_request_id
+from app.core.diagnostics import database_error_message
 from app.core.redact import redact
 
 # Attributes the logging module puts on every LogRecord. Anything on a record that
@@ -77,7 +80,21 @@ class ContextFilter(logging.Filter):
         return True
 
 
-class JsonFormatter(logging.Formatter):
+class _SafeExceptionFormatter(logging.Formatter):
+    def formatException(self, exc_info) -> str:
+        safe = database_error_message(exc_info[1])
+        if safe is None:
+            return super().formatException(exc_info)
+        # No source lines, exception messages or locals: server detail can repeat a
+        # rejected value independently of SQLAlchemy's hidden bound parameters.
+        locations = [
+            f'  File "{Path(frame.filename).name}", line {frame.lineno}, in {frame.name}'
+            for frame in traceback.extract_tb(exc_info[2])
+        ]
+        return "\n".join(["Database failure stack (values withheld):", *locations, safe])
+
+
+class JsonFormatter(_SafeExceptionFormatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": _timestamp(record),
@@ -106,7 +123,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-class ConsoleFormatter(logging.Formatter):
+class ConsoleFormatter(_SafeExceptionFormatter):
     """Human-readable equivalent for local development. Same fields, less quoting."""
 
     def format(self, record: logging.LogRecord) -> str:

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import { ApiError } from "@/config/api";
+import { HistoricalFilters } from "@/features/changes/HistoricalFilters";
+import { asChange, filtersFromParams, paramsFromFilters } from "@/features/changes/filters";
 import { Button } from "@/components/ui/button";
 import { LoonLoading } from "@/components/icons/LoonLoading";
 import { getChangePolicy, listChanges } from "@/features/changes/api";
@@ -22,62 +25,11 @@ import {
   type LabelMap
 } from "@/features/changes/render";
 import { HIDDEN_KEYS } from "@/features/changes/types";
-import type { ChangeFilters, ChangeKind, ChangeLevel, DeviceChange, UserFilter } from "@/features/changes/types";
+import type { ChangeFilters, ChangeLevel, ChangePolicy, DeviceChange, UserFilter } from "@/features/changes/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-const asLevel = (value: string | null): ChangeLevel | undefined =>
-  value === "high" || value === "normal" || value === "low" ? value : undefined;
-
-const asChange = (value: string | null): ChangeKind | undefined => CHANGE_KINDS.find((kind) => kind === value);
-
-function filtersFromParams(params: URLSearchParams): ChangeFilters {
-  return {
-    q: params.get("q") ?? undefined,
-    artifact: params.get("artifact") ?? undefined,
-    level: asLevel(params.get("level")),
-    change: asChange(params.get("change")),
-    // #107: the Overview feed links here with `since` and `minLevel`. Before it read
-    // them, that link landed on an unfiltered feed — the window silently dropped, which
-    // is the failure the absolute anchor exists to prevent.
-    minLevel: asLevel(params.get("minLevel")),
-    since: params.get("since") ?? undefined,
-    // #447: the ten keys with no control on this page. Read here for the same reason `since`
-    // is — a filter the URL carries and the page ignores is a feed that answers a question
-    // nobody asked, and a chip below says which are on.
-    ...Object.fromEntries(HIDDEN_KEYS.map((key) => [key, params.get(key) ?? undefined])),
-    section: params.get("section") ?? undefined,
-    // #300: the device page links here with all three subject keys. Before this read
-    // them, that link landed on the unfiltered fleet feed — the same silent drop #107
-    // fixed for `since`, one filter over.
-    connectionId: params.get("connectionId") ? Number(params.get("connectionId")) : undefined,
-    subjectId: params.get("subjectId") ?? undefined,
-    subjectKind: params.get("subjectKind") ?? undefined,
-    page: params.get("page") ? Number(params.get("page")) : 1
-  };
-}
-
-function paramsFromFilters(filters: ChangeFilters): URLSearchParams {
-  const params = new URLSearchParams();
-  if (filters.q) params.set("q", filters.q);
-  if (filters.artifact) params.set("artifact", filters.artifact);
-  if (filters.level) params.set("level", filters.level);
-  if (filters.change) params.set("change", filters.change);
-  if (filters.minLevel) params.set("minLevel", filters.minLevel);
-  if (filters.since) params.set("since", filters.since);
-  for (const key of HIDDEN_KEYS) {
-    const value = filters[key];
-    if (value) params.set(key, value);
-  }
-  if (filters.section) params.set("section", filters.section);
-  if (filters.connectionId !== undefined) params.set("connectionId", String(filters.connectionId));
-  if (filters.subjectId) params.set("subjectId", filters.subjectId);
-  if (filters.subjectKind) params.set("subjectKind", filters.subjectKind);
-  if (filters.page && filters.page !== 1) params.set("page", String(filters.page));
-  return params;
-}
 
 export function ChangesPage() {
   const { t } = useLocale();
@@ -86,6 +38,11 @@ export function ChangesPage() {
   const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
   const [rows, setRows] = useState<DeviceChange[]>([]);
   const [total, setTotal] = useState(0);
+  const [devicesTotal, setDevicesTotal] = useState(0);
+  const [policy, setPolicy] = useState<ChangePolicy | null>(null);
+  const [policyError, setPolicyError] = useState(false);
+  const [policyRetry, setPolicyRetry] = useState(0);
+  const [filterDraftDirty, setFilterDraftDirty] = useState(false);
   // What the applied `user` filter resolved to (#446): a name for its chip, and for typed text
   // the token to put in the URL in its place.
   const [userFilter, setUserFilter] = useState<UserFilter | null>(null);
@@ -111,40 +68,48 @@ export function ChangesPage() {
   // Forward to the address the choice produced shows it again, because it is again true.
   const [changeReset, setChangeReset] = useState<{ section: string; at: string } | null>(null);
   const pageSize = 50;
+  const [historyVisit, setHistoryVisit] = useState(0);
+  // Back can cancel a pending router transition before the new query renders. The
+  // restored query then equals the old one, so following the URL alone retains edited drafts.
+  // Native history visits still reset those drafts to the applied query, without a fetch.
+  useEffect(() => {
+    const visit = () => { setHistoryVisit(value => value + 1); setFilterDraftDirty(false); };
+    window.addEventListener("popstate", visit);
+    return () => window.removeEventListener("popstate", visit);
+  }, []);
 
   // The two text boxes are drafts — typed, then applied. They still have to follow the URL
   // when something else moves it: the back button, and a click on an identity in the table
   // below, which sets `artifact` without going through the box. Adjusted during render
   // rather than from an effect (React's own "adjusting state when a prop changes"), so the
   // box never paints a frame still showing the filter that was just replaced.
-  const applied = { q: filters.q ?? "", artifact: filters.artifact ?? "" };
+  const applied = { q: filters.q ?? "", artifact: filters.artifact ?? "", historyVisit };
   const [lastApplied, setLastApplied] = useState(applied);
-  if (lastApplied.q !== applied.q || lastApplied.artifact !== applied.artifact) {
+  if (lastApplied.q !== applied.q || lastApplied.artifact !== applied.artifact || lastApplied.historyVisit !== historyVisit) {
     setLastApplied(applied);
     setDraftQuery(applied.q);
     setDraftArtifact(applied.artifact);
   }
 
-  // Field labels only — "Version" rather than `version`, "Bundle version" rather than
-  // `cfBundleVersion`. The policy document already carries one for every field the ledger
-  // can log and needs no permission this page does not already hold, and a failure here
-  // degrades to the raw field name rather than to a missing control, which is why the
-  // *section* list beside it is a constant instead of a second read of this document.
+  // The policy supplies field labels and scalar choices without extra permissions.
+  // A failed read keeps existing queries usable and offers a visible retry for choices.
   useEffect(() => {
     let cancelled = false;
     getChangePolicy()
       .then((policy) => {
         if (cancelled) return;
+        setPolicy(policy);
+        setPolicyError(false);
         setLabels(labelsFromPolicy(policy));
         setDepartmentNames(departmentNamesFromPolicy(policy));
       })
       .catch(() => {
-        /* raw field names are a fine answer; nothing to tell the operator */
+        if (!cancelled) setPolicyError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [policyRetry]);
 
   // A new question — moved filters, or the Prompt bar re-asking the same one — has to
   // read as a question being asked, not as the last answer. Adjusted here, during the
@@ -168,13 +133,14 @@ export function ChangesPage() {
         if (cancelled) return;
         setRows(response.items);
         setTotal(response.total);
+        setDevicesTotal(response.devicesTotal);
         setUserFilter(response.userFilter ?? null);
         // A typed name that found one person leaves the address bar before anyone copies it.
         const rewritten = userTokenRewrite(filters.user, response.userFilter);
         if (rewritten) setSearchParams(paramsFromFilters({ ...filters, user: rewritten }), { replace: true });
       })
-      .catch(() => {
-        if (!cancelled) setError(tc.errorLoading);
+      .catch((failure: unknown) => {
+        if (!cancelled) setError(failure instanceof ApiError && failure.detail ? failure.detail : tc.errorLoading);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -204,7 +170,7 @@ export function ChangesPage() {
   // same move, and the line under the filters says so rather than let it vanish unseen.
   function chooseSection(section: string | undefined) {
     const reset = !canMatch(section, filters.change);
-    const params = nextParams(reset ? { section, change: undefined } : { section });
+    const params = nextParams({ section, field: undefined, changedTo: undefined, ...(reset ? { change: undefined } : {}) });
     setSearchParams(params);
     setChangeReset(reset && section ? { section, at: params.toString() } : null);
   }
@@ -231,12 +197,13 @@ export function ChangesPage() {
     if (searchParams.toString() !== "") setSearchParams(new URLSearchParams());
     setDraftQuery("");
     setDraftArtifact("");
+    setFilterDraftDirty(false);
     setPromptSession((session) => session + 1);
     setPromptUsed(false);
     setChangeReset(null);
   }
 
-  const canClear = hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
+  const canClear = filterDraftDirty || hasSomethingToClear(filters, { q: draftQuery, artifact: draftArtifact }, promptUsed);
 
   // One chip per filter with no control of its own, in the order they were added to the page.
   // `since` keeps the table's own time format; a dimension is shown as the value it matched,
@@ -245,6 +212,7 @@ export function ChangesPage() {
     const words = tc.hiddenChips;
     const of: Partial<Record<keyof ChangeFilters, (value: string) => string>> = {
       since: (value) => tc.sinceChip(new Date(value).toLocaleString()),
+      until: (value) => `${tc.historical.end}: ${new Date(value).toLocaleString()}`,
       trigger: (value) => words.trigger(tc.triggers[value] ?? value),
       spanId: () => words.span,
       version: words.version,
@@ -258,9 +226,12 @@ export function ChangesPage() {
       user: (value) => userChipLabel(value, userFilter, words.person)
     };
     const chips: { key: keyof ChangeFilters; label: string }[] = [];
-    for (const key of ["since", ...HIDDEN_KEYS] as const) {
+    for (const key of ["since", "until", ...HIDDEN_KEYS] as const) {
       const value = filters[key];
       if (value) chips.push({ key, label: of[key]?.(value) ?? value });
+    }
+    if (filters.subjectKind && !filters.subjectId) {
+      chips.push({ key: "subjectKind", label: `${tc.historical.subjectKind}: ${tc.historical.subjectKinds[filters.subjectKind] ?? filters.subjectKind}` });
     }
     return chips;
   }, [filters, tc, departmentNames, userFilter]);
@@ -287,12 +258,6 @@ export function ChangesPage() {
         <h1 className="text-3xl font-bold tracking-tight">{tc.title}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{tc.description}</p>
       </div>
-
-      {/* Above the controls it moves, and through the same URL they write (`applyPrompt`):
-          the answer is a set of filters in the URL, so Back, a shared link and the table
-          all behave as if the operator had set them by hand. The bar names every key, so
-          its answer replaces the filters rather than merging into them. */}
-      <PromptBar filters={filters} onApply={applyPrompt} onUse={setPromptUsed} session={promptSession} />
 
       <form
         className="flex flex-wrap items-start gap-3"
@@ -400,6 +365,12 @@ export function ChangesPage() {
         )}
       </form>
 
+      <HistoricalFilters key={`${promptSession}:${historyVisit}`} filters={filters} policy={policy}
+        policyError={policyError} userFilter={userFilter} onApply={update} onDirtyChange={setFilterDraftDirty}
+        onRetry={() => setPolicyRetry(value => value + 1)} />
+      <p className="text-sm text-muted-foreground">{tc.historical.observationHint}</p>
+      <PromptBar filters={filters} onApply={applyPrompt} onUse={setPromptUsed} session={promptSession} />
+
       {/* Every filter this page has no control for, named while it is applied and removable:
           the window the Overview's feed links here with (#107, #443), and the ten dimensions a
           link, a click on a row or the Prompt bar can set (#447). Before them, such a filter
@@ -468,7 +439,7 @@ export function ChangesPage() {
                 </td>
               </tr>
             )}
-            {rows.map((row) => {
+            {!loading && !error && rows.map((row) => {
               const detail = detailText(row, tc);
               const what = whatOf(row, labels, sectionLabels);
               // Offered only where the filter would actually find the row again — see
@@ -539,13 +510,13 @@ export function ChangesPage() {
       </div>
 
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>{tc.count(total)}</span>
+        <span role="status">{loading ? tc.loading : error ? "—" : tc.matching(total, devicesTotal)}</span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => update({ page: page - 1 })}>
+          <Button variant="outline" size="sm" disabled={loading || !!error || page <= 1} onClick={() => update({ page: page - 1 })}>
             {tc.previous}
           </Button>
-          <span className="self-center">{tc.pageOf(page, totalPages)}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => update({ page: page + 1 })}>
+          <span className="self-center">{!loading && !error && tc.pageOf(page, totalPages)}</span>
+          <Button variant="outline" size="sm" disabled={loading || !!error || page >= totalPages} onClick={() => update({ page: page + 1 })}>
             {tc.next}
           </Button>
         </div>

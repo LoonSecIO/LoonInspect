@@ -24,7 +24,7 @@ describe("visibleNavigation", () => {
   it("a viewer sees every fleet page and only the ungated Settings entries", () => {
     const items = visibleNavigation(VIEWER, NO_FLAGS);
 
-    expect(paths(items)).toEqual(["/", "/devices", "/posture/macos", "/settings/my-account"]);
+    expect(paths(items)).toEqual(["/", "/devices", "/patch-plans", "/posture/macos", "/settings/my-account"]);
     // Devices' children carry no permission: the floor every role holds is enough.
     expect(items[1].children?.map((child) => child.to)).toEqual([
       "/devices/applications",
@@ -128,6 +128,7 @@ describe("visibleNavigation", () => {
       expect(visibleNavigation(EVERYTHING, NO_FLAGS, ANSWERING).map((item) => item.labelKey)).toEqual([
         "overview",
         "devices",
+        "patchPlans",
         "posture",
         "settings"
       ]);
@@ -142,7 +143,7 @@ describe("visibleNavigation", () => {
         expect(posture(visibleNavigation(permissions, NO_FLAGS, ANSWERING))?.children?.map((child) => child.labelKey)).not.toContain("patchPolicy");
       }
       // And a viewer's tree is what it was: the flag off adds no Posture section.
-      expect(paths(visibleNavigation(VIEWER, NO_FLAGS))).toEqual(["/", "/devices", "/posture/macos", "/settings/my-account"]);
+      expect(paths(visibleNavigation(VIEWER, NO_FLAGS))).toEqual(["/", "/devices", "/patch-plans", "/posture/macos", "/settings/my-account"]);
     });
 
     it("with the flag on it is listed last, and needs app:read like its route", () => {
@@ -203,8 +204,17 @@ describe("visibleNavigation", () => {
     const before = JSON.stringify(navigationItems.map((item) => [item.to, item.children?.length]));
     const items = visibleNavigation(VIEWER, NO_FLAGS);
 
-    expect(settings(items)).not.toBe(navigationItems[3]);
+    expect(settings(items)).not.toBe(settings(navigationItems));
     expect(JSON.stringify(navigationItems.map((item) => [item.to, item.children?.length]))).toBe(before);
-    expect(navigationItems[3].to).toBe("/settings/connections");
+    expect(settings(navigationItems)?.to).toBe("/settings/connections");
   });
+});
+
+it("lists Patch Plans directly for inventory readers, including read-only roles, and requires both grants", () => {
+  for (const permissions of [VIEWER, AUDITOR, EVERYTHING]) {
+    expect(visibleNavigation(permissions, NO_FLAGS).find(item => item.labelKey === "patchPlans")?.to).toBe("/patch-plans");
+  }
+  for (const permissions of [[], [PERMISSIONS.APP_READ], [PERMISSIONS.DEVICE_READ]]) {
+    expect(visibleNavigation(permissions, NO_FLAGS).find(item => item.labelKey === "patchPlans")).toBeUndefined();
+  }
 });

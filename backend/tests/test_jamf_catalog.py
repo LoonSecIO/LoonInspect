@@ -479,12 +479,13 @@ class TestACatalogOutOfReach:
         error = await self._summaries(refused)
 
         message = str(error)
+        # The OS's own words: they are what tells a name that did not resolve from a refusal or TLS interception.
         assert f"{self.HOST} did not answer (ConnectError: [Errno -2] Name or service not known)" in message
         for check in ("outbound access", "DNS", "proxy", "egress firewall", "TLS interception"):
             assert check in message
         self._ends_on_the_state_it_leaves(message)
-        # The httpx error is kept behind the sentence, for anyone who turns the traceback on.
-        assert isinstance(error.__cause__, httpx.ConnectError)
+        # Even an explicit traceback must not repeat credentials from a transport URL.
+        assert error.__cause__ is None and error.__suppress_context__
 
     async def test_an_error_with_no_words_is_named_by_its_type_alone(self) -> None:
         """A timeout often has nothing to say; `(ConnectTimeout: )` would read as a sentence cut off."""
@@ -505,6 +506,44 @@ class TestACatalogOutOfReach:
         assert "line two" not in message
         assert "x" * 200 not in message
 
+    async def test_the_default_address_keeps_the_words_that_name_tls_interception(self, monkeypatch) -> None:
+        """The default address carries nothing to withhold, so the sentence keeps the reason: on a
+        default install behind TLS-intercepting egress it says so instead of a bare `ConnectError`
+        that a name that did not resolve would also read as."""
+        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://jamf-patch.jamfcloud.com/v1")
+        why = "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate"
+
+        def intercepted(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError(why, request=request)
+
+        message = str(await self._summaries(intercepted))
+        assert f"jamf-patch.jamfcloud.com did not answer (ConnectError: {why})" in message
+
+    @pytest.mark.parametrize(
+        ("address", "error"),
+        [
+            pytest.param("https://svc:synthetic-secret@patch.example.test/v1", httpx.ConnectError, id="userinfo"),
+            pytest.param("https://patch.example.test/v1?token=synthetic-secret", httpx.ConnectError, id="query"),
+            pytest.param("https://patch.example.test/v1#synthetic-secret", httpx.ReadTimeout, id="fragment"),
+            pytest.param("https://patch.example.test/v1", httpx.InvalidURL, id="an address httpx could not read"),
+        ],
+    )
+    async def test_an_errors_words_are_withheld_when_the_address_has_something_to_withhold(
+        self, monkeypatch, address: str, error: type[Exception]
+    ) -> None:
+        """A mirror's address can carry a credential, and an `InvalidURL`'s words quote the address it
+        could not read, so there the brackets hold the type alone and the step-through's mirror probe
+        prints the words in the operator's own shell instead."""
+        monkeypatch.setattr(settings, "jamf_patch_base_url", address)
+
+        def failing(request: httpx.Request) -> httpx.Response:
+            words = f"synthetic-secret in {address}"
+            raise error(words) if error is httpx.InvalidURL else error(words, request=request)
+
+        message = str(await self._summaries(failing))
+        assert f"{self.HOST} did not answer ({error.__name__})." in message
+        assert "synthetic-secret" not in message
+
     @pytest.mark.parametrize("status", [403, 429, 503])
     async def test_a_status_that_is_not_the_catalog_names_the_status_and_the_url(self, status: int) -> None:
         error = await self._summaries(lambda request: httpx.Response(status))
@@ -514,7 +553,7 @@ class TestACatalogOutOfReach:
         assert f"Check what {self.URL} returns from this container" in message  # the one thing to look at
         assert "proxy answering in Jamf's place, or an outage at Jamf" in message  # the two usual causes
         self._ends_on_the_state_it_leaves(message)
-        assert isinstance(error.__cause__, httpx.HTTPStatusError)
+        assert error.__cause__ is None and error.__suppress_context__
 
     @pytest.mark.parametrize(
         "answer",
@@ -605,7 +644,7 @@ class TestAnAddressThatIsNotAnAddress:
 
         message = str(raised.value)
         assert "JAMF_PATCH_BASE_URL" in message  # what to change
-        assert repr(value) in message  # what it holds now
+        assert "value withheld" in message
         assert "https://" in message  # what it must look like
         assert "https://jamf-patch.jamfcloud.com/v1" in message  # what removing it restores
         assert "docs/troubleshooting.md" in message  # where the step-through is
