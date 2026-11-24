@@ -47,7 +47,7 @@ struct UninstallPlan {
             let names: [String]
             do { names = try fm.contentsOfDirectory(atPath: byHost) }
             catch { throw UninstallFailure("Cannot inspect this user's ByHost preferences. Check Library access and retry; no changes were made.") }
-            paths += names.filter { $0.hasPrefix(Self.bundleID + ".") && $0.hasSuffix(".plist") }.sorted().map { byHost + "/" + $0 }
+            paths += names.filter(Self.isByHostPreference).sorted().map { byHost + "/" + $0 }
         }
         for path in paths {
             if let entry = try Self.inspect(path, uid: uid, bundle: false) { removals.append(entry) }
@@ -71,6 +71,19 @@ struct UninstallPlan {
             }
         }
         self.removals = removals; self.retained = retained
+    }
+
+    static func isByHostPreference(_ name: String) -> Bool {
+        let prefix = bundleID + ".", suffix = ".plist"
+        guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return false }
+        let host = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+        // CoreFoundation uses a UUID, a legacy 12-hex host ID, or UnknownHostID.
+        // A dotted suffix belongs to another application domain, not this bundle.
+        if host == "UnknownHostID" { return true }
+        if let uuid = UUID(uuidString: host), uuid.uuidString.caseInsensitiveCompare(host) == .orderedSame { return true }
+        return host.utf8.count == 12 && host.utf8.allSatisfy {
+            (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0)
+        }
     }
 
     static func isLink(_ path: String) -> Bool {
@@ -190,7 +203,8 @@ func executeUninstall(_ plan: UninstallPlan, actions: UninstallActions, report: 
     func remove(_ entry: Removal) throws {
         let preferences = plan.home + "/Library/Preferences/"
         if entry.path == preferences + UninstallPlan.bundleID + ".plist"
-            || entry.path.hasPrefix(preferences + "ByHost/" + UninstallPlan.bundleID + ".") {
+            || (entry.path.hasPrefix(preferences + "ByHost/")
+                && UninstallPlan.isByHostPreference((entry.path as NSString).lastPathComponent)) {
             // CFPreferences may remove or rewrite a previewed plist while synchronizing.
             guard try UninstallPlan.inspect(entry.path, uid: plan.uid, bundle: false) != nil else { return }
         } else { try plan.verify(entry) }

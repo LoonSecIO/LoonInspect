@@ -50,7 +50,7 @@ final class FakeActions: UninstallActions {
             try write(home + "/Documents/evidence.pdf"); try write(support + "/backup/PG_VERSION")
             try write(support + "/data/export.pdf"); try app(home + "/Applications/LoonInspect.app")
             let browserPaths = ["HTTPStorages/io.loonsec.looninspect/store", "HTTPStorages/io.loonsec.looninspect.binarycookies",
-                                "Cookies/io.loonsec.looninspect.binarycookies", "Preferences/ByHost/io.loonsec.looninspect.synthetic.plist"]
+                                "Cookies/io.loonsec.looninspect.binarycookies", "Preferences/ByHost/io.loonsec.looninspect.12345678-ABCD-1234-ABCD-123456789ABC.plist"]
             for path in browserPaths { try write(home + "/Library/" + path) }
             let unrelatedPreferences = home + "/Library/Preferences/ByHost/io.loonsec.looninspect-other.synthetic.plist"
             try write(unrelatedPreferences)
@@ -69,8 +69,32 @@ final class FakeActions: UninstallActions {
             passed += 1
         }
         do {
+            let (home, _, socket) = try fixture("preferences-domain-boundary")
+            let preferences = home + "/Library/Preferences/"
+            let uuid = "12345678-ABCD-1234-ABCD-123456789ABC"
+            let own = [UninstallPlan.bundleID + ".plist"]
+                + [uuid, "23456789-abcd-1234-abcd-123456789abc", "001122aabbcc", "AABBCCDDEEFF", "UnknownHostID"].map {
+                    "ByHost/" + UninstallPlan.bundleID + "." + $0 + ".plist"
+                }
+            let retained = [
+                "ByHost/" + UninstallPlan.bundleID + ".beta." + uuid + ".plist",
+                "ByHost/" + UninstallPlan.bundleID + "-other." + uuid + ".plist",
+                "ByHost/example.unrelated." + uuid + ".plist",
+                "ByHost/" + UninstallPlan.bundleID + ".backup.plist",
+                "ByHost/" + UninstallPlan.bundleID + "..plist",
+                "ByHost/" + UninstallPlan.bundleID + ".123456789ABCDEF.plist",
+            ]
+            for path in own + retained { try write(preferences + path) }
+            let preview = try plan(home, socket)
+            check(Set(preview.removals.map { $0.path }) == Set(own.map { preferences + $0 }), "Preview crossed a preference domain boundary")
+            try executeUninstall(preview, actions: FakeActions()) { _ in }
+            for path in own { check(!fm.fileExists(atPath: preferences + path), "Own host/any-host preferences retained") }
+            for path in retained { check(fm.fileExists(atPath: preferences + path), "Other preference domain or unknown file removed") }
+            passed += 1
+        }
+        do {
             let (home, _, socket) = try fixture("rewritten-preferences")
-            let path = home + "/Library/Preferences/ByHost/io.loonsec.looninspect.synthetic.plist"
+            let path = home + "/Library/Preferences/ByHost/io.loonsec.looninspect.12345678-ABCD-1234-ABCD-123456789ABC.plist"
             try write(path)
             let preview = try plan(home, socket), actions = FakeActions()
             actions.onClearPreferences = { try fm.removeItem(atPath: path); try write(path, "rewritten") }
@@ -80,11 +104,11 @@ final class FakeActions: UninstallActions {
         }
         do {
             let (home, _, socket) = try fixture("redirected-byhost")
-            try write(home + "/outside/io.loonsec.looninspect.synthetic.plist")
+            try write(home + "/outside/io.loonsec.looninspect.12345678-ABCD-1234-ABCD-123456789ABC.plist")
             try fm.createDirectory(atPath: home + "/Library/Preferences", withIntermediateDirectories: true)
             try fm.createSymbolicLink(atPath: home + "/Library/Preferences/ByHost", withDestinationPath: home + "/outside")
             refused { _ = try plan(home, socket) }
-            check(fm.fileExists(atPath: home + "/outside/io.loonsec.looninspect.synthetic.plist"), "Redirected preferences touched")
+            check(fm.fileExists(atPath: home + "/outside/io.loonsec.looninspect.12345678-ABCD-1234-ABCD-123456789ABC.plist"), "Redirected preferences touched")
             passed += 1
         }
         do {
