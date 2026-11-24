@@ -422,6 +422,11 @@ directly.*
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
+   Upstream response bodies are withheld from delivery errors because they can echo
+   credentials or inventory. Use the HTTP status and the stated next check. For an
+   Elastic item rejection, check index mappings and write permissions in the receiver's
+   service logs; an HTTP 200 can still contain a rejected item. Connection failures name
+   DNS/network, connection-refused or TLS checks without copying credential-bearing URLs.
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
@@ -821,8 +826,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    answer is not the collector. The address at the end of the command is the default: an
    instance with `SHARING_ENDPOINT` set probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
-   - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
-     Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
+   - `The collector at api.loonsec.io answered HTTP 403` → that name is not the collector yet: until LoonSec reclaims
      it, an older account's API answers there. An image built before 2026-09-25, whose
      default was that name, or a `SHARING_ENDPOINT` set to it, reads this on every
      exchange. Set `SHARING_ENDPOINT` to `https://api.next.loonsec.io/v1/exchange` or
@@ -831,18 +835,20 @@ and step 2 ends with how to tell that apart from a broken exchange.
      same line is reportable state **M**. From any other host, a `403` or `404` means
      there is no collector at that path: check `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
-     and the text after the colon says how. `Name or service not known` is DNS — `docker
+     and the text after the colon names the next checks. For DNS, `docker
      compose exec app getent hosts <host>` prints nothing when the container cannot
      resolve it. `Connection refused` is nothing listening at that address.
-     `CERTIFICATE_VERIFY_FAILED` is something between this container and the collector
-     presenting its own certificate, usually a TLS-inspecting proxy: exempt the host from
-     inspection.
+     `TLS certificate verification failed` means the certificate or trust chain needs
+     checking; a TLS-inspecting proxy may need an exemption for this host.
    - `No answer from <host> within 10 seconds.` → an egress firewall dropping the
      connection, or the collector down; the probe above tells them apart. An air-gapped
      instance with sharing on reads this every day, and that is a supported configuration.
-   - `<host> answered 200 with a body that is not JSON …`, or `answered 302 Found,
-     redirecting to <another host>` → something other than the collector answered: a
+   - `<host> answered 200 with a body that is not JSON …`, or `answered HTTP 302`
+     → something other than the collector answered: a
      proxy or a captive portal. The probe above shows who.
+   Response text, redirect targets and raw transport exceptions are withheld from the
+   share log. Check the collector's service logs for details, without copying submitted
+   payloads or credentials into support reports.
    - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
      container's body, and the text after the colon is its reason. Reportable state **M**:
      the container built something the collector will not take, which is ours to fix.
@@ -1586,13 +1592,16 @@ field that left, `query_text`.
      page opened. Step 1.
    - *No AI provider is saved …* or *… is not saved in Settings › AI* → the card was removed after
      the page opened. Save it again and reload.
-   - *could not reach the endpoint …* → the app could not open a connection to the saved Base URL. For
+   - *Connection failed* or *Connection refused* → the app could not open a connection to the saved Base URL. For
      Apple's model on the same Mac, on the Mac: `curl -s http://127.0.0.1:1976/health` prints
      `fm serve is running` when it is; if not, run `fm serve` in Terminal. From the container:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('http://host.docker.internal:1976/health', timeout=5).read())"`.
-   - *HTTP 403* with *Cross-site requests are not allowed* → `fm serve` refuses a request that
+   - *HTTP 401 / 403* → check the saved key and its permissions. On the Apple card,
+     `fm serve` also refuses a request that
      names another host. Keep the Apple card's Base URL on `host.docker.internal`: the app then
      presents `127.0.0.1`, which `fm serve` accepts. Any other address is presented as typed.
+     Upstream error text is withheld because it can echo the saved key or prompt. Check
+     the provider's service logs if the status and next check do not resolve it.
    - *The Apple card uses only Apple's on-device model, system …* → the Apple card was saved
      naming another model, usually `pcc` (Private Cloud Compute, on Apple's servers), by a build
      that allowed it. Nothing was sent, and the share log has no row for the question. An admin
@@ -2787,13 +2796,14 @@ that log, then repeat the act.
    sends this case only; the list stays. A 403: only an administrator sends, reads or withdraws a case.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
-2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+2. ***"…(HTTP 400)…response text was withheld"***: check the submitted fields, particularly a URL naming an IP
+   address or a `.local` host, or a hidden character (step 10), and the service's logs. Upstream errors
+   are withheld because they can echo a case's private key, contact or submitted content. Nothing was stored there:
    send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
-3. ***"…HTTP 503. It said: "Submissions are not enabled…"***: the service has not opened submissions;
-   repeat the act once support says it has. ***"…HTTP 503… Try again after … UTC"***: the day's 100
+3. ***"…HTTP 503…"***: check with support whether the service has opened submissions and is available;
+   repeat the act once support confirms it. ***"…HTTP 503… Try again after … UTC"*** can mean the day's 100
    new cases, shared by every instance, are spent; repeat the act after that time, under the case's key.
 4. ***"…a fresh one (HTTP 409)"***: the key collided, and so did the fresh one minted in its place: **Y**.
 5. ***"…HTTP 429"*** or ***"Asked too soon…"***: a case's status is read once a minute at most, and not

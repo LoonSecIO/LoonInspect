@@ -36,6 +36,7 @@ from app.core import participation
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.feature_flags import APP_PROMOTION_FLAG
+from app.core.outbound_errors import http_failure, transport_failure
 from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
@@ -487,41 +488,28 @@ def _failure_sentence(exc: Exception) -> str:
     """A failed attempt's `error`, in the operator's words: who failed, and the detail
     that says why (docs/troubleshooting.md §5, step 6 maps each shape to the next check).
 
-    It used to be `str(exc)` — httpx's vocabulary, read only by someone who downloaded the
-    NDJSON. Send now (#408) puts it on the page, so it is written for the page: the host
-    rather than the whole URL, the collector's own reason where it gave one, and how many
-    times the run tried, since every shape below is the *last* attempt's.
+    Upstream text can echo the submitted payload or credentials. Keep the configured host,
+    status and next check, never response bodies, redirect targets or exception strings.
     """
-    host = urlsplit(app_settings.sharing_endpoint).hostname or app_settings.sharing_endpoint
+    try:
+        host = urlsplit(app_settings.sharing_endpoint).hostname or "the configured host"
+    except ValueError:
+        host = "the configured host"
     tried = f" Tried {len(_RETRY_DELAYS) + 1} times."
     if isinstance(exc, httpx.HTTPStatusError):
-        response = exc.response
-        said = f"The collector at {host} answered {response.status_code} {response.reason_phrase}"
-        if response.has_redirect_location:
-            # Where to, by host only: a captive portal's redirect can carry a session in
-            # its query string, and the host is the part that names who is answering.
-            said += f", redirecting to {urlsplit(response.headers['location']).hostname or 'another address'}"
-        else:
-            # The collector's reason where it gave one (the Support collector answers a 400
-            # with {"error": …}), collapsed to one line and bounded: this is untrusted text
-            # from the far end, stored and shown as text, never as markup.
-            reason = " ".join(response.text.split())[:200]
-            if reason:
-                said += f": {reason}"
-        return said + "." + tried
+        return f"The collector at {host} answered {http_failure(exc.response.status_code)}" + tried
     if isinstance(exc, httpx.TimeoutException):
         return f"No answer from {host} within {_TIMEOUT_SECONDS:g} seconds." + tried
     if isinstance(exc, httpx.ConnectError):
-        # DNS, a refused connection and a TLS failure all arrive here; httpx's text names
-        # which (`Name or service not known`, `CERTIFICATE_VERIFY_FAILED`, …).
-        return f"Could not connect to {host}: {exc}." + tried
+        return f"Could not connect to {host}: {transport_failure(exc)}" + tried
     if isinstance(exc, ValueError):
         # post_exchange's undecodable-200 case (#82).
         return (
             f"{host} answered 200 with a body that is not JSON, so something other than the collector "
             "answered — usually a proxy or a captive portal." + tried
         )
-    return f"The exchange to {host} failed: {type(exc).__name__}: {exc}." + tried
+    detail = transport_failure(exc) if isinstance(exc, httpx.HTTPError) else "Check the collector and server logs."
+    return f"The exchange to {host} failed. {detail}" + tried
 
 
 def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:
@@ -632,8 +620,8 @@ async def run_exchange(
         # unlogged attempt is also an unconsumed day, so `exchange_due` would say
         # yes again on the next tick and a persistently bad upstream would become a
         # crash loop instead of one logged failure a day.
-        logger.debug("exchange failed: %s", exc)
         log.error = _failure_sentence(exc)[:2000]
+        logger.debug("exchange failed: %s", log.error)
     else:
         response = result.response
         log.outcome = "sent"

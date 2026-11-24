@@ -5,7 +5,7 @@ the first request, stored encrypted like a contribution receipt, sent only in a 
 or shown, and never joined by a credential, receipt or submission UUID. Sending belongs to the v2 preview
 INTELLIGENCE_ACCESS gates and needs INTELLIGENCE_SUBMISSIONS, its own switch, too (#692); status and
 withdrawal need neither, so switching either off never strands a withdrawal.
-Outcomes land on the case (`state`, `last_error`), quoting the service's one bounded sentence. What the
+Outcomes land on the case (`state`, `last_error`), without quoting upstream errors. What the
 administrator wrote is kept here as long as the service keeps it, and no longer (`forget_closed`).
 """
 
@@ -36,7 +36,6 @@ FIELDS = ("kind", "app_name", "bundle_id", "platform", "versions", "public_url",
 TYPED = ("public_url", "text", "contact")  # what the administrator wrote; withdrawal clears it here too
 KEPT = timedelta(days=90)  # the service deletes content and contact this long after a case closes (#623, 2026-09-23)
 POLL_FLOOR = timedelta(seconds=60)  # the service answers a faster status read with 429
-SAID = 1000  # characters of the service's sentence quoted; its longest, the public_url rule, has 387
 Transport = httpx.AsyncBaseTransport | None
 
 
@@ -95,7 +94,11 @@ def _refused(case: SubmissionCase, code: int, said: str) -> None:
 
 
 async def _post(case: SubmissionCase, route: str, body: dict, transport: Transport) -> tuple[int, dict | None, str] | None:
-    """POST only `body`, with no credential, query, redirect or proxy: (status, answer, the service's sentence)."""
+    """POST only `body`: return status, answer and a safe indication of a service refusal.
+
+    A nonempty third value distinguishes a service's JSON refusal from an unrelated 404.
+    Never quote its text: it can echo the request's case key, contact or submitted content.
+    """
     raw = bytearray()
     try:
         async with (
@@ -118,9 +121,13 @@ async def _post(case: SubmissionCase, route: str, body: dict, transport: Transpo
     except ValueError:
         answer = None
     said = answer.get("error") if isinstance(answer, dict) else None
-    said = said if isinstance(said, str) and said.isprintable() else ""
-    said = said if len(said) <= SAID else said[:SAID] + "…"  # cut, never dropped: a refusal names its rule first
-    return response.status_code, answer if isinstance(answer, dict) else None, f' It said: "{said}"' if said else ""
+    recognized = isinstance(said, str) and bool(said) and said.isprintable()
+    detail = (
+        " The service returned a refusal; its response text was withheld. Check the submitted fields and service logs."
+        if recognized
+        else ""
+    )
+    return response.status_code, answer if isinstance(answer, dict) else None, detail
 
 
 def _settled(case: SubmissionCase, answer: dict | None, state: str | None = None) -> bool:
@@ -135,10 +142,19 @@ def _settled(case: SubmissionCase, answer: dict | None, state: str | None = None
     except (KeyError, TypeError, ValueError):
         return False
     case.state, case.received_at, case.closed_at, case.release = answer["state"], received, closed, release
-    (case.coverage, case.note), case.last_error = words, None
+    # These are intentional service-authored explanations, but the request's capability
+    # must never become display text. Also remove another case's well-formed capability.
+    case.coverage, case.note = tuple(_display_text(word, case.case_key) for word in words)
+    case.last_error = None
     if case.state == "withdrawn":  # a status read may hear it first: after a lost answer, or on a copied database
         _forget(case)
     return True
+
+
+def _display_text(value: str | None, case_key: str) -> str | None:
+    if value is None:
+        return None
+    return KEY.sub("[case key withheld]", value.replace(case_key, "[case key withheld]"))
 
 
 def _forget(case: SubmissionCase) -> None:

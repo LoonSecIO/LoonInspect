@@ -309,7 +309,7 @@ async def _sentence_for(handler) -> str:
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_names_the_host_the_status_and_the_collectors_reason(endpoint) -> None:
+async def test_a_refusal_names_the_host_status_and_next_check_without_upstream_text(endpoint) -> None:
     """The shape a default endpoint with no collector behind it answers today: API
     Gateway's 403 for a route that does not exist."""
 
@@ -323,8 +323,8 @@ async def test_a_refusal_names_the_host_the_status_and_the_collectors_reason(end
         )
 
     assert await _sentence_for(handler) == (
-        'The collector at collector.example.test answered 403 Forbidden: {"message":"Missing Authentication Token"}. '
-        "Tried 4 times."
+        "The collector at collector.example.test answered HTTP 403: The endpoint refused access. "
+        "Check the key's permissions and the configured endpoint. Response body withheld. Tried 4 times."
     )
 
 
@@ -334,13 +334,14 @@ async def test_a_long_html_error_page_is_one_bounded_line(endpoint) -> None:
         return httpx.Response(502, text="<html>\n  <body>\n" + "Bad gateway. " * 400 + "</body></html>")
 
     sentence = await _sentence_for(handler)
-    assert sentence.startswith("The collector at collector.example.test answered 502 Bad Gateway: <html> <body> Bad")
+    assert sentence.startswith("The collector at collector.example.test answered HTTP 502:")
+    assert "<html>" not in sentence and "Response body withheld" in sentence
     assert "\n" not in sentence
     assert len(sentence) < 300
 
 
 @pytest.mark.asyncio
-async def test_a_redirect_names_where_to_by_host_and_nothing_else(endpoint) -> None:
+async def test_a_redirect_does_not_copy_its_untrusted_target(endpoint) -> None:
     """A captive portal's redirect: the host says who is answering; its query string may
     carry a session and has no business in the share log."""
 
@@ -348,10 +349,8 @@ async def test_a_redirect_names_where_to_by_host_and_nothing_else(endpoint) -> N
         return httpx.Response(302, headers={"Location": "https://portal.example.net/login?session=s3cr3t"})
 
     sentence = await _sentence_for(handler)
-    assert sentence == (
-        "The collector at collector.example.test answered 302 Found, redirecting to portal.example.net. Tried 4 times."
-    )
-    assert "s3cr3t" not in sentence
+    assert "HTTP 302" in sentence and "redirects are not followed" in sentence
+    assert "s3cr3t" not in sentence and "portal.example.net" not in sentence
 
 
 @pytest.mark.asyncio
@@ -363,12 +362,13 @@ async def test_no_answer_says_how_long_it_waited(endpoint) -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unreachable_host_keeps_the_reason_httpx_gave(endpoint) -> None:
+async def test_an_unreachable_host_names_the_connection_checks_without_exception_text(endpoint) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
 
     assert await _sentence_for(handler) == (
-        "Could not connect to collector.example.test: [Errno -2] Name or service not known. Tried 4 times."
+        "Could not connect to collector.example.test: Connection failed. "
+        "Check the endpoint address, DNS, network access and TLS certificate. Tried 4 times."
     )
 
 
