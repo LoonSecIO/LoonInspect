@@ -47,6 +47,7 @@ export interface UserFilter {
 export interface DeviceChangeListResponse {
   items: DeviceChange[];
   total: number;
+  devicesTotal: number;
   page: number;
   pageSize: number;
   userFilter?: UserFilter | null;
@@ -68,15 +69,18 @@ export interface ChangeFilters {
   /** Absolute ISO instant. The feed's anchor, carried into every click-through so a
    *  shared link reproduces the window the sender saw. */
   since?: string;
+  until?: string;
+  /** A scalar policy field in section, with an exact new-value match. */
+  field?: string;
+  changedTo?: string;
   /** What started the observation the change was found in: sweep | manual | webhook. */
   trigger?: string;
   /** One observation of one subject — every change that pull found on that Mac (#447). */
   spanId?: string;
   /** A prefix of the version a change moved TO: "153" finds 153.0.7049.84. */
   version?: string;
-  /** The Mac as the observation saw it (`deviceMeta`, #447). None of these has a control on
-   *  the page: they arrive from a link, a click on a row, or the Prompt bar, and each shows as
-   *  a removable chip while it is applied. `model` and `user` match anywhere in the value,
+  /** The Mac as the observation saw it (`deviceMeta`, #447). These have visible controls and
+   *  may also arrive from links, rows, or the Prompt bar. Each shows as a removable chip. `model` and `user` match anywhere in the value,
    *  `osVersion` is a prefix, and the rest are exact. A row derived before the stamp existed
    *  carries none, so it matches none of them. `user` also takes a `u_…` token, matched exactly
    *  on the row's `userToken`, and that is what a link carries (#446). */
@@ -96,9 +100,8 @@ export interface ChangeFilters {
   pageSize?: number;
 }
 
-/** The filter keys with no control on the Changes page (#447): a link, a click on a row, or the
- *  Prompt bar sets them, the API takes them under these names, and each shows as a removable
- *  chip while it is applied — a filter the page applies is never one the page hides. */
+/** The originally hidden filters (#447), also retained as removable chips. Historical
+ *  device dimensions now have controls; trigger, observation and entry version remain link-only. */
 export const HIDDEN_KEYS = [
   "trigger",
   "spanId",
@@ -114,6 +117,7 @@ export const HIDDEN_KEYS = [
 
 export interface PolicyField {
   key: string;
+  scalar: boolean;
   field: string;
   label: string;
   level: ChangeLevel;

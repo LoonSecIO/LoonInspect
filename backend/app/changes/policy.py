@@ -233,6 +233,14 @@ FIELD_RULES: tuple[FieldRule, ...] = (
     _f("definition", "criteria", HIGH, "Group criteria", "Criteria moving re-scopes every policy the group drives."),
 )
 
+# Whole-list comparisons are field changes, but cannot accept a scalar Changed to value.
+SCALAR_FIELDS = frozenset(
+    (rule.section, rule.field)
+    for rule in FIELD_RULES
+    if (rule.section, rule.field) not in {("disk_encryption", "fileVault2EnabledUserNames"), ("definition", "criteria")}
+)
+
+
 # --- list sections ----------------------------------------------------------------------
 
 ENTRY_RULES: tuple[EntryRule, ...] = (
@@ -507,6 +515,7 @@ class EffectivePolicy:
                 {
                     "key": rule.key,
                     "field": rule.field,
+                    "scalar": (rule.section, rule.field) in SCALAR_FIELDS,
                     "label": rule.label,
                     "level": rule.level,
                     "why": rule.why,

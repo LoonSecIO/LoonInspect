@@ -116,7 +116,7 @@ def _span(connection_id: int, subject_id: str, span_id):
     )
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def seeded():
     """Two tenants, each with a connection and a handful of changes — including a
     Wireshark install in *both*, which is what makes the tenancy assertion mean
@@ -310,7 +310,7 @@ async def seeded():
                 await db.commit()
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def client(seeded):
     """Signed in as the operational tenant's admin, CSRF armed. https, because the
     session cookie is Secure and a plain-http client silently discards it."""
@@ -345,7 +345,186 @@ def feed(client, seeded):
 
 # `userFilter` is null unless a `user` filter was applied (#446) — "nothing was asked" rather
 # than "asked, and nothing resolved it", which is the pair of nulls inside it.
-EMPTY = {"items": [], "total": 0, "page": 1, "pageSize": 200, "userFilter": None}
+EMPTY = {"items": [], "total": 0, "devicesTotal": 0, "page": 1, "pageSize": 200, "userFilter": None}
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def scalar_changes(seeded):
+    """Observed OS transitions, lookalikes and a neighbour for the exact field query."""
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import DeviceChange, MdmConnection
+
+    label = f"scalar-window-{uuidlib.uuid4().hex}"
+    inserted = {}
+
+    def row(connection, subject, minute, **overrides):
+        return _change(
+            connection,
+            **{
+                "subject_id": subject,
+                "subject_label": label,
+                "observed_at": BASE + timedelta(minutes=minute),
+                "collected_at": BASE + timedelta(days=1),
+                "section": "operating_system",
+                "field": "version",
+                "change": "changed",
+                "old_value": {"value": "27.2"},
+                "new_value": {"value": "27.2.1"},
+                "device_meta": {"departmentId": "870", "managed": True},
+                **overrides,
+            },
+        )
+
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        second = MdmConnection(name=label, provider="jamf", base_url="https://second-scalar.jamfcloud.com")
+        db.add(second)
+        await db.flush()
+        second_id = second.id
+        rows = [
+            row(seeded["mine"], "870-a", 0),
+            row(seeded["mine"], "870-a", 30),
+            # Changed-to is intentionally not called upgraded: this is a downgrade.
+            row(seeded["mine"], "870-b", 60, old_value={"value": "28.0"}),
+            row(seeded["mine"], "870-unknown", 90, device_meta=None),
+            row(second_id, "870-a", 30),
+            row(seeded["mine"], "870-prefix", 30, new_value={"value": "27.2.10"}),
+            row(seeded["mine"], "870-build", 30, field="build"),
+            row(
+                seeded["mine"],
+                "870-app",
+                30,
+                section="applications",
+                field=None,
+                change="updated",
+                entry_kind="application",
+                new_value={"version": "27.2.1"},
+            ),
+            row(seeded["mine"], "870-before", -1),
+            row(seeded["mine"], "870-end", 120),
+            row(seeded["mine"], "870-group", 30, subject_kind="computer_group", section="definition", field="name"),
+        ]
+        db.add_all(rows)
+        await db.commit()
+        inserted[OPERATIONAL_TENANT_ID] = [r.id for r in rows]
+    async with session_for_tenant(NEIGHBOUR_TENANT_ID) as db:
+        neighbour = row(seeded["theirs"], "870-a", 30)
+        db.add(neighbour)
+        await db.commit()
+        inserted[NEIGHBOUR_TENANT_ID] = [neighbour.id]
+    try:
+        yield {
+            "q": label,
+            "section": "operating_system",
+            "field": "version",
+            "changedTo": "27.2.1",
+            "since": BASE.isoformat(),
+            "until": (BASE + timedelta(hours=2)).isoformat(),
+        }
+    finally:
+        for tenant, ids in inserted.items():
+            async with session_for_tenant(tenant) as db:
+                await db.execute(delete(DeviceChange).where(DeviceChange.id.in_(ids)))
+                if tenant == OPERATIONAL_TENANT_ID:
+                    await db.execute(delete(MdmConnection).where(MdmConnection.id == second_id))
+                await db.commit()
+
+
+async def test_exact_os_target_and_window_count_distinct_computers(client, scalar_changes) -> None:
+    response = await client.get("/api/changes", params={**scalar_changes, "pageSize": 2})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 5
+    assert body["devicesTotal"] == 4
+    assert len(body["items"]) == 2
+    all_rows = (await client.get("/api/changes", params=scalar_changes)).json()["items"]
+    assert {r["subjectId"] for r in all_rows} == {"870-a", "870-b", "870-unknown"}
+    assert len({r["mdmConnectionId"] for r in all_rows}) == 2
+    assert all(r["newValue"] == {"value": "27.2.1"} and r["field"] == "version" for r in all_rows)
+    # Same bounds expressed in a local offset select the same instants.
+    local = {**scalar_changes, "since": "2026-08-30T07:00:00-05:00", "until": "2026-08-30T09:00:00-05:00"}
+    assert (await client.get("/api/changes", params=local)).json()["total"] == 5
+
+
+async def test_scalar_query_composes_with_historical_dimensions(client, scalar_changes) -> None:
+    response = await client.get("/api/changes", params={**scalar_changes, "department": "870", "managed": "true"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 4 and body["devicesTotal"] == 3
+    assert "870-unknown" not in _subjects(body)
+    # These subjects have no current device rows: historical stamps alone answer.
+
+
+async def test_current_device_changes_cannot_rewrite_historical_membership(client, scalar_changes):
+    from app.core.database import session_for_tenant
+    from app.core.tenancy import OPERATIONAL_TENANT_ID
+    from app.models.schema import Device
+
+    query = {**scalar_changes, "department": "870", "managed": "true"}
+    before = (await client.get("/api/changes", params=query)).json()
+    connection = next(row["mdmConnectionId"] for row in before["items"] if row["subjectId"] == "870-b")
+    async with session_for_tenant(OPERATIONAL_TENANT_ID) as db:
+        current = Device(
+            mdm_connection_id=connection,
+            mdm_provider="jamf",
+            external_id="870-b",
+            serial_number="SYNTHETIC870B",
+            hostname="Current state",
+            department_id="870",
+            managed=True,
+        )
+        unknown = Device(
+            mdm_connection_id=connection,
+            mdm_provider="jamf",
+            external_id="870-unknown",
+            serial_number="SYNTHETIC870UNKNOWN",
+            hostname="Missing historical stamp",
+            department_id="870",
+            managed=True,
+        )
+        db.add_all([current, unknown])
+        await db.commit()
+        ids = [current.id, unknown.id]
+        try:
+            current.department_id = "different-today"
+            current.managed = False
+            await db.commit()
+            after = (await client.get("/api/changes", params=query)).json()
+            assert after == before
+            assert "870-unknown" not in _subjects(after)
+        finally:
+            await db.execute(delete(Device).where(Device.id.in_(ids)))
+            await db.commit()
+
+
+async def test_device_total_excludes_groups_and_is_independent_of_page(client, scalar_changes) -> None:
+    query = {"q": scalar_changes["q"], "subjectKind": "computer_group", "pageSize": 1}
+    response = await client.get("/api/changes", params=query)
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1 and response.json()["devicesTotal"] == 0
+    response = await client.get("/api/changes", params={**scalar_changes, "page": 10, "pageSize": 2})
+    assert response.json()["items"] == []
+    assert response.json()["total"] == 5 and response.json()["devicesTotal"] == 4
+
+
+@pytest.mark.parametrize(
+    "query, sentence",
+    [
+        ({"changedTo": "27.2.1"}, "Choose a section and field"),
+        ({"field": "version"}, "Choose a section"),
+        ({"section": "applications", "field": "version"}, "Choose a section"),
+        ({"section": "operating_system", "field": "madeUp"}, "Choose a section"),
+        ({"section": "definition", "field": "criteria", "changedTo": "[]"}, "Choose a section"),
+        ({"since": "2026-08-30T12:00:00"}, "since must include a timezone"),
+        ({"until": "2026-08-30T14:00:00"}, "until must include a timezone"),
+        ({"since": "2026-08-30T12:00:00Z", "until": "2026-08-30T12:00:00Z"}, "end time must be later"),
+        ({"since": "2026-08-30T14:00:00Z", "until": "2026-08-30T12:00:00Z"}, "end time must be later"),
+    ],
+)
+async def test_scalar_query_refuses_invalid_field_or_time(client, query, sentence) -> None:
+    response = await client.get("/api/changes", params=query)
+    assert response.status_code == 422
+    assert sentence in response.json()["detail"]
 
 
 def _subjects(body: dict) -> set[str]:

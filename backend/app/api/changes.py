@@ -4,11 +4,11 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import ColumnElement, String, func, or_, select, text
+from sqlalchemy import ColumnElement, String, distinct, func, or_, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.person_token import is_person_token
-from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, EffectivePolicy, Overrides, levels_at_least
+from app.changes.policy import CHANGE_POLICY_VERSION, LEVELS, SCALAR_FIELDS, EffectivePolicy, Overrides, levels_at_least
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db
@@ -104,12 +104,15 @@ def change_conditions(
     subject_id: str | None = None,
     subject_kind: str | None = None,
     section: str | None = None,
+    field: str | None = None,
+    changed_to: str | None = None,
     level: str | None = None,
     min_level: str | None = None,
     change: str | None = None,
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
+    until: datetime | None = None,
     trigger: str | None = None,
     span_id: str | None = None,
     version: str | None = None,
@@ -127,6 +130,22 @@ def change_conditions(
         conditions.append(DeviceChange.subject_kind == subject_kind)
     if section:
         conditions.append(DeviceChange.section == section)
+    if field is not None:
+        if (section, field) not in SCALAR_FIELDS:
+            raise HTTPException(
+                status_code=422,
+                detail="The changed-field filter cannot be applied. Choose a section and one of its scalar fields on Changes.",
+            )
+        conditions.append(DeviceChange.field == field)
+    if changed_to is not None:
+        if field is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a section and field before filtering by Changed to. "
+                "Select a scalar field on Changes, then enter its target value.",
+            )
+        conditions.append(func.jsonb_typeof(DeviceChange.new_value["value"]).in_(("string", "number", "boolean")))
+        conditions.append(DeviceChange.new_value["value"].astext == changed_to)
     if level and min_level:
         # Refused rather than composed. ANDing them is well-defined and useless —
         # `level=low&minLevel=normal` is "low changes that are at least normal", which is
@@ -151,8 +170,17 @@ def change_conditions(
         if change not in CHANGE_KINDS:
             raise HTTPException(status_code=422, detail=f"change must be one of {', '.join(CHANGE_KINDS)}")
         conditions.append(DeviceChange.change == change)
+    for name, bound in (("since", since), ("until", until)):
+        if bound is not None and bound.utcoffset() is None:
+            raise HTTPException(status_code=422, detail=f"{name} must include a timezone offset or Z. Choose the time again.")
+    if since is not None and until is not None and since >= until:
+        raise HTTPException(
+            status_code=422, detail="The end time must be later than the start time. Adjust the observation window."
+        )
     if since is not None:
         conditions.append(DeviceChange.observed_at >= since)
+    if until is not None:
+        conditions.append(DeviceChange.observed_at < until)
     if trigger:
         if trigger not in TRIGGERS:
             raise HTTPException(status_code=422, detail=f"trigger must be one of {', '.join(TRIGGERS)}")
@@ -259,12 +287,15 @@ async def list_changes(
     subject_id: str | None = Query(default=None, alias="subjectId"),
     subject_kind: str | None = Query(default=None, alias="subjectKind"),
     section: str | None = None,
+    field: str | None = Query(default=None, max_length=255),
+    changed_to: str | None = Query(default=None, alias="changedTo", max_length=512),
     level: str | None = None,
     min_level: str | None = Query(default=None, alias="minLevel"),
     change: str | None = None,
     q: str | None = None,
     artifact: str | None = None,
     since: datetime | None = None,
+    until: datetime | None = None,
     trigger: str | None = None,
     span_id: str | None = Query(default=None, alias="spanId"),
     version: str | None = None,
@@ -285,6 +316,13 @@ async def list_changes(
     *device* — its name, serial, or Jamf id. `artifact` names the *thing that changed*
     — an application name or bundle id, a local account's username, or the label the
     contract carries for a group, a profile, or an extension attribute.
+
+    `field` selects a scalar field within `section`, as listed by the change policy.
+    `changedTo` matches that field's new value exactly, so OS version 27.2.1 does not
+    match 27.2.10 or an application version. `since` (inclusive) and `until` (exclusive)
+    bound observation time, with timezone offsets required. These are reported inventory
+    times, not exact installation times. `devicesTotal` counts distinct computers by
+    connection and subject ID across the full filtered result, independently of pagination.
 
     They are separate parameters rather than one widened `q` for two reasons. Widening
     `q` would silently change what every existing caller gets back, the frontend and
@@ -314,8 +352,7 @@ async def list_changes(
     * a section outside the aperture of the observation stamps nothing, so a webhook's narrow
       read can leave a row with a model and no department.
 
-    The page has controls for none of the ten. They arrive from a link, from a click on a row,
-    or from the Prompt bar, and every one of them shows as a chip while it is applied.
+    The page exposes historical device filters. Link-only filters remain visible as chips.
 
     `user` takes two shapes (#446): typed text matches any of the three names, a `u_…` token
     matches `userToken` exactly, and `userFilter` echoes what it resolved to — a name for the
@@ -327,12 +364,15 @@ async def list_changes(
         subject_id=subject_id,
         subject_kind=subject_kind,
         section=section,
+        field=field,
+        changed_to=changed_to,
         level=level,
         min_level=min_level,
         change=change,
         q=q,
         artifact=artifact,
         since=since,
+        until=until,
         trigger=trigger,
         span_id=span_id,
         version=version,
@@ -345,7 +385,19 @@ async def list_changes(
         user=user,
     )
 
-    total = (await db.execute(select(func.count()).select_from(DeviceChange).where(*conditions))).scalar_one()
+    # One aggregate uses the same predicates and database snapshot for both totals.
+    total, devices_total = (
+        await db.execute(
+            select(
+                func.count(),
+                func.count(distinct(tuple_(DeviceChange.mdm_connection_id, DeviceChange.subject_id))).filter(
+                    DeviceChange.subject_kind == "computer"
+                ),
+            )
+            .select_from(DeviceChange)
+            .where(*conditions)
+        )
+    ).one()
     rows = (
         (
             await db.execute(
@@ -361,7 +413,12 @@ async def list_changes(
     )
     resolved = await _resolve_user_filter(db, conditions, user.strip()) if user and user.strip() else None
     return DeviceChangeListResponse(
-        items=[_to_out(r) for r in rows], total=total, page=page, page_size=page_size, user_filter=resolved
+        items=[_to_out(r) for r in rows],
+        total=total,
+        devices_total=devices_total,
+        page=page,
+        page_size=page_size,
+        user_filter=resolved,
     )
 
 

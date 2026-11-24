@@ -121,7 +121,7 @@ def _span(connection_id: int, subject_id: str, *, observed_at: datetime, collect
     )
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
+@pytest_asyncio.fixture(scope="module", loop_scope="session")
 async def seeded(accounts):
     """One connection of this file's own. Two minis both named "Kyle's Mac mini" (the
     typographic apostrophe), one of which added Wireshark and one of which updated it an
