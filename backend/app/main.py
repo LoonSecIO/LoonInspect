@@ -82,6 +82,7 @@ from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, unscoped_session
+from app.core.diagnostics import database_error_message
 from app.core.fleet_catalog import tick as fleet_catalog_check
 from app.core.fleet_history import run_worker as fleet_history_worker
 from app.core.logging import configure_logging
@@ -527,6 +528,25 @@ async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Keep database values out of Starlette's preformatted startup/shutdown failures."""
+    phase = "startup"
+    try:
+        async with _application_lifespan(app) as state:
+            phase = "shutdown"
+            yield state
+    except Exception as exc:
+        safe = database_error_message(exc)
+        if safe is None:
+            raise
+        # Starlette serializes lifespan failures before Uvicorn logs them, so that
+        # message never reaches our exception formatter. Log safe stack locations
+        # here, then give Starlette only the safe diagnosis with its cause hidden.
+        logger.exception("application %s failed: %s", phase, safe)
+        raise RuntimeError(f"Application {phase} failed. {safe}") from None
+
+
+@asynccontextmanager
+async def _application_lifespan(app: FastAPI):
     # Deliberately called again here, not just at import. fastapi-cli imports this
     # module to resolve the app object *before* uvicorn applies its own dictConfig,
     # so the import-time call gets overwritten and uvicorn's loggers come back with
