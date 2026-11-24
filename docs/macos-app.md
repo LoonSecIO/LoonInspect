@@ -221,6 +221,23 @@ publication it checks that the release carries the files. Environment setup and 
 are in
 [`macos/README.md`](../macos/README.md#github-actions).
 
+### Window navigation and appearance
+
+The native title bar follows the workspace's **Appearance** choice, including when it differs
+from macOS. The normal close, minimize and full-screen buttons remain available. The compact
+**Back** and **Forward** buttons use this window's page history, including applied searches and
+filters. The same actions are in **View**, with **⌘[** and **⌘]** shortcuts. WebKit's native
+back/forward gestures are enabled while the workspace is available; macOS trackpad or mouse
+settings control which gesture is available.
+
+A dimmed direction means there is no available local history entry, or the page is loading,
+starting or recovering. Navigation does not invent a parent page. **Reload Window** reloads the
+current workspace route and query, including a route reached through in-page navigation.
+Back and Forward keep same-document state, including unsaved Patch Plans notes. They do not
+save a plan. An explicit page confirmation, such as **Discard draft**, opens a native sheet;
+**Cancel** is the default action. This is separate from browser unload prompts: save important
+work before quitting or reloading the app.
+
 ### Finding text and searching records
 
 **Edit → Find → Find in Page…** (⌘F) opens a native find bar. Type literal text; **Return** or
