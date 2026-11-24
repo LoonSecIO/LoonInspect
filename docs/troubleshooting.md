@@ -849,12 +849,13 @@ and step 2 ends with how to tell that apart from a broken exchange.
    Response text, redirect targets and raw transport exceptions are withheld from the
    share log. Check the collector's service logs for details, without copying submitted
    payloads or credentials into support reports.
-   - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
-     container's body, and the text after the colon is its reason. Reportable state **M**:
-     the container built something the collector will not take, which is ours to fix.
-   - `answered 429 …` or `answered 5…` → the collector is throttling or unwell. Nothing
-     to fix on this side; the next exchange tries again. The same line for more than a
-     day is reportable state **M**.
+   - `answered HTTP 400` or `answered HTTP 413` → the collector refused the request's
+     format or size. Its response text is withheld. Check `SHARING_ENDPOINT` and report
+     the HTTP status to support so the collector's service logs can be checked.
+     Reportable state **M**: the container built something the collector will not take.
+   - `answered HTTP 429` or `answered HTTP 5…` → the collector is throttling or unwell.
+     Check its availability and service logs; the next exchange tries again. The same
+     line for more than a day is reportable state **M**.
 
 7. **A build says how many findings it has, and the line beside it says *updating to
    …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
