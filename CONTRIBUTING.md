@@ -62,7 +62,11 @@ Every PR must pass the same gates `main` enforces:
   looking settled. That guard compares the effect's **whole** dependency array, term for
   term. A guard on a subset is a re-fetch that resets nothing, so a load that failed and
   then succeeded paints its rows under the failure line it had already earned (#479).
-- **Image** — the multi-stage Docker build must complete.
+- **Image** — the multi-stage Docker build must complete. The runtime image copies only
+  the backend application, migrations and package metadata; tests, fixtures and developer
+  caches stay out of its build context. To run tests using the image's `uv`, bind-mount the
+  checkout and use a separate environment as described in `backend/tests/conftest.py`.
+  The tests run from that checkout, so they do not need to be packaged in the image.
 
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match
 their manifests (`--frozen` / `npm ci` enforce this).
