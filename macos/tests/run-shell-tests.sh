@@ -9,3 +9,11 @@ swiftc -module-cache-path "$scratch/module-cache" \
   "$macos/shell/Sources/LoonInspect/ExportDestination.swift" \
   "$macos/tests/test_exports.swift" -o "$scratch/exports"
 "$scratch/exports"
+
+swiftc -module-cache-path "$scratch/module-cache" \
+  "$macos/uninstall/Uninstall.swift" "$macos/tests/test_uninstall.swift" -o "$scratch/uninstall-tests"
+"$scratch/uninstall-tests"
+# Compile the actual macOS/Security entry point, but never run it against the host.
+swiftc -target "$(uname -m)-apple-macosx13.0" -module-cache-path "$scratch/module-cache" \
+  "$macos/uninstall/Uninstall.swift" "$macos/uninstall/main.swift" -o "$scratch/LoonInspect-Uninstall"
+"$scratch/LoonInspect-Uninstall" --help

@@ -220,37 +220,52 @@ the headless checks; running it briefly creates test windows.
 
 ## Where it keeps things, and how to start over
 
-The app keeps its database and logs in `~/Library/Application Support/LoonInspect`, its three
-secrets in the login keychain under the service `LoonInspect`, and the port it chose in
-`run/port` there. The window's web view data, cache, frame and Check for Updates Daily choice are
-kept under the bundle identifier, `io.loonsec.looninspect`. **Deleting or replacing the app
-does not reset that data or its local account.** Each installation has its own accounts;
-credentials created on one Mac do not automatically sign in on another.
+Ordinary app replacement or deletion preserves the local account, inventory and Keychain
+secrets. Reinstalling reopens the same instance; it does not reset a forgotten password. Accounts are
+local to each installation; a password created on another Mac does not automatically apply.
 
-For a deliberate clean reinstall, use [`scripts/Uninstall-LoonInspect.command`](scripts/Uninstall-LoonInspect.command).
-Run it as the macOS user who used the app, without `sudo`. Double-click the downloaded file,
-or run it in Terminal. Preview its exact deletion scope first if needed:
+A v1.4 disk image includes the standalone **LoonInspect-Uninstall** helper and its instructions.
+The same signed helper is in `LoonInspect.app/Contents/Resources` (also in the release ZIP).
+Run it in Terminal with no arguments or `--dry-run` to preview the current user's exact paths.
+Nothing is changed by a preview. Use `--uninstall` only for a deliberate permanent reset:
+it requires an interactive terminal, a backup decision and a typed user-specific confirmation.
+Never use `sudo`; it has no alternate-user, custom-path or unattended confirmation option.
 
-```sh
-/bin/bash ~/Downloads/Uninstall-LoonInspect.command --dry-run
-/bin/bash ~/Downloads/Uninstall-LoonInspect.command
-```
+The helper stops verified copies of the app belonging to this user, waits for their services,
+and takes the same instance lock before removing data. It refuses live orphan databases,
+unsafe paths/ownership, changed preview identities and shutdown failures. Only matching,
+user-owned bundles at `/Applications/LoonInspect.app` and `~/Applications/LoonInspect.app`
+are removed. Custom locations and shared bundles owned by another user are retained.
+The removal allowlist covers the local database, unfinished database, logs, audit/cache/cert
+runtime directories, run files, preferred port, WebKit state/cache, HTTP storage/cookies,
+saved window state and preferences (including this bundle’s ByHost files). Unknown sibling files, including backups, remain. Login Keychain deletion names
+only the app's three database/encryption accounts under service `LoonInspect` and all profiles
+under `io.loonsec.LoonInspect.mcp`; other services and other keychains are retained.
 
-The helper requires `ERASE LOONINSPECT`, stops the app and waits for its services to exit,
-then permanently deletes this user's database, stored connection credentials, patch plans,
-audit history, web-view state, preferences and three Keychain items. It removes the identified
-LoonInspect app copies from `/Applications` and `~/Applications`. It creates no backup.
-Previously exported PDFs, downloaded installers, backups, other users, app copies in other
-locations, and remote Jamf data are outside its scope. Wait for **UNINSTALL COMPLETE**, then
-install the release again and create a new local administrator in first-time setup.
-If it stops, follow its message and [`troubleshooting.md` §25](../docs/troubleshooting.md#25-looninspectapp-will-not-open-or-opens-and-says-it-could-not-start);
-do not assume a partially completed uninstall finished.
+Before confirming, preserve a consistent, stopped `pgdata` copy **and the matching three
+Keychain items**, and move backups/exports outside every previewed removal directory. The
+helper does not make a backup or print secrets. Exports outside those paths, other macOS users
+and remote Jamf data are untouched. After reset, install/open the signed app and complete
+first-time setup with a new local account; MCP clients need new tokens and pairing.
+See [Backup](../docs/macos-app.md#backup) and
+[uninstall troubleshooting](../docs/troubleshooting.md#macos-clean-uninstall-and-reinstall).
 
-The scoped-removal and refusal checks run with `python3 macos/tests/test_uninstall.py` from
-the repository root on macOS, using temporary files and fake services, never the real Keychain.
+### Isolated validation
 
-A backup is a copy of `pgdata` taken while the app is quit, plus the
-matching `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain
-items. The encryption key is needed to read stored connection credentials; the database
-passwords must match the copied cluster. A different Mac or user account does not acquire
-those secrets by copying the app or database ([Backup](../docs/macos-app.md#backup)).
+`bash macos/tests/run-shell-tests.sh` compiles the standalone helper and exercises removal,
+refusal, symlink, identity-change, lock and backup boundaries with temporary fixtures and fake
+native service/Keychain actions. It does not invoke a host uninstall. Before release, validate
+in a disposable macOS VM: first setup; ordinary replacement retaining the account; preview and
+cancel leaving state unchanged; confirmed removal; reinstall returning to first setup; missing
+paths; locked Keychain; app shutdown; unrelated Keychain item, backup/export and other-user
+sentinels retained. Do not use a real host installation for these destructive checks.
+
+Validated on 2026-11-23 in a newly provisioned UTM macOS 27.2.1 VM with the published
+v1.3.0 app and an ad-hoc helper build: ordinary replacement retained the account; dry-run,
+cancellation and a locked Keychain preserved state; confirmed removal stopped the running
+native app and removed its database/encryption keys plus both CLI-created and native-app
+MCP credentials. Stopped backups, exports, an unrelated Keychain item, another user's owned
+files and a shared app bundle survived. A rerun tolerated missing paths. Reinstall returned
+to first-time setup and created fresh keys. The app was left reinstalled and healthy with
+update checks disabled. All data was synthetic. The helper targets macOS 13, matching the
+app; this exercise covered macOS 27.2.1 and did not submit a new notarization request.

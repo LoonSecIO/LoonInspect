@@ -3192,29 +3192,15 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
 6. **Reinstalling still asks for the old account, or says the email/password is incorrect.**
    Replacing or deleting the app leaves its local database and account intact. Use the account
    created on this Mac; a different installation's password does not automatically apply here.
-   For a deliberate full reset, use
-   [`Uninstall-LoonInspect.command`](../macos/scripts/Uninstall-LoonInspect.command), as described
-   in [`macos/README.md`](../macos/README.md#where-it-keeps-things-and-how-to-start-over).
-   Run as your normal macOS user, without `sudo`; `--dry-run` lists the scope without changing
-   anything. Enter `ERASE LOONINSPECT` only when you intend to delete the local accounts,
-   connections, inventory, patch plans and history. The helper creates no backup.
-   - *No confirmation received* or *Cancelled* → nothing was changed. Run again when ready.
-   - *A LoonInspect service is still running* → quit every LoonInspect copy, or restart this
-     Mac without reopening it, then rerun. The helper has not deleted data.
-   - *Cannot access the LoonInspect Keychain item* → unlock the login Keychain and rerun.
-     A failure at this preflight has not deleted data. A later Keychain-removal error says
-     local data was already removed; resolve it and rerun before reinstalling.
-   - *Could not remove…*, a preference-clear error, or a verification error → check the named
-     folder's ownership and permissions, then rerun. Data might already be partially removed.
-     If `/Applications/LoonInspect.app` needs administrator access, move that copy to Trash
-     in Finder, which can request it, or ask your Mac administrator to remove it.
-   - *symbolic link*, *different bundle identifier*, *Cannot identify*, an invalid home folder,
-     or another owner → the helper refuses to guess a deletion target. Review that location;
-     remove a redirected or unidentifiable app copy manually and rerun. Do not use `sudo`
-     to bypass the current-user check.
-   - **UNINSTALL COMPLETE** → reinstall the release, open the new copy from Applications,
-     and create a new local administrator. Eject old disk images and avoid opening another
-     app copy while resetting. Exported PDFs, backups, other users and Jamf are untouched.
+   For a deliberate full reset, use the standalone **LoonInspect-Uninstall** helper in the v1.4
+   disk image or app's `Contents/Resources`, as described in
+   [`macos/README.md`](../macos/README.md#where-it-keeps-things-and-how-to-start-over).
+   Run as your normal macOS user, without `sudo`; the default/`--dry-run` lists the scope without
+   changing anything. `--uninstall` requires a backup decision and typed user-specific confirmation.
+   Follow [clean-uninstall troubleshooting](#macos-clean-uninstall-and-reinstall) for refusals or
+   partial completion. Shared app bundles owned by someone else remain: ask the Mac administrator
+   to remove those separately if needed. After **Local reset complete**, reinstall and create a
+   new local administrator. Eject old disk images and avoid opening another copy during reset.
 
    A restorable database backup is `pgdata` copied while the app is quit plus the matching
    `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain items.
@@ -3631,3 +3617,38 @@ Start in **Settings → AI connections**, with the intended organization selecte
   filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
 
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
+
+
+## macOS clean uninstall and reinstall
+
+**Reinstall still asks for the old account:** ordinary app replacement preserves the local
+instance. Use the existing account, restore its backup, or choose a deliberate full reset with
+**LoonInspect-Uninstall** on the disk image. Reset permanently removes local accounts and
+inventory; it is not password recovery. See [Backup](macos-app.md#backup) before proceeding.
+
+1. Run the helper with `--dry-run` in Terminal. Review the exact current-user paths, Keychain
+   services and retained files. No services or files change during preview.
+2. Save a stopped database copy and its matching three Keychain secrets if recovery matters.
+   Move needed backups and exports outside all listed removal directories. The helper never
+   creates a backup or exports a secret. Run `--uninstall`, choose the backup acknowledgement,
+   and type the user-specific deletion confirmation. Cancel or a mismatched response changes
+   nothing. Do not use `sudo`, pipe confirmations or remove refusal checks.
+3. **Login Keychain locked/unavailable:** unlock it in Keychain Access and retry. The preflight
+   fails before services or data change. An access refusal during deletion can leave a partial
+   removal; allow the appropriate item deletion, preview again and retry.
+4. **Services did not stop / database live / instance locked:** quit LoonInspect and MCP clients,
+   wait for shutdown, then retry. If an orphan remains, restart this Mac or open and quit the
+   app cleanly. The helper never force-kills a PID from a database file.
+5. **Symbolic link / ownership / changed path / app signature:** inspect the exact reported path.
+   A corrupt or unrecognized app bundle is refused before data/key deletion; verify its origin
+   before removing it separately. An ad-hoc but valid development signature is accepted. Move the link
+   aside without deleting its destination, or resolve ownership through the responsible Mac
+   administrator. Generate a fresh preview. Shared app bundles are retained for their owner;
+   do not broaden deletion to another user's directory.
+6. **Removal may be partial:** read the last completed path, correct the reported access issue,
+   then preview and retry. Missing already-removed items are allowed. Unknown sibling files,
+   backups, exports outside the listed directories, other Keychain services and remote Jamf
+   data remain. A retained custom app copy may be removed separately after checking its identity.
+7. Open the newly installed signed app. It should show first-time setup, where you create a new
+   local account. Recreate connections and MCP tokens as needed. If old data reappears, verify
+   which macOS user and app installation you opened; do not delete a different user's data.
