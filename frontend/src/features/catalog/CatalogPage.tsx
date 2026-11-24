@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useHasPermission } from "@/features/auth/store";
 import { DeviceScopeBuilder } from "./DeviceScopeBuilder";
-import { PatchPlanWorkspace, type PatchPlanActions } from "./PatchPlanWorkspace";
+import { patchPlanHref } from "./patchPlanNavigation";
 import { defaultScope } from "./patchPlanTypes";
 import { LoonLoading } from "@/components/icons/LoonLoading";
 import { listCatalog } from "@/features/catalog/api";
@@ -65,19 +65,19 @@ function formatDate(value: string | null): string {
 export function CatalogPage() {
   const [params, setParams] = useSearchParams();
   const scope = params.get("deviceScope") ?? JSON.stringify(defaultScope);
+  if (params.get("plan")) return <Navigate replace to={patchPlanHref(params)} />;
   return <div className="space-y-4">
     <DeviceScopeBuilder key={`filter:${scope}`} value={scope} onChange={value => {
       const next = new URLSearchParams(params); next.set("deviceScope", value); next.delete("plan"); setParams(next);
     }} />
-    <ScopedCatalog key={`catalog:${scope}`} deviceScope={scope} initialSearch={params.get("q") ?? ""} planId={params.get("plan")} onOpen={id => {
-      const next = new URLSearchParams(params); if (id) next.set("plan", id); else next.delete("plan"); setParams(next);
-    }} />
+    <ScopedCatalog key={`catalog:${scope}`} deviceScope={scope} initialSearch={params.get("q") ?? ""} />
   </div>;
 }
 
-function ScopedCatalog({ deviceScope, initialSearch, planId, onOpen }: { deviceScope: string; initialSearch: string; planId: string | null; onOpen: (id: string) => void }) {
+function ScopedCatalog({ deviceScope, initialSearch }: { deviceScope: string; initialSearch: string }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const planActions = useRef<PatchPlanActions>(null);
+  const navigate = useNavigate();
+  function openPlan(hashes: string[]) { navigate(patchPlanHref(new URLSearchParams({ deviceScope }), hashes)); }
   const canPlan = useHasPermission("patch:plan-write");
   const { t } = useLocale();
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
@@ -155,7 +155,11 @@ function ScopedCatalog({ deviceScope, initialSearch, planId, onOpen }: { deviceS
 
   return (
     <section className="space-y-4">
-      <PatchPlanWorkspace ref={planActions} scope={deviceScope} selected={selected} planId={planId} onOpen={onOpen} onClear={() => setSelected([])} />
+      {canPlan && <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={!selected.length || selected.length > 50} onClick={() => openPlan(selected)}>Plan for {selected.length} selected apps</Button>
+        {selected.length > 0 && <Button variant="ghost" onClick={() => setSelected([])}>Clear selection</Button>}
+        {selected.length > 50 && <p role="status" className="text-sm">Select up to 50 applications per report.</p>}
+      </div>}
       <p className="text-sm text-muted-foreground">{t.catalog.description} Selecting an application includes all its installed versions in the applied device scope.</p>
 
       <CorpusBanner corpusAsOf={corpusAsOf} t={t} />
@@ -237,7 +241,7 @@ function ScopedCatalog({ deviceScope, initialSearch, planId, onOpen }: { deviceS
                   {canPlan && <td className="px-4 py-2"><div className="flex items-center gap-2">
                     <input type="checkbox" aria-label={`Select ${entry.name} ${entry.version} for a patch plan`} checked={selected.includes(entry.appHash)}
                       onChange={e => setSelected(current => e.target.checked ? [...new Set([...current, entry.appHash])] : current.filter(hash => hash !== entry.appHash))} />
-                    <Button variant="outline" size="sm" onClick={() => planActions.current?.build([entry.appHash])}>Build a patch plan</Button>
+                    <Button variant="outline" size="sm" onClick={() => openPlan([entry.appHash])}>Plan application</Button>
                   </div></td>}
                   <td className="px-4 py-2 font-medium">{entry.name}</td>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{entry.bundleId}</td>

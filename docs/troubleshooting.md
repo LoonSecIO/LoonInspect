@@ -3606,3 +3606,25 @@ Start in **Settings → AI connections**, with the intended organization selecte
   filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
 
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
+
+
+## Patch Plans navigation and unsaved review notes
+
+Open **Patch Plans** from the main navigation, or use **Plan application** in Installed
+Apps or Catalog. Existing saved `?plan=` links redirect to `/patch-plans?plan=...`.
+An account needs both application and device read access to open the page. Creating,
+investigating and saving still require patch-plan write access; read-only accounts can
+open saved plans and export the saved revision.
+
+If **Browser storage is unavailable** appears, the draft remains in this tab's memory
+through navigation, but closing the tab loses it. Save the review notes before closing,
+or copy them somewhere appropriate if saving fails. Do not clear browser storage to
+resolve a save failure. A draft from an older revision is shown as a conflict: compare
+it with the saved report, copy any notes you need, then choose **Discard draft** and edit
+the latest revision. Export stays disabled while notes are unsaved, so the PDF cannot
+silently omit the visible review. **View current installed apps in this scope** opens
+current inventory with the saved report's scope, without changing that report.
+
+If **device scope is invalid** appears when building from a planning link, return to
+**Choose installed apps**, apply valid device filters and select the apps again. No plan
+is created from the invalid scope.

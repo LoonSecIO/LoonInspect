@@ -350,6 +350,7 @@ export const de: Translations = {
     reload: "Seite neu laden"
   },
   nav: {
+    patchPlans: "Patch-Pläne",
     overview: "Übersicht",
     devices: "Geräte",
     applications: "Anwendungen",
@@ -1159,6 +1160,7 @@ export const de: Translations = {
     eyebrow: "Geräte",
     title: "Anwendungen",
     description: "Über Ihre Flotte installierte Anwendungen, aggregiert aus dem synchronisierten Geräteinventar.",
+    tabPatchPlans: "Patch-Pläne",
     tabInstalled: "Installierte Apps",
     tableName: "Name",
     tableBundleId: "Bundle-ID",

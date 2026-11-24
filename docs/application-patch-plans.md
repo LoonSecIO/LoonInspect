@@ -1,8 +1,22 @@
 # Installed application patch plans
 
-Devices > Applications > Installed Apps is the primary entry. Select up to 50 applications
-or choose **Build a patch plan** on one row. Catalog also offers the same workflow, and
-Installed Fleet catalog titles link to Installed Apps for planning.
+**Patch Plans** is a top-level navigation entry at `/patch-plans`. Open a saved report
+directly, or start in Devices > Applications > Installed Apps: select up to 50 applications
+and choose **Plan for selected apps**, or **Plan application** on one row. The device
+scope and application search, severity bands and KEV filter travel with that selection.
+Catalog also offers a contextual planning action; neither inventory page loads the full
+planning workspace. Installed Fleet catalog titles link to Installed Apps for planning.
+
+Saved plans use `/patch-plans?plan=<id>`. Existing `?plan=` links from Installed Apps
+and Catalog redirect to the same report. Refresh and Back/Forward preserve the selected
+plan. **View current installed apps in this scope** returns to live inventory using the
+report's saved device and application scope; it does not change the saved evidence.
+
+Unsaved operator notes are scoped to organization, account and plan in this browser tab.
+They survive navigation and are restored when the plan is reopened. A draft from an older
+revision is marked as a conflict and cannot overwrite newer saved notes; copy the notes
+you need, then discard the draft. Browser storage failures retain an in-memory draft and
+show a warning to save before closing the tab; closing/reloading asks before losing notes.
 Fleet's feature flag controls Fleet evidence only; planning works while Fleet is off.
 
 ## Device scope
