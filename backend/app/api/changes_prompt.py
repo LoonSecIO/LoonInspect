@@ -260,15 +260,16 @@ async def _dimension_repair(
     from the bar this way instead: the instructions do not change, and neither does their
     measurement.
 
-    **Search.** Asked "which MacBook Airs installed Wireshark", the model puts "MacBook Air" in
-    Search, where it matches no device name, no serial and no Jamf id. A device always wins: the
-    first question is whether any change row names this device, because a Mac can be named after
-    anything — "Kyle's Mac mini" is a device name, and so is a Mac named after its own
-    department. Only a Search that matches no device is read as a dimension, in this order: the
-    words for management state, a model, an OS version, a department from Jamf's own catalog.
+    **Device search.** Asked "which MacBook Airs installed Wireshark", the model puts "MacBook
+    Air" in Device search, where it matches no device name, no serial and no Jamf id. A device
+    always wins: the first question is whether any change row names this device, because a Mac
+    can be named after anything — "Kyle's Mac mini" is a device name, and so is a Mac named
+    after its own department. Only a Device search that matches no device is read as a
+    dimension, in this order: the words for management state, a model, an OS version, a
+    department from Jamf's own catalog.
 
-    **Filter to one thing** (#450). Asked "What changed on Macs in Engineering : Product?", the
-    model read the department as the name of a profile: Filter to one thing "Engineering :
+    **Named-entry search** (#450). Asked "What changed on Macs in Engineering : Product?", the
+    model read the department as the name of a profile: Named-entry search "Engineering :
     Product", Section Configuration profiles — zero rows, over a question the feed can answer. A
     thing always wins here the same way a device does: only a value no change row names is read
     as a department, and only when Jamf's catalog holds exactly that name. The section the model
@@ -364,9 +365,9 @@ async def _summary(
     """What the page will show for ``filters``: the rows, the computers among them, newest
     first, and when they were observed. Three scans, whatever the fleet's size.
 
-    ``dimensions`` are the stamped ones a repair moved a Search value into (#447) and ``since``
-    the start the question's own words asked for (#444), counted here for the same reason every
-    other filter is: the numbers in the box are the page's numbers."""
+    ``dimensions`` are the stamped ones a repair moved a Device search value into (#447) and
+    ``since`` the start the question's own words asked for (#444), counted here for the same
+    reason every other filter is: the numbers in the box are the page's numbers."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
@@ -559,9 +560,9 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # A widened answer searches for more than the model's did, so a person applies it: the
     # page gets the same filters and summary as an applied one, and runs nothing until then.
     outcome = "proposed" if interpretation.widened else "applied"
-    # A Search the fleet has no device for, but does have a model, an OS version, a department
-    # or a management state for, is read as that instead (#447). It narrows what would otherwise
-    # have matched nothing, so it does not hold the answer back for an Apply.
+    # A Device search the fleet has no device for, but does have a model, an OS version, a
+    # department or a management state for, is read as that instead (#447). It narrows what
+    # would otherwise have matched nothing, so it does not hold the answer back for an Apply.
     dimensions: dict[str, str | None] = dict.fromkeys(PROMPT_DIMENSIONS)
     moved, department_name = await _dimension_repair(db, question, interpretation.filters, dimensions)
     repairs = [str(repair) for repair in interpretation.repairs] + moved

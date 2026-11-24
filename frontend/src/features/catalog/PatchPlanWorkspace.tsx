@@ -173,7 +173,8 @@ export function PatchPlanWorkspace({ ref, scope, applicationScope, selected, pla
           {app.vulnerabilities && <p className="mt-2 text-sm">Known findings: {app.vulnerabilities.counts?.total ?? "unknown"} · KEV: {app.vulnerabilities.counts?.kev ?? "unknown"} · average per assessed device: {app.vulnerabilities.averagePerAssessedDevice?.toFixed(2) ?? "unknown"}. Coverage: {app.vulnerabilities.assessment.replaceAll("_", " ")} · {app.vulnerabilities.assessedDeviceCount}/{app.devices} devices assessed · {app.vulnerabilities.unknownBuildCount} unknown builds.</p>}
           <div className="my-4 grid gap-3 lg:grid-cols-2">{app.options.map(o => <article key={`${o.source}:${o.reference}`} className="space-y-2 rounded-md bg-muted/30 p-3 text-sm">
             <p className="font-semibold">{o.source} · {o.title}</p><p>{o.status.replaceAll("_", " ")} · target {o.targetVersion}</p><p>{o.detail}</p>
-            <a href={o.url} target="_blank" rel="noreferrer" className="underline">View source</a>
+            {o.url ? <a href={o.url} target="_blank" rel="noreferrer" className="underline">View source</a>
+              : <p>Source URL withheld. Check the configured catalog address.</p>}
             <p className="break-all text-muted-foreground">Read {stamp(o.observedAt)} · revision {o.sourceRevision}</p>
           </article>)}</div>
           {research && <article className="mb-4 space-y-2 rounded-md border p-3 text-sm"><p className="font-semibold">Installomator · {research.status.replaceAll("_", " ")}</p>

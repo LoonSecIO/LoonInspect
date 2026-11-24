@@ -20,6 +20,7 @@ from app.core.ai_usage import recorder
 from app.core.database import session_for_tenant
 from app.core.ollama import select_model, selected
 from app.core.patch_plans import checksum
+from app.core.provenance import source_options
 from app.models.schema import ApplicationPatchPlan
 
 logger = logging.getLogger(__name__)
@@ -185,7 +186,7 @@ async def ai_priorities(db, snapshot, requested_provider):
             "bundleId": a["bundleId"],
             "devices": a["devices"],
             "versions": a["versions"],
-            "options": a["options"],
+            "options": source_options(a["options"]),
             "steps": a["steps"],
         }
         for a in snapshot["applications"]

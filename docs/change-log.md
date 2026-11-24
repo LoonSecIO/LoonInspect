@@ -334,3 +334,59 @@ the artifact search over it, which is why the default keeps every row: a month-1
 investigation is the reason the rows exist. [KNOWN_ISSUES.md §1](../KNOWN_ISSUES.md)
 prices the alternative, and [troubleshooting.md §24](troubleshooting.md) is the
 step-through when the clock is on and the table still grows.
+
+
+## 7. Finding historical changes
+
+Devices → Changes separates **Device search** (name, serial, Jamf ID or UDID),
+**Named-entry search** (an app, account, group or profile name), and **Section →
+Changed field → Changed to exactly**. Field choices come from the change policy's
+catalog. Whole-list fields such as group criteria do not accept a scalar target;
+use their section to inspect the recorded differences. Disabled policy fields remain
+searchable because older retained observations may have recorded them.
+
+To find Macs that changed to OS version **27.2.1**, select **Operating system**, then
+**OS version**, enter `27.2.1`, set **Observed from** and **Observed until**, and apply.
+The example button sets those field controls and **Changed**, retains the time window
+and device filters, and clears incompatible named-entry, level and observation-link
+filters. It counts changed-to transitions, including downgrades. It does not claim the
+installation time or a number of unique people. The existing macOS adoption view remains
+the place to compare current installed versions.
+
+The inputs show the browser's IANA timezone and convert edited local times into absolute
+UTC instants in the URL. Start is included; end is excluded. An unchanged shared bound
+preserves its original instant, including the later occurrence of a repeated daylight-saving
+hour. A skipped local time and an end at or before the start are refused. For an ambiguous
+local time, the browser chooses its first occurrence; a shared ISO bound with an explicit
+offset can specify either occurrence. Observation time is the inventory report time,
+which can precede the time LoonInspect collected it.
+
+**Device attributes at the observation** filters model, observed OS version, FileVault,
+site, department, management state and assigned user from the change's historical stamp.
+Connection ID narrows the source instance. Model/user are contains matches, observed OS
+is a prefix, and site/department/FileVault/management are exact. These controls never join
+current device state. Missing stamps remain unknown and do not match a dimension filter.
+A typed assigned user resolving to one identity is replaced by its tenant-scoped token in
+the shared URL, as before. The device count still counts devices, not people.
+
+The two totals cover the entire filtered result, independent of the displayed page:
+matching change rows and distinct computer identities `(connection ID, subject ID)`.
+Repeated events on one device count once; identical Jamf IDs in separate connections count
+separately; smart-group changes do not inflate the device total. A first observation,
+a section first collected later, a tracking-policy exclusion or expired retained history
+cannot supply a missing prior change. Review the row's old/new evidence before drawing
+conclusions about an actual update rollout.
+
+All applied controls travel in the URL, including pagination. Back/Forward restores them;
+Clear removes them and draft inputs. Applying an AI query replaces all filters, explicitly
+clearing the scalar field, exact target and end bound that AI does not produce. Moving a
+filter hides the prior AI count/readback. Core controls work with AI disabled.
+
+The feed API adds `field`, `changedTo` and `until`, and returns `devicesTotal` beside
+`total`. `GET /api/changes/policy` marks compatible fields with `scalar: true`.
+`changedTo` compares the selected field's scalar `newValue.value` exactly and case-sensitively;
+`27.2.1` does not match `27.2.10`, another field, or an application-entry version.
+JSON null and compound values are not scalar target matches. The existing `version`
+parameter remains an application-entry new-version prefix. Both time bounds require a
+timezone offset or `Z`. Invalid section/field/target combinations and invalid ranges
+return 422 with a next check. See [the troubleshooting path](troubleshooting.md#31-change-filters-do-not-find-an-os-version-or-time-window).

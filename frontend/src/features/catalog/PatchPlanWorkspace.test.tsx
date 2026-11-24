@@ -32,6 +32,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); forgetReviewDraft("looninspect.patch-review.tenant.operator.saved-plan"); forgetReviewDraft("looninspect.patch-review.tenant.operator.other-plan"); vi.clearAllMocks(); });
 
 describe("Installed Applications patch plans", () => {
+  it("shows a next check instead of a link when a source URL was withheld", async () => {
+    const original = request.getMockImplementation()!;
+    const withheld: PatchPlan = { ...plan, snapshot: { ...plan.snapshot, applications: [{ ...plan.snapshot.applications[0],
+      options: [{ source: "Jamf Patch", title: "Synthetic title", reference: "title", status: "catalog_match", targetVersion: "2",
+        url: "", observedAt: null, sourceRevision: "synthetic", detail: "Verify source identity." }] }] } };
+    request.mockImplementation((path, options) => path === "/application-patch-plans/saved-plan"
+      ? Promise.resolve(withheld) : original(path, options));
+    render(<MemoryRouter><PatchPlanWorkspace ref={createRef()} scope='{"match":"all","rules":[]}' selected={[]}
+      planId="saved-plan" onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>);
+    expect(await screen.findByText("Source URL withheld. Check the configured catalog address.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "View source" })).toBeNull();
+  });
+
   it("builds the selected app with the exact applied device filter", async () => {
     const actions = createRef<PatchPlanActions>();
     const onOpen = vi.fn();

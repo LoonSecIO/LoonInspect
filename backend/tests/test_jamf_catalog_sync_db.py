@@ -411,9 +411,11 @@ class TestACatalogOutOfReach:
     answered Starlette's bare 500, which named neither the host nor what to check."""
 
     HOST = "patch.example.test"
+    SECRET = "synthetic-catalog-credential-7da41e"
+    PRIVATE = "synthetic-catalog-response-7da41e"
 
-    @staticmethod
-    def _unreachable(monkeypatch) -> None:
+    @classmethod
+    def _unreachable(cls, monkeypatch, *, status: int | None = None) -> None:
         """The default source, over a transport that refuses every connection the way the route
         sweep's does, pointed at a host that is plainly not Jamf's so the sentence can be checked
         for the one it was given."""
@@ -422,10 +424,13 @@ class TestACatalogOutOfReach:
         from app.core.config import settings
         from app.mdm.patch import jamf_catalog
 
-        monkeypatch.setattr(settings, "jamf_patch_base_url", "https://patch.example.test/v1")
+        base = f"https://synthetic-user:{cls.SECRET}@{cls.HOST}/v1?token={cls.SECRET}#private"
+        monkeypatch.setattr(settings, "jamf_patch_base_url", base)
 
         def refused(request: httpx.Request) -> httpx.Response:
-            raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+            if status is not None:
+                return httpx.Response(status, json={"error": f"{cls.PRIVATE}: {base}"})
+            raise httpx.ConnectError(f"Could not connect to {base}: {cls.PRIVATE}", request=request)
 
         @asynccontextmanager
         async def source():
@@ -469,11 +474,14 @@ class TestACatalogOutOfReach:
         assert named[0].levelno == logging.ERROR
         assert named[0].exc_info is None
         message = named[0].getMessage()
-        assert f"{self.HOST} did not answer (ConnectError: [Errno -2] Name or service not known)" in message
+        assert f"{self.HOST} did not answer (ConnectError)" in message
+        assert self.SECRET not in message and self.PRIVATE not in message
+        assert "JAMF_PATCH_BASE_URL" in message
         assert "outbound access" in message
         assert "docs/troubleshooting.md section 6, step 2" in message
 
-    async def test_the_button_answers_a_refusal_with_the_sentence(self, db, server, records, admin, monkeypatch) -> None:  # noqa: F811
+    @pytest.mark.parametrize("status", [None, 403], ids=["connection", "http-refusal"])
+    async def test_the_button_answers_a_refusal_with_the_sentence(self, db, server, records, admin, monkeypatch, status) -> None:  # noqa: F811
         """A 409 whose `detail` is the sentence — the shape every designed refusal in this API has, and
         the one the page shows under the button — the same sentence once in the container log, and no
         row touched: the titles the container already had still answer."""
@@ -482,7 +490,7 @@ class TestACatalogOutOfReach:
         await server.sync(db)
         before = {row_id: row.synced_at for row_id, row in (await _rows(db, [r["id"] for r in records])).items()}
 
-        self._unreachable(monkeypatch)
+        self._unreachable(monkeypatch, status=status)
         said, done = self._collect("app.api.jamf_patch", logging.WARNING)
         try:
             response = await admin.post("/api/jamf-patch/sync")
@@ -491,7 +499,13 @@ class TestACatalogOutOfReach:
 
         assert response.status_code == 409, response.text
         detail = response.json()["detail"]
-        assert detail.startswith(f"The Jamf patch catalog cannot be refreshed: {self.HOST} did not answer (ConnectError: ")
+        assert detail.startswith(f"The Jamf patch catalog cannot be refreshed: {self.HOST} ")
+        if status is None:
+            assert "did not answer (ConnectError)" in detail and "outbound access" in detail
+        else:
+            assert f"answered {status} instead of the catalog" in detail
+            assert f"Check what https://{self.HOST}/v1 returns from this container" in detail
+        assert self.SECRET not in response.text and self.PRIVATE not in response.text
         assert "docs/troubleshooting.md section 6, step 2" in detail
         assert [record.getMessage() for record in said] == [detail]
         assert said[0].exc_info is None
@@ -505,9 +519,13 @@ class TestACatalogOutOfReach:
         button used to answer it with a 500."""
         from app.core.config import settings
 
-        monkeypatch.setattr(settings, "jamf_patch_base_url", "jamf-patch.jamfcloud.com/v1")
+        monkeypatch.setattr(settings, "jamf_patch_base_url", f"invalid://synthetic-user:{self.SECRET}@{self.HOST}/v1")
 
         response = await admin.post("/api/jamf-patch/sync")
 
         assert response.status_code == 409, response.text
-        assert "JAMF_PATCH_BASE_URL is set to 'jamf-patch.jamfcloud.com/v1'" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert "JAMF_PATCH_BASE_URL is set to an unusable value (value withheld)" in detail
+        assert self.SECRET not in response.text
+        assert "Correct it, or remove it from the environment" in detail
+        assert "docs/troubleshooting.md section 6" in detail

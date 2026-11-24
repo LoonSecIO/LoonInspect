@@ -27,7 +27,9 @@ from pathlib import Path
 import pytest
 
 from app.ai.changes_prompt import (  # the reply keys are read to prove `since` is not one
+    _ARTIFACT,
     _REPLY_KEYS,
+    _SEARCH,
     CALL_TIMEOUT_SECONDS,
     CHANGES,
     DISCLOSED_FIELDS,
@@ -53,6 +55,7 @@ from app.ai.changes_prompt import (  # the reply keys are read to prove `since` 
 
 _ROOT = Path(__file__).resolve().parents[2]
 RENDER_TS = _ROOT / "frontend" / "src" / "features" / "changes" / "render.ts"
+EN_TS = _ROOT / "frontend" / "src" / "i18n" / "en.ts"
 MODULE = _ROOT / "backend" / "app" / "ai" / "changes_prompt.py"
 
 NO_FILTERS = {"q": None, "artifact": None, "level": None, "section": None, "change": None, "since": None}
@@ -151,7 +154,7 @@ def test_an_unknown_change_is_any_and_says_so_without_quoting_it():
 
 # The refusal, as the page shows it: what a name may hold, never what this one held.
 REFUSED_FILTER = (
-    "Dropped the model's value for Filter to one thing: a name here takes only letters and digits in any script, "
+    "Dropped the model's value for Named-entry search: a name here takes only letters and digits in any script, "
     "spaces, and . _ @ ' \u2019 ( ) + / - & # ! , : \u2014 it held another character."
 )
 
@@ -245,7 +248,7 @@ def test_a_jamf_id_sent_as_a_number_is_a_search_and_a_boolean_is_not():
     filters, _, repairs = coerce({"search": 42, "filter": True})
     assert filters["q"] == "42"
     assert filters["artifact"] is None
-    assert repairs == ["Dropped the model's value for Filter to one thing: it was not text."]
+    assert repairs == ["Dropped the model's value for Named-entry search: it was not text."]
     assert _widening(repairs) == repairs
 
 
@@ -428,7 +431,7 @@ def test_a_search_that_repeats_the_name_filter_is_cleared_without_quoting_it():
     )
     assert filters["q"] is None
     assert filters["artifact"] == "Google Chrome"
-    assert repairs == ["Cleared Search: it repeated the Filter to one thing name instead of naming a device."]
+    assert repairs == ["Cleared Device search: it repeated the Named-entry search name instead of naming a device."]
 
 
 @pytest.mark.parametrize(
@@ -703,7 +706,7 @@ def test_a_serial_filled_by_the_guard_is_applied_not_proposed():
     reply = '{"search":null,"filter":null,"level":"any","section":"any","change":"any","unsupported":null}'
     result = interpret("what happened on VKM73DMG47", reply)
     assert result.filters == {**NO_FILTERS, "q": "VKM73DMG47"}
-    assert result.repairs == ["Filled Search with the one serial-number-shaped word in the question."]
+    assert result.repairs == ["Filled Device search with the one serial-number-shaped word in the question."]
     assert result.widened is False
     assert result.widening == []
 
@@ -714,7 +717,7 @@ def test_a_search_dropped_then_filled_with_the_serial_is_applied_not_proposed(se
     reply = json.dumps({"search": search, "filter": None, "level": "any", "section": "any", "change": "any"})
     result = interpret("what happened on KY4QVD7430?", reply)
     assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
-    assert len(result.repairs) == 2 and result.repairs[0].startswith("Dropped the model's value for Search")
+    assert len(result.repairs) == 2 and result.repairs[0].startswith("Dropped the model's value for Device search")
     assert result.widened is False
 
 
@@ -827,7 +830,7 @@ def test_a_bare_any_is_not_read_as_any():
 
 # --- a serial the question never named (Kyle, 2026-09-15) -----------------------------------------
 
-SERIAL_NOT_ASKED = "Dropped the model's value for Search: that serial number is not in the question."
+SERIAL_NOT_ASKED = "Dropped the model's value for Device search: that serial number is not in the question."
 
 
 def test_a_serial_the_question_never_named_is_dropped_and_widens():
@@ -867,7 +870,7 @@ def test_the_wrong_serial_is_replaced_by_the_one_the_question_named():
     reply = '{"search":"C02XL0ABJG5H","filter":null,"level":"any","section":"any","change":"any"}'
     result = interpret("what changed on KY4QVD7430", reply)
     assert result.filters == {**NO_FILTERS, "q": "KY4QVD7430"}
-    assert result.repairs == [SERIAL_NOT_ASKED, "Filled Search with the one serial-number-shaped word in the question."]
+    assert result.repairs == [SERIAL_NOT_ASKED, "Filled Device search with the one serial-number-shaped word in the question."]
     assert result.widened is False
 
 
@@ -909,7 +912,7 @@ def test_moved_to_chrome_keeps_the_name_and_drops_the_search_that_repeats_it():
     assert result.parsed is True
     assert result.filters == {**NO_FILTERS, "artifact": "Google Chrome", "section": "applications", "change": "updated"}
     assert result.unsupported == "Cannot match a specific version."
-    assert result.repairs == ["Cleared Search: it repeated the Filter to one thing name instead of naming a device."]
+    assert result.repairs == ["Cleared Device search: it repeated the Named-entry search name instead of naming a device."]
 
 
 # Kyle's three demo questions (2026-09-14), each with the answer the live lane expects of
@@ -999,6 +1002,23 @@ def _change_kinds() -> list[str]:
     match = re.search(r"export const CHANGE_KINDS\b[^=]*=\s*\[(.*?)\]", RENDER_TS.read_text(), re.S)
     assert match, "frontend/src/features/changes/render.ts does not declare CHANGE_KINDS"
     return re.findall(r"[\"']([^\"']+)[\"']", match.group(1))
+
+
+def _changes_label(key: str) -> str:
+    """One top-level label in en.ts's `changes` block, as the page shows it."""
+    source = EN_TS.read_text()
+    start = source.index("\n  changes: {\n")
+    block = source[start : source.index("\n  },\n", start)]
+    match = re.search(rf'^    {key}: "([^"]+)",$', block, re.M)
+    assert match, f"frontend/src/i18n/en.ts no longer labels changes.{key} on one line"
+    return match.group(1)
+
+
+def test_repairs_name_the_controls_by_the_pages_own_labels():
+    """A correction names the control the page changed, so it has to use the label the
+    operator sees above the table. Renaming `changes.search` and `changes.artifact` once left
+    every correction naming a control the page no longer had."""
+    assert (_changes_label("search"), _changes_label("artifact")) == (_SEARCH, _ARTIFACT)
 
 
 def test_the_section_keys_are_the_pages_section_order():

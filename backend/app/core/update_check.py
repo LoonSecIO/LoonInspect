@@ -34,9 +34,11 @@ now, logged once per attempt, and asked again an hour later.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import secrets
+import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -164,6 +166,64 @@ def _unreadable(address: str) -> str | None:
     return None if port is None or 0 <= port <= 65535 else "its port is not one a host has"
 
 
+# What loading the CA bundle named by SSL_CERT_FILE raises when the client is built: a missing
+# path, a directory, an unreadable file, or one that is not PEM (ssl.SSLError). A connect or
+# handshake failure never arrives as one of these: httpx raises its own ConnectError for those.
+# A bad SSL_CERT_DIR raises nothing here (httpx 0.28.1 ignores it or reads it lazily).
+_TRUST_STORE_FAULTS = (ssl.SSLError, FileNotFoundError, IsADirectoryError, NotADirectoryError, PermissionError)
+
+
+def _provider_fault(exc: Exception) -> tuple[int, str] | None:
+    """Classify only expected provider/transport failures, without quoting their values: the level to log it at, and why.
+
+    AnyIO can group a socket failure. Every leaf must be recognized so an unrelated
+    programming error still reaches the scheduler's internal-failure diagnostic.
+
+    Debug, not warning, for no route to the provider and for an answer that is not JSON (a
+    captive portal's page): an offline or air-gapped deployment hits these on every hourly
+    retry forever, and that is a configuration, not a fault. The Updates block on Settings >
+    Support says `unreachable` to the operator who goes looking. A setting that can never
+    work (a proxy, a CA bundle) or an answer no parser can hold is a warning.
+    """
+    if isinstance(exc, ExceptionGroup):
+        faults = [_provider_fault(child) for child in exc.exceptions]
+        known = [fault for fault in faults if fault is not None]
+        return max(known) if known and len(known) == len(faults) else None
+    if isinstance(exc, RecursionError):
+        return logging.WARNING, (
+            "the provider response exceeds the JSON nesting limit; check the provider or proxy response format"
+        )
+    if isinstance(exc, OverflowError):
+        return logging.WARNING, (
+            "a redirect or proxy port is outside the supported range; check redirect targets and proxy port settings"
+        )
+    if isinstance(exc, ImportError):
+        return logging.WARNING, (
+            "the configured proxy transport is unavailable; check HTTPS_PROXY/ALL_PROXY and use a supported HTTP proxy"
+        )
+    if isinstance(exc, httpx.InvalidURL):
+        return logging.WARNING, "a redirect or proxy address is invalid; check redirect targets and proxy settings"
+    if isinstance(exc, json.JSONDecodeError | UnicodeDecodeError):
+        return logging.DEBUG, "the provider's answer is not JSON; check that no proxy or captive portal answers for it"
+    if isinstance(exc, ValueError):
+        return logging.WARNING, (
+            "the provider response or proxy configuration is unreadable; check JSON responses and proxy settings"
+        )
+    if isinstance(exc, httpx.HTTPError):
+        return logging.DEBUG, "the provider could not be reached; check network access, TLS and proxy settings"
+    if isinstance(exc, _TRUST_STORE_FAULTS):
+        return logging.WARNING, "the TLS trust store could not be loaded; check that SSL_CERT_FILE names a readable PEM bundle"
+    return None
+
+
+def _record_provider_fault(exc: Exception) -> bool:
+    if (fault := _provider_fault(exc)) is None:
+        return False
+    level, why = fault
+    logger.log(level, "update check unreachable: %s; the check will retry in an hour", why)
+    return True
+
+
 def request_body(stage: str, last: int | None) -> dict:
     """Five keys and no others; `last`, the `day` the last answered check was given, is absent before one, never null."""
     body = {"contract": "v1", "release": RELEASE, "kind": settings.instance_kind, "stage": stage}
@@ -195,8 +255,9 @@ async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateRea
         async with httpx.AsyncClient(timeout=5.0, headers=headers, follow_redirects=False) as client:
             response = await client.post(address, json=body)
         answer = response.json() if response.status_code == 200 else None
-    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
-        logger.debug("update check could not reach the provider: %s", exc)
+    except Exception as exc:
+        if not _record_provider_fault(exc):
+            raise
         return None, REASON_UNREACHABLE
     day = answer.get("day") if isinstance(answer, dict) else None
     if type(day) is int and 0 <= day < 2**31:  # the ceiling is the column's; the service's days are far below it
@@ -206,7 +267,7 @@ async def _ask_service(address: str, body: dict) -> tuple[dict | None, UpdateRea
     if response.status_code == 429:
         logger.info("update check refused (429) by LoonSec's update service, its limit shared by all; asks again in an hour")
         return None, REASON_REFUSED
-    logger.debug("update check got %s from %s", response.status_code, address)
+    logger.debug("update check got HTTP %s from the provider", response.status_code)
     return None, REASON_UNREACHABLE
 
 
@@ -251,7 +312,7 @@ def _unanswered(response: httpx.Response, *, not_found: UpdateReason, **names: s
             response.status_code,
         )
         return _Answer(update_available=None, reason=REASON_REFUSED, **names)
-    logger.debug("update check got %s from %s", response.status_code, response.request.url)
+    logger.debug("update check got HTTP %s from the provider", response.status_code)
     return _Answer(update_available=None, reason=REASON_UNREACHABLE, **names)
 
 
@@ -293,13 +354,11 @@ async def _ask(current_sha: str) -> _Answer:
                 return _Answer(update_available=False, latest_sha=latest_sha, **names)
             if status in _BEHIND:
                 return _Answer(update_available=True, latest_sha=latest_sha, **names)
-            logger.debug("update check: the compare answer carried status %r", status)
+            logger.debug("update check: the compare answer carried no recognized status")
             return _Answer(update_available=None, reason=REASON_UNREACHABLE, **names)
-    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:  # InvalidURL: an address httpx cannot read
-        # Debug, not warning: an offline or air-gapped deployment hits this on every hourly
-        # retry forever, and that is a configuration, not a fault. The Updates block on
-        # Settings > Support says `unreachable` to the operator who goes looking.
-        logger.debug("update check could not reach the provider: %s", exc)
+    except Exception as exc:
+        if not _record_provider_fault(exc):
+            raise
         return _Answer(update_available=None, reason=REASON_UNREACHABLE)
 
 

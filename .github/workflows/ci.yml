@@ -218,11 +218,18 @@ jobs:
       # not by itself prove pyyaml is out of the dev group, because `fastapi[standard]`
       # pulls `uvicorn[standard]`, which requires pyyaml regardless. Without this step,
       # GET /api/evidence/report 503s in the shipped image on a green build.
-      - name: Assert the image carries the baseline rule catalogue
+      - name: Assert runtime packaging and the baseline rule catalogue
         run: |
-          docker run --rm -e UPDATE_CHECK=false looninspect:ci uv run --frozen --no-dev --no-sync python -c \
-            "from app.baseline.catalogue import catalogue; c = catalogue(); print('catalogue v%s, %d rules' % (c.version, len(c.rules)))" \
-            || { echo "::error::the shipped image cannot read docs/baseline-rules.yml — check the Dockerfile COPY, the .dockerignore exception, and pyyaml in [project].dependencies"; exit 1; }
+          docker run --rm -e UPDATE_CHECK=false looninspect:ci uv run --frozen --no-dev --no-sync python -c '
+          from pathlib import Path
+          from app.baseline.catalogue import catalogue
+          forbidden = {"tests", "scripts", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".coverage", "htmlcov", ".env"}
+          found = sorted(p.name for p in Path("/app").iterdir()
+                         if p.name in forbidden or p.name.startswith((".env.", ".coverage.")))
+          assert not found, "developer or local files shipped in runtime image: " + ", ".join(found)
+          c = catalogue()
+          print("catalogue v%s, %d rules" % (c.version, len(c.rules)))
+          ' || { echo "::error::runtime packaging check failed — see the assertion above; check Dockerfile COPY inputs, .dockerignore, and pyyaml in [project].dependencies"; exit 1; }
 
       # The image needs a database to reach `healthy` now, and this job runs it
       # standalone rather than through compose — so the database is stood up here
