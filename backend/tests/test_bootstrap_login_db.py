@@ -182,3 +182,66 @@ async def test_exact_identifier_wins_without_trying_a_second_accounts_credential
     else:
         assert signed.status_code == 202 and "loon_session" not in client.cookies
         assert mfa.challenge_account_id(signed.json()["challenge"]) == exact_id
+
+
+@pytest.mark.parametrize(
+    ("made_by", "real", "real_alternate", "ghost", "ghost_alternate"),
+    [
+        (
+            "accounts",
+            "real.user@example.com",
+            "Anyone <real.user@example.com>",
+            "ghost.user@example.com",
+            "Anyone <ghost.user@example.com>",
+        ),
+        (
+            "accounts",
+            "real.user@example.com",
+            '"Anyone" <real.user@example.com>',
+            "ghost.user@example.com",
+            '"Anyone" <ghost.user@example.com>',
+        ),
+        ("accounts", "café@example.com", "café@example.com", "ghosté@example.com", "ghosté@example.com"),
+        # Keyed on the stored row when an account matched, a raw environment identifier
+        # would share no row with its own normalized spelling, and the oracle inverts.
+        ("environment", "admin@xn--bcher-kva.de", "admin@bücher.de", "ghost@xn--bcher-kva.de", "ghost@bücher.de"),
+    ],
+)
+async def test_lockout_does_not_reveal_whether_an_account_exists(
+    install, monkeypatch, made_by, real, real_alternate, ghost, ghost_alternate
+):
+    tenant_id, client = install
+    if made_by == "accounts":
+        await _create_from_accounts_schema(tenant_id, real)
+    else:
+        await _bootstrap(tenant_id, monkeypatch, real)
+
+    async def probe(entered, alternate):
+        for _ in range(_LOCKOUT_THRESHOLD):
+            failed = await client.post("/api/auth/login", json={"email": entered, "password": "incorrect-password"})
+            assert failed.status_code == 401
+        return (await client.post("/api/auth/login", json={"email": alternate, "password": "incorrect-password"})).status_code
+
+    # Five failures, then one more in another spelling of the same address: the answer
+    # must not depend on whether an account holds it (429 for one, 401 for the other
+    # would be an account enumeration oracle on an unauthenticated route).
+    assert await probe(real, real_alternate) == await probe(ghost, ghost_alternate) == 429
+
+
+async def test_code_and_password_failures_share_one_lockout_for_a_raw_environment_identifier(install, monkeypatch):
+    tenant_id, client = install
+    email = "admin@xn--bcher-kva.de"
+    account_id = await _bootstrap(tenant_id, monkeypatch, email)
+    async with session_for_tenant(tenant_id) as db:
+        db.add(AuthIdentity(account_id=account_id, provider=mfa.PROVIDER, subject=account_id, confirmed_at=datetime.now(UTC)))
+        await db.commit()
+    challenge = await client.post("/api/auth/login", json={"email": email, "password": PASSWORD})
+    assert challenge.status_code == 202
+    for _ in range(_LOCKOUT_THRESHOLD):
+        refused = await client.post("/api/auth/login/mfa", json={"challenge": challenge.json()["challenge"], "code": "000000"})
+        assert refused.status_code == 401
+    # Wrong codes count against the password step's lockout, whichever spelling it uses.
+    for entered in (email, "admin@bücher.de"):
+        locked = await client.post("/api/auth/login", json={"email": entered, "password": PASSWORD})
+        assert locked.status_code == 429
+    assert "loon_session" not in client.cookies

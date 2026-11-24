@@ -100,17 +100,21 @@ def _account_out(
     )
 
 
-async def _account_for_login(db: AsyncSession, identifier: str) -> Account | None:
-    """Resolve one stored identifier before checking credentials or its shared lockout."""
-    candidates = [identifier]
+def _canonical_identifier(identifier: str) -> str:
+    """The EmailStr spelling setup and account creation store, or the identifier itself."""
     try:
-        canonical = _EMAIL_IDENTIFIER.validate_python(identifier).lower()
+        return _EMAIL_IDENTIFIER.validate_python(identifier).lower()
     except ValidationError:
         # Environment bootstrap accepts private domains and other stored identifiers.
-        pass
-    else:
-        if canonical != identifier:
-            candidates.append(canonical)
+        return identifier
+
+
+async def _account_for_login(db: AsyncSession, identifier: str) -> Account | None:
+    """Resolve one stored identifier before checking credentials."""
+    candidates = [identifier]
+    canonical = _canonical_identifier(identifier)
+    if canonical != identifier:
+        candidates.append(canonical)
     accounts = {account.email: account for account in await db.scalars(select(Account).where(Account.email.in_(candidates)))}
     # Exact storage wins, including a raw environment identifier. Only its absence
     # permits the EmailStr normalization used by setup and account creation; a wrong
@@ -119,7 +123,13 @@ async def _account_for_login(db: AsyncSession, identifier: str) -> Account | Non
 
 
 async def _get_attempt(db: AsyncSession, identifier: str, ip: str) -> LoginAttempt | None:
-    result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == identifier, LoginAttempt.ip == ip))
+    # The row is keyed on the canonical spelling, worked out from the identifier alone.
+    # Keying a matched account on its stored spelling and a miss on the entered one would
+    # let a second spelling of an address (a display name, a decomposed accent) answer
+    # 429 for an address that exists and 401 for one that does not: an enumeration
+    # oracle. The second-factor steps pass the stored spelling and reach the same row.
+    key = _canonical_identifier(identifier)
+    result = await db.execute(select(LoginAttempt).where(LoginAttempt.identifier == key, LoginAttempt.ip == ip))
     return result.scalar_one_or_none()
 
 
@@ -136,7 +146,7 @@ async def _record_failure(db: AsyncSession, identifier: str, ip: str) -> None:
         # not. The tenant is the column's own default, as on every ORM insert.
         await db.execute(
             pg_insert(LoginAttempt)
-            .values(identifier=identifier, ip=ip, failure_count=0, last_failure_at=now)
+            .values(identifier=_canonical_identifier(identifier), ip=ip, failure_count=0, last_failure_at=now)
             .on_conflict_do_nothing(constraint="uq_login_attempt_identifier_ip")
         )
         attempt = await _get_attempt(db, identifier, ip)
@@ -271,9 +281,8 @@ async def login(
 ) -> AccountOut:
     email = payload.email.strip().lower()
     account = await _account_for_login(db, email)
-    if account is not None:
-        # All spellings that resolve to this account share the same lockout row.
-        email = account.email
+    # Logged and audited as the lockout row's key, whether or not an account matched.
+    email = _canonical_identifier(email)
     ip = _client_ip(request)
     now = datetime.now(UTC)
 

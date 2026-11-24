@@ -635,7 +635,8 @@ the run `jobID`, the token's index settings, and the search you ran.
    their existing email normalization at sign-in. If both the entered spelling and
    its normalized spelling belong to separate accounts, the entered spelling selects
    its own account; its password, active status and MFA requirements still apply.
-   Alternate spellings that select one account share its lockout counter. Creating a
+   Every spelling of one normalized address shares one lockout counter, even when
+   those spellings select separate accounts. Creating a
    new account through the wizard or Settings › Accounts keeps
    its existing mail-address validation; that creation policy is separate from
    authenticating an account already stored by environment bootstrap.
