@@ -161,8 +161,8 @@ NOT_ABOUT_CHANGES = "not_about_changes"
 
 # The page's own names for its controls (`changes.search`, `changes.artifact` in the
 # SPA's copy), so a repair reads in the words the operator sees above the table.
-_SEARCH = "Search"
-_ARTIFACT = "Filter to one thing"
+_SEARCH = "Device search"
+_ARTIFACT = "Named-entry search"
 
 # The instructions, static and versioned here (threat-model P2). Byte for byte the text
 # measured against Apple FM through `fm serve` on 2026-09-14. The first version scored 29

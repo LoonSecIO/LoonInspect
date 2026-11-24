@@ -3568,6 +3568,10 @@
       },
       "DeviceChangeListResponse": {
         "properties": {
+          "devicesTotal": {
+            "title": "Devicestotal",
+            "type": "integer"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/DeviceChangeOut"
@@ -3599,6 +3603,7 @@
           }
         },
         "required": [
+          "devicesTotal",
           "items",
           "page",
           "pageSize",
@@ -7944,6 +7949,10 @@
             "title": "Overridden",
             "type": "boolean"
           },
+          "scalar": {
+            "title": "Scalar",
+            "type": "boolean"
+          },
           "why": {
             "title": "Why",
             "type": "string"
@@ -7957,6 +7966,7 @@
           "label",
           "level",
           "overridden",
+          "scalar",
           "why"
         ],
         "title": "PolicyFieldOut",
@@ -13549,7 +13559,7 @@
     },
     "/api/changes": {
       "get": {
-        "description": "The change feed, newest first.\n\nTwo searches, because an investigation runs in two directions. `q` names the\n*device* \u2014 its name, serial, or Jamf id. `artifact` names the *thing that changed*\n\u2014 an application name or bundle id, a local account's username, or the label the\ncontract carries for a group, a profile, or an extension attribute.\n\nThey are separate parameters rather than one widened `q` for two reasons. Widening\n`q` would silently change what every existing caller gets back, the frontend and\nany bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`\nwith `artifact=Wireshark` is \"did this laptop family get Wireshark\", which a single\nOR-ed needle can only answer as \"either\".\n\nNot searchable here, deliberately: `path` (an `artifact=/Applications` that matches\nthe whole fleet is a worse answer than none), and old values \u2014 searching the value a\nchange moved *from* is a different query surface, not a filter. A certificate is\nidentified only by its SHA-1 fingerprint and carries no label, so it is reachable by\n`section=certificates`, not by name.\n\n**What is filterable is wider than what the table shows** (#447). Three keys come off the\nrow itself \u2014 `trigger`, the observation the change was found in (`spanId`), and the version\nit moved to (`version`) \u2014 and seven read the dimensions stamped on the row when it was\nderived: `model`, `osVersion`, `fileVault`, `site`, `department`, `managed`, `user`. They are\nthe Mac as *that observation* saw it, not as it is today, which is the whole reason they are\nstamped rather than joined (app.changes.derive.device_dimensions).\n\nTwo bounds a caller has to know, because a filter that silently drops rows is the failure\nthis feed exists to avoid:\n\n* a row derived before the stamp existed carries none, so it matches no dimension filter.\n  The page says so beneath an empty table rather than letting an older change read as \"not\n  a MacBook Air\";\n* a section outside the aperture of the observation stamps nothing, so a webhook's narrow\n  read can leave a row with a model and no department.\n\nThe page has controls for none of the ten. They arrive from a link, from a click on a row,\nor from the Prompt bar, and every one of them shows as a chip while it is applied.\n\n`user` takes two shapes (#446): typed text matches any of the three names, a `u_\u2026` token\nmatches `userToken` exactly, and `userFilter` echoes what it resolved to \u2014 a name for the\nchip, and for text naming one person, the token to rewrite the URL with. The wire is\nunchanged (#188).",
+        "description": "The change feed, newest first.\n\nTwo searches, because an investigation runs in two directions. `q` names the\n*device* \u2014 its name, serial, or Jamf id. `artifact` names the *thing that changed*\n\u2014 an application name or bundle id, a local account's username, or the label the\ncontract carries for a group, a profile, or an extension attribute.\n\n`field` selects a scalar field within `section`, as listed by the change policy.\n`changedTo` matches that field's new value exactly, so OS version 27.2.1 does not\nmatch 27.2.10 or an application version. `since` (inclusive) and `until` (exclusive)\nbound observation time, with timezone offsets required. These are reported inventory\ntimes, not exact installation times. `devicesTotal` counts distinct computers by\nconnection and subject ID across the full filtered result, independently of pagination.\n\nThey are separate parameters rather than one widened `q` for two reasons. Widening\n`q` would silently change what every existing caller gets back, the frontend and\nany bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`\nwith `artifact=Wireshark` is \"did this laptop family get Wireshark\", which a single\nOR-ed needle can only answer as \"either\".\n\nNot searchable here, deliberately: `path` (an `artifact=/Applications` that matches\nthe whole fleet is a worse answer than none), and old values \u2014 searching the value a\nchange moved *from* is a different query surface, not a filter. A certificate is\nidentified only by its SHA-1 fingerprint and carries no label, so it is reachable by\n`section=certificates`, not by name.\n\n**What is filterable is wider than what the table shows** (#447). Three keys come off the\nrow itself \u2014 `trigger`, the observation the change was found in (`spanId`), and the version\nit moved to (`version`) \u2014 and seven read the dimensions stamped on the row when it was\nderived: `model`, `osVersion`, `fileVault`, `site`, `department`, `managed`, `user`. They are\nthe Mac as *that observation* saw it, not as it is today, which is the whole reason they are\nstamped rather than joined (app.changes.derive.device_dimensions).\n\nTwo bounds a caller has to know, because a filter that silently drops rows is the failure\nthis feed exists to avoid:\n\n* a row derived before the stamp existed carries none, so it matches no dimension filter.\n  The page says so beneath an empty table rather than letting an older change read as \"not\n  a MacBook Air\";\n* a section outside the aperture of the observation stamps nothing, so a webhook's narrow\n  read can leave a row with a model and no department.\n\nThe page exposes historical device filters. Link-only filters remain visible as chips.\n\n`user` takes two shapes (#446): typed text matches any of the three names, a `u_\u2026` token\nmatches `userToken` exactly, and `userFilter` echoes what it resolved to \u2014 a name for the\nchip, and for text naming one person, the token to rewrite the URL with. The wire is\nunchanged (#188).",
         "operationId": "list_changes_api_changes_get",
         "parameters": [
           {
@@ -13614,6 +13624,40 @@
                 }
               ],
               "title": "Section"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field"
+            }
+          },
+          {
+            "in": "query",
+            "name": "changedTo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Changedto"
             }
           },
           {
@@ -13711,6 +13755,23 @@
                 }
               ],
               "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
             }
           },
           {

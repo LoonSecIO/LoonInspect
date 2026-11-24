@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§28, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§31, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -72,6 +72,7 @@ they were written — §9 ends by saying the paths continue at §10.
 - **§28** ["Support does not show the Mac app version or build"](#28-support-does-not-show-the-mac-app-version-or-build)
 - **§29** ["Codex or Claude cannot use LoonInspect"](#29-codex-or-claude-cannot-use-looninspect)
 - **§30** [Installed application patch plans](#30-installed-application-patch-plans)
+- **§31** [Change filters do not find an OS version or time window](#31-change-filters-do-not-find-an-os-version-or-time-window)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -1628,7 +1629,7 @@ Report the block's four lines (build, latest release, last checked, the sentence
 
 ## 11. "The Prompt bar is missing, or it answers *AI search unavailable*"
 
-The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
+The Prompt bar is the box labelled **Prompt** below the deterministic filters on **Devices › Changes**. It
 sends the typed question — nothing else — to the card picked in its **Model** list, which names
 every card saved on **Settings › AI** and the model it uses. The model answers with filter
 settings, and the page moves its filters to them and runs them. Two exceptions: an answer the
@@ -1715,20 +1716,20 @@ field that left, `query_text`.
    `none`).
 
    **The answer leads with *The model's answer needed a correction that widens the search, so it
-   was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
+   was not applied*.** Not a failure, and nothing has run: the filters above the Prompt bar are
    still the ones you had. The model did answer with filter settings, but the page had to change
    one of them in a way that would match more than the model named. One of four things happened:
-   - a name it gave for **Search** or **Filter to one thing** was dropped: it was not text, was
+   - a name it gave for **Device search** or **Named-entry search** was dropped: it was not text, was
      longer than 64 characters, or held a character a name here may not;
-   - it put a serial number in **Search** that the question never named — often one from its
+   - it put a serial number in **Device search** that the question never named — often one from its
      own instructions — which was dropped;
    - it named a section, level or change the page does not have, which was read as *any*;
    - it added a field the page does not use and put a value in it, perhaps the name.
 
    Run as it stood, an answer that lost its name would list every added app rather than the one
-   asked about, so a correction like that waits for you. A dropped **Search** does not wait when
-   the question holds one serial number in capitals, as Jamf writes it: the page fills Search
-   with it, and the answer runs. The
+   asked about, so a correction like that waits for you. A dropped **Device search** does not
+   wait when the question holds one serial number in capitals, as Jamf writes it: the page
+   fills Device search with it, and the answer runs. The
    lines under the lead are those corrections, in the page's words. If the model also said the
    filters cannot express part of the question, its sentence follows *These filters would be as
    close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
@@ -1739,12 +1740,12 @@ field that left, `query_text`.
    `. _ @ ' ’ ( ) + / - & # ! , :`. One holding anything else is dropped from the answer: a
    quote, a semicolon, a percent sign, an angle bracket, a symbol such as ™, or a character
    that draws nothing (a Hangul filler, a variation selector), which would have read back as a
-   plain name and matched no row. Typed into **Filter to one thing** by hand, such a name still
+   plain name and matched no row. Typed into **Named-entry search** by hand, such a name still
    searches. The audit log records such an answer as
    `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
 
    **The answer leads with *Invalid question — the Prompt bar can't answer it, so nothing was
-   run*.** Not a failure, and nothing has run: the filters below the Prompt bar are still the
+   run*.** Not a failure, and nothing has run: the filters above the Prompt bar are still the
    ones you had. The model judged the text not a question about changes on your devices: a
    greeting or thanks, a question about the model itself, general knowledge or how to do
    something, arithmetic, a request to write text or code, a question about vulnerabilities,
@@ -1821,7 +1822,7 @@ field that left, `query_text`.
    `version` (the version a change moved *to*, by prefix, so `version=153` finds 153.0.7049.84).
    `q` also matches a Mac's UDID now, beside its name, serial and Jamf id.
 
-   They arrive three ways: a link, the Prompt bar (which reads a Search value the fleet has no
+   They arrive three ways: a link, the Prompt bar (which reads a Device search value the fleet has no
    device for as a model, an OS version, a department name or "unmanaged", and says so in its
    corrections), and a click on a row's model or on the person assigned to it, which is how the
    rest are discovered.
@@ -1852,7 +1853,7 @@ field that left, `query_text`.
 
    **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
    Product?" works when Jamf's catalog holds that department's name. The model tends to read a
-   department as the name of a profile and put it in *Filter to one thing*, with *Section:
+   department as the name of a profile and put it in *Named-entry search*, with *Section:
    Configuration profiles* beside it; when no app, profile, group or account has that name and
    exactly one department does, the page reads it as the department instead and clears the
    section the model guessed — unless the question named that section itself ("which apps
@@ -1884,7 +1885,7 @@ field that left, `query_text`.
    while the model was answering; the page keeps the filters you set. Ask again to apply it. *Corrections to the model's answer*
    lists what the page changed or dropped from the model's reply before running it. *No changes
    match* under the bar, and *No changes match these filters* in the table, mean the change log
-   holds no row for those filters: the bar matches names the way *Filter to one thing* does, and
+   holds no row for those filters: the bar matches names the way *Named-entry search* does, and
    a Mac that already had an app when tracking began never shows it as *Added* — it appears only
    when something about it changes. The table says *No changes yet …* only with no filter set,
    when the log itself is empty; *No changes on this page …* means the page number in the address
@@ -3694,3 +3695,40 @@ Start in **Settings → AI connections**, with the intended organization selecte
   filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
 
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
+
+
+## 31. Change filters do not find an OS version or time window
+
+1. **An OS version typed into search finds nothing.** Device search finds a device's name,
+   serial, ID or UDID; Named-entry search finds applications, groups, accounts and profiles.
+   Use **Section: Operating system → Changed field: OS version → Changed to exactly: 27.2.1**,
+   or the example button. Set the observation window, then press **Apply field, time and
+   device filters**. AI is not required. The old/new values in each row are the evidence.
+2. **“Choose a section and field” or an unusable field in a shared URL.** Select a section,
+   then a scalar field from its list. A field from Applications, group criteria or another
+   section cannot be used as a scalar target. If field choices failed to load, use
+   **Retry field choices**; if this continues, report the visible error and app version.
+   A section change clears the previous field/target together. Clear also removes every
+   applied filter, including filters carried only by a shared link. Browser Back/Forward
+   restores the URL's applied filters and discards unapplied drafts, including when Back
+   cancels a filter change before its results render.
+3. **The time window is refused or selects the wrong day.** Check the timezone printed
+   below the inputs. Start is inclusive and end is exclusive; end must be later. A clock
+   time skipped at the start of daylight saving is not valid. Use absolute ISO instants
+   with `Z` or an offset when editing API/shared links; an offset also disambiguates a
+   repeated local hour. The window uses **Observed**, not collection or installation time.
+4. **The total differs from the page's row count or the number of users.** Totals cover all
+   matching pages. Multiple transitions on one Mac count as multiple changes and one
+   device. Equal IDs in different source connections count separately; groups count as
+   changes but not devices. Assigned user does not establish unique-person identity.
+5. **Adding a historical device filter removes an expected row.** These filters use the
+   attributes stamped on that observation, not Devices' current state. Missing stamps
+   remain unknown; narrower collection scopes and older observations may lack a field.
+   Remove that dimension filter and inspect the recorded change. A first observation is
+   a baseline, not evidence of a prior upgrade. Check **Settings → Change tracking** and
+   [retention (§24)](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
+   if the expected period has no retained change rows. “Changed to” includes downgrades.
+6. **A query fails to load.** Its error replaces the result counts, so an unavailable query
+   does not read as zero changes. Correct the field/time message or retry loading the page.
+   If valid filters still fail, report the visible error, app version and a synthetic example;
+   remove personal values from the shared query before posting it publicly.

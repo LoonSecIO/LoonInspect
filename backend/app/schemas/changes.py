@@ -52,6 +52,7 @@ class UserFilterOut(_Base):
 class DeviceChangeListResponse(_Base):
     items: list[DeviceChangeOut]
     total: int
+    devices_total: int
     page: int
     page_size: int
     # Null unless a `user` filter is applied — not the same as the pair of nulls inside it.
@@ -97,6 +98,7 @@ class KnownDepartment(_Base):
 
 class PolicyFieldOut(_Base):
     key: str
+    scalar: bool
     field: str
     label: str
     level: str

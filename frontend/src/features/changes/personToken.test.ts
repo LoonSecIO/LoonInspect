@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { rowUserToken, userChipLabel, userTokenRewrite } from "@/features/changes/personToken";
+import { isPersonToken, rowUserToken, userChipLabel, userTokenRewrite } from "@/features/changes/personToken";
 import type { DeviceChange } from "@/features/changes/types";
 import { en } from "@/i18n/en";
 
@@ -33,4 +33,13 @@ it("shows the chip as a person and never as the token", () => {
   // Still text: quoted as typed, whether or not it resolved to one person.
   expect(userChipLabel("dana", null, words)).toBe("Assigned user matching “dana”");
   expect(userChipLabel("dana", { token: TOKEN, display: "Dana Okonkwo" }, words)).toBe("Assigned user matching “dana”");
+});
+
+it("recognises the complete token contract without hiding literal u_ usernames", () => {
+  expect(isPersonToken(TOKEN)).toBe(true);
+  for (const value of ["u_", "u_admin", `${TOKEN}x`, TOKEN.slice(0, -1), `${TOKEN}\n`, "u_123456789012345!"]) {
+    expect(isPersonToken(value)).toBe(false);
+  }
+  expect(userChipLabel("u_admin", null, words)).toBe("Assigned user matching “u_admin”");
+  expect(userChipLabel(TOKEN, { token: "u_0000000000000000", display: "Previous Person" }, words)).toBe(words.unresolved);
 });
