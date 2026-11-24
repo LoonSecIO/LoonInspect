@@ -5,10 +5,11 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest } from "@/config/api";
 import { PatchPlanWorkspace, type PatchPlanActions } from "./PatchPlanWorkspace";
+import { forgetReviewDraft, forgetSubmittedReviewDraft, readReviewDraft, rememberReviewDraft } from "./patchPlanDraft";
 import type { PatchPlan } from "./patchPlanTypes";
 
 vi.mock("@/config/api", async importOriginal => ({ ...await importOriginal<typeof import("@/config/api")>(), apiRequest: vi.fn() }));
-vi.mock("@/features/auth/store", () => ({ useHasPermission: () => true }));
+vi.mock("@/features/auth/store", () => ({ useHasPermission: () => true, useAuthStore: () => ({ id: "operator", tenant: { id: "tenant" } }) }));
 const request = vi.mocked(apiRequest);
 const appHash = "a".repeat(32);
 const plan: PatchPlan = {
@@ -20,6 +21,7 @@ const plan: PatchPlan = {
       targetVersion: "3.4.14", versions: [], options: [], gaps: ["Verify Jamf configuration"], steps: ["Verify identity", "Pilot in Jamf"] }] },
 };
 beforeEach(() => {
+  sessionStorage.clear();
   request.mockImplementation(async (path, options) => {
     if (path.endsWith("ai-status")) return { available: true, reason: null, providers: [{ provider: "openai_compatible", model: "qwen3.8:27b-mlx" }] };
     if (path === "/application-patch-plans" && !options?.method) return [{ ...plan, applications: plan.snapshot.applications }];
@@ -27,7 +29,7 @@ beforeEach(() => {
     return plan;
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); forgetReviewDraft("looninspect.patch-review.tenant.operator.saved-plan"); forgetReviewDraft("looninspect.patch-review.tenant.operator.other-plan"); vi.clearAllMocks(); });
 
 describe("Installed Applications patch plans", () => {
   it("shows a next check instead of a link when a source URL was withheld", async () => {
@@ -52,6 +54,13 @@ describe("Installed Applications patch plans", () => {
     expect(request).toHaveBeenCalledWith("/application-patch-plans", expect.objectContaining({ method: "POST", json: {
       scope: JSON.parse(scope), appHashes: [appHash], title: "Application patch plan" } }));
     expect(onOpen).toHaveBeenCalledWith("saved-plan");
+  });
+
+  it("explains an invalid device scope from a direct planning link without creating a plan", async () => {
+    render(<MemoryRouter><PatchPlanWorkspace scope="invalid-json" selected={[appHash]} planId={null} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "Build plan for 1 selected apps" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("device scope is invalid"));
+    expect(request.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
   });
 
   it("blocks export until visible review notes have been saved to a new revision", async () => {
@@ -115,7 +124,7 @@ describe("Installed Applications patch plans", () => {
     expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("clears discarded notes when reopening a plan after switching away", async () => {
+  it("restores unsaved notes and keeps export blocked when reopening a plan", async () => {
     const actions = createRef<PatchPlanActions>();
     const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace ref={actions} scope='{"match":"all","rules":[]}' selected={[]}
       planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
@@ -123,7 +132,73 @@ describe("Installed Applications patch plans", () => {
     fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Discarded owner" } });
     rendered.rerender(view(null));
     rendered.rerender(view("saved-plan"));
-    await waitFor(() => expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe(""));
-    expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Discarded owner"));
+    expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
   });
+});
+
+it("keeps an unsaved review across navigation when browser storage fails", async () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage unavailable"); });
+  const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace scope='{"match":"all","rules":[]}' selected={[]}
+    planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+  const rendered = render(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Unsaved tab draft" } });
+  expect(screen.getByText(/Browser storage is unavailable/)).toBeTruthy();
+  rendered.rerender(view(null));
+  const leaving = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(leaving);
+  expect(leaving.defaultPrevented).toBe(true);
+  rendered.rerender(view("saved-plan"));
+  expect((await screen.findByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Unsaved tab draft");
+  expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+it("clears the matching persisted draft when a save succeeds after navigation", async () => {
+  const original = request.getMockImplementation()!;
+  let finish!: (value: PatchPlan) => void;
+  const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+  let saved = false;
+  const next = { ...plan, revision: 2, snapshot: { ...plan.snapshot, operatorReview: { owner: "Owner" } } };
+  request.mockImplementation((path, options) => options?.method === "PATCH" ? pending
+    : path === "/application-patch-plans/saved-plan" && saved ? Promise.resolve(next) : original(path, options));
+  const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace scope='{"match":"all","rules":[]}' selected={[]}
+    planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+  const rendered = render(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Owner" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save review notes" }));
+  rendered.rerender(view(null));
+  saved = true;
+  await act(async () => { finish(next); });
+  rendered.rerender(view("saved-plan"));
+  await waitFor(() => expect(screen.getByText("Example · revision 2 · Draft")).toBeTruthy());
+  expect(screen.queryByText(/This draft is from revision/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+
+it("preserves newer draft edits when an earlier save finishes after navigation", async () => {
+  const original = request.getMockImplementation()!;
+  let finish!: (value: PatchPlan) => void;
+  const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+  request.mockImplementation((path, options) => options?.method === "PATCH" ? pending : original(path, options));
+  const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace scope='{"match":"all","rules":[]}' selected={[]}
+    planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+  const rendered = render(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Submitted owner" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save review notes" }));
+  rendered.rerender(view(null)); rendered.rerender(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Newer owner" } });
+  await act(async () => { finish({ ...plan, revision: 2 }); });
+  expect(JSON.parse(sessionStorage.getItem("looninspect.patch-review.tenant.operator.saved-plan")!).values.owner).toBe("Newer owner");
+  expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Newer owner");
+  expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+it("does not clear a newer draft revision even when its note values match the completed save", () => {
+  const key = "looninspect.patch-review.tenant.operator.saved-plan";
+  const values = { owner: "Owner", window: "", pilot: "", recovery: "", exceptions: "", approval: "" };
+  rememberReviewDraft(key, { revision: 2, values });
+  expect(forgetSubmittedReviewDraft(key, { revision: 1, values })).toBe(true);
+  expect(readReviewDraft(key)).toEqual({ revision: 2, values });
 });

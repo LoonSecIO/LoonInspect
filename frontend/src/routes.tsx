@@ -13,6 +13,7 @@ import { DevicesPage } from "@/features/devices/DevicesPage";
 import { OsPosturePage } from "@/features/osPosture/OsPosturePage";
 import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
+import { PatchPlansPage } from "@/features/catalog/PatchPlansPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { ApplicationRecordPage } from "@/features/devices/ApplicationRecordPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
@@ -50,6 +51,11 @@ export function AppRoutes() {
         <Route path="/" element={<App />}>
         <Route index element={<OverviewPage />} />
         <Route path="devices" element={<DevicesPage />} />
+        <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+          <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+            <Route path="patch-plans" element={<PatchPlansPage />} />
+          </Route>
+        </Route>
         <Route path="devices/applications" element={<ApplicationsPage />}>
           <Route index element={<ApplicationsOverviewPage />} />
           <Route path="catalog" element={<CatalogPage />} />

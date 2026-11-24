@@ -385,6 +385,7 @@ export const en = {
     reload: "Reload the page"
   },
   nav: {
+    patchPlans: "Patch Plans",
     overview: "Overview",
     devices: "Devices",
     applications: "Applications",
@@ -1256,6 +1257,7 @@ export const en = {
     eyebrow: "Devices",
     title: "Applications",
     description: "Applications installed across your fleet, aggregated from synced device inventory.",
+    tabPatchPlans: "Patch Plans",
     tabInstalled: "Installed Apps",
     tableName: "Name",
     tableBundleId: "Bundle ID",

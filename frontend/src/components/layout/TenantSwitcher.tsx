@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { switchTenant } from "@/features/auth/api";
 import { useAuthStore } from "@/features/auth/store";
+import { confirmReviewDraftSessionChange, suspendReviewDraftUnloadWarning } from "@/features/catalog/patchPlanDraft";
 import { useLocale } from "@/i18n/LocaleContext";
 
 /**
@@ -23,13 +24,17 @@ export function TenantSwitcher() {
   const current = user.tenants.find((tenant) => tenant.current) ?? user.tenants[0];
 
   async function choose(tenantId: string) {
-    if (tenantId === current.id) return;
+    if (tenantId === current.id || !confirmReviewDraftSessionChange()) return;
     setSwitching(true);
     setFailed(false);
+    let restoreWarning: (() => void) | undefined;
     try {
       await switchTenant(tenantId);
+      // The new cookie is already active. A second prompt must not strand the old tenant UI.
+      restoreWarning = suspendReviewDraftUnloadWarning();
       window.location.assign("/");
     } catch {
+      restoreWarning?.();
       setFailed(true);
       setSwitching(false);
     }
