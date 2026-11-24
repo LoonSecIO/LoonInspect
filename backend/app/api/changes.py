@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import ColumnElement, String, distinct, func, or_, select, text, tuple_
+from sqlalchemy import ColumnElement, String, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.changes.person_token import is_person_token
@@ -391,17 +391,23 @@ async def list_changes(
         user=user,
     )
 
-    # One aggregate uses the same predicates and database snapshot for both totals.
+    # Both totals come from one statement, so they share the predicates and one database
+    # snapshot. Distinct computers are counted over a grouped subquery, not as
+    # count(DISTINCT (connection, subject)): Postgres can neither parallelise nor hash a
+    # DISTINCT aggregate, so every page of a large feed became a serial scan and an
+    # on-disk sort.
+    computers = (
+        select(DeviceChange.mdm_connection_id, DeviceChange.subject_id)
+        .where(*conditions, DeviceChange.subject_kind == "computer")
+        .group_by(DeviceChange.mdm_connection_id, DeviceChange.subject_id)
+        .subquery()
+    )
     total, devices_total = (
         await db.execute(
             select(
-                func.count(),
-                func.count(distinct(tuple_(DeviceChange.mdm_connection_id, DeviceChange.subject_id))).filter(
-                    DeviceChange.subject_kind == "computer"
-                ),
+                select(func.count()).select_from(DeviceChange).where(*conditions).scalar_subquery(),
+                select(func.count()).select_from(computers).scalar_subquery(),
             )
-            .select_from(DeviceChange)
-            .where(*conditions)
         )
     ).one()
     rows = (

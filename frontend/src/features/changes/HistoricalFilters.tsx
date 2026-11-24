@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { localTime, timeBound } from "@/features/changes/filters";
 import { isPersonToken } from "@/features/changes/personToken";
@@ -8,29 +8,52 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 const inputClasses = "rounded-md border border-input bg-background px-3 py-2 text-sm";
 const DEVICE_TEXT_KEYS = ["model", "osVersion", "site", "department", "user"] as const;
+const DRAFT_KEYS = ["field", "changedTo", "since", "until", "connectionId", "model", "osVersion", "fileVault", "site", "department", "managed", "user"] as const;
+type Draft = Record<(typeof DRAFT_KEYS)[number], string>;
 
-/** Historical stamps only: this form never asks the current-device scope builder. */
-export function HistoricalFilters({ filters, policy, policyError, userFilter, onApply, onDirty, onRetry }: {
-  filters: ChangeFilters; policy: ChangePolicy | null; policyError: boolean; userFilter: UserFilter | null;
-  onApply: (next: Partial<ChangeFilters>) => void; onDirty: () => void; onRetry: () => void;
-}) {
-  const { t } = useLocale();
-  const words = t.changes.historical;
-  const [draft, setDraft] = useState(() => ({
+function draftOf(filters: ChangeFilters): Draft {
+  return {
     field: filters.field ?? "", changedTo: filters.changedTo ?? "",
     since: localTime(filters.since), until: localTime(filters.until),
     connectionId: filters.connectionId?.toString() ?? "", model: filters.model ?? "", osVersion: filters.osVersion ?? "",
     fileVault: filters.fileVault ?? "", site: filters.site ?? "", department: filters.department ?? "",
     managed: filters.managed ?? "", user: filters.user ?? ""
-  }));
+  };
+}
+
+/** Historical stamps only: this form never asks the current-device scope builder. */
+export function HistoricalFilters({ filters, policy, policyError, userFilter, onApply, onDirtyChange, onRetry }: {
+  filters: ChangeFilters; policy: ChangePolicy | null; policyError: boolean; userFilter: UserFilter | null;
+  onApply: (next: Partial<ChangeFilters>) => void; onDirtyChange: (dirty: boolean) => void; onRetry: () => void;
+}) {
+  const { t } = useLocale();
+  const words = t.changes.historical;
+  const applied = draftOf(filters);
+  const [draft, setDraft] = useState(applied);
   const [error, setError] = useState<string | null>(null);
   const [userEdited, setUserEdited] = useState(false);
+  // Unapplied drafts survive every other move on the page (Section, Level, Change, the two
+  // search boxes, a page, another key's chip): the field list waits on Section, so a window
+  // typed first must still be there when the field is chosen. Only a key whose applied value
+  // moved takes it, as the search boxes do; a new section or field takes the target with it.
+  // Back, Forward and Clear remount this form instead, which discards every draft.
+  const [synced, setSynced] = useState({ applied, section: filters.section });
+  const moved = DRAFT_KEYS.filter(key => applied[key] !== synced.applied[key]);
+  if (moved.length > 0 || synced.section !== filters.section) {
+    const fieldMoved = moved.includes("field") || synced.section !== filters.section;
+    setSynced({ applied, section: filters.section });
+    setDraft(previous => ({ ...previous, ...Object.fromEntries(moved.map(key => [key, applied[key]])),
+      ...(fieldMoved ? { field: applied.field, changedTo: applied.changedTo } : {}) }));
+    if (moved.includes("user")) setUserEdited(false);
+    setError(null);
+  }
+  const dirty = DRAFT_KEYS.some(key => draft[key] !== applied[key]);
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   const fields = policy?.sections.find(section => section.section === filters.section)?.fields.filter(field => field.scalar) ?? [];
-  function edit(key: keyof typeof draft, value: string) {
+  function edit(key: keyof Draft, value: string) {
     setDraft(previous => ({ ...previous, [key]: value, ...(key === "field" ? { changedTo: "" } : {}) }));
     setError(null);
     if (key === "user") setUserEdited(true);
-    onDirty();
   }
   // Only an unchanged applied token gets a readable alias. Once the operator edits,
   // keep their literal draft, and never borrow a name from a different query's reply.

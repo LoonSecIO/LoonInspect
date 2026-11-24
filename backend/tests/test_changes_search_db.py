@@ -507,6 +507,33 @@ async def test_device_total_excludes_groups_and_is_independent_of_page(client, s
     assert response.json()["total"] == 5 and response.json()["devicesTotal"] == 4
 
 
+async def test_both_totals_come_from_one_statement_without_a_distinct_aggregate(client, scalar_changes) -> None:
+    """Every page load counts the whole filtered feed. Postgres cannot parallelise or hash
+    `count(DISTINCT ...)`, so at millions of rows that shape turned each page into a serial
+    scan and an on-disk sort; the device total is a count over a grouped subquery instead.
+    Still one statement, so both totals read one snapshot. The department and managed
+    filters bind JSON paths, which the statement now renders twice."""
+    from sqlalchemy import event
+
+    from app.core.database import engine
+
+    sent: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        sent.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        response = await client.get("/api/changes", params={**scalar_changes, "department": "870", "managed": "true"})
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 4 and response.json()["devicesTotal"] == 3
+    counting = [statement for statement in sent if "count(" in statement.lower()]
+    assert len(counting) == 1, counting
+    assert "count(distinct" not in counting[0].lower()
+
+
 @pytest.mark.parametrize(
     "query, sentence",
     [

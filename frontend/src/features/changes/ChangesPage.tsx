@@ -70,7 +70,7 @@ export function ChangesPage() {
   const pageSize = 50;
   const [historyVisit, setHistoryVisit] = useState(0);
   // Back can cancel a pending router transition before the new query renders. The
-  // restored query then equals the old one, so URL-based keys alone retain edited drafts.
+  // restored query then equals the old one, so following the URL alone retains edited drafts.
   // Native history visits still reset those drafts to the applied query, without a fetch.
   useEffect(() => {
     const visit = () => { setHistoryVisit(value => value + 1); setFilterDraftDirty(false); };
@@ -124,7 +124,6 @@ export function ChangesPage() {
     setAsked(asking);
     setLoading(true);
     setError(null);
-    setFilterDraftDirty(false);
   }
 
   useEffect(() => {
@@ -366,8 +365,8 @@ export function ChangesPage() {
         )}
       </form>
 
-      <HistoricalFilters key={`${searchParams.toString()}:${promptSession}:${historyVisit}`} filters={filters} policy={policy}
-        policyError={policyError} userFilter={userFilter} onApply={update} onDirty={() => setFilterDraftDirty(true)}
+      <HistoricalFilters key={`${promptSession}:${historyVisit}`} filters={filters} policy={policy}
+        policyError={policyError} userFilter={userFilter} onApply={update} onDirtyChange={setFilterDraftDirty}
         onRetry={() => setPolicyRetry(value => value + 1)} />
       <p className="text-sm text-muted-foreground">{tc.historical.observationHint}</p>
       <PromptBar filters={filters} onApply={applyPrompt} onUse={setPromptUsed} session={promptSession} />

@@ -2114,9 +2114,9 @@ export const de: Translations = {
     title: "Änderungen",
     description:
       "Das Änderungsprotokoll jedes Geräts zwischen zwei Beobachtungszeiträumen. Enthalten ist, was Ihre Änderungsverfolgung als relevant eingestuft hat.",
-    search: "Suche",
+    search: "Gerätesuche",
     searchPlaceholder: "Gerätename, Seriennummer oder Jamf-ID",
-    artifact: "Auf ein Objekt filtern",
+    artifact: "Objektsuche",
     artifactPlaceholder: "App-Name, Bundle-ID, Benutzername, Gruppe…",
     artifactHint: "App, Konto, Gruppe oder Profil – keine Pfade und nicht die Werte selbst.",
     filterTo: (name: string) => `Auf ${name} filtern`,

@@ -122,6 +122,36 @@ describe("Changes deterministic filters", () => {
     fireEvent.change(screen.getByLabelText("Section"), { target: { value: "applications" } });
     await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0]).toMatchObject({ section: "applications", field: undefined, changedTo: undefined, managed: "false" }));
   });
+  it("keeps unapplied window and device drafts when Section, Level or another chip moves the URL", async () => {
+    open("?trigger=sweep"); await screen.findByText("Found by a sweep");
+    const value = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value;
+    fireEvent.change(screen.getByLabelText("Observed from (inclusive)"), { target: { value: "2026-11-20T09:00" } });
+    fireEvent.change(screen.getByLabelText("Observed until (exclusive)"), { target: { value: "2026-11-24T17:00" } });
+    fireEvent.change(screen.getByLabelText("Department ID"), { target: { value: "870" } });
+    fireEvent.change(screen.getByLabelText("Section"), { target: { value: "operating_system" } });
+    await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0].section).toBe("operating_system"));
+    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "high" } });
+    fireEvent.click(screen.getByText("Found by a sweep"));
+    await waitFor(() => expect(vi.mocked(listChanges).mock.calls.at(-1)![0]).toMatchObject({ level: "high", trigger: undefined }));
+    expect([value("Observed from (inclusive)"), value("Observed until (exclusive)"), value("Department ID")])
+      .toEqual(["2026-11-20T09:00", "2026-11-24T17:00", "870"]);
+    expect((screen.getByRole("button", { name: "Clear" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("Changed field"), { target: { value: "version" } });
+    fireEvent.change(screen.getByLabelText("Changed to exactly"), { target: { value: "27.2.1" } });
+    // A field belongs to its section: a new section takes the unapplied field and target with it.
+    fireEvent.change(screen.getByLabelText("Section"), { target: { value: "applications" } });
+    await waitFor(() => expect(value("Changed field")).toBe(""));
+    expect(value("Changed to exactly")).toBe("");
+    expect(value("Department ID")).toBe("870");
+    fireEvent.change(screen.getByLabelText("Section"), { target: { value: "operating_system" } });
+    await screen.findByRole("option", { name: "OS version" });
+    fireEvent.change(screen.getByLabelText("Changed field"), { target: { value: "version" } });
+    fireEvent.change(screen.getByLabelText("Changed to exactly"), { target: { value: "27.2.1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply field, time and device filters" }));
+    await screen.findByText("51 matching changes · 3 distinct devices");
+    expect(vi.mocked(listChanges).mock.calls.at(-1)![0]).toMatchObject({ section: "operating_system", field: "version", changedTo: "27.2.1",
+      level: "high", department: "870", since: new Date("2026-11-20T09:00").toISOString(), until: new Date("2026-11-24T17:00").toISOString() });
+  });
   it("refuses a reversed window before fetching and makes unapplied drafts clearable", async () => {
     open(); await waitFor(() => expect(listChanges).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByLabelText("Observed from (inclusive)"), { target: { value: "2026-11-24T12:00" } });

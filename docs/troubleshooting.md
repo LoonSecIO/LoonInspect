@@ -1630,20 +1630,20 @@ field that left, `query_text`.
    `none`).
 
    **The answer leads with *The model's answer needed a correction that widens the search, so it
-   was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
+   was not applied*.** Not a failure, and nothing has run: the filters above the Prompt bar are
    still the ones you had. The model did answer with filter settings, but the page had to change
    one of them in a way that would match more than the model named. One of four things happened:
-   - a name it gave for **Search** or **Named-entry search** was dropped: it was not text, was
+   - a name it gave for **Device search** or **Named-entry search** was dropped: it was not text, was
      longer than 64 characters, or held a character a name here may not;
-   - it put a serial number in **Search** that the question never named — often one from its
+   - it put a serial number in **Device search** that the question never named — often one from its
      own instructions — which was dropped;
    - it named a section, level or change the page does not have, which was read as *any*;
    - it added a field the page does not use and put a value in it, perhaps the name.
 
    Run as it stood, an answer that lost its name would list every added app rather than the one
-   asked about, so a correction like that waits for you. A dropped **Search** does not wait when
-   the question holds one serial number in capitals, as Jamf writes it: the page fills Search
-   with it, and the answer runs. The
+   asked about, so a correction like that waits for you. A dropped **Device search** does not
+   wait when the question holds one serial number in capitals, as Jamf writes it: the page
+   fills Device search with it, and the answer runs. The
    lines under the lead are those corrections, in the page's words. If the model also said the
    filters cannot express part of the question, its sentence follows *These filters would be as
    close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
@@ -1659,7 +1659,7 @@ field that left, `query_text`.
    `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
 
    **The answer leads with *Invalid question — the Prompt bar can't answer it, so nothing was
-   run*.** Not a failure, and nothing has run: the filters below the Prompt bar are still the
+   run*.** Not a failure, and nothing has run: the filters above the Prompt bar are still the
    ones you had. The model judged the text not a question about changes on your devices: a
    greeting or thanks, a question about the model itself, general knowledge or how to do
    something, arithmetic, a request to write text or code, a question about vulnerabilities,
@@ -1736,7 +1736,7 @@ field that left, `query_text`.
    `version` (the version a change moved *to*, by prefix, so `version=153` finds 153.0.7049.84).
    `q` also matches a Mac's UDID now, beside its name, serial and Jamf id.
 
-   They arrive three ways: a link, the Prompt bar (which reads a Search value the fleet has no
+   They arrive three ways: a link, the Prompt bar (which reads a Device search value the fleet has no
    device for as a model, an OS version, a department name or "unmanaged", and says so in its
    corrections), and a click on a row's model or on the person assigned to it, which is how the
    rest are discovered.
