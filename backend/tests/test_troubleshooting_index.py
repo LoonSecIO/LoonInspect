@@ -86,19 +86,41 @@ def test_the_indexs_one_sub_entry_reaches_the_routing_table() -> None:
     assert anchor == _slug(title), "the sub-entry's link does not reach its own heading"
 
 
+def _letters(count: int) -> list[str]:
+    """The first `count` reportable-state letters: A … Z, then AA, AB … AZ, BA …, the way
+    spreadsheet columns run (ruled R18, 2026-11-24, when the twenty-sixth letter was spent)."""
+    letters = []
+    for index in range(1, count + 1):
+        letter = ""
+        while index:
+            index, remainder = divmod(index - 1, 26)
+            letter = chr(ord("A") + remainder) + letter
+        letters.append(letter)
+    return letters
+
+
+def test_the_letters_run_past_z_the_way_spreadsheet_columns_do() -> None:
+    """The run the next test holds the index to, on its own: a mistake here would let a gap
+    through there."""
+    assert _letters(3) == ["A", "B", "C"]
+    assert _letters(29)[24:] == ["Y", "Z", "AA", "AB", "AC"]
+    assert _letters(53)[-2:] == ["AZ", "BA"]
+
+
 def test_every_reportable_state_is_indexed_at_the_path_it_lives_in() -> None:
     """The letters were assigned in writing order, so they do not run in section order — K is
     in §0 and M in §5 — and the index is the only thing mapping one to the other. It is also
     the only thing that can be quietly wrong about it, which is what this pins."""
-    indexed = {letter: int(number) for letter, number in re.findall(r"^\| \*\*([A-Z])\*\* \| §(\d+) \|", _index(), re.M)}
-    written = set(re.findall(r"^\*\*([A-Z])\.\*\* ", _DOC, re.M))
+    indexed = {letter: int(number) for letter, number in re.findall(r"^\| \*\*([A-Z]+)\*\* \| §(\d+) \|", _index(), re.M)}
+    written = re.findall(r"^\*\*([A-Z]+)\.\*\* ", _DOC, re.M)
 
-    assert set(indexed) == written, "a reportable state is written without an index row, or indexed without being written"
-    # A contiguous run from A, not a pin on W: the letters are handed out in writing order,
-    # so the next path to land takes the next letter, and the Addigy sibling is about two
-    # weeks out. What must never happen is a gap or a letter used twice — a ticket naming
-    # **X** has to reach exactly one paragraph — and that is what this holds.
-    assert sorted(indexed) == [chr(ord("A") + offset) for offset in range(len(indexed))], (
+    assert len(written) == len(set(written)), "a reportable state's letter is written twice"
+    assert set(indexed) == set(written), "a reportable state is written without an index row, or indexed without being written"
+    # A contiguous run from A, not a pin on the last letter: the letters are handed out in
+    # writing order, so the next path to land takes the next letter. What must never happen
+    # is a gap or a letter used twice — a ticket naming **X** has to reach exactly one
+    # paragraph — and that is what this holds. Past Z the run continues AA, AB, … (R18).
+    assert sorted(indexed, key=lambda letter: (len(letter), letter)) == _letters(len(indexed)), (
         "the reportable states are no longer one unbroken run from A"
     )
 

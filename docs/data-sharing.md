@@ -446,6 +446,27 @@ ignores it, which is the same clause every other field of this response lives un
   server's kill switch — stops both halves in one act: it writes the tier `off`, imports
   nothing that day, and stops that tenant being answered from the epoch it already had.
 
+**The patch-policy document rides the same response** (#614, consent-gated as ruled R21 on
+2026-11-24). Beside `corpus`, the response may carry `patch_policy`, a map from the algorithm
+that reads the document to a link of the corpus's shape, all three keys or none:
+
+```jsonc
+"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…" } }
+```
+
+The document is LoonSec's patch-policy reference: one object for every app LoonSec
+references, built from NVD records, LoonSec's record of NVD changes, and public vendor release
+records. It is sent to exactly the tiers that receive the corpus, and the container treats it
+the way it treats the corpus: it follows only the entry for the algorithm this build reads,
+downloads only when `signature` (the document's own `doc_id`) differs from the copy it holds,
+checks it whole (the `doc_id` recomputed from the body, its kind, schema and algorithm, and
+every count it states), keeps the last two copies, and answers only tenants whose tier is not
+`off`. A refusal keeps the held copy answering and is one state an operator can read on
+Settings › Support ([`troubleshooting.md`](troubleshooting.md) §32). An absent `patch_policy`
+is a valid answer, recorded as *not published*. An instance with no network reads the same
+document from `PATCH_POLICY_FEED_FILE` instead, and then follows no link at all. Nothing about
+a fleet is sent to receive it: the request body is unchanged.
+
 Semantics the server may rely on:
 
 - **Every snapshot row names its platform.** `platform` is present on every `apps`, `os` and

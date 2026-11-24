@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§31, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§32, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -73,10 +73,13 @@ they were written — §9 ends by saying the paths continue at §10.
 - **§29** ["Codex or Claude cannot use LoonInspect"](#29-codex-or-claude-cannot-use-looninspect)
 - **§30** [Installed application patch plans](#30-installed-application-patch-plans)
 - **§31** [Change filters do not find an OS version or time window](#31-change-filters-do-not-find-an-os-version-or-time-window)
+- **§32** ["LoonSec's patch-policy data has not arrived, is old, or was
+  refused"](#32-loonsecs-patch-policy-data-has-not-arrived-is-old-or-was-refused)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
-ticket names one, this says which path it came off.
+ticket names one, this says which path it came off. After **Z** the letters run on the way
+spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never start again at **A**.
 
 | State | Path | What it names |
 | --- | --- | --- |
@@ -106,6 +109,9 @@ ticket names one, this says which path it came off.
 | **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
 | **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
 | **Z** | §22 | A reference replay that shipped with the build is refused after a reload |
+| **AA** | §32 | LoonSec names no patch-policy document, or only an old one, two days running |
+| **AB** | §32 | A downloaded patch-policy document is refused by its check two exchanges running |
+| **AC** | §32 | The store refuses the patch-policy link two exchanges running, with the clock right |
 
 ## 0. The four things you can read
 
@@ -3901,3 +3907,119 @@ inventory; it is not password recovery. See [Backup](macos-app.md#backup) before
 7. Open the newly installed signed app. It should show first-time setup, where you create a new
    local account. Recreate connections and MCP tokens as needed. If old data reappears, verify
    which macOS user and app installation you opened; do not delete a different user's data.
+
+## 32. "LoonSec's patch-policy data has not arrived, is old, or was refused"
+
+LoonSec's patch-policy data (#614) is one reference document for every app LoonSec references:
+NVD-derived affected ranges over each app's version list, a first-detectable day per CVE where
+LoonSec knows it, and the public release records each app's dates come from. It arrives the way
+the vulnerability corpus does (§5): a signed link riding the daily data-sharing exchange,
+downloaded only when the document changed, checked whole, and held on this instance. An
+air-gapped instance reads it from a file instead (step 8). It answers only for an organization
+whose data sharing is on, as the corpus does. Nothing about the organization is sent to get it.
+
+Where to read its state: Settings › Support › **LoonSec patch-policy data**, one sentence, for
+every account that holds **app:read**; `GET /api/patch-policy/apps`, whose `feed.state` and
+`feed.sentence` are the same words, with `feed.outcome`, `feed.host`, `feed.httpStatus` and
+`feed.detail` from the last attempt; and the container log, where every line about it begins
+`patch-policy data` (`docker compose logs app --since 48h | grep -i "patch-policy data"`). A
+copy that is held keeps answering through every failure below: a refused document is never
+stored, and nothing is deleted to make room for one.
+
+1. ***This organization does not share data with LoonSec, so it does not receive LoonSec's
+   patch-policy data.*** The tier is the gate, whichever way the document arrived. Settings ›
+   Data Sharing: choose **keys** or **reveal**. A copy the container already holds answers on the
+   next page load; if none is held, one arrives with the next exchange, and an administrator can
+   press **Send now** to run it at once. On an instance with more than one tenant, check the
+   tenant you are looking at. With `COMMUNITY_SHARING=false` nothing is sent whatever the tier
+   says, and the tier can still be chosen: that is how an air-gapped instance using step 8 opens
+   the gate.
+2. ***LoonSec's patch-policy data has not arrived on this instance yet.*** No exchange has
+   answered since this build was installed. Settings › Data Sharing shows the last exchange:
+   - none yet → the daily exchange is jittered per organization; **Send now** runs it at once.
+   - *failed* → the exchange itself did not get an answer, and §5 step 6 walks why. The document
+     rides the same request, so it waits for the same fix.
+   - *sent*, and the sentence has not moved after a reload → read the container log for
+     `patch-policy data could not be stored`: the database refused the write. Check
+     `docker compose logs db` and free volume space, then **Send now**.
+
+   *…has not been read from PATCH_POLICY_FEED_FILE yet* is the same state on an instance that
+   reads the file (step 8): the file is read at startup and again within five minutes of any
+   change, so this lasts only until the container has started; if it stays, the container log
+   names what was found.
+3. ***LoonSec's last exchange carried no patch-policy data.*** The exchange answered and named
+   no document. Nothing on this instance is wrong, and a copy already held keeps answering
+   (the sentence then ends *Showing the copy dated …*). If it reads the same after the next
+   day's exchange, that is reportable state **AA**, below.
+4. ***This build reads patch_walk/1; LoonSec now publishes only …*** LoonSec has moved to a newer
+   way of reading the document and this build reads only the older one. LoonSec keeps
+   publishing the older one for at least 90 days after a move, so this means the instance has
+   stayed behind longer than that. Update LoonInspect (§10); the held copy keeps answering until
+   then.
+5. ***The patch-policy file could not be downloaded from …*** The host it names is the object
+   store the exchange's link pointed at, **not** the exchange's own host
+   (`api.next.loonsec.io`), so an egress rule that lets the exchange through can still stop
+   this. The reason after the colon says which:
+   - *…did not complete (ConnectError)* or *(ConnectTimeout)*, *(ReadTimeout)* → the container
+     could not reach that host. Allow outbound HTTPS to it, then check from the container
+     itself: `docker compose exec app curl -sSI https://<host>/` (any HTTP status is a reach).
+   - *…did not complete (HTTP 403)* or *(HTTP 404)* → the host answered and refused the link.
+     A link lives fifteen minutes and the download starts seconds after the exchange, so a
+     clock far from the right time can expire it on arrival; compare `date -u` in the container
+     with the real time. If the clock is right and the same refusal follows the next exchange,
+     that is reportable state **AC**.
+   - *…redirected somewhere this container refuses* or *the exchange named a link this container
+     refuses* → something between the container and the internet answered in the store's place
+     (a proxy or a captive portal), or the link named an address the container will not dial.
+     Fix the proxy; a refused link with no proxy in the way is reportable state **AC**.
+   - *…passed the …-byte ceiling* → far more came back than the document is; something other
+     than the store answered. Same as the line above.
+6. ***LoonSec's patch-policy data failed its check (…), so it was not stored.*** The document
+   arrived and was refused whole; the copy it would have replaced is still used (the sentence
+   says which). The words in brackets are the check that failed:
+   - *it is not JSON* or *it is not a gzip file* or *its gzip stream is cut short* → the bytes
+     did not survive the trip, usually a proxy that rewrote or truncated them.
+   - *its kind is …*, *its schema is …*, *its algorithm is …* → the document is not one this
+     build reads. Update LoonInspect (§10).
+   - *its doc_id … is not what its contents hash to*, *it is not the document the exchange
+     named* → the content changed after LoonSec built it, or the link served another
+     document.
+   - *it lacks …* or *its own counts disagree (…)* → the document does not add up in its own
+     key names. That is LoonSec's to fix.
+
+   The next exchange tries again. The same sentence after the next day's exchange, with no
+   proxy in the way, is reportable state **AB**.
+7. ***Showing patch-policy data dated …, more than three days old; the walk ends …*** The copy
+   held is more than three days old and the last attempt found nothing newer. Every exchange
+   that answers either stores a newer copy or finds the held one current, so read the last
+   exchange on Settings › Data Sharing: *failed* is §5 step 6. *Sent* means LoonSec has not
+   published a newer document, which is reportable state **AA** once it has lasted past the
+   next exchange. On an instance that reads the file (step 8), put a newer file in its place.
+8. **An instance with no network: `PATCH_POLICY_FEED_FILE`.** Put the document (the
+   `.json.gz` file LoonSec provides) on the data volume and name it in `.env`:
+   `docker compose cp patch-policy.json.gz app:/app/data/patch-policy.json.gz`, then
+   `PATCH_POLICY_FEED_FILE=/app/data/patch-policy.json.gz` in the `.env` beside
+   `docker-compose.yml`, then `docker compose up -d`. The container reads it at startup and
+   again within five minutes of any change to it, checks it exactly as it checks a download,
+   and from then on the exchange downloads no patch-policy data. The organization's tier still
+   has to be on (step 1). If the sentence reads *…could not be read from /app/data/… (Permission
+   denied)*, the file is not readable by the container's user:
+   `docker compose exec --user root app chmod a+r /app/data/patch-policy.json.gz`. *(No such file
+   or directory)* is a path that is not inside the container: the path is the container's, not
+   the host's.
+
+**AA.** The exchange answers and LoonSec names no patch-policy document, or names the same
+document dated more than three days ago, on two consecutive days. Report the sentence as worded,
+`feed.attemptedAt`, `feed.docId` and `feed.asOf` from `GET /api/patch-policy/apps`, and the build
+from Settings › Support (§8).
+
+**AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
+proxy between the container and the store. Report the sentence as worded (the bracketed check is
+the part that matters), `feed.host`, and the build (§8). Nothing is wrong with the copy held,
+which keeps answering.
+
+**AC.** The store refuses the link (`HTTP 403` or `404`), or the exchange names a link this
+container refuses, on two consecutive exchanges, with the container's clock right and no proxy
+in the way. Report the sentence as worded, `feed.host` and `feed.httpStatus`, and the build (§8).
+The link itself is a credential that expires: do not paste it anywhere, and nothing here stores
+or logs it.

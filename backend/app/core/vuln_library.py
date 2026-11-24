@@ -142,11 +142,15 @@ class CorpusRefused(Exception):
     (docs/diagnosability.md rule 3). Raised, logged once at the import site, and never
     re-raised at a device sync: a refused epoch changes nothing, so the previous one keeps
     answering.
+
+    `http_status` is the status the link's host answered with, when the refusal is one; the
+    patch-policy feed (#614) records it beside the host. The corpus's sentence already names it.
     """
 
-    def __init__(self, state: str, message: str) -> None:
+    def __init__(self, state: str, message: str, *, http_status: int | None = None) -> None:
         super().__init__(message)
         self.state = state
+        self.http_status = http_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,8 +353,30 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
     *read*: a publisher answering with ten gigabytes would be refused only once ten
     gigabytes were in this container's memory, which is the failure the cap exists to
     prevent rather than a cap on it.
+
+    The work is `download_signed`'s, which the patch-policy document's download shares (#614);
+    this is the corpus's call of it, with the corpus's words and ceiling, read when it is called.
     """
-    headers = {"User-Agent": build_user_agent("corpus")}
+    return await download_signed(url, what="corpus", max_bytes=_MAX_BUNDLE_BYTES, transport=transport)
+
+
+async def download_signed(
+    url: str,
+    *,
+    what: str,
+    max_bytes: int,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> bytes:
+    """One object behind a signed link the exchange named: the corpus bundle, or LoonSec's
+    patch-policy document (#614, `app.core.patch_policy_feed`).
+
+    `what` is the object's name in every sentence (`the corpus link…`, `the patch-policy
+    download…`) and the User-Agent's comment; `max_bytes` is its ceiling. Everything else is one
+    rule for both: a capped stream, redirects followed by hand with every hop validated, and no
+    part of a signed URL in any refusal.
+    """
+    headers = {"User-Agent": build_user_agent(what)}
+    link = f"the {what} link"
     try:
         async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT_SECONDS, transport=transport, follow_redirects=False) as client:
             # Redirects are followed by hand, and **every hop is validated like the first**.
@@ -360,23 +386,24 @@ async def download_bundle(url: str, *, transport: httpx.AsyncBaseTransport | Non
             for _ in range(_MAX_REDIRECTS + 1):
                 async with client.stream("GET", url, headers=headers) as response:
                     if response.is_redirect and response.has_redirect_location:
-                        url = validate_corpus_url(str(response.next_request.url))
+                        url = validate_corpus_url(str(response.next_request.url), name=link)
                         continue
                     response.raise_for_status()
-                    data = await _read_capped(response)
+                    data = await _read_capped(response, what=what, max_bytes=max_bytes)
                 break
             else:
-                raise CorpusRefused("download_failed", f"the corpus link redirected more than {_MAX_REDIRECTS} times")
+                raise CorpusRefused("download_failed", f"{link} redirected more than {_MAX_REDIRECTS} times")
     except BlockedCorpusUrl as exc:
-        raise CorpusRefused("download_failed", f"the corpus link redirected somewhere this container refuses: {exc}") from exc
+        raise CorpusRefused("download_failed", f"{link} redirected somewhere this container refuses: {exc}") from exc
     except (httpx.HTTPError, ValueError) as exc:
         # HTTP errors can include the complete presigned URL. Keep only a safe category.
-        reason = f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
-        raise CorpusRefused("download_failed", f"the corpus download did not complete ({reason})") from None
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        reason = f"HTTP {status}" if status is not None else type(exc).__name__
+        raise CorpusRefused("download_failed", f"the {what} download did not complete ({reason})", http_status=status) from None
     return data
 
 
-async def _read_capped(response: httpx.Response) -> bytes:
+async def _read_capped(response: httpx.Response, *, what: str, max_bytes: int) -> bytes:
     """The response body, or a refusal at the first chunk that crosses the ceiling.
 
     Raised from inside the stream so the connection is dropped where it is: `CorpusRefused`
@@ -389,10 +416,10 @@ async def _read_capped(response: httpx.Response) -> bytes:
     size = 0
     async for chunk in response.aiter_bytes():
         size += len(chunk)
-        if size > _MAX_BUNDLE_BYTES:
+        if size > max_bytes:
             raise CorpusRefused(
                 "download_failed",
-                f"the corpus download passed the {_MAX_BUNDLE_BYTES}-byte ceiling this container accepts and was stopped "
+                f"the {what} download passed the {max_bytes}-byte ceiling this container accepts and was stopped "
                 "there; nothing was imported",
             )
         chunks.append(chunk)

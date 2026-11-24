@@ -787,6 +787,37 @@ export const en = {
         sessions: "A day after they expire or are revoked, hourly."
       } as Record<string, string>,
       note: "Sizes are Postgres's own — heap, indexes and TOAST together — for this database and every tenant in it; rows are the planner's estimate since the last VACUUM or ANALYZE. A purge frees pages for reuse and does not give disk back (KNOWN_ISSUES §1). The audit log is a file on the data volume, not a table, and is not counted here."
+    },
+    // #614: the state of LoonSec's patch-policy document on this instance. Each state's sentence
+    // is the backend's own (`app.core.patch_policy_feed`), word for word, and
+    // `backend/tests/test_patch_policy_feed.py` holds the two together; docs/troubleshooting.md
+    // §32 walks each one.
+    patchPolicyFeed: {
+      heading: "LoonSec patch-policy data",
+      help: "LoonSec's patch-policy reference document: one file for every app LoonSec references, received with the daily data-sharing exchange, or read from PATCH_POLICY_FEED_FILE on an instance with no network, and held on this instance. Nothing about this organization is sent to get it.",
+      loading: "Reading the patch-policy data's state…",
+      errorLoading: "The patch-policy data's state could not be read from this instance.",
+      states: {
+        tier_off: "This organization does not share data with LoonSec, so it does not receive LoonSec's patch-policy data. Settings › Data Sharing.",
+        never: "LoonSec's patch-policy data has not arrived on this instance yet. It rides the daily data-sharing exchange; Settings › Data Sharing shows the last exchange.",
+        neverFile: "LoonSec's patch-policy data has not been read from PATCH_POLICY_FEED_FILE yet. The file is read at startup and again whenever it changes; the container log says what was found.",
+        current: (asOf: string) => `Showing LoonSec's patch-policy data dated ${asOf}.`,
+        stale: (asOf: string, until: string) => `Showing patch-policy data dated ${asOf}, more than three days old; the walk ends ${until}.`,
+        not_published: "LoonSec's last exchange carried no patch-policy data. Nothing on this instance is wrong; report it if it lasts a day.",
+        algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec now publishes only ${published}. Update LoonInspect.`,
+        downloadFailed: (host: string, reason: string) => `The patch-policy file could not be downloaded from ${host}: ${reason}.`,
+        readFailed: (path: string, reason: string) => `The patch-policy file could not be read from ${path}: ${reason}.`,
+        invalid: (reason: string) => `LoonSec's patch-policy data failed its check (${reason}), so it was not stored.`
+      },
+      showingCopy: (asOf: string) => `Showing the copy dated ${asOf}.`,
+      stillUsed: (asOf: string) => `The copy dated ${asOf} is still used.`,
+      noCopy: "This instance holds no copy yet.",
+      anotherAlgorithm: "other algorithms",
+      exchangeLink: "the exchange's link",
+      held: (docId: string, received: string) => `Document ${docId}…, received ${received}.`,
+      attempted: (when: string, where: string) => `Last attempt ${when}, from ${where}.`,
+      fromExchange: "the data-sharing exchange",
+      fromFile: "PATCH_POLICY_FEED_FILE"
     }
   },
   apiTokens: {
