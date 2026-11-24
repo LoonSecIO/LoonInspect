@@ -7,6 +7,7 @@ here (#231) against a stub session."""
 
 from __future__ import annotations
 
+import socket
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -309,7 +310,7 @@ async def _sentence_for(handler) -> str:
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_names_the_host_the_status_and_the_collectors_reason(endpoint) -> None:
+async def test_a_refusal_names_the_host_status_and_next_check_without_upstream_text(endpoint) -> None:
     """The shape a default endpoint with no collector behind it answers today: API
     Gateway's 403 for a route that does not exist."""
 
@@ -323,9 +324,36 @@ async def test_a_refusal_names_the_host_the_status_and_the_collectors_reason(end
         )
 
     assert await _sentence_for(handler) == (
-        'The collector at collector.example.test answered 403 Forbidden: {"message":"Missing Authentication Token"}. '
-        "Tried 4 times."
+        "The collector at collector.example.test answered HTTP 403: No collector takes the exchange at that address. "
+        "Check SHARING_ENDPOINT. Response body withheld. Tried 4 times."
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "check"),
+    [
+        (401, "Check SHARING_ENDPOINT."),
+        (403, "Check SHARING_ENDPOINT."),
+        (404, "Check SHARING_ENDPOINT."),
+        (400, "Report the status to support (state M)."),
+        (413, "Report the status to support (state M)."),
+        (429, "the next exchange tries again."),
+        (503, "the next exchange tries again."),
+    ],
+)
+async def test_a_refusal_names_a_check_the_exchange_has(endpoint, status, check) -> None:
+    """The exchange sends no key and has no batch size an operator sets, and the collector's
+    logs are LoonSec's: the next check is SHARING_ENDPOINT, support, or the next exchange."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"error": "unsupported contract"})
+
+    sentence = await _sentence_for(handler)
+    assert sentence.startswith(f"The collector at collector.example.test answered HTTP {status}: ")
+    assert check in sentence
+    for word in ("key", "batch", "service logs"):
+        assert word not in sentence, f"{word!r} is not on the exchange's path: {sentence}"
 
 
 @pytest.mark.asyncio
@@ -334,13 +362,14 @@ async def test_a_long_html_error_page_is_one_bounded_line(endpoint) -> None:
         return httpx.Response(502, text="<html>\n  <body>\n" + "Bad gateway. " * 400 + "</body></html>")
 
     sentence = await _sentence_for(handler)
-    assert sentence.startswith("The collector at collector.example.test answered 502 Bad Gateway: <html> <body> Bad")
+    assert sentence.startswith("The collector at collector.example.test answered HTTP 502:")
+    assert "<html>" not in sentence and "Response body withheld" in sentence
     assert "\n" not in sentence
     assert len(sentence) < 300
 
 
 @pytest.mark.asyncio
-async def test_a_redirect_names_where_to_by_host_and_nothing_else(endpoint) -> None:
+async def test_a_redirect_does_not_copy_its_untrusted_target(endpoint) -> None:
     """A captive portal's redirect: the host says who is answering; its query string may
     carry a session and has no business in the share log."""
 
@@ -348,10 +377,8 @@ async def test_a_redirect_names_where_to_by_host_and_nothing_else(endpoint) -> N
         return httpx.Response(302, headers={"Location": "https://portal.example.net/login?session=s3cr3t"})
 
     sentence = await _sentence_for(handler)
-    assert sentence == (
-        "The collector at collector.example.test answered 302 Found, redirecting to portal.example.net. Tried 4 times."
-    )
-    assert "s3cr3t" not in sentence
+    assert "HTTP 302" in sentence and "redirects are not followed" in sentence
+    assert "s3cr3t" not in sentence and "portal.example.net" not in sentence
 
 
 @pytest.mark.asyncio
@@ -363,12 +390,18 @@ async def test_no_answer_says_how_long_it_waited(endpoint) -> None:
 
 
 @pytest.mark.asyncio
-async def test_an_unreachable_host_keeps_the_reason_httpx_gave(endpoint) -> None:
+async def test_an_unreachable_host_names_the_connection_checks_without_exception_text(endpoint) -> None:
+    """The shape httpx raises for a name that does not resolve: the resolver's error behind it."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+        try:
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        except socket.gaierror as resolver:
+            raise httpx.ConnectError("[Errno -2] Name or service not known", request=request) from resolver
 
     assert await _sentence_for(handler) == (
-        "Could not connect to collector.example.test: [Errno -2] Name or service not known. Tried 4 times."
+        "Could not connect to collector.example.test: The endpoint's host name did not resolve. "
+        "Check the configured address and DNS. Tried 4 times."
     )
 
 

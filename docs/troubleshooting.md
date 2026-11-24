@@ -422,6 +422,14 @@ directly.*
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
+   Upstream response bodies are withheld from delivery errors because they can echo
+   credentials or inventory. Use the HTTP status and the stated next check. For an
+   Elastic item rejection, check index mappings and write permissions in the receiver's
+   service logs; an HTTP 200 can still contain a rejected item. A connection failure says
+   which, without copying credential-bearing URLs: *Connection refused…* (nothing
+   listening at that address and port), *The endpoint's host name did not resolve…* (the
+   name or DNS), *TLS certificate verification failed…* ([`splunk-setup.md`](splunk-setup.md)
+   §5), or *Connection failed…* for anything else.
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
@@ -530,6 +538,18 @@ the run `jobID`, the token's index settings, and the search you ran.
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §3).
    - `app` restarting or unhealthy with `db` healthy → step 2.
 2. **The app's log.** `docker compose logs app --tail 100`:
+   - *The database operation failed* in a run or request log → check database health,
+     free storage and whether startup migrations completed for the running build. The
+     error retains its type and, when supplied by the database, a five-character
+     `SQLSTATE` code. Report those with the run's `jobID` or request ID if it repeats.
+     SQL text, bound values and database server detail are withheld from these error
+     diagnostics because they can contain inventory or credentials; application stack
+     locations remain available. Bound parameters are also hidden in SQL debug logs.
+     *Application startup failed* with this diagnosis means initialization stopped;
+     fix the database health or migration problem before restarting the app.
+     *Application shutdown failed* with this diagnosis means shutdown cleanup failed;
+     check database health and the adjacent safe stack locations before restarting.
+     Startup and shutdown tracebacks follow the same value-withholding rule.
    - `password authentication failed for user "looninspect_app"` → `POSTGRES_APP_PASSWORD`
      in `.env` is not the one the database was created with; the database keeps the
      first. Put the original back ([`operations.md`](operations.md) §3 shows the role the
@@ -624,7 +644,23 @@ the run `jobID`, the token's index settings, and the search you ran.
    swapped the image back ([`operations.md`](operations.md) §5). **This is the fix:** roll
    forward to the newer image, or restore the dump taken before the upgrade. Rolled
    forward and the sentence persists → reportable **G**.
-5. Healthy and signed in, and something else is unreadable → reportable **G**.
+5. **An administrator created with `INITIAL_ADMIN_EMAIL` cannot sign in because its
+   `.local` or `.test` address is refused with 422.** Upgrade to a build containing
+   INSPECT-815, then sign in with the existing address and password. The fix accepts
+   stored account identifiers without requiring a public mail domain; it does not
+   recreate accounts or reset passwords. Keep the existing volumes and instance key.
+   Surrounding spaces and letter case are ignored just as at bootstrap. A 401 still
+   means invalid credentials or an inactive account; a 429 means wait for the lockout
+   to expire. Internationalized addresses created through the wizard or Accounts keep
+   their existing email normalization at sign-in. If both the entered spelling and
+   its normalized spelling belong to separate accounts, the entered spelling selects
+   its own account; its password, active status and MFA requirements still apply.
+   Every spelling of one normalized address shares one lockout counter, even when
+   those spellings select separate accounts. Creating a
+   new account through the wizard or Settings › Accounts keeps
+   its existing mail-address validation; that creation policy is separate from
+   authenticating an account already stored by environment bootstrap.
+6. Healthy and signed in, and something else is unreadable → reportable **G**.
 
 **F.** Startup migration failed. Report `docker compose logs app --tail 200` and the
 build (Settings › Support shows it).
@@ -821,8 +857,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    answer is not the collector. The address at the end of the command is the default: an
    instance with `SHARING_ENDPOINT` set probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
-   - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
-     Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
+   - `The collector at api.loonsec.io answered HTTP 403` → that name is not the collector yet: until LoonSec reclaims
      it, an older account's API answers there. An image built before 2026-09-25, whose
      default was that name, or a `SHARING_ENDPOINT` set to it, reads this on every
      exchange. Set `SHARING_ENDPOINT` to `https://api.next.loonsec.io/v1/exchange` or
@@ -831,24 +866,28 @@ and step 2 ends with how to tell that apart from a broken exchange.
      same line is reportable state **M**. From any other host, a `403` or `404` means
      there is no collector at that path: check `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
-     and the text after the colon says how. `Name or service not known` is DNS — `docker
-     compose exec app getent hosts <host>` prints nothing when the container cannot
-     resolve it. `Connection refused` is nothing listening at that address.
-     `CERTIFICATE_VERIFY_FAILED` is something between this container and the collector
-     presenting its own certificate, usually a TLS-inspecting proxy: exempt the host from
-     inspection.
+     and the text after the colon says how. `The endpoint's host name did not resolve` is
+     DNS — `docker compose exec app getent hosts <host>` prints nothing when the container
+     cannot resolve it. `Connection refused` is nothing listening at that address.
+     `TLS certificate verification failed` is something between this container and the
+     collector presenting its own certificate, usually a TLS-inspecting proxy: exempt the
+     host from inspection. `Connection failed` is none of those three: check egress to
+     that host.
    - `No answer from <host> within 10 seconds.` → an egress firewall dropping the
      connection, or the collector down; the probe above tells them apart. An air-gapped
      instance with sharing on reads this every day, and that is a supported configuration.
-   - `<host> answered 200 with a body that is not JSON …`, or `answered 302 Found,
-     redirecting to <another host>` → something other than the collector answered: a
-     proxy or a captive portal. The probe above shows who.
-   - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
-     container's body, and the text after the colon is its reason. Reportable state **M**:
+   - `<host> answered 200 with a body that is not JSON …`, or `answered HTTP 302`
+     (*Something other than the collector answered …*) → a proxy or a captive portal.
+     The probe above shows who.
+   Response text, redirect targets and raw transport exceptions are withheld from the
+   share log, because they can echo what was sent. The probe above prints what answers
+   at that address to a body of `{}`, which carries nothing of the fleet.
+   - `answered HTTP 400` or `answered HTTP 413` (*The collector refused what this
+     container sent. Report the status to support (state M).*) → reportable state **M**:
      the container built something the collector will not take, which is ours to fix.
-   - `answered 429 …` or `answered 5…` → the collector is throttling or unwell. Nothing
-     to fix on this side; the next exchange tries again. The same line for more than a
-     day is reportable state **M**.
+   - `answered HTTP 429` or `answered HTTP 5…` (*The collector is throttling or
+     unavailable …*) → nothing to fix on this side; the next exchange tries again. The
+     same line for more than a day is reportable state **M**.
 
 7. **A build says how many findings it has, and the line beside it says *updating to
    …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
@@ -1448,6 +1487,26 @@ slot says why.
    - *Owed now* under *Next check*, still there a minute later → no process runs the scheduler
      (`scheduler_enabled` is `true` on a container's `starting` line), or that container's log
      says `update check could not run` and why.
+   - `update check unreachable` in the log names the provider-side failure and the
+     check retries in an hour. **Redirect or proxy port outside the supported range:**
+     correct the provider's redirect target or the port in `HTTPS_PROXY` / `ALL_PROXY`.
+     **Proxy transport unavailable:** this build does not include SOCKS support; use
+     an HTTP proxy or remove the unsupported proxy setting. **JSON nesting limit:**
+     the provider or an intervening proxy returned an excessively nested response;
+     correct its response format. **TLS trust store could not be loaded:** the file
+     `SSL_CERT_FILE` names is missing, unreadable or not a PEM bundle; correct the
+     mount or the path ([`splunk-setup.md`](splunk-setup.md) §5 builds the bundle).
+     Addresses, proxy credentials and response text are
+     withheld from these diagnostics. Recreate the container after changing its
+     environment (`docker compose up -d`); a restart does not re-read `.env`. No route
+     to the provider, or an answer that is not JSON (a captive portal's page), logs
+     this line only at `LOG_LEVEL=DEBUG`: an offline or air-gapped instance meets it
+     every hour, and *The update check got no answer it could read* above is its step-through.
+   - `update check could not run: it could not read or save its database state` → check database health
+     and connectivity. `update check could not run because of an unexpected internal failure` → report the
+     error type, the stack locations logged with it (file, line and function only), and the
+     build shown in Settings › Support. These leave the last stored answer in place;
+     provider failures above instead store `unreachable` and the next hourly retry.
    - *The provider refused the check* → the container log says which, once per attempt.
      `update check refused (429) by LoonSec's update service` is that service's limit, shared
      by every instance: the check asks again in an hour, and there is nothing to change here.
@@ -1609,13 +1668,17 @@ field that left, `query_text`.
      page opened. Step 1.
    - *No AI provider is saved …* or *… is not saved in Settings › AI* → the card was removed after
      the page opened. Save it again and reload.
-   - *could not reach the endpoint …* → the app could not open a connection to the saved Base URL. For
+   - *Connection refused*, *Connection failed* or *The endpoint's host name did not resolve* → the app could not
+     open a connection to the saved Base URL; *refused* is nothing listening at its port. For
      Apple's model on the same Mac, on the Mac: `curl -s http://127.0.0.1:1976/health` prints
      `fm serve is running` when it is; if not, run `fm serve` in Terminal. From the container:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('http://host.docker.internal:1976/health', timeout=5).read())"`.
-   - *HTTP 403* with *Cross-site requests are not allowed* → `fm serve` refuses a request that
+   - *HTTP 401 / 403* → check the saved key and its permissions. On the Apple card,
+     `fm serve` also refuses a request that
      names another host. Keep the Apple card's Base URL on `host.docker.internal`: the app then
      presents `127.0.0.1`, which `fm serve` accepts. Any other address is presented as typed.
+     Upstream error text is withheld because it can echo the saved key or prompt. Check
+     the provider's service logs if the status and next check do not resolve it.
    - *The Apple card uses only Apple's on-device model, system …* → the Apple card was saved
      naming another model, usually `pcc` (Private Cloud Compute, on Apple's servers), by a build
      that allowed it. Nothing was sent, and the share log has no row for the question. An admin
@@ -2811,7 +2874,9 @@ that log, then repeat the act.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+   address or a `.local` host; a hidden character is caught here first, step 10). The quote never repeats a
+   case key or what was written in the URL, text or contact fields: those read *[case key withheld]* and
+   *[withheld]*. Nothing was stored there:
    send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.

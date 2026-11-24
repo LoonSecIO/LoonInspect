@@ -284,15 +284,15 @@ async def test_unreachable_is_its_own_failure():
 @pytest.mark.parametrize(
     ("status", "hint"),
     [
-        (401, "rejected the key"),
-        (403, "the name it arrived under"),
-        (404, "no such route or model"),
+        (401, "rejected authentication"),
+        (403, "permissions"),
+        (404, "route or resource"),
         (429, "rate-limiting"),
         (500, "HTTP 500"),
-        (529, "overloaded"),
+        (529, "availability"),
     ],
 )
-async def test_rejections_carry_the_status_a_hint_and_a_bounded_message(status, hint):
+async def test_rejections_carry_the_status_and_a_hint_without_upstream_text(status, hint):
     def handler(request: httpx.Request) -> httpx.Response:
         message = "model 'nope' not found " + "x" * 1000
         return httpx.Response(status, json={"error": {"message": message, "type": "invalid_request_error"}})
@@ -304,19 +304,20 @@ async def test_rejections_carry_the_status_a_hint_and_a_bounded_message(status, 
     assert err.kind == "http_status"
     assert err.status == status
     assert hint in err.message
-    assert "model 'nope' not found" in err.message
+    assert "model 'nope' not found" not in err.message
+    assert "Response body withheld" in err.message
     assert len(err.message) < 420
     assert KEY not in err.message
 
 
-async def test_a_non_json_rejection_shows_its_size_and_type_but_never_its_body():
+async def test_a_non_json_rejection_shows_its_status_but_never_its_body_or_headers():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502, text="<html><title>nginx/1.25 banner</title></html>", headers={"content-type": "text/html"})
 
     with pytest.raises(AdapterError) as excinfo:
         await complete(Wire.openai_chat, REQ, transport=_server(handler))
     assert "HTTP 502" in excinfo.value.message
-    assert "text/html" in excinfo.value.message
+    assert "text/html" not in excinfo.value.message
     assert "nginx" not in excinfo.value.message
 
 
