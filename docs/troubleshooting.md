@@ -3606,3 +3606,40 @@ Start in **Settings → AI connections**, with the intended organization selecte
   filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
 
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
+
+## Snowflake delivery is queued, rejected, or has no rows
+
+Start in **Settings → Destinations**. The Snowflake setup steps and exact SQL are in
+[Snowflake setup](snowflake-setup.md); a portal login alone is not a configured pipe.
+
+1. **Authentication/permission refused (401/403):** confirm the organization-account
+   identifier, service user and writer role; compare the registered RSA public key
+   with the private key entered in the destination. The writer needs USAGE on the
+   database/schema, INSERT on the table and OPERATE on the custom pipe. Rotate only
+   the destination secret after registering its replacement public key.
+2. **Endpoint/pipe missing (404):** check database, schema and pipe names against the
+   setup SQL, and that the URL names this Snowflake account. Target names are fixed
+   after creation; use a new destination and targeted re-emit for a new target.
+3. **Could not be reached / unreadable response:** check outbound HTTPS and DNS for
+   both the account host and its discovered ingestion host. If deployment policy
+   sets `DESTINATION_ALLOWED_HOSTS`, both exact hosts must be allowed. Redirects,
+   proxy environment variables and private/loopback resolved addresses are refused.
+4. **Committed row counts pending / uncommitted data:** keep the destination enabled.
+   The retained batch will be checked again; a request acknowledgement is not row
+   acceptance. Do not drop the channel or delete the destination to clear this state.
+   Check Snowflake channel status and service health if it persists.
+5. **Part of a batch accepted:** the app checks its events individually. Query the
+   supplied deduplicated view, not raw row counts. **Rejected event** points to the
+   pipe transformation, target types and Snowflake ingestion errors; fix the cause,
+   then choose **Redrive** before its displayed dead-letter retention expires.
+6. **Event cannot be encoded / exceeds 3 MiB:** the event is retained as a dead letter.
+   Check the event's encoded size and timestamp validity. It was not truncated or
+   replaced with an empty snapshot. Redrive alone cannot make an oversized row fit.
+7. **Checkpoint counters or channel changed:** preserve the database backup and
+   queued events. Check for another writer using a cloned database or a restore whose
+   checkpoint is older than Snowflake's. Contact support with the destination ID and
+   safe diagnostic; exclude keys, tokens, event payloads and customer URLs from logs.
+
+Use the Test result's source event key with the supplied query to prove a row arrived.
+Amber means unresolved. Re-emit completion proves queuing; reconcile its device count
+with Snowflake and the destination's pending/rejected counts before declaring success.

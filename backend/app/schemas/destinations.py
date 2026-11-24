@@ -9,6 +9,7 @@ from pydantic.alias_generators import to_camel
 
 from app.core.egress import validate_destination_url
 from app.core.outbox import KNOWN_EVENT_TYPES
+from app.schemas.snowflake import SnowflakeConfig, private_key, validate_snowflake_url
 
 # Validate syntax and host policy on both writes. Transport is checked against the
 # create payload or the PATCH merged with its stored row; output remains readable
@@ -17,11 +18,11 @@ DestinationUrl = Annotated[
     str, Field(min_length=1, max_length=1024), AfterValidator(lambda value: validate_destination_url(value, allow_insecure=True))
 ]
 
-# Literals rather than a runtime membership test, so the four working values reach the
+# Literals rather than a runtime membership test, so the working values reach the
 # OpenAPI schema. A bare `str` published nothing, and an API-driven caller reading the
 # spec had no way to learn that `splunk_hec` was even a legal type.
-DestinationType = Literal["generic_webhook", "splunk_hec", "elastic", "runreveal"]
-AuthType = Literal["none", "bearer", "header", "splunk_hec", "elastic_api_key"]
+DestinationType = Literal["generic_webhook", "splunk_hec", "elastic", "runreveal", "snowflake"]
+AuthType = Literal["none", "bearer", "header", "splunk_hec", "elastic_api_key", "snowflake_jwt"]
 
 # The auth scheme each destination type requires. This coupling used to live *only* in
 # FIXED_AUTH in frontend/src/features/destinations/DestinationsPage.tsx, so the UI path
@@ -34,6 +35,7 @@ _FIXED_AUTH: dict[str, str] = {
     "splunk_hec": "splunk_hec",
     "elastic": "elastic_api_key",
     "runreveal": "bearer",
+    "snowflake": "snowflake_jwt",
 }
 
 
@@ -41,6 +43,8 @@ def resolve_auth_type(destination_type: str, auth_type: str | None) -> str:
     """The auth scheme this destination will actually use, or a ValueError naming the
     one it must use. `None` means the caller did not say, which is the common case for
     a type that only has one right answer."""
+    if auth_type == "snowflake_jwt" and destination_type != "snowflake":
+        raise ValueError("snowflake_jwt authentication is only available for Snowflake destinations")
     required = _FIXED_AUTH.get(destination_type)
     if auth_type is None:
         return required or "none"
@@ -93,6 +97,7 @@ class DestinationOut(_CamelModel):
     # Elastic only; null everywhere else, and null on an Elastic destination means
     # the built-in data-stream default.
     elastic_index: str | None
+    snowflake_config: SnowflakeConfig | None = None
     # Never the secret itself. There is no read path for it anywhere in this API — the
     # admin typed it, there is nothing to show back, same posture as an API token.
     has_secret: bool
@@ -143,6 +148,8 @@ class DestinationTestOut(_CamelModel):
     # diagnosis from any status code. A 200 beside `ok: false` is Elastic's bulk API
     # accepting the request and rejecting the item.
     status_code: int | None = None
+    pending: bool = False
+    source_event_key: str | None = None
 
 
 class DestinationCreate(_CamelModel):
@@ -158,6 +165,7 @@ class DestinationCreate(_CamelModel):
     auth_header_name: str | None = None
     auth_secret: str | None = None
     elastic_index: str | None = Field(default=None, min_length=1, max_length=255)
+    snowflake_config: SnowflakeConfig | None = None
     enabled: bool = True
     subscribed_events: list[str] | None = None
 
@@ -169,6 +177,15 @@ class DestinationCreate(_CamelModel):
             raise ValueError("authHeaderName is required when authType is 'header'")
         if self.auth_type != "none" and not self.auth_secret:
             raise ValueError("authSecret is required unless authType is 'none'")
+        if self.type == "snowflake":
+            if self.snowflake_config is None:
+                raise ValueError("snowflakeConfig is required for Snowflake destinations")
+            self.url = validate_snowflake_url(self.url, self.snowflake_config)
+            if self.allow_insecure_http:
+                raise ValueError("Snowflake requires HTTPS")
+            private_key(self.auth_secret or "")
+        elif self.snowflake_config is not None:
+            raise ValueError("snowflakeConfig is only available for Snowflake destinations")
         _validate_elastic_index(self.elastic_index)
         _validate_subscribed_events(self.subscribed_events)
         return self
@@ -189,6 +206,7 @@ class DestinationUpdate(_CamelModel):
     auth_secret: str | None = None
     # Provide null explicitly to fall back to the built-in default index.
     elastic_index: str | None = Field(default=None, max_length=255)
+    snowflake_config: SnowflakeConfig | None = None
     enabled: bool | None = None
     subscribed_events: list[str] | None = None
 

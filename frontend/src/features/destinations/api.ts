@@ -21,6 +21,8 @@ export interface DestinationTestResult {
    *  back at all (DNS, refused, timeout, TLS), which is a different diagnosis from any
    *  status code. */
   statusCode: number | null;
+  pending?: boolean;
+  sourceEventKey?: string | null;
 }
 
 /** Sends one synthetic event down the real delivery path. Always resolves — a refused

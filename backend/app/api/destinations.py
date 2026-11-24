@@ -22,6 +22,7 @@ from app.schemas.destinations import (
     DestinationUpdate,
     resolve_auth_type,
 )
+from app.schemas.snowflake import private_key, validate_snowflake_url
 
 router = APIRouter(prefix="/api/destinations", tags=["destinations"])
 
@@ -95,6 +96,7 @@ def _to_out(destination: Destination, health: dict | None = None) -> Destination
         auth_type=destination.auth_type,
         auth_header_name=destination.auth_header_name,
         elastic_index=destination.elastic_index,
+        snowflake_config=destination.snowflake_config,
         has_secret=bool(destination.auth_secret_encrypted),
         enabled=destination.enabled,
         subscribed_events=destination.subscribed_events,
@@ -154,6 +156,7 @@ async def create_destination(payload: DestinationCreate, db: AsyncSession = Depe
         auth_header_name=payload.auth_header_name,
         auth_secret_encrypted=payload.auth_secret,
         elastic_index=payload.elastic_index,
+        snowflake_config=payload.snowflake_config.model_dump(by_alias=True) if payload.snowflake_config else None,
         enabled=payload.enabled,
         subscribed_events=payload.subscribed_events,
     )
@@ -182,6 +185,28 @@ async def update_destination(
 ) -> DestinationOut:
     destination = await _get_or_404(db, destination_id)
     data = payload.model_dump(exclude_unset=True)
+
+    if destination.type == "snowflake":
+        # A channel's target is part of its durable recovery identity. Rotating its
+        # key is safe; silently pointing pending bytes at a new table is not.
+        from app.schemas.snowflake import SnowflakeConfig
+
+        try:
+            stored = SnowflakeConfig.model_validate(destination.snowflake_config)
+            if "snowflake_config" in data and payload.snowflake_config != stored:
+                raise ValueError(
+                    "Snowflake target settings are fixed. Create another destination and re-emit inventory to change the target."
+                )
+            if "url" in data and validate_snowflake_url(data["url"] or "", stored) != destination.url:
+                raise ValueError("Snowflake target URL is fixed; create another destination to change the target")
+            if data.get("allow_insecure_http"):
+                raise ValueError("Snowflake requires HTTPS")
+            if data.get("auth_secret"):
+                private_key(data["auth_secret"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    elif data.get("snowflake_config") is not None:
+        raise HTTPException(status_code=422, detail="snowflakeConfig is only available for Snowflake destinations")
 
     # `type` is immutable, so only here is the pairing knowable. Without this an
     # operator could PATCH a working splunk_hec destination to authType "none" and
@@ -239,6 +264,7 @@ async def update_destination(
 @router.post(
     "/{destination_id}/test",
     response_model=DestinationTestOut,
+    response_model_exclude_unset=True,
     dependencies=[Depends(require(Permission.DESTINATION_WRITE))],
 )
 async def test_destination(destination_id: int, db: AsyncSession = Depends(get_db)) -> DestinationTestOut:
@@ -253,6 +279,19 @@ async def test_destination(destination_id: int, db: AsyncSession = Depends(get_d
     refused delivery is a successful test that reports a refusal.
     """
     destination = await _get_or_404(db, destination_id)
+    if destination.type == "snowflake":
+        from app.core.snowflake_delivery import test_destination as test_snowflake
+
+        ok, pending, detail, key = await test_snowflake(db, destination)
+        audit(
+            AuditAction.DESTINATION_UPDATED,
+            target_type="destination",
+            target_id=destination.id,
+            tested=True,
+            delivered=ok,
+            pending=pending,
+        )
+        return DestinationTestOut(ok=ok, pending=pending, detail=detail, source_event_key=key)
     outcome = await send_test_event(destination)
 
     audit(

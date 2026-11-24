@@ -305,7 +305,7 @@ def test_an_unknown_type_is_refused_by_the_schema() -> None:
         DestinationCreate(name="x", type="datadog", url="https://example.test/x")
 
 
-def test_the_openapi_schema_publishes_the_four_working_types() -> None:
+def test_the_openapi_schema_publishes_the_working_types() -> None:
     """A bare `str` published nothing, so an API-driven caller reading the spec could not
     learn that splunk_hec was a legal value at all."""
     from app.schemas.destinations import DestinationCreate
@@ -313,7 +313,7 @@ def test_the_openapi_schema_publishes_the_four_working_types() -> None:
     schema = DestinationCreate.model_json_schema()
     published = schema["properties"]["type"]
     values = published.get("enum") or schema["$defs"][published["allOf"][0]["$ref"].rsplit("/", 1)[-1]]["enum"]
-    assert set(values) == {"generic_webhook", "splunk_hec", "elastic", "runreveal"}
+    assert set(values) == {"generic_webhook", "splunk_hec", "elastic", "runreveal", "snowflake"}
 
 
 # --- delivery diagnosability --------------------------------------------------------
