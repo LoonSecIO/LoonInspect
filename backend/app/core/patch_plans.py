@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
@@ -14,6 +15,7 @@ from app.core.application_risk import application_rows, application_scope_descri
 from app.core.config import settings
 from app.core.device_scope import scope_description, scoped_devices
 from app.core.device_scope_queries import prepare_scope
+from app.core.provenance import source_options, source_url
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import NO_ANSWER, corpus_as_of
 from app.mdm.patch.requirements import compare_versions, version_tuple
@@ -52,6 +54,23 @@ def plan_output(plan):
         "researchStartedAt": iso(plan.research_started_at),
         "research": plan.research,
     }
+    return report_presentation(body)
+
+
+def report_presentation(report):
+    """Hash the displayed report after withholding sensitive source-URL components.
+
+    Historical snapshots stay stored unchanged. Their displayed hash changes only if
+    redaction changes the body; the revision remains the saved evidence's revision.
+    """
+    body = deepcopy(report)
+    body.pop("sha256", None)
+    for app in body["snapshot"]["applications"]:
+        app["options"] = source_options(app["options"])
+    research = body.get("research") or {}
+    for app in research.get("applications", []):
+        if "url" in app:
+            app["url"] = source_url(app["url"])
     return {**body, "sha256": checksum(body)}
 
 
@@ -198,7 +217,7 @@ async def build_snapshot(db, payload, organization):
                     "title": title.name,
                     "reference": title.id,
                     "targetVersion": title.current_version,
-                    "url": f"{settings.jamf_patch_base_url.rstrip('/')}/patch/{title.id}",
+                    "url": source_url(f"{source_url(settings.jamf_patch_base_url).rstrip('/')}/patch/{title.id}"),
                     "observedAt": iso(title.synced_at),
                     "sourceRevision": title.last_modified,
                     "detail": "Public title match. Jamf package association, deployment policy and entitlement need "
