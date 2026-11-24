@@ -254,8 +254,9 @@ See [Backup](../docs/macos-app.md#backup) and
 
 `bash macos/tests/run-shell-tests.sh` compiles the standalone helper and exercises removal,
 refusal, symlink, identity-change, lock and backup boundaries with temporary fixtures and fake
-native service/Keychain actions. It does not invoke a host uninstall. Before release, validate
-in a disposable macOS VM: first setup; ordinary replacement retaining the account; preview and
+native service/Keychain actions. It runs the helper's real code-signature check against ad-hoc
+signed fixture bundles: a bundle signed under another identifier is refused. It does not invoke a
+host uninstall. Before release, validate in a disposable macOS VM: first setup; ordinary replacement retaining the account; preview and
 cancel leaving state unchanged; confirmed removal; reinstall returning to first setup; missing
 paths; locked Keychain; app shutdown; unrelated Keychain item, backup/export and other-user
 sentinels retained. Do not use a real host installation for these destructive checks.

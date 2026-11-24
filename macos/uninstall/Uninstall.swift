@@ -17,6 +17,12 @@ struct Removal: Equatable {
 struct UninstallPlan {
     static let bundleID = "io.loonsec.looninspect"
     static let accounts = ["ENCRYPTION_KEY", "postgres-looninspect_app", "postgres-looninspect"]
+    /// `codesign` arguments that check a bundle's seal and pin its signing identifier. `-R` tests the
+    /// requirement; `--requirement` abbreviates `--requirements`, which only embeds one at signing
+    /// time and which `--verify` ignores. An ad-hoc development build signs as the bundle id and passes.
+    static func signatureCheck(_ path: String) -> [String] {
+        ["--verify", "--strict", "-R", "=identifier \"\(bundleID)\"", path]
+    }
     let home: String
     let uid: uid_t
     let support: String

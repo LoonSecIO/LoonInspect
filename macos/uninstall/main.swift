@@ -31,7 +31,7 @@ final class NativeActions: UninstallActions {
         }
     }
     func validateApp(_ path: String) throws {
-        do { _ = try run("/usr/bin/codesign", ["--verify", "--strict", "--requirement", "=identifier \"\(UninstallPlan.bundleID)\"", path]) }
+        do { _ = try run("/usr/bin/codesign", UninstallPlan.signatureCheck(path)) }
         catch { throw UninstallFailure("The app signature/identity does not verify: \(path). Check that bundle before removing it separately, then preview again. No data or keys were removed.") }
     }
     func stopServices(plan: UninstallPlan) throws {

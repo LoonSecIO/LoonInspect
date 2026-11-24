@@ -27,6 +27,13 @@ final class FakeActions: UninstallActions {
         try fm.createDirectory(atPath: path + "/Contents", withIntermediateDirectories: true)
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: URL(fileURLWithPath: path + "/Contents/Info.plist"))
     }
+    static func status(_ executable: String, _ arguments: [String]) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run(); process.waitUntilExit()
+        return process.terminationStatus
+    }
     static func main() throws {
         guard let temporary = realpath(fm.temporaryDirectory.path, nil) else { fatalError("Temporary directory unavailable") }
         defer { free(temporary) }
@@ -133,6 +140,25 @@ final class FakeActions: UninstallActions {
             let preview = try plan(home, socket); check(preview.removals.isEmpty && preview.retained.count == 1, "Wrong bundle included")
             try executeUninstall(preview, actions: FakeActions()) { _ in }
             check(fm.fileExists(atPath: home + "/Applications/LoonInspect.app"), "Wrong bundle removed")
+            passed += 1
+        }
+        // The helper's real codesign check on ad-hoc fixtures that share the app's Info.plist identity:
+        // only the bundle signed as the bundle id passes; a different signing identifier is refused.
+        do {
+            let (home, _, _) = try fixture("signature-identity")
+            guard let executable = Bundle.main.executablePath else { fatalError("Test executable unavailable") }
+            for identifier in [nil, "com.example.impostor"] as [String?] {
+                let bundle = home + "/" + (identifier ?? "genuine") + "/LoonInspect.app"
+                try app(bundle)
+                try fm.createDirectory(atPath: bundle + "/Contents/MacOS", withIntermediateDirectories: true)
+                try fm.copyItem(atPath: executable, toPath: bundle + "/Contents/MacOS/LoonInspect")
+                let signing = ["--force", "--sign", "-", "--timestamp=none"] + (identifier.map { ["--identifier", $0] } ?? []) + [bundle]
+                let signed = try status("/usr/bin/codesign", signing)
+                check(signed == 0 && UninstallPlan.isApp(bundle), "Signature fixture could not be built")
+                let verified = try status("/usr/bin/codesign", UninstallPlan.signatureCheck(bundle))
+                check((verified == 0) == (identifier == nil),
+                      identifier == nil ? "Ad-hoc bundle signed as the bundle id was refused" : "Bundle signed under another identifier was accepted")
+            }
             passed += 1
         }
         for mutation in ["replace", "new", "link"] {
