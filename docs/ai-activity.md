@@ -52,8 +52,10 @@ that cleanup; refreshing this page does not perform it.
 
 The live panel refreshes every 15 seconds while the tab is visible; returning to the
 tab requests a fresh reading. Manual refresh is available. A failed read immediately
-removes the prior health verdict and counts. A reading at least 45 seconds old is
-also unavailable, even while its replacement request is still pending. The timestamp
+removes the prior health verdict and counts. A reading this browser received at least
+45 seconds ago is also unavailable, even while its replacement request is still pending.
+Its age is measured on the browser's clock alone, so a server clock that differs from
+the browser's does not make a new reading look old. The timestamp
 then names the last successful reading, not current health. Check connectivity and
 retry. A permission refusal asks for system read access, rather than reporting zero.
 

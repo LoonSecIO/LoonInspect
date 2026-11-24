@@ -8,11 +8,16 @@ import { AIActivityEntry } from "./AIActivityEntry";
 import { LiveActivityPanel } from "./LiveActivityPanel";
 import { ActivitySummary } from "./ActivitySummary";
 import { activityQuery, isActivityReport, isLiveActivity, rangeError, utcDay, type ActivityMetrics, type ActivityReport, type LiveActivity } from "./activity";
+import { aiActivityEnglish, aiActivityGerman } from "./activityCopy";
 
 vi.mock("@/config/api", async original => ({ ...await original<typeof import("@/config/api")>(), apiRequest: vi.fn() }));
 const permission = vi.hoisted(() => vi.fn(() => true));
 vi.mock("@/features/auth/store", () => ({ useHasPermission: permission }));
-vi.mock("@/i18n/LocaleContext", () => ({ useLocale: () => ({ locale: "en" }) }));
+const locale = vi.hoisted(() => ({ current: "en" as "en" | "de" }));
+vi.mock("@/i18n/LocaleContext", async () => {
+  const [{ en }, { de }] = await Promise.all([import("@/i18n/en"), import("@/i18n/de")]);
+  return { useLocale: () => ({ locale: locale.current, t: locale.current === "de" ? de : en }) };
+});
 const request = vi.mocked(apiRequest);
 const metrics: ActivityMetrics = {
   attempts: 1, answered: 1, failed: 0, dispatches: 1, dispatchReports: 1, usefulResults: 1, usefulReports: 1,
@@ -56,7 +61,7 @@ beforeEach(() => {
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   request.mockImplementation(async path => path === "/system/ai/activity/live" ? live() : report());
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); locale.current = "en"; });
 
 describe("AI Activity", () => {
   it("has a permission-gated entry and no provider call just to discover it", () => {
@@ -117,6 +122,20 @@ describe("AI Activity", () => {
     expect(screen.getByText(/inclusive range of 1–90 days/)).toBeTruthy();
     expect(screen.queryByText(/No inference attempts were recorded/)).toBeNull();
   });
+  it("reads the page, its controls and its failures in the reader's language", async () => {
+    locale.current = "de";
+    request.mockImplementation(async path => { if (path === "/system/ai/activity/live") throw new Error("offline"); return report(); });
+    page();
+    expect(await screen.findByText("Welche Dienste haben die Aufrufe bearbeitet?")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("KI-Aktivität");
+    expect(screen.getByRole("heading", { name: "Verlauf der Nutzung" })).toBeTruthy();
+    expect(screen.getByLabelText("Von (UTC)")).toBeTruthy();
+    expect(await screen.findByText(/Die aktuelle Auslastung konnte nicht gelesen werden/)).toBeTruthy();
+    expect(screen.getByText("Messung nicht verfügbar")).toBeTruthy();
+    expect(screen.queryByText("Historical usage")).toBeNull(); expect(screen.queryByText("Live workload")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Bis (UTC)"), { target: { value: "2020-01-01" } });
+    expect(screen.getByText(/Das Ende muss am oder nach dem Start liegen/)).toBeTruthy();
+  });
 });
 
 describe("live workload freshness", () => {
@@ -146,6 +165,14 @@ describe("live workload freshness", () => {
     await act(async () => { fireEvent(document, new Event("visibilitychange")); await Promise.resolve(); });
     expect(screen.getByText("Idle")).toBeTruthy();
   });
+  it("measures a reading's age on the browser's clock, so a server clock behind it is not staleness", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-23T12:00:00Z"));
+    request.mockImplementation(async () => live({ asOf: new Date(Date.now() - 60_000).toISOString() }));
+    render(<LiveActivityPanel />); await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByText("Keeping up")).toBeTruthy(); expect(screen.getByText("Waiting")).toBeTruthy();
+    expect(screen.queryByText("Measurement unavailable")).toBeNull();
+  });
   it("rejects a successful HTTP read with an unreadable measurement body", async () => {
     request.mockResolvedValue({ state: "keeping_up" }); render(<LiveActivityPanel />);
     expect(await screen.findByText("Measurement unavailable")).toBeTruthy(); expect(screen.queryByText("Keeping up")).toBeNull();
@@ -156,8 +183,9 @@ it("validates real report shapes, leap dates and preserved safe filters", () => 
   expect(isActivityReport(report())).toBe(true); expect(isLiveActivity(live())).toBe(true);
   expect(isLiveActivity({ ...live(), waiting: -1 })).toBe(false);
   expect(isActivityReport({ ...report(), totals: { ...metrics, attempts: "3" } })).toBe(false);
-  expect(rangeError("2026-02-30", "2026-03-01")).toMatch(/valid/);
-  expect(rangeError("2024-02-29", "2024-02-29")).toBeNull();
+  expect(rangeError("2026-02-30", "2026-03-01", aiActivityEnglish)).toMatch(/valid/);
+  expect(rangeError("2026-02-30", "2026-03-01", aiActivityGerman)).toMatch(/gültiges/);
+  expect(rangeError("2024-02-29", "2024-02-29", aiActivityEnglish)).toBeNull();
   expect(activityQuery(new URLSearchParams("?provider=openai_compatible&model=example&password=ignored")).has("password")).toBe(false);
 });
 

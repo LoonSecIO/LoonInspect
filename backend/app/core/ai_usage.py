@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.database import bound_tenant_id, session_for_tenant
@@ -118,11 +118,24 @@ async def touch_coverage(db, at):
     )
 
 
-def recording_failure(tenant):
+def recording_failure(tenant, exc=None):
     if tenant:
         _recording_failures.setdefault(tenant, datetime.now(UTC))
         _last_recording_failures[tenant] = datetime.now(UTC)
-    logger.warning("AI usage could not be saved. Activity measurement is incomplete; check database health and migrations.")
+    # Name the kind of failure, never its message: a database error can quote the values.
+    from app.summaries.diagnostics import safe_exception
+
+    if isinstance(exc, TimeoutError):
+        cause, check = "the write took longer than 2 seconds", "check database load and latency"
+    else:
+        cause = type(exc).__name__ if exc else "unknown error"
+        check = "check database health and that startup migrations completed; report the error type if they did"
+    logger.warning(
+        "AI usage could not be saved (%s). Activity measurement is incomplete; %s.",
+        cause,
+        check,
+        extra=safe_exception(exc) if exc else {},
+    )
 
 
 async def work_event(
@@ -190,8 +203,8 @@ class UsageRecorder:
                 if detailed:
                     await touch_coverage(session, datetime.now(UTC))
                 await session.commit()
-        except Exception:
-            recording_failure(self.tenant)
+        except Exception as exc:
+            recording_failure(self.tenant, exc)
 
     async def start(self, timeout_seconds):
         self.started_at, self.started_clock = datetime.now(UTC), time.monotonic()
@@ -461,6 +474,8 @@ async def expire_abandoned(db, at):
         await db.scalars(
             select(Work.id)
             .where(
+                # Active work is unfinished; finished_at lets ix_ai_work_finished narrow the scan.
+                Work.finished_at.is_(None),
                 Work.feature != "inventory_summary",
                 Work.outcome.in_(("waiting", "running", "validating")),
                 Work.deadline_at < at - timedelta(seconds=ABANDONED_GRACE_SECONDS),
@@ -486,9 +501,17 @@ async def prune(db, today):
     await db.execute(delete(Daily).where(Daily.day < today - timedelta(days=RETENTION_DAYS - 1)))
     cutoff = datetime.combine(today - timedelta(days=RETENTION_DAYS - 1), datetime.min.time(), UTC)
     # retention-clock: ai-usage — terminal facts expire by their finished UTC day.
-    await db.execute(delete(Attempt).where(func.coalesce(Attempt.finished_at, Attempt.started_at) < cutoff))
+    await db.execute(delete(Attempt).where(_before(Attempt.finished_at, Attempt.started_at, cutoff)))
     # retention-clock: ai-usage — retain completions that cross the arrival-day boundary.
-    await db.execute(delete(Work).where(func.coalesce(Work.finished_at, Work.arrived_at) < cutoff))
+    await db.execute(delete(Work).where(_before(Work.finished_at, Work.arrived_at, cutoff)))
+
+
+def _before(finished, began, cutoff):
+    """coalesce(finished, began) < cutoff, spelled so the (tenant_id, finished_at) index serves it.
+
+    prune() runs on every five-second summary tick; a coalesce() would scan the whole table.
+    """
+    return or_(finished < cutoff, and_(finished.is_(None), began < cutoff))
 
 
 async def usage_report(db, start, end):

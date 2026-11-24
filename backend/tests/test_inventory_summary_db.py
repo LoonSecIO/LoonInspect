@@ -819,3 +819,42 @@ async def test_reclaimed_summary_terminal_refusal_closes_unfinished_attempt_with
     assert report["totals"]["attempts"] == report["totals"]["dispatches"] == 1
     assert report["totals"]["usefulResults"] == 0 and report["totals"]["retries"] == 0
     assert report["work"]["expired" if stop == "expired" else "skipped"] == 1
+
+
+async def test_web_only_process_reports_not_running_only_when_nothing_drains_inventory(summary_db, monkeypatch):
+    """SCHEDULER_ENABLED describes the process answering; another container can drain the queue."""
+    from sqlalchemy import update
+
+    from app.core.ai_activity import live_report
+    from app.core.ai_usage import recorder
+    from app.core.config import settings
+    from app.models.schema import AIUsageAttempt as Attempt
+    from app.models.schema import InventorySummaryJob as Job
+    from app.summaries.service import collect, now
+
+    db, _ = summary_db
+    monkeypatch.setattr(settings, "scheduler_enabled", False)
+    await emit(db, snapshot())
+    await collect(db)
+    source = await emit(db, snapshot(version="2"))
+    await collect(db)
+    job = await db.scalar(select(Job).where(Job.source_id == source))
+    assert job.status == "pending"
+    # Just queued: a scheduler elsewhere has had no chance to pick it up yet.
+    assert (await live_report(db))["state"] != "not_running"
+    job.created_at = now() - timedelta(minutes=10)
+    await db.commit()
+    # A scheduler in another container started an inventory attempt a minute ago.
+    meter = recorder(db, "inventory_summary", "apple_fm", "system", work_id=uuid.uuid4())
+    await meter.start(60)
+    await meter.finish_attempt("answered", None)
+    await db.execute(update(Attempt).where(Attempt.id == meter.id).values(started_at=now() - timedelta(minutes=1)))
+    await db.commit()
+    assert (await live_report(db))["state"] != "not_running"
+    # Nothing has started an inventory attempt for ten minutes: nothing drains the queue.
+    await db.execute(update(Attempt).where(Attempt.id == meter.id).values(started_at=now() - timedelta(minutes=10)))
+    await db.commit()
+    live = await live_report(db)
+    assert live["state"] == "not_running" and "scheduler_enabled" in live["nextCheck"]
+    monkeypatch.setattr(settings, "scheduler_enabled", True)
+    assert (await live_report(db))["state"] != "not_running"

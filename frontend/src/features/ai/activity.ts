@@ -1,4 +1,5 @@
 import { apiRequest, ApiError } from "@/config/api";
+import type { AIActivityCopy } from "./activityCopy";
 
 export interface ActivityMetrics {
   attempts: number; answered: number; failed: number;
@@ -55,24 +56,30 @@ export function activityQuery(params: URLSearchParams) {
   for (const key of filterKeys) if (params.get(key)) query.set(key, params.get(key)!);
   return query;
 }
-export function rangeError(start: string, end: string): string | null {
+export function rangeError(start: string, end: string, copy: AIActivityCopy): string | null {
   const valid = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)) && new Date(day).toISOString().slice(0, 10) === day;
-  if (!valid(start) || !valid(end)) return "Choose a valid start and end date (UTC).";
+  if (!valid(start) || !valid(end)) return copy.errors.invalidDates;
   const days = (Date.parse(end) - Date.parse(start)) / 86400000 + 1;
-  if (days < 1 || days > 90) return "Choose an inclusive range of 1–90 days. The end must be on or after the start.";
-  if (end > utcDay()) return "The end date cannot be in the future (UTC).";
+  if (days < 1 || days > 90) return copy.errors.rangeLength;
+  if (end > utcDay()) return copy.errors.futureEnd;
   return null;
 }
-export function readFailure(error: unknown, live: boolean) {
-  if (error instanceof ApiError && error.status === 403) return "You do not have permission to read AI Activity. Ask an administrator for system read access.";
-  if (error instanceof ApiError && error.status === 422) return "AI Activity could not read these filters. Check the date range and selected values, then retry.";
-  return `${live ? "Live workload" : "AI history"} could not be read. Check connectivity and retry; this does not mean there were no calls.`;
+export function readFailure(error: unknown, live: boolean, copy: AIActivityCopy) {
+  if (error instanceof ApiError && error.status === 403) return copy.errors.forbidden;
+  if (error instanceof ApiError && error.status === 422) return copy.errors.badFilters;
+  return live ? copy.errors.liveUnreadable : copy.errors.historyUnreadable;
 }
-export const count = (value: number | null) => value === null ? "Unknown" : value.toLocaleString();
-export const duration = (ms: number | null) => ms === null ? "Unknown" : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
-export const age = (seconds: number | null) => seconds === null ? "Unknown" : duration(seconds * 1000);
-export const stamp = (value: string | null) => value ? new Date(value).toLocaleString() : "Not yet measured";
-export function coverage(reports: number, attempts: number) { return `${count(reports)}/${count(attempts)} attempts measured`; }
+/** Number, time and coverage wording in the reader's language; numbers use the browser's locale. */
+export function formats(copy: AIActivityCopy) {
+  const count = (value: number | null) => value === null ? copy.unknown : value.toLocaleString();
+  const duration = (ms: number | null) => ms === null ? copy.unknown : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+  return {
+    count, duration,
+    age: (seconds: number | null) => seconds === null ? copy.unknown : duration(seconds * 1000),
+    stamp: (value: string | null) => value ? new Date(value).toLocaleString() : copy.notMeasured,
+    coverage: (reports: number, attempts: number) => copy.measured(count(reports), count(attempts)),
+  };
+}
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const number = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;

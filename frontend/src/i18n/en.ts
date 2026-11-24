@@ -1,12 +1,14 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
 import { mcpEnglish } from "@/features/mcp/copy";
+import { aiActivityEnglish } from "@/features/ai/activityCopy";
 import type { UpdateReason } from "@/features/system/api";
 import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
   mcp: mcpEnglish,
+  aiActivity: aiActivityEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",

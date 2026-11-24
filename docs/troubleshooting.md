@@ -3455,17 +3455,26 @@ The view requires `system:read`; it remains readable with AI disabled so retaine
 history and the disabled state are available. Provider setup and inference keep their
 existing permission, feature-flag and consent checks.
 
-1. **Check freshness first.** Read the live as-of time. A failed read or stale response
-   is measurement unavailable, not a healthy empty queue. Use Refresh, then check the
+1. **Check freshness first.** Read the live as-of time. A failed read, or a reading this
+   browser received at least 45 seconds ago, is measurement unavailable, not a healthy
+   empty queue. Use Refresh, then check the
    app/API connection and `docker compose logs app`. A server warning beginning
-   “AI usage could not be saved” means some metadata was lost: check database health
-   and startup migration success. No prompts or response bodies belong in that warning.
+   “AI usage could not be saved” means some metadata was lost; its parenthesis says why.
+   “the write took longer than 2 seconds” means database load or latency: check the
+   database's health and response time. Any other text there is an error type, such as
+   `ProgrammingError`: check that startup migrations completed, and if they did, report
+   the error type with the line's `stack`. No prompts or response bodies belong in that warning.
    A recovered write preserves the gap marker. Historical periods intersecting the
    known gap remain marked incomplete; the live verdict recovers after a complete
    subsequent 15-minute interval. A process that dies before persisting a failure
    marker cannot report that lost measurement later.
 2. **Check whether work can run.** Not running means AI or inference consent is off,
-   or inventory work is waiting with `SCHEDULER_ENABLED` off. No provider configured
+   or nothing is processing inventory work: the container answering has
+   `SCHEDULER_ENABLED` off, an inventory summary has waited over two minutes, and no
+   inventory attempt has started for five. A web-only container beside one that runs the
+   scheduler shows the other verdicts while that one starts attempts. Read
+   `scheduler_enabled` on each container's `starting` line,
+   `docker compose logs app | grep scheduler_enabled`; one must say `true`. No provider configured
    means an administrator must save and test one in Settings → AI. The panel states
    which condition applies. Read-only operators ask an administrator to change setup.
 3. **Read the evidence behind the verdict.** Backlog growing means there is waiting

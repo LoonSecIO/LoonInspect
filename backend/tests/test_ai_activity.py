@@ -1,5 +1,7 @@
 """Pure AI Activity status rules and safe configured-service attribution."""
 
+import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -18,7 +20,7 @@ from app.schemas.ai import AIConfigIn
         ({"consent": False}, "disabled"),
         ({"configured": False}, "no_provider"),
         ({"degraded": True}, "unavailable"),
-        ({"scheduler_enabled": False, "inventory_waiting": 1}, "not_running"),
+        ({"inventory_undrained": True}, "not_running"),
         ({"stalled": 1}, "stalled"),
         ({"limited": 1}, "rate_limited"),
         ({"oldest": 121}, "waiting_too_long"),
@@ -112,3 +114,40 @@ def test_unsaved_service_identity_keeps_attribution_versions_distinct():
     ollama = service_identity(payload.provider, payload.model_copy(update={"ollama_policy": {"preferences": ["m"]}}))
     assert unknown["service_kind"] == "compatible" and ollama["service_kind"] == "ollama"
     assert unknown["service_id"] != ollama["service_id"]
+
+
+async def test_recording_failure_names_its_cause_and_never_its_message(caplog, monkeypatch):
+    from app.core import ai_usage
+
+    def broken(_tenant):
+        raise RuntimeError("SYNTHETIC_UNSAFE_DATABASE_DETAIL")
+
+    class Slow:
+        # What asyncio.timeout raises once the recorder's two-second budget runs out.
+        async def __aenter__(self):
+            raise TimeoutError
+
+        async def __aexit__(self, *exc):
+            return False
+
+    async def write(_session):
+        pytest.fail("the write ran without a session")
+
+    tenant = uuid.uuid4()
+    meter = ai_usage.recorder(None, "ai_test_box", "apple_fm", "m")
+    meter.tenant = tenant
+    try:
+        with caplog.at_level(logging.WARNING, logger="app.core.ai_usage"):
+            monkeypatch.setattr(ai_usage, "session_for_tenant", broken)
+            await meter._save(write)
+            monkeypatch.setattr(ai_usage, "session_for_tenant", lambda _tenant: Slow())
+            await meter._save(write)
+    finally:
+        ai_usage._recording_failures.pop(tenant, None)
+        ai_usage._last_recording_failures.pop(tenant, None)
+    fault, slow = [r for r in caplog.records if r.getMessage().startswith("AI usage could not be saved")]
+    assert "(RuntimeError)" in fault.getMessage() and "migrations" in fault.getMessage()
+    assert fault.error_type == "RuntimeError" and fault.stack
+    assert "2 seconds" in slow.getMessage() and "database load" in slow.getMessage()
+    assert slow.error_type == "TimeoutError"
+    assert "SYNTHETIC_UNSAFE_DATABASE_DETAIL" not in caplog.text

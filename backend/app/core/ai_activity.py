@@ -479,8 +479,7 @@ def health(
     failures,
     limited,
     stalled,
-    scheduler_enabled=True,
-    inventory_waiting=0,
+    inventory_undrained=False,
 ):
     """Every verdict names both its evidence and the operator's next check."""
     if not enabled or not consent:
@@ -507,13 +506,15 @@ def health(
             "Check database health and the AI Activity migration; inspect the server's usage-recording warning.",
             "A telemetry write failed in this measurement period.",
         )
-    if not scheduler_enabled and inventory_waiting:
+    if inventory_undrained:
         return (
             "not_running",
             "Not running",
-            "Inventory summaries are waiting while the scheduler is disabled.",
-            "Check SCHEDULER_ENABLED on the worker.",
-            "Scheduler disabled and inventory waiting count is positive.",
+            "Inventory summaries are waiting and nothing is processing them; this container runs no scheduler.",
+            "Check that one app container runs the scheduler: read scheduler_enabled on its starting line "
+            "(docker compose logs app | grep scheduler_enabled).",
+            "SCHEDULER_ENABLED is off here, inventory has waited over 120 seconds, "
+            "and no inventory attempt started in the last 300 seconds.",
         )
     if stalled:
         return (
@@ -632,7 +633,11 @@ async def live_report(db):
         if row["status"] == "pending":
             inventory["oldestWaitingSeconds"] = max(0, (now - row["oldest"]).total_seconds())
         stalled += int(row["deadline"] <= now)
-    active = (await db.scalars(select(Work).where(Work.feature != "inventory_summary", Work.outcome.in_(ACTIVE)))).all()
+    active = (
+        await db.scalars(
+            select(Work).where(Work.finished_at.is_(None), Work.feature != "inventory_summary", Work.outcome.in_(ACTIVE))
+        )
+    ).all()
     interactive = {
         "waiting": sum(w.outcome == "waiting" for w in active),
         "running": sum(w.outcome != "waiting" for w in active),
@@ -672,6 +677,14 @@ async def live_report(db):
             )
         )
     ).one()
+    # SCHEDULER_ENABLED describes only the process answering this request. A web-only
+    # container can sit beside one that drains the queue (operations.md §7), so "not
+    # running" also needs the database to show nothing draining it: inventory has waited
+    # past two minutes and no inventory attempt has started for five.
+    undrained = False
+    if not settings.scheduler_enabled and (inventory["oldestWaitingSeconds"] or 0) > 120:
+        last = await db.scalar(select(func.max(Attempt.started_at)).where(Attempt.feature == "inventory_summary"))
+        undrained = last is None or (now - last).total_seconds() > 300
     verdict = health(
         enabled=enabled,
         consent=consent,
@@ -688,8 +701,7 @@ async def live_report(db):
         failures=failed,
         limited=limited,
         stalled=stalled,
-        scheduler_enabled=settings.scheduler_enabled,
-        inventory_waiting=inventory["waiting"],
+        inventory_undrained=undrained,
     )
     return {
         "asOf": now,
