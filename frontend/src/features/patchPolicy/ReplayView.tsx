@@ -31,6 +31,8 @@ const heading = "text-xs font-medium uppercase tracking-wide text-muted-foregrou
 const cell = "px-3 py-2";
 /** To the minute, with its clock spelled out. */
 const when = (value: string) => `${value.slice(0, 16).replace("T", " ")} UTC`;
+/** A link only for an https address: the file ships with the build, and still names no other scheme here. */
+const linkable = (url: string | undefined): url is string => typeof url === "string" && url.startsWith("https://");
 
 /** One CVE's outcome as a sentence. A value this build does not know is printed as the file spells it. */
 function outcomeWords(outcome: LedgerOutcome | undefined, copy: PatchPolicyCopy): string {
@@ -49,8 +51,12 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
   const [shown, setShown] = useState<Shown>("all");
   const policy = replay.policies[stop];
   const { cves_in_window: inWindow, cves_replayed: replayed, cves_excluded: excluded } = replay.counts;
-  const line = replay.branch_choice?.held_at_branch;
-  const changed = replay.branch_choice?.cves_where_the_choice_changes_the_answer?.by_policy?.[stop];
+  // `null` is an app replayed as one release line: no line to name, and no other line to choose.
+  const line = replay.branch_choice.held_at_branch;
+  const changed = line === null ? undefined : replay.branch_choice.cves_where_the_choice_changes_the_answer?.by_policy?.[stop];
+  const { timeline } = replay;
+  const waits = replay.early_stable_choice?.device === "skip";
+  const behind = replay.early_stable_choice?.promotion_table_behind_timeline === true;
   const rows = replayedRows(replay).filter((row) => shown === "all" || row.outcomes?.[stop]?.outcome === shown);
   const filters: [Shown, string, number][] = [
     ["all", copy.filterAll, replayed],
@@ -69,7 +75,8 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
     <div className="min-w-0 space-y-4">
       <div className="rounded-lg border border-foreground/30 p-3 text-sm">
         <b className="block">{copy.referenceTitle}</b>
-        {copy.reference(line ? `${appName} ${line}` : appName, replay.window.since, replay.window.until)}
+        {copy.reference(appName, line, replay.window.since, replay.window.until)}
+        <span className="block pt-1">{copy.sources(timeline.name)}</span>
       </div>
 
       <div className={card}>
@@ -101,7 +108,9 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
             </button>
           ))}
         </div>
-        <p className="pt-2 text-sm text-muted-foreground">{copy.policySaid(stop)}</p>
+        <p className="pt-2 text-sm text-muted-foreground">{copy.policySaid(stop, timeline.name)}</p>
+        {waits && stop !== "never" && <p className="pt-1 text-sm text-muted-foreground">{copy.waitsForPromotion}</p>}
+        {waits && behind && <p className="pt-1 text-sm text-muted-foreground">{copy.promotionTableBehind(timeline.name)}</p>}
       </div>
 
       <div className={card}>
@@ -206,7 +215,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                     <td className={`${cell} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
                     <td className={cell}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
                     <td className={`${cell} tabular-nums`}>
-                      {fix?.fixed_version ? copy.fix(fix.fixed_version, fix.release_date_reported_by_jamf) : <span className="text-muted-foreground">{copy.noFixOnLine}</span>}
+                      {fix?.fixed_version ? copy.fix(fix.fixed_version, fix.release_date) : <span className="text-muted-foreground">{copy.noFixOnLine}</span>}
                     </td>
                   </tr>
                 );
@@ -301,15 +310,30 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]">
           <dt className="text-muted-foreground">{copy.evidenceWindow}</dt>
           <dd className="tabular-nums">{replay.window.since} → {replay.window.until}</dd>
-          <dt className="text-muted-foreground">{copy.evidenceCatalog}</dt>
-          <dd>
-            {copy.fetched(when(replay.evidence.catalog_fetched_at))}
-            {replay.evidence.catalog_snapshot_id && <span className="block break-all font-mono text-xs text-muted-foreground">{replay.evidence.catalog_snapshot_id}</span>}
+          <dt className="text-muted-foreground">{copy.evidenceTimeline}</dt>
+          <dd className="space-y-0.5">
+            <span className="block">
+              {linkable(timeline.url) ? (
+                <a href={timeline.url} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">{timeline.name}</a>
+              ) : (
+                timeline.name
+              )}
+              {" · "}
+              {copy.fetched(when(timeline.fetched_at))}
+            </span>
+            {timeline.url && !linkable(timeline.url) && <span className="block break-all font-mono text-xs text-muted-foreground">{timeline.url}</span>}
+            {timeline.sha256 && <span className="block break-all font-mono text-xs text-muted-foreground">{timeline.sha256}</span>}
+            <span className="block text-muted-foreground">{timeline.clock}</span>
+          </dd>
+          <dt className="text-muted-foreground">{copy.evidenceClock}</dt>
+          <dd className="space-y-0.5">
+            <span className="block">{copy.cveClock}</span>
+            <span className="block text-muted-foreground">{replay.clocks.published}</span>
           </dd>
           <dt className="text-muted-foreground">{copy.evidenceRun}</dt>
           <dd className="break-all font-mono text-xs">{replay.run_id}</dd>
         </dl>
-        <p className="text-muted-foreground">{copy.releaseDates}</p>
+        <p className="text-muted-foreground">{copy.releaseDatesSaid}</p>
       </div>
     </div>
   );

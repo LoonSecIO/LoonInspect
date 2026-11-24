@@ -1,13 +1,15 @@
-import type { Refusal, SliderStop } from "@/features/patchPolicy/replay";
+import { REPLAY_SCHEMA, type Refusal, type SliderStop } from "@/features/patchPolicy/replay";
 
 /**
  * The words of the patch-policy reference page (#614, first slice), kept beside the feature the way
  * `devices/historyCopy.ts` is, so the views can be lifted out with their copy and no dictionary.
  *
- * Four things these words must keep saying. A release date is *as reported by Jamf's patch catalog*,
- * never *released on*. The replayed count is never called all the CVEs: the excluded ones are named
- * and counted. An app with no replay reads *no reference replay yet*, never zero. And the page is a
- * reference analysis of a hypothetical Mac, never this organization's exposure.
+ * Five things these words must keep saying. A release date is the date the file's own timeline gives
+ * it, and the page names that timeline from the file (`timeline.name`), never a source of its own and
+ * never *released on*. The CVE clock is said: each CVE counts from NVD's publication date. The
+ * replayed count is never called all the CVEs: the excluded ones are named and counted. An app with
+ * no replay reads *no reference replay yet*, never zero. And the page is a reference analysis of a
+ * hypothetical Mac, never this organization's exposure.
  */
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
@@ -26,10 +28,12 @@ export const patchPolicyEnglish = {
   appsCapped: (shown: number, total: number) => `Showing ${shown} of ${total} apps. Search to narrow the list.`,
   catalogLoading: "Reading Jamf's patch catalog…",
   catalogEmpty:
-    "Jamf's patch catalog holds no titles on this instance yet, so only the apps with a reference replay are listed. It fills on the first catalog refresh of a Jamf Pro connection (Settings › Connections).",
+    "Jamf's patch catalog holds no titles on this instance yet, so only the apps with a reference replay are listed. This instance refreshes it at the top of every hour without a Jamf Pro connection; if it stays empty, see troubleshooting.md §6.",
   catalogFailed:
     "Jamf's patch catalog could not be read, so only the apps with a reference replay are listed. That is a failed read, not an empty catalog. Reload the page; if it holds, report it with the build from Settings › Support.",
   unknownApp: (id: string) => `No reference replay is filed under "${id}". Pick an app from the list.`,
+  noReplays:
+    "No reference replay ships with this build, so no app can be picked. That is the build, not this organization's data: report it with the build from Settings › Support (troubleshooting.md §22).",
 
   replayLoading: "Loading the reference replay…",
   refusedLead: (name: string) => `The reference replay for ${name} is not shown, because its file was refused.`,
@@ -40,7 +44,9 @@ export const patchPolicyEnglish = {
       case "kind":
         return `Its kind is ${refusal.found}, and this page reads patch_policy_replay only.`;
       case "schema":
-        return `Its schema is ${refusal.found}, and this page reads schema 1 only.`;
+        return refusal.found === "1"
+          ? `Its schema is 1, the earlier replay format, which does not name where its release dates come from. This page reads schema ${REPLAY_SCHEMA} only.`
+          : `Its schema is ${refusal.found}, and this page reads schema ${REPLAY_SCHEMA} only.`;
       case "missing":
         return `It lacks ${refusal.key}, which this page draws.`;
       case "totals":
@@ -51,21 +57,27 @@ export const patchPolicyEnglish = {
     "The file ships inside this build and none of this organization's data is involved. Reload once. If it reads the same, report this message with the build from Settings › Support (troubleshooting.md §22).",
 
   referenceTitle: "A reference analysis, not this organization's exposure",
-  reference: (title: string, since: string, until: string) =>
-    `One hypothetical Mac that follows Jamf's "${title}" patch title, replayed from ${since} to ${until} against public CVE records. No inventory from this instance is read to draw it, nothing is sent anywhere, and no number here is stored as a measure of this fleet.`,
+  reference: (app: string, line: string | null, since: string, until: string) =>
+    `One hypothetical Mac that runs ${app}${line ? `, held on its ${line} release line` : ""}, replayed from ${since} to ${until} against public CVE records. No inventory from this instance is read to draw it, nothing is sent anywhere, and no number here is stored as a measure of this fleet.`,
+  sources: (timeline: string) =>
+    `Release dates come from ${timeline}. The CVE clock is NVD's publication date: each CVE counts from the day NVD published it.`,
 
   policyHeading: "Patch policy",
   stops: { "1d": "1 day", "7d": "7 days", "14d": "14 days", "30d": "30 days", "60d": "60 days", never: "Never" } satisfies Record<SliderStop, string>,
-  policySaid: (stop: SliderStop) =>
+  policySaid: (stop: SliderStop, timeline: string) =>
     stop === "never"
       ? "No release is installed: the Mac stays on the version it opened the window with."
-      : `Every release is installed by day ${parseInt(stop, 10)}, where day one is the date Jamf's patch catalog reports for the release.`,
+      : `Every release is installed by day ${parseInt(stop, 10)}, where day one is the release's date in ${timeline}.`,
+  waitsForPromotion:
+    "A build served before its major version is promoted to stable is installed no earlier than the promotion day, and a major above the promotion table's newest row is not installed (early_stable, under Definitions).",
+  promotionTableBehind: (timeline: string) =>
+    `The promotion table has no row yet for the newest major version in ${timeline}, so this Mac never installs that major here.`,
 
   neverSeenLabel: "vulnerabilities never seen",
   of: "of",
   neverSeenSaid: "Never seen: on or after the day NVD published the CVE, this Mac ran no version the CVE affects.",
-  outside: (outside: number, neverSeen: number, line: string | undefined) =>
-    `${outside} of the ${neverSeen} never seen were never in range: they affect only versions ${line ? `off the ${line} line` : "this Mac never runs"}, so no policy on this title meets them.`,
+  outside: (outside: number, neverSeen: number, line: string | null) =>
+    `${outside} of the ${neverSeen} never seen were never in range: they affect only versions ${line ? `off the ${line} line` : "this Mac never runs"}, so no patch policy meets them here.`,
   denominators: (replayed: number, inWindow: number, excluded: number) =>
     `${replayed} CVEs were replayed, of ${inWindow} published in the window. The other ${excluded} are excluded and counted below; excluded is not safe.`,
 
@@ -80,7 +92,7 @@ export const patchPolicyEnglish = {
   versions: (initial: string, final: string) => `Opens the window on ${initial} and ends it on ${final}.`,
   installs: (count: number) => `The ${count} ${plural(count, "update", "updates")} this Mac makes`,
   branchChoice: (count: number) =>
-    `Following Jamf's combined title instead, which crosses to newer release lines, changes the outcome of ${count} ${plural(count, "CVE", "CVEs")} under this policy.`,
+    `Following the newest release line instead, which crosses to newer lines as they ship, changes the outcome of ${count} ${plural(count, "CVE", "CVEs")} under this policy.`,
 
   compareHeading: "Every stop on the slider",
   colPolicy: "Policy",
@@ -94,8 +106,8 @@ export const patchPolicyEnglish = {
   colCve: "CVE",
   colPublished: "Published (NVD)",
   colSeverity: "Severity (today's score)",
-  colFix: (line: string | undefined) => `Fix${line ? ` on ${line}` : ""}, as reported by Jamf`,
-  fix: (version: string, reported: string | null | undefined) => (reported ? `${version}, reported ${reported}` : version),
+  colFix: (line: string | null) => `Fix${line ? ` on ${line}` : ""}, with its release date`,
+  fix: (version: string, dated: string | null | undefined) => (dated ? `${version}, dated ${dated}` : version),
   noFixOnLine: "none on this line",
   colOutcome: (stop: string) => `Outcome at ${stop}`,
   outcome: {
@@ -122,7 +134,8 @@ export const patchPolicyEnglish = {
     configuration_declined: "The affected-version listing could not be read safely",
     only_prerelease_criteria: "Names only pre-release builds",
     no_fixed_version_determinable: "No fixed version can be read from the record",
-    fixed_version_not_in_catalog: "The fixed version is not a release in Jamf's patch catalog",
+    fixed_version_not_in_catalog: "The fixed version is not a release on this replay's release timeline",
+    fixed_version_not_in_timeline: "The fixed version is not a release on this replay's release timeline",
     branch_ambiguity: "The affected range covers a release line whose fix it does not name"
   } as Record<string, string>,
   excludedList: (excluded: number) => `The ${excluded} excluded ${plural(excluded, "CVE", "CVEs")}`,
@@ -136,11 +149,13 @@ export const patchPolicyEnglish = {
 
   evidenceHeading: "Evidence",
   evidenceWindow: "Window",
-  evidenceCatalog: "Jamf patch catalog snapshot",
+  evidenceTimeline: "Release dates",
   fetched: (when: string) => `fetched ${when}`,
+  evidenceClock: "CVE clock",
+  cveClock: "NVD publication date",
   evidenceRun: "Run",
-  releaseDates:
-    "Release dates are as reported by Jamf's patch catalog. They are not a claim about when the vendor made a release available."
+  releaseDatesSaid:
+    "Every release date on this page is a date from that timeline, and the page computes none."
 };
 
 export type PatchPolicyCopy = typeof patchPolicyEnglish;
@@ -162,10 +177,12 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   appsCapped: (shown: number, total: number) => `${shown} von ${total} Apps angezeigt. Suchen Sie, um die Liste einzugrenzen.`,
   catalogLoading: "Jamfs Patch-Katalog wird gelesen…",
   catalogEmpty:
-    "Jamfs Patch-Katalog enthält auf dieser Instanz noch keine Titel; aufgeführt sind daher nur die Apps mit einem Referenz-Replay. Er füllt sich mit der ersten Katalogaktualisierung einer Jamf-Pro-Verbindung (Einstellungen › Verbindungen).",
+    "Jamfs Patch-Katalog enthält auf dieser Instanz noch keine Titel; aufgeführt sind daher nur die Apps mit einem Referenz-Replay. Diese Instanz aktualisiert ihn zu jeder vollen Stunde, ohne Jamf-Pro-Verbindung; bleibt er leer, siehe troubleshooting.md §6.",
   catalogFailed:
     "Jamfs Patch-Katalog konnte nicht gelesen werden; aufgeführt sind daher nur die Apps mit einem Referenz-Replay. Das ist ein fehlgeschlagener Lesevorgang, kein leerer Katalog. Laden Sie die Seite neu; bleibt es dabei, melden Sie es mit dem Build aus Einstellungen › Support.",
   unknownApp: (id: string) => `Unter „${id}“ ist kein Referenz-Replay abgelegt. Wählen Sie eine App aus der Liste.`,
+  noReplays:
+    "Mit diesem Build wird kein Referenz-Replay ausgeliefert; es lässt sich daher keine App auswählen. Das liegt am Build, nicht an den Daten dieser Organisation: Melden Sie es mit dem Build aus Einstellungen › Support (troubleshooting.md §22).",
 
   replayLoading: "Referenz-Replay wird geladen…",
   refusedLead: (name: string) => `Das Referenz-Replay für ${name} wird nicht angezeigt, weil seine Datei abgelehnt wurde.`,
@@ -176,7 +193,9 @@ export const patchPolicyGerman: PatchPolicyCopy = {
       case "kind":
         return `Ihr kind ist ${refusal.found}; diese Seite liest nur patch_policy_replay.`;
       case "schema":
-        return `Ihr schema ist ${refusal.found}; diese Seite liest nur schema 1.`;
+        return refusal.found === "1"
+          ? `Ihr schema ist 1, das frühere Replay-Format, das nicht angibt, woher seine Release-Daten stammen. Diese Seite liest nur schema ${REPLAY_SCHEMA}.`
+          : `Ihr schema ist ${refusal.found}; diese Seite liest nur schema ${REPLAY_SCHEMA}.`;
       case "missing":
         return `Ihr fehlt ${refusal.key}, das diese Seite darstellt.`;
       case "totals":
@@ -187,21 +206,27 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     "Die Datei wird mit diesem Build ausgeliefert, und keine Daten dieser Organisation sind beteiligt. Laden Sie einmal neu. Lautet die Meldung gleich, melden Sie sie mit dem Build aus Einstellungen › Support (troubleshooting.md §22).",
 
   referenceTitle: "Eine Referenzanalyse, nicht die Exposition dieser Organisation",
-  reference: (title: string, since: string, until: string) =>
-    `Ein hypothetischer Mac, der Jamfs Patch-Titel „${title}“ folgt, nachgespielt von ${since} bis ${until} gegen öffentliche CVE-Einträge. Dafür wird kein Inventar dieser Instanz gelesen, nichts wird irgendwohin gesendet, und keine Zahl hier wird als Messwert dieser Flotte gespeichert.`,
+  reference: (app: string, line: string | null, since: string, until: string) =>
+    `Ein hypothetischer Mac, auf dem ${app} läuft${line ? `, gehalten auf der Release-Linie ${line}` : ""}, nachgespielt von ${since} bis ${until} gegen öffentliche CVE-Einträge. Dafür wird kein Inventar dieser Instanz gelesen, nichts wird irgendwohin gesendet, und keine Zahl hier wird als Messwert dieser Flotte gespeichert.`,
+  sources: (timeline: string) =>
+    `Die Release-Daten stammen aus ${timeline}. Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD: Jede CVE zählt ab dem Tag, an dem NVD sie veröffentlicht hat.`,
 
   policyHeading: "Patch-Richtlinie",
   stops: { "1d": "1 Tag", "7d": "7 Tage", "14d": "14 Tage", "30d": "30 Tage", "60d": "60 Tage", never: "Nie" },
-  policySaid: (stop: SliderStop) =>
+  policySaid: (stop: SliderStop, timeline: string) =>
     stop === "never"
       ? "Kein Release wird installiert: Der Mac bleibt auf der Version, mit der er das Zeitfenster begonnen hat."
-      : `Jedes Release ist bis Tag ${parseInt(stop, 10)} installiert; Tag eins ist das Datum, das Jamfs Patch-Katalog für das Release meldet.`,
+      : `Jedes Release ist bis Tag ${parseInt(stop, 10)} installiert; Tag eins ist das Datum des Release in ${timeline}.`,
+  waitsForPromotion:
+    "Ein Build, der vor der Beförderung seiner Hauptversion zu Stable ausgeliefert wurde, wird frühestens am Tag der Beförderung installiert, und eine Hauptversion oberhalb der neuesten Zeile der Beförderungstabelle wird nicht installiert (early_stable, unter Definitionen).",
+  promotionTableBehind: (timeline: string) =>
+    `Die Beförderungstabelle hat noch keine Zeile für die neueste Hauptversion in ${timeline}; dieser Mac installiert diese Hauptversion hier daher nie.`,
 
   neverSeenLabel: "Schwachstellen nie gesehen",
   of: "von",
   neverSeenSaid: "Nie gesehen: Ab dem Tag, an dem NVD die CVE veröffentlicht hat, lief auf diesem Mac keine Version, die sie betrifft.",
-  outside: (outside: number, neverSeen: number, line: string | undefined) =>
-    `${outside} der ${neverSeen} nie gesehenen waren nie im betroffenen Bereich: Sie betreffen nur Versionen ${line ? `außerhalb der Linie ${line}` : "die dieser Mac nie ausführt"}, sodass keine Richtlinie auf diesem Titel ihnen begegnet.`,
+  outside: (outside: number, neverSeen: number, line: string | null) =>
+    `${outside} der ${neverSeen} nie gesehenen waren nie im betroffenen Bereich: Sie betreffen nur Versionen ${line ? `außerhalb der Linie ${line}` : "die dieser Mac nie ausführt"}, sodass ihnen hier keine Patch-Richtlinie begegnet.`,
   denominators: (replayed: number, inWindow: number, excluded: number) =>
     `${replayed} CVEs wurden nachgespielt, von ${inWindow} im Zeitfenster veröffentlichten. Die übrigen ${excluded} sind ausgeschlossen und unten gezählt; ausgeschlossen heißt nicht sicher.`,
 
@@ -216,7 +241,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   versions: (initial: string, final: string) => `Beginnt das Zeitfenster auf ${initial} und beendet es auf ${final}.`,
   installs: (count: number) => `${mehrzahl(count, "Das eine Update", `Die ${count} Updates`)}, die dieser Mac ausführt`,
   branchChoice: (count: number) =>
-    `Folgt der Mac stattdessen Jamfs kombiniertem Titel, der auf neuere Release-Linien wechselt, ändert sich unter dieser Richtlinie das Ergebnis von ${count} ${mehrzahl(count, "CVE", "CVEs")}.`,
+    `Folgt der Mac stattdessen der neuesten Release-Linie, die mit jeder neuen Linie wechselt, ändert sich unter dieser Richtlinie das Ergebnis von ${count} ${mehrzahl(count, "CVE", "CVEs")}.`,
 
   compareHeading: "Jede Stufe des Reglers",
   colPolicy: "Richtlinie",
@@ -230,8 +255,8 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   colCve: "CVE",
   colPublished: "Veröffentlicht (NVD)",
   colSeverity: "Schweregrad (heutige Bewertung)",
-  colFix: (line: string | undefined) => `Fix${line ? ` auf ${line}` : ""}, wie von Jamf gemeldet`,
-  fix: (version: string, reported: string | null | undefined) => (reported ? `${version}, gemeldet am ${reported}` : version),
+  colFix: (line: string | null) => `Fix${line ? ` auf ${line}` : ""}, mit seinem Release-Datum`,
+  fix: (version: string, dated: string | null | undefined) => (dated ? `${version}, datiert ${dated}` : version),
   noFixOnLine: "keiner auf dieser Linie",
   colOutcome: (stop: string) => `Ergebnis bei ${stop}`,
   outcome: {
@@ -258,7 +283,8 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     configuration_declined: "Die Angabe der betroffenen Versionen ließ sich nicht sicher lesen",
     only_prerelease_criteria: "Nennt nur Vorabversionen",
     no_fixed_version_determinable: "Aus dem Eintrag lässt sich keine korrigierte Version lesen",
-    fixed_version_not_in_catalog: "Die korrigierte Version ist kein Release in Jamfs Patch-Katalog",
+    fixed_version_not_in_catalog: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
+    fixed_version_not_in_timeline: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
     branch_ambiguity: "Der betroffene Bereich umfasst eine Release-Linie, deren Fix er nicht nennt"
   },
   excludedList: (excluded: number) => `${mehrzahl(excluded, "Die eine ausgeschlossene CVE", `Die ${excluded} ausgeschlossenen CVEs`)}`,
@@ -272,9 +298,11 @@ export const patchPolicyGerman: PatchPolicyCopy = {
 
   evidenceHeading: "Belege",
   evidenceWindow: "Zeitfenster",
-  evidenceCatalog: "Snapshot von Jamfs Patch-Katalog",
+  evidenceTimeline: "Release-Daten",
   fetched: (when: string) => `abgerufen ${when}`,
+  evidenceClock: "CVE-Uhr",
+  cveClock: "Veröffentlichungsdatum bei NVD",
   evidenceRun: "Lauf",
-  releaseDates:
-    "Release-Daten sind die von Jamfs Patch-Katalog gemeldeten. Sie sind keine Aussage darüber, wann der Hersteller ein Release bereitgestellt hat."
+  releaseDatesSaid:
+    "Jedes Release-Datum auf dieser Seite ist ein Datum aus dieser Zeitleiste; die Seite berechnet keines."
 };

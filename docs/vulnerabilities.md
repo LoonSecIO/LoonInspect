@@ -65,7 +65,7 @@ a dataset that may not be available.
 > catalog — both works of the United States government — and the identifiers in Jamf's
 > public patch catalog, which enter the corpus only as SHA-256 content keys (`key_title`,
 > `key_full`, `app/core/content_keys.py`); no Jamf name, version, or release date is
-> redistributed. The legacy NVD dataset and its gateway named above are not used.
+> redistributed in the corpus. The legacy NVD dataset and its gateway named above are not used.
 > Delivery is a LoonSec-hosted signed link handed to consenting instances on the daily
 > data-sharing exchange. NVD's API terms ask that products display the notice *"This
 > product uses the NVD API but is not endorsed or certified by the NVD."*; it is shown

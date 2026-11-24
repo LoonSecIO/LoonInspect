@@ -6,10 +6,14 @@
  * LoonVD computes every number (`docs/PATCH-POLICY-REPLAY.md` in LoonVD-Internal); nothing here
  * recomputes one. The contract is additive-only: unknown keys are ignored, and a file of another `kind`
  * or `schema`, or one whose own totals disagree, is refused whole rather than drawn in part.
+ *
+ * Schema 2 is the replay that names its own release dates: `timeline` says where they come from and
+ * what a date means, and each release and fix carries `release_date` on that timeline. Schema 1 named
+ * no source in the file, so this page refuses it rather than print dates it cannot attribute.
  */
 
 export const REPLAY_KIND = "patch_policy_replay";
-export const REPLAY_SCHEMA = 1;
+export const REPLAY_SCHEMA = 2;
 
 /** The slider's stops, in order: the day policies, then Never. */
 export const SLIDER_STOPS = ["1d", "7d", "14d", "30d", "60d", "never"] as const;
@@ -32,9 +36,23 @@ export interface PolicyTotals {
 }
 
 export interface LedgerFix {
+  /** The release line the fix is on: `"4.4"`, or `""` for an app replayed as one line. */
   branch?: string;
   fixed_version?: string | null;
-  release_date_reported_by_jamf?: string | null;
+  /** The fixed release's date on the file's own `timeline`. */
+  release_date?: string | null;
+}
+
+/** Where the file's release dates come from, in the file's own words. The page prints `name` and
+ *  `clock` as they stand and names no source the file does not. */
+export interface ReplayTimeline {
+  source?: string;
+  name: string;
+  url?: string;
+  fetched_at: string;
+  sha256?: string;
+  /** What one of its dates means: the day a build was first served, a tag's date, and so on. */
+  clock: string;
 }
 
 export interface LedgerOutcome {
@@ -70,15 +88,21 @@ export interface PatchPolicyReplay {
   run_id: string;
   window: { since: string; until: string };
   definitions: Record<string, string>;
-  clocks: Record<string, string>;
-  evidence: { catalog_fetched_at: string; catalog_snapshot_id?: string };
+  /** `published` is the CVE clock, which the page states: each CVE counts from NVD's publication date. */
+  clocks: Record<string, string> & { published: string };
+  timeline: ReplayTimeline;
   counts: { cves_in_window: number; cves_replayed: number; cves_excluded: number };
   exclusions: { by_reason: Record<string, number>; cves: ExcludedCve[] };
   policies: Record<SliderStop, PolicyTotals> & Record<string, PolicyTotals | undefined>;
-  branch_choice?: {
-    held_at_branch?: string;
+  branch_choice: {
+    /** The release line the device is held to; `null` for an app replayed as one line, whose
+     *  fixes all name the line `""` and which has no other line to choose. */
+    held_at_branch: string | null;
     cves_where_the_choice_changes_the_answer?: { by_policy?: Record<string, number> };
   };
+  /** Present where the vendor promotes a major to stable on a day of its own (Chrome): `skip` is the
+   *  device that waits for that day. */
+  early_stable_choice?: { device?: string; promotion_table_behind_timeline?: boolean };
   product?: { bundle_ids?: string[] };
   ledger: LedgerRow[];
 }
@@ -108,8 +132,15 @@ function firstMissing(file: Json): string | null {
   if (!isRecord(file.window) || !isText(file.window.since)) return "window.since";
   if (!isText(file.window.until)) return "window.until";
   if (!isRecord(file.definitions)) return "definitions";
-  if (!isRecord(file.clocks)) return "clocks";
-  if (!isRecord(file.evidence) || !isText(file.evidence.catalog_fetched_at)) return "evidence.catalog_fetched_at";
+  if (!isRecord(file.clocks) || !isText(file.clocks.published)) return "clocks.published";
+  // The page names the source of every date it prints, and says what a date means, from these.
+  if (!isRecord(file.timeline) || !isText(file.timeline.name)) return "timeline.name";
+  if (!isText(file.timeline.clock)) return "timeline.clock";
+  if (!isText(file.timeline.fetched_at)) return "timeline.fetched_at";
+  // Present on every replay, and `null` only for one release line: the page reads null as that.
+  if (!isRecord(file.branch_choice) || !(file.branch_choice.held_at_branch === null || isText(file.branch_choice.held_at_branch))) {
+    return "branch_choice.held_at_branch";
+  }
   if (!isRecord(file.counts)) return "counts";
   for (const key of ["cves_in_window", "cves_replayed", "cves_excluded"]) if (!isCount(file.counts[key])) return `counts.${key}`;
   if (!isRecord(file.policies)) return "policies";
@@ -191,9 +222,11 @@ export function replayedRows(replay: PatchPolicyReplay): LedgerRow[] {
 }
 
 /** The fix on the release line the device is held to, which is the one its installs can reach.
+ *  A held line of `null` is the one line of an app replayed as one, whose fixes name the line `""`.
  *  `null` where the CVE names no fix on that line: those are the rows that were never in range. */
-export function heldFix(row: LedgerRow, branch: string | undefined): LedgerFix | null {
-  return row.fixes?.find((fix) => fix.branch === branch) ?? null;
+export function heldFix(row: LedgerRow, line: string | null): LedgerFix | null {
+  const held = line ?? "";
+  return row.fixes?.find((fix) => (fix.branch ?? "") === held) ?? null;
 }
 
 export const isSliderStop = (value: string | null): value is SliderStop => SLIDER_STOPS.includes(value as SliderStop);

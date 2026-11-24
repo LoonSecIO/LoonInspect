@@ -1,6 +1,8 @@
-/** The patch-policy reference page as it is drawn (#614, first slice): the Wireshark numbers at each
- *  stop, and the four things the page must keep saying. Node lane (#285): the views are stateless
- *  enough to render to markup, and the slider's own movement is the browser's. */
+/** The patch-policy reference page as it is drawn (#614, first slice), on hand-made schema-2 replays
+ *  whose numbers are invented (`testing/replayFixtures.ts`): the numbers at each stop, the release-date
+ *  source and the CVE clock the page names, an app replayed as one release line, and the things the
+ *  page must keep saying. Node lane (#285): the views are stateless enough to render to markup, and
+ *  the slider's own movement is the browser's. */
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,92 +10,120 @@ import { AppPicker } from "@/features/patchPolicy/AppPicker";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { SLIDER_STOPS, readReplay, type PatchPolicyReplay, type SliderStop } from "@/features/patchPolicy/replay";
 import { ReplayView } from "@/features/patchPolicy/ReplayView";
-import wireshark from "./replays/wireshark-2026-10-02.json";
+import { heldLineReplay, singleLineReplay } from "@/features/patchPolicy/testing/replayFixtures";
 
-const replay = readReplay(wireshark).replay as PatchPolicyReplay;
+const held = readReplay(heldLineReplay()).replay as PatchPolicyReplay;
+const single = readReplay(singleLineReplay()).replay as PatchPolicyReplay;
 const copy = patchPolicyEnglish;
 /** The markup with tags dropped, so a sentence can be matched across the spans that style it. */
 const text = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/\s+/g, " ");
-const drawn = (stop: SliderStop, words = copy) =>
-  text(renderToStaticMarkup(<ReplayView replay={replay} appName="Wireshark" stop={stop} onStop={() => {}} copy={words} />));
+const markupOf = (stop: SliderStop, words = copy, replay = held, appName = "Example App") =>
+  renderToStaticMarkup(<ReplayView replay={replay} appName={appName} stop={stop} onStop={() => {}} copy={words} />);
+const drawn = (stop: SliderStop, words = copy, replay = held, appName = "Example App") => text(markupOf(stop, words, replay, appName));
 
-describe("ReplayView on the Wireshark replay", () => {
-  it("at 1 day: 100 of 101 never seen, 1 exposed for 2 days, 19 update events", () => {
+describe("ReplayView on an app held on one release line", () => {
+  it("at 1 day: 3 of 4 never seen, 1 exposed for 1 day, 3 update events", () => {
     const page = drawn("1d");
-    expect(page).toContain("100 of 101 vulnerabilities never seen");
-    expect(page).toContain("13 of the 100 never seen were never in range");
+    expect(page).toContain("3 of 4 vulnerabilities never seen");
+    expect(page).toContain("1 of the 3 never seen were never in range: they affect only versions off the 4.4 line");
     expect(page).toContain("Exposed 1 CVEs this Mac ran");
-    expect(page).toContain("Exposure days 2 CVE-days");
-    expect(page).toContain("Update events 19 days on which");
-    expect(page).toContain("Opens the window on 4.4.0 and ends it on 4.4.19.");
+    expect(page).toContain("Exposure days 1 CVE-days");
+    expect(page).toContain("Update events 3 days on which");
+    expect(page).toContain("Opens the window on 4.4.1 and ends it on 4.4.4.");
     // The one CVE still seen under a 1-day policy, as its row reads.
-    expect(page).toContain("CVE-2025-13946");
-    expect(page).toContain("Exposed 2 days, until 4.4.12 on 2025-12-05");
+    expect(page).toContain("CVE-2099-0004");
+    expect(page).toContain("Exposed 1 day, until 4.4.4 on 2025-03-05");
+    expect(page).toContain("Never seen: the fix was installed first");
   });
 
-  it("at 14 days: 13 of 101 never seen, every one of them never in range, 88 exposed for 946 days", () => {
-    const page = drawn("14d");
-    expect(page).toContain("13 of 101 vulnerabilities never seen");
-    expect(page).toContain("13 of the 13 never seen were never in range");
-    expect(page).toContain("Exposed 88 CVEs this Mac ran");
-    expect(page).toContain("Exposure days 946 CVE-days");
-    expect(page).toContain("Update events 18 days on which");
-    expect(page).toContain("Never seen: never in range");
-    expect(page).not.toContain("Never seen: the fix was installed first");
+  it("the headline along the whole slider is 3, 2, 1, 1, 1, 1", () => {
+    expect(SLIDER_STOPS.map((stop) => /(\d+) of 4 vulnerabilities never seen/.exec(drawn(stop))?.[1])).toEqual(["3", "2", "1", "1", "1", "1"]);
   });
 
-  it("the headline along the whole slider is 100, 39, 13, 13, 13, 13", () => {
-    expect(SLIDER_STOPS.map((stop) => /(\d+) of 101 vulnerabilities never seen/.exec(drawn(stop))?.[1])).toEqual(["100", "39", "13", "13", "13", "13"]);
-  });
-
-  it("never: no update events, and all 88 exposed are still open at window end", () => {
+  it("never: no update events, and all 3 exposed are still open at window end", () => {
     const page = drawn("never");
     expect(page).toContain("Update events 0 days on which");
-    expect(page).toContain("Still open at window end 88 exposed");
-    expect(page).toContain("Exposure days 14,287");
+    expect(page).toContain("Still open at window end 3 exposed");
+    expect(page).toContain("Exposure days 2,031");
+    expect(page).toContain("Exposed 725 days, still open at window end");
     expect(page).not.toContain("this Mac makes");
   });
 
   it("never presents the replayed count as all the CVEs, and shows the exclusions with their reasons", () => {
     const page = drawn("7d");
-    expect(page).toContain("101 CVEs were replayed, of 122 published in the window. The other 21 are excluded and counted below");
-    expect(page).toContain("Excluded: 21 CVEs");
-    expect(page).toContain("NVD has not yet listed which versions are affected 19");
-    expect(page).toContain("The affected range covers a release line whose fix it does not name 1");
-    expect(page).toContain("Not about macOS 1");
+    expect(page).toContain("4 CVEs were replayed, of 5 published in the window. The other 1 are excluded and counted below");
+    expect(page).toContain("Excluded: 1 CVE");
+    expect(page).toContain("NVD has not yet listed which versions are affected 1");
     // A reason nothing was excluded for is still a row: the replay looked.
     expect(page).toContain("Rejected by the CVE program 0");
-    expect(page).toContain("CVE-2026-0962");
+    expect(page).toContain("The fixed version is not a release on this replay's release timeline 0");
+    expect(page).toContain("CVE-2099-0005");
   });
 
-  it("says release dates are as reported by Jamf's patch catalog, and never 'released on'", () => {
+  it("names the release-date source from the file, and never 'released on'", () => {
     const page = drawn("7d");
-    expect(page).toContain("day one is the date Jamf's patch catalog reports for the release");
-    expect(page).toContain("Release dates are as reported by Jamf's patch catalog.");
-    expect(page).toContain("Fix on 4.4, as reported by Jamf");
-    expect(page).toContain("4.4.2, reported 2024-11-20");
+    expect(page).toContain("Release dates come from Example App's release tags.");
+    expect(page).toContain("day one is the release's date in Example App's release tags.");
+    expect(page).toContain("Fix on 4.4, with its release date");
+    expect(page).toContain("4.4.2, dated 2024-11-27");
+    expect(page).toContain("The UTC date of the release's tag. Release-candidate tags are dropped.");
+    expect(page).toContain("Every release date on this page is a date from that timeline, and the page computes none.");
     expect(page.toLowerCase()).not.toContain("released on");
-    expect(text(renderToStaticMarkup(<ReplayView replay={replay} appName="Wireshark" stop="7d" onStop={() => {}} copy={patchPolicyGerman} />)).toLowerCase()).not.toContain("veröffentlicht am");
+    expect(drawn("7d", patchPolicyGerman).toLowerCase()).not.toContain("veröffentlicht am");
   });
 
-  it("is labelled a reference analysis of the Wireshark 4.4 title, not this organization's exposure", () => {
+  it("states its CVE clock: NVD's publication date, with the file's own words for it", () => {
+    const page = drawn("7d");
+    expect(page).toContain("The CVE clock is NVD's publication date: each CVE counts from the day NVD published it.");
+    expect(page).toContain("CVE clock NVD publication date NVD `published`, truncated to the UTC date.");
+  });
+
+  it("names no source the file does not: neither Jamf nor Fleet, in either language", () => {
+    // Fleet the product, capitalised; "this fleet" is the organization's Macs and stays.
+    for (const replay of [held, single]) {
+      for (const stop of SLIDER_STOPS) {
+        for (const words of [copy, patchPolicyGerman]) {
+          const page = drawn(stop, words, replay);
+          expect(page).not.toMatch(/jamf/i);
+          expect(page).not.toMatch(/\bFleet\b/);
+        }
+      }
+    }
+  });
+
+  it("is labelled a reference analysis of a Mac held on the 4.4 line, not this organization's exposure", () => {
     const page = drawn("1d");
     expect(page).toContain("A reference analysis, not this organization's exposure");
-    expect(page).toContain('follows Jamf\'s "Wireshark 4.4" patch title, replayed from 2024-10-02 to 2026-10-02');
+    expect(page).toContain("One hypothetical Mac that runs Example App, held on its 4.4 release line, replayed from 2024-11-23 to 2026-11-23");
     expect(page).toContain("No inventory from this instance is read");
   });
 
-  it("carries the evidence line: window, catalog snapshot date, run id", () => {
-    const page = drawn("1d");
-    expect(page).toContain("2024-10-02 → 2026-10-02");
-    expect(page).toContain("fetched 2026-10-02 07:45 UTC");
-    expect(page).toContain("d6d412eb4ace1c38924212e8883ece963de413d12c8f28adbec23fad9fdc6aad");
-    expect(page).toContain("8e578b5804537684112659c2bcc38695ce6e8db412851f147d194d216001fe4c");
+  it("says what following the newest line instead would change, under the stop shown", () => {
+    expect(drawn("7d")).toContain("Following the newest release line instead, which crosses to newer lines as they ship, changes the outcome of 1 CVE under this policy.");
+    expect(drawn("never")).toContain("changes the outcome of 2 CVEs under this policy.");
+  });
+
+  it("carries the evidence: window, release-date source with its link, fetch time and digest, and run id", () => {
+    const markup = markupOf("1d");
+    const page = text(markup);
+    expect(page).toContain("2024-11-23 → 2026-11-23");
+    expect(markup).toContain('href="https://example.com/example-app/tags"');
+    expect(markup).toContain('rel="noreferrer noopener"');
+    expect(page).toContain("Example App's release tags · fetched 2026-11-24 09:15 UTC");
+    expect(page).toContain("1111111111111111111111111111111111111111111111111111111111111111");
+    expect(page).toContain("fixture-held-line");
+  });
+
+  it("prints an address that is not https as text, never as a link", () => {
+    const replay = readReplay({ ...heldLineReplay(), timeline: { ...(heldLineReplay().timeline as object), url: "javascript:alert(1)" } }).replay as PatchPolicyReplay;
+    const markup = renderToStaticMarkup(<ReplayView replay={replay} appName="Example App" stop="1d" onStop={() => {}} copy={copy} />);
+    expect(markup).not.toContain("href=");
+    expect(text(markup)).toContain("javascript:alert(1)");
   });
 
   it("keeps the tabled policy off the slider and out of every table, and quotes none of its numbers", () => {
     for (const stop of SLIDER_STOPS) {
-      const markup = renderToStaticMarkup(<ReplayView replay={replay} appName="Wireshark" stop={stop} onStop={() => {}} copy={copy} />);
+      const markup = markupOf(stop);
       // Six stops and no seventh, on the slider and in the comparison table.
       expect(markup).toContain('max="5"');
       for (const label of Object.values(copy.stops)) expect(markup).toContain(`>${label}</button>`);
@@ -102,17 +132,65 @@ describe("ReplayView on the Wireshark replay", () => {
       // Its definition is shown apart, in the file's own words, which say it is tabled.
       expect(page).toContain("Not on the slider");
       expect(page).toContain("TABLED 2026-10-02, not ruled: do not quote this row.");
-      // Its exposure days appear nowhere; its 38 and 63 are too common on the page to search for.
-      expect(page).not.toContain("10,415");
+      // Its exposure days appear nowhere.
+      expect(page).not.toContain("147");
       expect(markup).not.toContain(">critical_or_kev</dt>");
     }
   });
 
   it("reads in German from the same file", () => {
     const page = drawn("14d", patchPolicyGerman);
-    expect(page).toContain("13 von 101 Schwachstellen nie gesehen");
+    expect(page).toContain("1 von 4 Schwachstellen nie gesehen");
     expect(page).toContain("Eine Referenzanalyse, nicht die Exposition dieser Organisation");
-    expect(page).toContain("wie von Jamf gemeldet");
+    expect(page).toContain("Ein hypothetischer Mac, auf dem Example App läuft, gehalten auf der Release-Linie 4.4,");
+    expect(page).toContain("Die Release-Daten stammen aus Example App's release tags.");
+    expect(page).toContain("Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD");
+    expect(page).toContain("Fix auf 4.4, mit seinem Release-Datum");
+    expect(page).toContain("4.4.2, datiert 2024-11-27");
+    expect(page).toContain("Folgt der Mac stattdessen der neuesten Release-Linie");
+  });
+});
+
+describe("ReplayView on an app replayed as one release line", () => {
+  const page = (stop: SliderStop = "7d", words = copy) => drawn(stop, words, single, "Example Browser");
+
+  it("names no line: the Mac runs the app, and the fix column has no line in its heading", () => {
+    expect(page()).toContain("One hypothetical Mac that runs Example Browser, replayed from 2024-11-23 to 2026-11-23");
+    expect(page()).not.toContain("held on");
+    expect(page()).toContain("Fix, with its release date");
+    expect(page("7d", patchPolicyGerman)).toContain("Ein hypothetischer Mac, auf dem Example Browser läuft, nachgespielt");
+  });
+
+  it("shows each CVE's fix on the one line, not 'none on this line'", () => {
+    const shown = page("1d");
+    expect(shown).toContain("131.0.5, dated 2024-12-10");
+    expect(shown).toContain("132.0.9, dated 2025-02-04");
+    expect(shown).not.toContain(copy.noFixOnLine);
+  });
+
+  it("hides the sentence about choosing another release line, at every stop", () => {
+    for (const stop of SLIDER_STOPS) {
+      expect(page(stop)).not.toContain("Following the newest release line instead");
+      expect(page(stop, patchPolicyGerman)).not.toContain("neuesten Release-Linie");
+    }
+  });
+
+  it("says its device waits for a major's promotion day, and not under Never", () => {
+    expect(page("7d")).toContain("A build served before its major version is promoted to stable is installed no earlier than the promotion day");
+    expect(page("never")).not.toContain("promoted to stable");
+    expect(page("7d")).not.toContain("The promotion table has no row yet");
+  });
+
+  it("says so when the promotion table is behind the timeline", () => {
+    const behind = readReplay({ ...singleLineReplay(), early_stable_choice: { device: "skip", promotion_table_behind_timeline: true } }).replay as PatchPolicyReplay;
+    expect(drawn("7d", copy, behind, "Example Browser")).toContain(
+      "The promotion table has no row yet for the newest major version in Example Browser's version history (stable channel), so this Mac never installs that major here."
+    );
+  });
+
+  it("counts what it replayed: 1 of 2 never seen at a day, none from a week on", () => {
+    expect(SLIDER_STOPS.map((stop) => /(\d+) of 2 vulnerabilities never seen/.exec(page(stop))?.[1])).toEqual(["1", "0", "0", "0", "0", "0"]);
+    expect(page("1d")).toContain("0 of the 1 never seen were never in range: they affect only versions this Mac never runs");
   });
 });
 
