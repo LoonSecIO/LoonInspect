@@ -624,7 +624,17 @@ the run `jobID`, the token's index settings, and the search you ran.
    swapped the image back ([`operations.md`](operations.md) §5). **This is the fix:** roll
    forward to the newer image, or restore the dump taken before the upgrade. Rolled
    forward and the sentence persists → reportable **G**.
-5. Healthy and signed in, and something else is unreadable → reportable **G**.
+5. **An administrator created with `INITIAL_ADMIN_EMAIL` cannot sign in because its
+   `.local` or `.test` address is refused with 422.** Upgrade to a build containing
+   INSPECT-815, then sign in with the existing address and password. The fix accepts
+   stored account identifiers without requiring a public mail domain; it does not
+   recreate accounts or reset passwords. Keep the existing volumes and instance key.
+   Surrounding spaces and letter case are ignored just as at bootstrap. A 401 still
+   means invalid credentials or an inactive account; a 429 means wait for the lockout
+   to expire. Creating a new account through the wizard or Settings › Accounts keeps
+   its existing mail-address validation; that creation policy is separate from
+   authenticating an account already stored by environment bootstrap.
+6. Healthy and signed in, and something else is unreadable → reportable **G**.
 
 **F.** Startup migration failed. Report `docker compose logs app --tail 200` and the
 build (Settings › Support shows it).

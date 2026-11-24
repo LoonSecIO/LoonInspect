@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from pydantic.alias_generators import to_camel
 
 from app.core.permissions import Role
@@ -79,7 +80,10 @@ class SwitchTenantRequest(_CamelModel):
 
 
 class LoginRequest(_CamelModel):
-    email: EmailStr
+    # Sign-in matches an existing account identifier, including addresses provisioned
+    # through INITIAL_ADMIN_EMAIL at private domains. Mail-address creation policy
+    # must not prevent an existing account from reaching password/MFA verification.
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=320)]
     # Not length-validated here: a rejected login must not reveal whether the failure
     # was policy or credentials. The DoS cap lives in verify_password().
     password: str
