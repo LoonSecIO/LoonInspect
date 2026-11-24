@@ -1,3 +1,9 @@
+"""Query retained device changes and configure their policy without reading current inventory.
+
+The predicates here also serve app/api/changes_prompt.py; app/changes/derive.py writes
+the historical evidence and app/changes/policy.py defines the tracked field catalog.
+"""
+
 from __future__ import annotations
 
 import uuid
