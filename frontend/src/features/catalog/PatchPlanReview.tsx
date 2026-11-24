@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError } from "@/config/api";
-import { readReviewDraft, rememberReviewDraft, forgetReviewDraft, watchReviewDraft } from "./patchPlanDraft";
+import { readReviewDraft, rememberReviewDraft, forgetReviewDraft, forgetSubmittedReviewDraft, watchReviewDraft } from "./patchPlanDraft";
 import type { PatchPlan } from "./patchPlanTypes";
 
 const fields = [
@@ -34,10 +34,12 @@ export function PatchPlanReview({ plan, canWrite, draftKey, onDirty, onSaved }: 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   async function save() {
     setBusy(true); setError("");
+    const submitted = { revision: draftRevision, values: { ...values } };
     try {
       const result = await apiRequest<PatchPlan>(`/application-patch-plans/${plan.id}`, { method: "PATCH", json: { ...values, revision: plan.revision } });
+      const cleared = forgetSubmittedReviewDraft(draftKey, submitted);
       if (!alive.current) return;
-      setStorageError(!forgetReviewDraft(draftKey));
+      setStorageError(!cleared);
       setDirty(false); onDirty(false); onSaved(result);
     } catch (e) { if (alive.current) setError(e instanceof ApiError && e.detail ? e.detail : "Review notes could not be saved. Check connectivity and retry."); }
     finally { if (alive.current) setBusy(false); }

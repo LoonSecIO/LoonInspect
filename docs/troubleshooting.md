@@ -3625,6 +3625,12 @@ the latest revision. Export stays disabled while notes are unsaved, so the PDF c
 silently omit the visible review. **View current installed apps in this scope** opens
 current inventory with the saved report's scope, without changing that report.
 
+Changing organization asks for confirmation before changing the session when this tab
+has unsaved review notes. Cancel keeps the current organization. Browser-stored drafts
+remain attached to their original organization, account and plan; copy or save any
+memory-only notes before confirming, because the switch reloads the page. A failed
+switch keeps the current page and its warning before closing or reloading.
+
 If **device scope is invalid** appears when building from a planning link, return to
 **Choose installed apps**, apply valid device filters and select the apps again. No plan
 is created from the invalid scope.

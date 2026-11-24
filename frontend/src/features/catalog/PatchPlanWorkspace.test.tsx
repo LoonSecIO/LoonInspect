@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest } from "@/config/api";
 import { PatchPlanWorkspace, type PatchPlanActions } from "./PatchPlanWorkspace";
-import { forgetReviewDraft } from "./patchPlanDraft";
+import { forgetReviewDraft, forgetSubmittedReviewDraft, readReviewDraft, rememberReviewDraft } from "./patchPlanDraft";
 import type { PatchPlan } from "./patchPlanTypes";
 
 vi.mock("@/config/api", async importOriginal => ({ ...await importOriginal<typeof import("@/config/api")>(), apiRequest: vi.fn() }));
@@ -137,4 +137,55 @@ it("keeps an unsaved review across navigation when browser storage fails", async
   rendered.rerender(view("saved-plan"));
   expect((await screen.findByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Unsaved tab draft");
   expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+it("clears the matching persisted draft when a save succeeds after navigation", async () => {
+  const original = request.getMockImplementation()!;
+  let finish!: (value: PatchPlan) => void;
+  const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+  let saved = false;
+  const next = { ...plan, revision: 2, snapshot: { ...plan.snapshot, operatorReview: { owner: "Owner" } } };
+  request.mockImplementation((path, options) => options?.method === "PATCH" ? pending
+    : path === "/application-patch-plans/saved-plan" && saved ? Promise.resolve(next) : original(path, options));
+  const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace scope='{"match":"all","rules":[]}' selected={[]}
+    planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+  const rendered = render(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Owner" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save review notes" }));
+  rendered.rerender(view(null));
+  saved = true;
+  await act(async () => { finish(next); });
+  rendered.rerender(view("saved-plan"));
+  await waitFor(() => expect(screen.getByText("Example · revision 2 · Draft")).toBeTruthy());
+  expect(screen.queryByText(/This draft is from revision/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+
+it("preserves newer draft edits when an earlier save finishes after navigation", async () => {
+  const original = request.getMockImplementation()!;
+  let finish!: (value: PatchPlan) => void;
+  const pending = new Promise<PatchPlan>(resolve => { finish = resolve; });
+  request.mockImplementation((path, options) => options?.method === "PATCH" ? pending : original(path, options));
+  const view = (id: string | null) => <MemoryRouter><PatchPlanWorkspace scope='{"match":"all","rules":[]}' selected={[]}
+    planId={id} onOpen={vi.fn()} onClear={vi.fn()} /></MemoryRouter>;
+  const rendered = render(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Submitted owner" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save review notes" }));
+  rendered.rerender(view(null)); rendered.rerender(view("saved-plan"));
+  fireEvent.change(await screen.findByLabelText("Plan owner"), { target: { value: "Newer owner" } });
+  await act(async () => { finish({ ...plan, revision: 2 }); });
+  expect(JSON.parse(sessionStorage.getItem("looninspect.patch-review.tenant.operator.saved-plan")!).values.owner).toBe("Newer owner");
+  expect((screen.getByLabelText("Plan owner") as HTMLTextAreaElement).value).toBe("Newer owner");
+  expect((screen.getByRole("button", { name: "Export plan as PDF" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+
+it("does not clear a newer draft revision even when its note values match the completed save", () => {
+  const key = "looninspect.patch-review.tenant.operator.saved-plan";
+  const values = { owner: "Owner", window: "", pilot: "", recovery: "", exceptions: "", approval: "" };
+  rememberReviewDraft(key, { revision: 2, values });
+  expect(forgetSubmittedReviewDraft(key, { revision: 1, values })).toBe(true);
+  expect(readReviewDraft(key)).toEqual({ revision: 2, values });
 });
