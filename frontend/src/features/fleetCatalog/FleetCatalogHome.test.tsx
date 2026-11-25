@@ -34,11 +34,14 @@ const titles: FleetCatalog = { enabled: true, source: "fleetdm/fleet", total: 3,
   installedTitlesWithHistory: 0, items: [title("stable"), title("example@esr"), title("new")],
   state: { checkedAt: "2026-11-20T00:00:00Z", changedAt: "2026-11-19T00:00:00Z", outcome: "ok", detail: null, appCount: 3,
     historyCheckedAt: null, historyDetail: null, historyOutcome: null } };
-/** The report, Fleet's titles, Check now and the builder's options on their own routes, and no AI for anything else. */
-const serve = (answer: (path: string) => unknown, check: () => unknown = () => ({})) => request.mockImplementation(async path =>
-  path.startsWith("/fleet-catalog/migration") ? answer(path) : path.startsWith("/fleet-catalog?") ? titles
-    : path === "/fleet-catalog/refresh" ? check() : path.includes("scope-options") ? options : { available: false, providers: [] });
+/** The report, Fleet's titles, Check now, the builder's options and the briefing (#911: off unless `brief` answers by method) on
+ *  their own routes, and no AI for anything else. */
+const serve = (answer: (path: string) => unknown, check: () => unknown = () => ({}),
+  brief: (method?: string) => unknown = () => ({ available: false, reason: "flag_off", providers: [] })) => request.mockImplementation(async (path, init) =>
+  path.startsWith("/fleet-catalog/migration") ? answer(path) : path.startsWith("/fleet-catalog?") ? titles : path === "/fleet-catalog/refresh" ? check()
+    : path.startsWith("/fleet-catalog/briefing") ? brief(init?.method) : path.includes("scope-options") ? options : { available: false, providers: [] });
 const asked = () => request.mock.calls.filter(([path]) => path.startsWith("/fleet-catalog/migration"));
+const posts = () => request.mock.calls.filter(([path, init]) => path.startsWith("/fleet-catalog/briefing") && init?.method === "POST");
 const filterOf = (path: string) => new URLSearchParams(path.split("?")[1]).get("deviceScope");
 const row = (name: string) => within(screen.getByText(name).closest("tr")!);
 const open = (query = "") =>
@@ -69,6 +72,23 @@ it("asks for the address's filter as it stands, aborts it for an applied one, an
   expect(screen.queryByText("Current")).toBeNull();
   expect(await screen.findByText("Current")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /briefing/i })).toBeNull();
+});
+
+it("discards a pending briefing when the device filter changes, and asks with the report's own query", async () => { // #857's
+  const stale = deferred<unknown>(), saved = { available: true, reason: null, providers: [{ provider: "anthropic", model: "m" }] };
+  serve(() => report([app("Scoped")]), undefined, method => method === "POST" ? stale.promise : saved);
+  open(`?${new URLSearchParams({ deviceScope: JSON.stringify({ match: "all", connectionId: 3, rules: [] }) })}`);
+  fireEvent.click(await screen.findByRole("button", { name: words.briefing.generate }));
+  const [[sent, init]] = posts();
+  expect(sent.split("?")[1]).toBe(asked()[0][0].split("?")[1]);
+  await screen.findByRole("option", { name: "Jamf 7" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Jamf connection" }), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply device filter" }));
+  await screen.findByRole("button", { name: words.briefing.generate }); // the new filter's report, and its own panel
+  expect(init?.signal?.aborted).toBe(true);
+  await act(async () => stale.resolve({ outcome: "selected", reason: null, highlights: [{ code: "apps_overdue", count: 5 }], provider: "anthropic",
+    model: "m", error: null }));
+  expect([screen.queryByText(words.briefing.codes.apps_overdue(5)), posts().length]).toEqual([null, 1]);
 });
 
 it("counts only verified gaps in both catalogs, and words each row in #903's copy", async () => {

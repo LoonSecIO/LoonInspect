@@ -380,6 +380,13 @@ patch-policy verdict and its installed builds' vulnerability evidence ([`trouble
   assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
   line that reads the build's one catalog answer and already rests on it.
 
+**Migration briefing** (#911), under the list's table, asks a saved provider which of the report's own counts should lead for the Macs in the
+device filter ([`ai-layer.md`](ai-layer.md#fleet-migration-briefing-v140)). It shows while the Fleet catalog flag, AI features, AI-inference consent
+(granted on Settings › AI) and a saved provider are all on, and it sends only when **Generate briefing** is pressed: at most seven counts, and no app,
+bundle ID, version, connection or Mac. The reply can only choose among those counts, and the page words them in English or German. When the reply
+is unusable or the provider fails, the report's own first counts show instead, under a sentence saying why. Nothing is stored
+([`troubleshooting.md`](troubleshooting.md) §27 step 17).
+
 **An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
 and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet titles that carry the bundle identifier, the
 Jamf Patch titles the builds were matched to, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13).

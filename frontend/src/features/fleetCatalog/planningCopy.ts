@@ -1,3 +1,4 @@
+import type { BriefingCode } from "./briefing";
 import type { MigrationScope, PriorityReason } from "./migrationTypes";
 import type { CoverageKey, PolicySummary, PortfolioEmpty, PortfolioSort, ReviewFilter } from "./portfolioView";
 
@@ -78,7 +79,31 @@ export const fleetPlanningEnglish = {
   partialCatalog: "Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why.",
   notRead: "Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.",
   noJamf: "Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.",
-  outsideNote: "Both catalogs are fully read, and neither lists these apps’ bundle IDs."
+  outsideNote: "Both catalogs are fully read, and neither lists these apps’ bundle IDs.",
+  // The migration briefing (#911): codes and counts in, so each lead and line is worded here. `name` goes into main's
+  // `changes.prompt.statusFailed`; a refusal's `detail` is shown as sent.
+  briefing: {
+    name: "the migration briefing",
+    title: "Migration briefing",
+    disclosure: "Generate briefing sends up to seven counts for the Macs in the device filter, and no app, version or Mac name, to the provider picked here. It chooses up to three to lead with. Nothing is stored.",
+    provider: "Provider and model",
+    generate: "Generate briefing",
+    pending: "Preparing briefing…",
+    selected: (who: string) => `${who} chose these counts to lead with.`,
+    unusable: (who: string) => `${who} answered, but not with counts this page can use, so the report’s first counts are shown.`,
+    error: (why: string) => `The AI provider did not answer, so the report’s first counts are shown (${why}). Settings › AI has its test box.`,
+    nothingToRank: "Nothing to rank: apart from their count, the Macs in the device filter show none of the six things a briefing weighs, so nothing was sent.",
+    failed: (reason: string) => `The migration briefing could not be prepared: ${reason}. Check docker compose logs app.`,
+    codes: {
+      apps_overdue: n => `${english(n, "app", "apps")} with an installed build outside the confirmed Jamf Patch rule.`,
+      apps_with_kev: n => `${english(n, "app", "apps")} with an older installed build carrying a KEV-listed finding.`,
+      ambiguous_apps: n => `${english(n, "app", "apps")} with a Fleet identity that needs review.`,
+      incomplete_comparisons: n => `${english(n, "app", "apps")} with an older build lacking an exact finding comparison.`,
+      recurring_review: n => `${english(n, "app", "apps")} with an observed gap and repeated Fleet catalog updates.`,
+      exact_candidates: n => `${english(n, "app", "apps")} with an exact Fleet catalog candidate.`,
+      scoped_macs: n => `${english(n, "Mac", "Macs")} in the device filter.`
+    } satisfies Record<BriefingCode, (count: number) => string>
+  }
 };
 
 export type FleetPlanningCopy = typeof fleetPlanningEnglish;
@@ -144,5 +169,27 @@ export const fleetPlanningGerman: FleetPlanningCopy = {
   partialCatalog: "Fleets Katalog wurde nur teilweise gelesen, daher können Titel oder Kanäle fehlen. Die Statuszeile des Fleet-Katalogs nennt den Grund.",
   notRead: "Die Fleet-Abdeckung ist unbekannt: Fleets Katalog wurde noch nicht gelesen. Die Statuszeile des Fleet-Katalogs nennt den Grund.",
   noJamf: "Die Jamf-Patch-Abdeckung ist unbekannt: Es sind noch keine Jamf-Patch-Titel synchronisiert, daher zählt keine App als „In keinem der Kataloge“. Öffnen Sie Geräte › Anwendungen › Jamf Patch und klicken Sie auf Jetzt synchronisieren.",
-  outsideNote: "Beide Kataloge sind vollständig gelesen, und keiner führt die Bundle-IDs dieser Apps."
+  outsideNote: "Beide Kataloge sind vollständig gelesen, und keiner führt die Bundle-IDs dieser Apps.",
+  briefing: {
+    name: "die Migrationsübersicht",
+    title: "Migrationsübersicht",
+    disclosure: "Übersicht erstellen sendet bis zu sieben Zahlen zu den Macs im Gerätefilter an den hier gewählten Anbieter, aber keine App, keine Version und keinen Mac-Namen. Er wählt bis zu drei davon aus, die zuerst genannt werden. Nichts wird gespeichert.",
+    provider: "Anbieter und Modell",
+    generate: "Übersicht erstellen",
+    pending: "Übersicht wird erstellt…",
+    selected: who => `${who} hat diese Zahlen an den Anfang gestellt.`,
+    unusable: who => `${who} hat geantwortet, aber nicht mit Zahlen, die diese Seite verwenden kann, daher stehen hier die ersten Zahlen des Berichts.`,
+    error: why => `Der KI-Anbieter hat nicht geantwortet, daher stehen hier die ersten Zahlen des Berichts (${why}). Unter Einstellungen › KI gibt es das Testfeld.`,
+    nothingToRank: "Nichts zu gewichten: Abgesehen von ihrer Anzahl zeigen die Macs im Gerätefilter keinen der sechs Punkte, die eine Übersicht abwägt, daher wurde nichts gesendet.",
+    failed: reason => `Die Migrationsübersicht konnte nicht erstellt werden: ${reason}. Prüfen Sie docker compose logs app.`,
+    codes: {
+      apps_overdue: n => `${german(n, "App", "Apps")} mit einem installierten Build außerhalb der bestätigten Jamf-Patch-Regel.`,
+      apps_with_kev: n => `${german(n, "App", "Apps")} mit einem älteren installierten Build, der einen Fund aus der KEV-Liste trägt.`,
+      ambiguous_apps: n => `${german(n, "App", "Apps")} mit einer Fleet-Identität, die geprüft werden muss.`,
+      incomplete_comparisons: n => `${german(n, "App", "Apps")} mit einem älteren Build ohne exakten Fundvergleich.`,
+      recurring_review: n => `${german(n, "App", "Apps")} mit einer beobachteten Lücke und wiederholten Updates im Fleet-Katalog.`,
+      exact_candidates: n => `${german(n, "App", "Apps")} mit einem exakten Kandidaten im Fleet-Katalog.`,
+      scoped_macs: n => `${german(n, "Mac", "Macs")} im Gerätefilter.`
+    }
+  }
 };

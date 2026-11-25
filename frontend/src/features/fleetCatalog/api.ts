@@ -1,4 +1,5 @@
 import { apiRequest } from "@/config/api";
+import type { Provider } from "@/features/ai/api";
 import type { MigrationDetail, MigrationPortfolio } from "@/features/fleetCatalog/migrationTypes";
 import type { FleetCatalog, FleetCatalogState, FleetTitleHistory } from "@/features/fleetCatalog/types";
 
@@ -24,6 +25,18 @@ export function fleetScopeQuery(params: URLSearchParams): string {
 /** The apps on the Macs `scope` (`fleetScopeQuery`) selects, against Fleet's and Jamf's catalogs. */
 export function getMigrationReport(scope: string, signal?: AbortSignal): Promise<MigrationPortfolio> {
   return apiRequest<MigrationPortfolio>(`/fleet-catalog/migration${scope ? `?${scope}` : ""}`, { signal });
+}
+
+/** Whether a migration briefing can be asked for (#910): main's Prompt bar status, or the Fleet catalog flag's 409. Unknown
+ *  until `isPromptStatus` reads it. */
+export function getBriefingStatus(signal?: AbortSignal): Promise<unknown> {
+  return apiRequest<unknown>("/fleet-catalog/briefing", { signal });
+}
+
+/** Which of the report's counts for the Macs `scope` (`fleetScopeQuery`, sent unchanged) selects lead, as the saved `provider`
+ *  ranks them. Unknown until `isBriefing` reads it. */
+export function requestBriefing(scope: string, provider: Provider, signal?: AbortSignal): Promise<unknown> {
+  return apiRequest<unknown>(`/fleet-catalog/briefing${scope ? `?${scope}` : ""}`, { method: "POST", json: { provider }, signal });
 }
 
 /** One installed app (`apps`, by app hash) or Fleet title (`titles`, by slug) on the Macs `scope` selects,
