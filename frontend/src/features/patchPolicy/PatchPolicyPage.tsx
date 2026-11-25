@@ -21,7 +21,8 @@ export function PatchPolicyPage() {
   const { t } = useLocale();
   const copy = t.patchPolicy;
   const [params, setParams] = useSearchParams();
-  const appId = params.get("app") ?? REPLAY_INDEX[0].id;
+  // `null` only when the build ships no replay and the address names none: a sentence, never zeros.
+  const appId: string | null = params.get("app") ?? REPLAY_INDEX.at(0)?.id ?? null;
   const entry = REPLAY_INDEX.find((each) => each.id === appId) ?? null;
   const asked = params.get("policy");
   const stop: SliderStop = isSliderStop(asked) ? asked : SLIDER_STOPS[0];
@@ -69,7 +70,7 @@ export function PatchPolicyPage() {
           {catalogFailed && <p className="text-xs text-destructive">{copy.catalogFailed}</p>}
           {titles?.length === 0 && !catalogFailed && <p className="text-xs text-muted-foreground">{copy.catalogEmpty}</p>}
         </div>
-        {!entry && <p className="text-sm">{copy.unknownApp(appId)}</p>}
+        {!entry && <p className="text-sm">{appId === null ? copy.noReplays : copy.unknownApp(appId)}</p>}
         {entry && !result && <p className="text-sm text-muted-foreground">{copy.replayLoading}</p>}
         {entry && result?.refusal && (
           <div className="space-y-1 text-sm">

@@ -266,3 +266,10 @@ has no free-text channel to the page at all. Nothing is saved without a person p
 Confirm (P4). `tests/test_patch_policy_rules.py` holds the corpus: Apple's on-device model's
 own replies to 40 statements, the wrong ones included.
 
+## Fleet migration briefing boundary (v1.4.0)
+
+This slot sends no fleet text (P1): up to seven integer counts under fixed codes, built by code from the migration report, with the instructions
+apart from them (P2). Its output is a closed list, one to three distinct codes the request carried, and any other reply is refused whole; the page
+words each code itself, so the model has no text channel to the page (P4). `FleetBriefing.tsx` is in S4's text-only scan. Nothing it returns is
+stored or applied: it only picks which of the report's own counts lead (P5). `tests/test_fleet_briefing.py` holds the reply corpus, and
+`tests/test_fleet_briefing_db.py` what leaves.

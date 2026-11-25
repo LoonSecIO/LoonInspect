@@ -5,10 +5,13 @@
  *  the permission are stubbed; nothing is fetched. */
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/config/api";
 import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
 import type { FleetCatalog, FleetCatalogState, FleetCatalogTitle, FleetTitleHistory } from "@/features/fleetCatalog/types";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 vi.mock("@/i18n/LocaleContext", async () => {
@@ -98,15 +101,26 @@ const HISTORY: FleetTitleHistory = {
   ]
 };
 
+const refreshed = vi.fn();
+const COUNTS = { alpha: 2, gamma: 0 };
+
+/** The search and the box held as the Fleet titles view holds them, the box ticked; Alpha is on 2 of the filter's Macs. */
+function Scoped() {
+  const [search, setSearch] = useState("");
+  const [installedOnly, setInstalledOnly] = useState(true);
+  return <FleetCatalogPage scope={{ search, setSearch, installedOnly, setInstalledOnly, counts: COUNTS, onRefresh: refreshed, titleHref: slug => `/titles/${slug}` }} />;
+}
+
 /** Renders the page and lets the first read land. */
 async function open(answer: FleetCatalog) {
   api.getFleetCatalog.mockResolvedValue(answer);
   await act(async () => {
-    render(<FleetCatalogPage />);
+    render(<MemoryRouter><Scoped /></MemoryRouter>);
   });
 }
 
 beforeEach(() => {
+  refreshed.mockReset();
   permission.held = true;
   api.getFleetCatalog.mockReset();
   api.refreshFleetCatalog.mockReset();
@@ -122,7 +136,7 @@ describe("the Fleet catalog tab", () => {
     expect(screen.getByRole("status").textContent).toBe(en.fleetCatalog.statusNever);
     expect(screen.getByText(en.fleetCatalog.emptyNeverCheckedCanCheck)).toBeTruthy();
     expect(screen.getByRole("button", { name: en.fleetCatalog.checkNow })).toBeTruthy();
-    expect(api.getFleetCatalog).toHaveBeenCalledExactlyOnceWith(true); // installed titles only, by default
+    expect(api.getFleetCatalog).toHaveBeenCalledExactlyOnceWith(false); // the whole catalog, which the box filters as held
   });
 
   it("lists the titles with Macs counted, and a version move with the version before it", async () => {
@@ -149,17 +163,17 @@ describe("the Fleet catalog tab", () => {
     expect(screen.queryByRole("button", { name: en.fleetCatalog.checkNow })).toBeNull();
   });
 
-  it("asks for the whole catalog when the box is unticked, and shows a dash, not a zero, for a title on no Mac", async () => {
-    await open(catalog());
-    api.getFleetCatalog.mockResolvedValue(catalog({ items: [ALPHA, GAMMA], total: 2 }));
+  it("shows a title on none of the filter's Macs once the box is unticked, without reading again, with a dash, not a zero, for no Mac", async () => {
+    await open(catalog({ items: [ALPHA, GAMMA], total: 2 }));
+    expect(screen.queryByText("Gamma")).toBeNull();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("checkbox"));
     });
 
-    expect(api.getFleetCatalog).toHaveBeenLastCalledWith(false);
+    expect(api.getFleetCatalog).toHaveBeenCalledExactlyOnceWith(false);
     const cells = Array.from(screen.getByText("Gamma").closest("tr")?.querySelectorAll("td") ?? []).map((cell) => cell.textContent);
-    expect(cells).toEqual([`Gamma${en.fleetCatalog.sourceLink}`, "com.example.gamma", "2.0", "0", "-", en.fleetCatalog.notMoved]);
+    expect(cells).toEqual([`Gamma${en.fleetCatalog.sourceLink}`, "com.example.gamma", "2.0", "0", "0", "-", en.fleetCatalog.notMoved]);
     const source = screen.getByRole("link", { name: en.fleetCatalog.sourceLabel("Gamma") });
     expect(source.getAttribute("href")).toBe("https://github.com/fleetdm/fleet/blob/main/ee/maintained-apps/outputs/gamma/darwin.json");
     expect(source.getAttribute("target")).toBe("_blank");
@@ -172,8 +186,15 @@ describe("the Fleet catalog tab", () => {
       fireEvent.change(screen.getByPlaceholderText(en.fleetCatalog.searchPlaceholder), { target: { value: "zzz" } });
     });
 
+    expect(screen.getByRole<HTMLInputElement>("checkbox").checked).toBe(true); // `Scoped` ticks the box
     expect(screen.getByText(en.fleetCatalog.emptyNoMatchInstalled)).toBeTruthy();
     expect(screen.queryByText("Alpha")).toBeNull();
+  });
+
+  it("says no title is on a Mac the filter selects, naming the box by its own label in both languages", async () => {
+    await open(catalog({ items: [GAMMA] }));
+    expect(screen.getByText(en.fleetCatalog.emptyNoneInstalled(953))).toBeTruthy();
+    for (const words of [en.fleetCatalog, de.fleetCatalog]) expect(words.emptyNoneInstalled(953)).toContain(words.installedOnly);
   });
 
   it("shows the server's sentence when Check now is refused, and reads the page again either way", async () => {
@@ -187,6 +208,7 @@ describe("the Fleet catalog tab", () => {
 
     expect(screen.getByText(refusal)).toBeTruthy();
     expect(api.getFleetCatalog).toHaveBeenCalledTimes(2); // a failed check still wrote what it found
+    expect(refreshed).toHaveBeenCalledOnce(); // and the counts for the filter are read again
   });
 
   it("dates the latest version from the version history when it has one, and says how far the history has got", async () => {
@@ -212,9 +234,10 @@ describe("the Fleet catalog tab", () => {
   it("opens a title's history from its row, and Read history reads it and lists the versions newest first", async () => {
     await open(catalog());
     api.getTitleHistory.mockResolvedValue(NEVER_READ);
+    expect(screen.getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/titles/alpha"); // the name opens its page (#906)
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+      fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyToggleLabel("Alpha") }));
     });
     expect(api.getTitleHistory).toHaveBeenCalledExactlyOnceWith("alpha");
     expect(screen.getByText(en.fleetCatalog.historyNotRead)).toBeTruthy();
