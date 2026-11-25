@@ -399,6 +399,45 @@ async def test_an_index_only_title_makes_the_snapshot_partial_and_keeps_its_prev
     assert (await _titles(db))["alpha"].latest_version == "2.0"
 
 
+async def test_tree_invalidation_reconciles_legacy_cache_without_reloading_manifests(db, github):
+    """The 1.3.0 upgrade marks a read catalog partial, checks it early, and reads only the manifest it lacks."""
+    from importlib import import_module
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    from app.core import fleet_catalog as fc
+    from app.models.schema import FleetCatalogState
+
+    await fc.check(db, transport=github.transport)
+    github.put("python@3.13+", "Versioned title", "org.fixture.versioned", "3.13")
+    state = await db.get(FleetCatalogState, 1)
+    # A pre-upgrade reader saw this complete upstream tree but skipped its special slug.
+    state.tree_sha = github.tree_sha
+    await db.commit()
+
+    def migrate(sync_db):
+        migration = import_module("migrations.versions.b13008440001_fleet_catalog_slug_refresh")
+        with Operations.context(MigrationContext.configure(sync_db.connection())):
+            migration.downgrade()  # Restore the shipped schema before exercising the new upgrade.
+            migration.upgrade()
+
+    await db.run_sync(migrate)
+    await db.commit()
+    db.expire_all()
+    state = await db.get(FleetCatalogState, 1)
+    assert state.tree_sha is None and state.snapshot_status == "partial" and fc.due(state, datetime.now(UTC))
+    state.outcome = fc.OUTCOME_REFUSED
+    assert not fc.due(state, datetime.now(UTC))
+    github.requests.clear()
+    await fc.check(db, transport=github.transport)
+    manifests = [r.url.path for r in github.requests if r.url.path.endswith("/darwin.json")]
+    assert len(manifests) == 1 and manifests[0].endswith("/python@3.13+/darwin.json")
+    github.requests.clear()
+    assert (await fc.check(db, transport=github.transport)).outcome == "unchanged"
+    assert len(github.requests) == 1
+
+
 # --- who makes a check happen ---------------------------------------------------------------
 
 
