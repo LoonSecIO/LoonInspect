@@ -106,6 +106,8 @@ class AuditAction(StrEnum):
     # A patching rule drafted from the stated policy. The draft is never saved; confirming
     # one is `patching-policy.updated`.
     AI_PATCH_POLICY_RULES = "ai.patch-policy-rules.sent"
+    # The migration report's AI briefing (#910): which highlights a provider chose, or why none. Never the counts.
+    AI_FLEET_CATALOG_BRIEFING = "ai.fleet-catalog-briefing.sent"
     SHARING_UUID_RESET = "sharing.uuid.reset"
     # An administrator's Send now (#408): data left the box because a person asked, not
     # because the schedule came round, so it is on the trail beside the tier it sent under.
