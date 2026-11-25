@@ -180,9 +180,10 @@ STOPS = {
         "POST /api/jamf-patch/sync",
     ],
     "the connection holds no Jamf credential": ["POST /api/devices/{device_id}/refresh"],
-    "the Fleet catalog flag is off: the check, a title's history and the migration detail stop at the flag": [
+    "the Fleet catalog flag is off: each is refused at the flag, before anything asks GitHub or an AI provider": [
         *("POST /api/fleet-catalog/refresh", "GET /api/fleet-catalog/{slug}/history", "POST /api/fleet-catalog/{slug}/history"),
         *("GET /api/fleet-catalog/migration/apps/{app_hash}", "GET /api/fleet-catalog/migration/titles/{slug}"),
+        *("GET /api/fleet-catalog/briefing", "POST /api/fleet-catalog/briefing"),
     ],
 }
 STOPPED = {route: why for why, routes in STOPS.items() for route in routes}

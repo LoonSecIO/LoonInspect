@@ -1321,6 +1321,95 @@
         "title": "AuthStatusOut",
         "type": "object"
       },
+      "BriefingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "BriefingIn",
+        "type": "object"
+      },
+      "BriefingOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/Highlight"
+            },
+            "title": "Highlights",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "enum": [
+              "selected",
+              "fallback"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "nothing_to_rank",
+                  "unusable",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "highlights",
+          "outcome"
+        ],
+        "title": "BriefingOut",
+        "type": "object"
+      },
       "BuildPlan": {
         "additionalProperties": false,
         "properties": {
@@ -5780,6 +5869,33 @@
           "events"
         ],
         "title": "HeldEvents",
+        "type": "object"
+      },
+      "Highlight": {
+        "properties": {
+          "code": {
+            "enum": [
+              "apps_overdue",
+              "apps_with_kev",
+              "ambiguous_apps",
+              "incomplete_comparisons",
+              "recurring_review",
+              "exact_candidates",
+              "scoped_macs"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
+        ],
+        "title": "Highlight",
         "type": "object"
       },
       "HostDetectionOut": {
@@ -16380,6 +16496,87 @@
           }
         },
         "summary": "Read Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/briefing": {
+      "get": {
+        "description": "Whether a briefing can be asked for: the Fleet catalog flag, then the AI switches as every AI surface reads them.",
+        "operationId": "briefing_status_api_fleet_catalog_briefing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Briefing Status",
+        "tags": [
+          "fleet-catalog"
+        ]
+      },
+      "post": {
+        "description": "Which of the report's counts for the Macs `deviceScope` selects lead, as a saved provider ranks them.",
+        "operationId": "briefing_api_fleet_catalog_briefing_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Briefing",
         "tags": [
           "fleet-catalog"
         ]
