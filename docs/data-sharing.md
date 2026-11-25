@@ -464,8 +464,8 @@ every count it states), keeps the last two copies, and answers only tenants whos
 `off`. A refusal keeps the held copy answering and is one state an operator can read on
 Settings › Support ([`troubleshooting.md`](troubleshooting.md) §32). An absent `patch_policy`
 is a valid answer, recorded as *not published*. An instance with no network reads the same
-document from `PATCH_POLICY_FEED_FILE` instead, and then follows no link at all. Nothing about
-a fleet is sent to receive it: the request body is unchanged.
+document from `PATCH_POLICY_FEED_FILE` instead, and then follows no link at all. Receiving it
+adds nothing to what the exchange sends: the request body is unchanged.
 
 Semantics the server may rely on:
 

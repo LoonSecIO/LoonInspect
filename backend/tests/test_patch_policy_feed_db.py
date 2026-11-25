@@ -345,6 +345,53 @@ async def test_the_feed_file_is_read_once_per_change_and_the_exchange_link_is_th
     assert view.from_file is True and view.source == "file"
 
 
+async def test_a_malformed_feed_file_is_refused_in_words_and_read_once(db, clean, monkeypatch, tmp_path) -> None:
+    """The file is read at container startup, so a document the check cannot even parse — here,
+    JSON nested past the parser's depth — must come back as `invalid` with a state row, not as an
+    exception out of the lifespan. And it is marked seen: an unchanged bad file is not re-read and
+    re-logged every five minutes."""
+    path = tmp_path / "patch-policy.json"
+    path.write_bytes(b"[" * 200_000 + b"]" * 200_000)
+    monkeypatch.setattr(settings, "patch_policy_feed_file", str(path))
+
+    assert await feed.load_feed_file(db) == "invalid"
+    state = await _state(db)
+    assert (state.source, state.outcome, state.host) == ("file", "invalid", str(path))
+    assert state.detail == "it is not JSON this container reads (it nests more deeply than any document does)"
+    assert await feed.load_feed_file(db) is None
+    assert await _held(db) == []
+
+
+async def test_a_defect_while_taking_the_file_is_recorded_and_never_raised(db, clean, monkeypatch, tmp_path, caplog) -> None:
+    """Belt and braces under the total check: anything else that goes wrong while the file is
+    taken is logged as a line to report, recorded as `invalid`, and the copy held keeps answering."""
+    await feed.deliver_from_exchange(db, _offer(DOC["doc_id"]), transport=_serving(GZ))
+    path = tmp_path / "patch-policy.json.gz"
+    path.write_bytes(_another()[1])
+    monkeypatch.setattr(settings, "patch_policy_feed_file", str(path))
+
+    async def defect(*_args):
+        raise RuntimeError("a defect")
+
+    monkeypatch.setattr(feed, "_take_file", defect)
+    with caplog.at_level("ERROR"):
+        assert await feed.load_feed_file(db) == "invalid"
+    assert (
+        caplog.records[-1]
+        .getMessage()
+        .startswith("patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure (RuntimeError), not a refusal")
+    )
+    state = await _state(db)
+    assert (state.outcome, state.detail) == ("invalid", "an unexpected failure (RuntimeError) that the container log reports")
+    assert await _held(db) == [(DOC["doc_id"], True)]
+    view = await feed.feed_view(db, now=datetime(2026, 11, 24, tzinfo=UTC))
+    assert view.sentence == (
+        "LoonSec's patch-policy data failed its check (an unexpected failure (RuntimeError) that the container log "
+        "reports), so it was not stored. The copy dated 2026-11-23 is still used."
+    )
+    assert await feed.load_feed_file(db) is None
+
+
 async def test_an_instance_with_the_file_set_and_nothing_read_yet_says_so(db, clean, monkeypatch) -> None:
     monkeypatch.setattr(settings, "patch_policy_feed_file", "/app/data/patch-policy.json.gz")
     view = await feed.feed_view(db)

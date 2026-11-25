@@ -110,8 +110,8 @@ spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never star
 | **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
 | **Z** | §22 | A reference replay that shipped with the build is refused after a reload |
 | **AA** | §32 | LoonSec names no patch-policy document, or only an old one, two days running |
-| **AB** | §32 | A downloaded patch-policy document is refused by its check two exchanges running |
-| **AC** | §32 | The store refuses the patch-policy link two exchanges running, with the clock right |
+| **AB** | §32 | A patch-policy document is refused by its check two exchanges running, or fails unexpectedly |
+| **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
 
 ## 0. The four things you can read
 
@@ -3916,7 +3916,8 @@ LoonSec knows it, and the public release records each app's dates come from. It 
 the vulnerability corpus does (§5): a signed link riding the daily data-sharing exchange,
 downloaded only when the document changed, checked whole, and held on this instance. An
 air-gapped instance reads it from a file instead (step 8). It answers only for an organization
-whose data sharing is on, as the corpus does. Nothing about the organization is sent to get it.
+whose data sharing is on, as the corpus does: it rides the exchange that organization already
+makes, and receiving it adds nothing to what that exchange sends.
 
 Where to read its state: Settings › Support › **LoonSec patch-policy data**, one sentence, for
 every account that holds **app:read**; `GET /api/patch-policy/apps`, whose `feed.state` and
@@ -3942,18 +3943,24 @@ stored, and nothing is deleted to make room for one.
    - *sent*, and the sentence has not moved after a reload → read the container log for
      `patch-policy data could not be stored`: the database refused the write. Check
      `docker compose logs db` and free volume space, then **Send now**.
+     `patch-policy data not read from PATCH_POLICY_FEED_FILE: the database session failed` is
+     the same check on an instance that reads the file.
 
    *…has not been read from PATCH_POLICY_FEED_FILE yet* is the same state on an instance that
    reads the file (step 8): the file is read at startup and again within five minutes of any
    change, so this lasts only until the container has started; if it stays, the container log
-   names what was found.
+   names what was found, and `patch-policy data from PATCH_POLICY_FEED_FILE could not be stored`
+   is the database, as in the bullet above.
 3. ***LoonSec's last exchange carried no patch-policy data.*** The exchange answered and named
    no document. Nothing on this instance is wrong, and a copy already held keeps answering
    (the sentence then ends *Showing the copy dated …*). If it reads the same after the next
    day's exchange, that is reportable state **AA**, below.
-4. ***This build reads patch_walk/1; LoonSec now publishes only …*** LoonSec has moved to a newer
-   way of reading the document and this build reads only the older one. LoonSec keeps
-   publishing the older one for at least 90 days after a move, so this means the instance has
+4. ***This build reads patch_walk/1; LoonSec's last exchange named only …*** The exchange named
+   the document only for a newer way of reading it. Once, it is usually a passing gap at
+   LoonSec: while LoonSec publishes two ways at once, after a move, an exchange that could not
+   read one of them leaves it out for a few minutes, and the next exchange (or **Send now**)
+   names it again; nothing needs updating. If the next exchange names the same, LoonSec has moved
+   on: it keeps publishing the older way for at least 90 days after a move, so the instance has
    stayed behind longer than that. Update LoonInspect (§10); the held copy keeps answering until
    then.
 5. ***The patch-policy file could not be downloaded from …*** The host it names is the object
@@ -3974,6 +3981,11 @@ stored, and nothing is deleted to make room for one.
      Fix the proxy; a refused link with no proxy in the way is reportable state **AC**.
    - *…passed the …-byte ceiling* → far more came back than the document is; something other
      than the store answered. Same as the line above.
+   - *…from the exchange's link: the exchange's patch_policy field is …*, *…entry is not an
+     object*, *…entry carries no sha256 signature* or *…entry carries no link* → LoonSec's
+     exchange answered with something under `patch_policy` that is not a link, so nothing was
+     dialled. Nothing on this instance is wrong; the same sentence after the next exchange is
+     reportable state **AC**.
 6. ***LoonSec's patch-policy data failed its check (…), so it was not stored.*** The document
    arrived and was refused whole; the copy it would have replaced is still used (the sentence
    says which). The words in brackets are the check that failed:
@@ -3986,6 +3998,11 @@ stored, and nothing is deleted to make room for one.
      document.
    - *it lacks …* or *its own counts disagree (…)* → the document does not add up in its own
      key names. That is LoonSec's to fix.
+   - *its structure could not be checked (…)*, or *an unexpected failure (…) that the container
+     log reports* → the check met a shape it has no words for, or failed for a reason that is not
+     a refusal. That it reaches you without a sentence is a gap on our side: reportable state
+     **AB**, with the log line that begins `patch-policy data` and the error type and stack
+     locations logged beneath it.
 
    The next exchange tries again. The same sentence after the next day's exchange, with no
    proxy in the way, is reportable state **AB**.
@@ -4006,7 +4023,16 @@ stored, and nothing is deleted to make room for one.
    denied)*, the file is not readable by the container's user:
    `docker compose exec --user root app chmod a+r /app/data/patch-policy.json.gz`. *(No such file
    or directory)* is a path that is not inside the container: the path is the container's, not
-   the host's.
+   the host's. *…the file is larger than the …-byte ceiling this container accepts* → the path
+   names something other than the document, which is a few hundred kilobytes: check that it is
+   the `.json.gz` LoonSec provided.
+
+A container log line `patch-policy data not updated: an unexpected failure, not a refusal` (after
+an exchange) or `patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure`
+(at startup or a tick) is a defect in this build, not a fault on yours. The container keeps
+running, the held copy keeps answering, and the next exchange or change to the file tries again.
+Report it as state **AB**, with that line, the error type and stack locations logged with it, and
+the build (§8).
 
 **AA.** The exchange answers and LoonSec names no patch-policy document, or names the same
 document dated more than three days ago, on two consecutive days. Report the sentence as worded,
@@ -4014,12 +4040,14 @@ document dated more than three days ago, on two consecutive days. Report the sen
 from Settings › Support (§8).
 
 **AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
-proxy between the container and the store. Report the sentence as worded (the bracketed check is
-the part that matters), `feed.host`, and the build (§8). Nothing is wrong with the copy held,
-which keeps answering.
+proxy between the container and the store; or the check, or the file read, fails with an
+unexpected failure rather than a refusal (step 6, step 8). Report the sentence as worded (the
+bracketed check is the part that matters), `feed.host`, any `patch-policy data` log line naming
+an unexpected failure with the stack locations beneath it, and the build (§8). Nothing is wrong
+with the copy held, which keeps answering.
 
-**AC.** The store refuses the link (`HTTP 403` or `404`), or the exchange names a link this
-container refuses, on two consecutive exchanges, with the container's clock right and no proxy
-in the way. Report the sentence as worded, `feed.host` and `feed.httpStatus`, and the build (§8).
+**AC.** The store refuses the link (`HTTP 403` or `404`), the exchange names a link this
+container refuses, or the exchange's `patch_policy` entry is not a link at all (step 5), on two
+consecutive exchanges, with the container's clock right and no proxy in the way. Report the sentence as worded, `feed.host` and `feed.httpStatus`, and the build (§8).
 The link itself is a credential that expires: do not paste it anywhere, and nothing here stores
 or logs it.

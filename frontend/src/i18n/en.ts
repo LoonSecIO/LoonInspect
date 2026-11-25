@@ -794,7 +794,7 @@ export const en = {
     // §32 walks each one.
     patchPolicyFeed: {
       heading: "LoonSec patch-policy data",
-      help: "LoonSec's patch-policy reference document: one file for every app LoonSec references, received with the daily data-sharing exchange, or read from PATCH_POLICY_FEED_FILE on an instance with no network, and held on this instance. Nothing about this organization is sent to get it.",
+      help: "LoonSec's patch-policy reference document: one file for every app LoonSec references, received with the daily data-sharing exchange this organization already makes, or read from PATCH_POLICY_FEED_FILE on an instance with no network, and held on this instance. It comes only to an organization that shares data, and receiving it adds nothing to what the exchange sends.",
       loading: "Reading the patch-policy data's state…",
       errorLoading: "The patch-policy data's state could not be read from this instance.",
       states: {
@@ -804,7 +804,7 @@ export const en = {
         current: (asOf: string) => `Showing LoonSec's patch-policy data dated ${asOf}.`,
         stale: (asOf: string, until: string) => `Showing patch-policy data dated ${asOf}, more than three days old; the walk ends ${until}.`,
         not_published: "LoonSec's last exchange carried no patch-policy data. Nothing on this instance is wrong; report it if it lasts a day.",
-        algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec now publishes only ${published}. Update LoonInspect.`,
+        algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec's last exchange named only ${published}. If the next exchange names the same, update LoonInspect.`,
         downloadFailed: (host: string, reason: string) => `The patch-policy file could not be downloaded from ${host}: ${reason}.`,
         readFailed: (path: string, reason: string) => `The patch-policy file could not be read from ${path}: ${reason}.`,
         invalid: (reason: string) => `LoonSec's patch-policy data failed its check (${reason}), so it was not stored.`

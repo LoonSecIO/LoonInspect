@@ -736,7 +736,7 @@ export const de: Translations = {
     },
     patchPolicyFeed: {
       heading: "Patch-Policy-Daten von LoonSec",
-      help: "Das Patch-Policy-Referenzdokument von LoonSec: eine Datei für jede App, auf die LoonSec verweist, empfangen mit dem täglichen Datenaustausch oder auf einer Instanz ohne Netzwerk aus PATCH_POLICY_FEED_FILE gelesen, und auf dieser Instanz gehalten. Über diese Organisation wird dafür nichts gesendet.",
+      help: "Das Patch-Policy-Referenzdokument von LoonSec: eine Datei für jede App, auf die LoonSec verweist, empfangen mit dem täglichen Datenaustausch, den diese Organisation ohnehin führt, oder auf einer Instanz ohne Netzwerk aus PATCH_POLICY_FEED_FILE gelesen, und auf dieser Instanz gehalten. Es kommt nur zu einer Organisation, die Daten teilt, und sein Empfang fügt dem, was der Austausch sendet, nichts hinzu.",
       loading: "Der Stand der Patch-Policy-Daten wird gelesen…",
       errorLoading: "Der Stand der Patch-Policy-Daten konnte von dieser Instanz nicht gelesen werden.",
       states: {
@@ -746,7 +746,7 @@ export const de: Translations = {
         current: (asOf: string) => `Angezeigt werden die Patch-Policy-Daten von LoonSec vom ${asOf}.`,
         stale: (asOf: string, until: string) => `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt; der Durchlauf endet am ${until}.`,
         not_published: "Der letzte Austausch mit LoonSec enthielt keine Patch-Policy-Daten. Auf dieser Instanz ist nichts falsch; melden Sie es, wenn es länger als einen Tag anhält.",
-        algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; LoonSec veröffentlicht jetzt nur ${published}. Aktualisieren Sie LoonInspect.`,
+        algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}. Nennt der nächste Austausch dasselbe, aktualisieren Sie LoonInspect.`,
         downloadFailed: (host: string, reason: string) => `Die Patch-Policy-Datei konnte nicht von ${host} heruntergeladen werden: ${reason}.`,
         readFailed: (path: string, reason: string) => `Die Patch-Policy-Datei konnte nicht aus ${path} gelesen werden: ${reason}.`,
         invalid: (reason: string) => `Die Patch-Policy-Daten von LoonSec haben ihre Prüfung nicht bestanden (${reason}) und wurden nicht gespeichert.`

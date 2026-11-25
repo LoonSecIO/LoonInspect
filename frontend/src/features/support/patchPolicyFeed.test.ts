@@ -57,7 +57,7 @@ const BACKEND: [string, PatchPolicyFeed, string][] = [
   [
     "algorithm unknown",
     feed("algorithm_unknown", { ...held, detail: "patch_walk/2" }),
-    "This build reads patch_walk/1; LoonSec now publishes only patch_walk/2. Update LoonInspect. Showing the copy dated 2026-11-23."
+    "This build reads patch_walk/1; LoonSec's last exchange named only patch_walk/2. If the next exchange names the same, update LoonInspect. Showing the copy dated 2026-11-23."
   ],
   [
     "download failed",

@@ -111,9 +111,14 @@ def test_every_reportable_state_is_indexed_at_the_path_it_lives_in() -> None:
     """The letters were assigned in writing order, so they do not run in section order — K is
     in §0 and M in §5 — and the index is the only thing mapping one to the other. It is also
     the only thing that can be quietly wrong about it, which is what this pins."""
-    indexed = {letter: int(number) for letter, number in re.findall(r"^\| \*\*([A-Z]+)\*\* \| §(\d+) \|", _index(), re.M)}
+    rows = re.findall(r"^\| \*\*([A-Z]+)\*\* \| §(\d+) \|", _index(), re.M)
+    indexed = {letter: int(number) for letter, number in rows}
     written = re.findall(r"^\*\*([A-Z]+)\.\*\* ", _DOC, re.M)
 
+    # Counted before the dict above folds them: a row repeated (a merge keeping both sides of
+    # the same line, say) would otherwise collapse into one key and pass.
+    letters = [letter for letter, _ in rows]
+    assert len(letters) == len(set(letters)), "a reportable state's letter is indexed twice"
     assert len(written) == len(set(written)), "a reportable state's letter is written twice"
     assert set(indexed) == set(written), "a reportable state is written without an index row, or indexed without being written"
     # A contiguous run from A, not a pin on the last letter: the letters are handed out in

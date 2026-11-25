@@ -245,7 +245,27 @@ def read_document(data: bytes, *, expected_doc_id: str | None = None) -> Documen
     kind, schema and algorithm are this build's; `doc_id` is what the body hashes to, and is the
     one the exchange named; and every count a track states closes against the rows it lists. Only
     then may the caller write it.
+
+    **Total.** Whatever the bytes are, the answer is a `Document` or a `DocumentRefused`: the
+    check runs at container startup (`PATCH_POLICY_FEED_FILE`) as well as after an exchange, so a
+    malformed document must never surface as a bare exception. Every shape the check knows how to
+    word is worded; anything else it trips over is refused naming the exception, which is the
+    line to report (docs/troubleshooting.md §32, state AB).
     """
+    try:
+        return _read_document(data, expected_doc_id)
+    except DocumentRefused:
+        raise
+    except RecursionError:
+        raise DocumentRefused(_TOO_DEEP) from None
+    except Exception as exc:  # the check is total; the refusal names what it tripped on
+        raise DocumentRefused(f"its structure could not be checked ({type(exc).__name__})") from None
+
+
+_TOO_DEEP = "it is not JSON this container reads (it nests more deeply than any document does)"
+
+
+def _read_document(data: bytes, expected_doc_id: str | None) -> Document:
     sha256 = hashlib.sha256(data).hexdigest()
     if data[:2] == b"\x1f\x8b":
         raw = _gunzip(data)
@@ -255,6 +275,8 @@ def read_document(data: bytes, *, expected_doc_id: str | None = None) -> Documen
         body_gz = gzip.compress(data, mtime=0)
     try:
         body = json.loads(raw.decode("utf-8"))
+    except RecursionError:
+        raise DocumentRefused(_TOO_DEEP) from None
     except (UnicodeDecodeError, ValueError) as exc:
         raise DocumentRefused(f"it is not JSON ({type(exc).__name__})") from None
     if not isinstance(body, dict):
@@ -348,6 +370,9 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
         if name in seen_apps:
             return f"its own counts disagree (apps lists {name} twice)"
         seen_apps.add(name)
+        bundle_ids = app.get("bundle_ids")
+        if bundle_ids is not None and not (isinstance(bundle_ids, list) and all(isinstance(b, str) for b in bundle_ids)):
+            return f"it lacks {name}.bundle_ids as a list of bundle ids"
         tracks = app.get("tracks")
         if not isinstance(tracks, list) or not tracks:
             return f"it lacks {name}.tracks"
@@ -370,6 +395,11 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
     if track["track"] in seen:
         return f"its own counts disagree ({app} lists {track['track']} twice)"
     seen.add(track["track"])
+    # What `GET /api/patch-policy/apps` answers with must be text or nothing: a document the
+    # route could not serve is refused here, not on every page load after it was stored.
+    for key in ("label", "channel", "edition", "timeline"):
+        if track.get(key) is not None and not isinstance(track.get(key), str):
+            return f"it lacks {where} {key} as text"
     timeline = track.get("timeline")
     if timeline is not None and timeline not in timelines:
         return f"it lacks sources.timelines.{timeline}, which {where} names"
@@ -381,15 +411,24 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
         return f"it lacks the keys of a version of {where}"
     if not all(v.get("date") is None or _is_day(v.get("date")) for v in versions):
         return f"it lacks a day for a dated version of {where}"
+    problem = _promotions_problem(track.get("promotions"), len(versions))
+    if problem is not None:
+        return f"it lacks {where} promotions as {problem}"
     if not isinstance(cves, list) or not all(isinstance(row, Mapping) and isinstance(row.get("cve_id"), str) for row in cves):
         return f"it lacks {where} cves"
     if not isinstance(exclusions, Mapping) or not isinstance(exclusions.get("by_reason"), Mapping):
         return f"it lacks {where} exclusions.by_reason"
     excluded_rows = exclusions.get("cves")
-    if not isinstance(excluded_rows, list) or not all(isinstance(row, Mapping) for row in excluded_rows):
-        return f"it lacks {where} exclusions.cves"
+    if not isinstance(excluded_rows, list) or not all(
+        isinstance(row, Mapping) and isinstance(row.get("cve_id"), str) for row in excluded_rows
+    ):
+        return f"it lacks {where} exclusions.cves, each with a cve_id"
     if not isinstance(undetectable, Mapping) or not isinstance(undetectable.get("cves"), list):
         return f"it lacks {where} not_detectable"
+    if not all(
+        isinstance(row, str) or (isinstance(row, Mapping) and isinstance(row.get("cve_id"), str)) for row in undetectable["cves"]
+    ):
+        return f"it lacks {where} not_detectable.cves, each a cve_id"
     if not isinstance(counts, Mapping) or not isinstance(counts.get("clock"), Mapping):
         return f"it lacks {where} counts"
     for key in ("versions", "versions_dated", "candidates", "listed", "excluded", "not_detectable"):
@@ -459,14 +498,47 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
     return None
 
 
+def _promotions_problem(promotions: object, size: int) -> str | None:
+    """A Chrome-style promotion table, or `None` for a track without one: rows of
+    `{versions: [i, j], promoted: day}` whose index runs climb the version list without
+    overlapping. The shape the day-walk, a separate module, reads; a version range stays a run
+    of indexes LoonSec compiled, never a version this container compares. Returns what the
+    table should be, or `None` when it is fine."""
+    if promotions is None:
+        return None
+    shape = "rows of {versions: [i, j], promoted: day} climbing the version list"
+    if not isinstance(promotions, list):
+        return shape
+    above = -1
+    for row in promotions:
+        if not isinstance(row, Mapping) or not _is_day(row.get("promoted")):
+            return shape
+        run = row.get("versions")
+        if not isinstance(run, list) or len(run) != 2 or not all(_is_count(i) for i in run):
+            return shape
+        if not above < run[0] <= run[1] < size:
+            return shape
+        above = run[1]
+    return None
+
+
 def _row_problem(row: Mapping[str, object], size: int) -> str | None:
-    """One listed CVE: a clock it can use, and index runs that point into the version list."""
+    """One listed CVE: the clock it states, which must be the one the rule gives it, and index
+    runs that point into the version list.
+
+    The rule (ruled 2026-11-24): a row is placed by its first detectable day where LoonSec knows
+    it, and by NVD publication otherwise, and says which. The day-walk derives the same answer
+    from whether `detectable_at` is present, so a row whose stated clock disagrees would be
+    counted one way here and walked the other; it is refused instead.
+    """
     cve = row["cve_id"]
     clock = row.get("clock")
     if clock not in ("detectable_at", "published"):
         return f"{cve} names no clock (detectable_at or published)"
     if not _is_day(row.get(clock)):
         return f"{cve} uses the {clock} clock and has no {clock} day"
+    if clock == "published" and row.get("detectable_at") is not None:
+        return f"{cve} has a detectable_at day and says it uses the published clock"
     affected = row.get("affected")
     if not isinstance(affected, list):
         return f"{cve} lacks affected"
@@ -566,7 +638,7 @@ async def deliver_from_exchange(
     """
     if settings.patch_policy_feed_file.strip():
         # The air-gapped path is the source; the exchange's link is not dialled.
-        logger.debug("patch-policy link not followed: PATCH_POLICY_FEED_FILE is set")
+        logger.debug("patch-policy data: the exchange's link not followed, because PATCH_POLICY_FEED_FILE is set")
         return None
     host = offer.host
     try:
@@ -577,8 +649,9 @@ async def deliver_from_exchange(
             listed = ", ".join(offer.algorithms)
             await record_attempt(db, source=SOURCE_EXCHANGE, outcome=ALGORITHM_UNKNOWN, detail=listed)
             logger.warning(
-                "patch-policy data not updated: this build reads %s and LoonSec's exchange named only %s. Update "
-                "LoonInspect (docs/troubleshooting.md §32)",
+                "patch-policy data not updated: this build reads %s and LoonSec's exchange named only %s. Once is a "
+                "passing gap at LoonSec; if the next exchange names the same, update LoonInspect "
+                "(docs/troubleshooting.md §32)",
                 ALGORITHM,
                 listed,
                 extra={"state": ALGORITHM_UNKNOWN},
@@ -645,7 +718,9 @@ async def load_feed_file(db: AsyncSession) -> str | None:
     nothing was read.
 
     The same checks as a download, and the same state row with `source: file` and the path where
-    a download records the link's host. Never raises: the container log names what was found.
+    a download records the link's host. Never raises, because it runs in the container's startup:
+    a file that cannot be read, checked or stored is a logged sentence and a state row, never a
+    container that will not start. The container log names what was found.
     """
     global _file_seen
     path = settings.patch_policy_feed_file.strip()
@@ -674,8 +749,39 @@ async def load_feed_file(db: AsyncSession) -> str | None:
             extra={"state": "store_failed"},
         )
         return None
+    except Exception as exc:  # startup must survive the file; the line logged is the report
+        await db.rollback()
+        outcome = await _record_unexpected(db, path, exc)
+    # Marked seen whatever was found, so an unchanged file is not re-read, and a failure is not
+    # re-logged, every five minutes; a change to the file reads it again.
     _file_seen = key
     return outcome
+
+
+async def _record_unexpected(db: AsyncSession, path: str, exc: Exception) -> str | None:
+    """A failure that is not a refusal, while taking the file: a defect to report, recorded as
+    `invalid` so the page says the file was not taken, and the copy already held keeps answering."""
+    logger.error(
+        "patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure (%s), not a refusal; the "
+        "copy already held keeps answering and the file is read again when it changes. Report this line and the "
+        "stack locations logged with it (docs/troubleshooting.md §32)",
+        type(exc).__name__,
+        exc_info=exc,
+        extra={"state": INVALID, "patch_policy_source": SOURCE_FILE},
+    )
+    try:
+        await record_attempt(
+            db,
+            source=SOURCE_FILE,
+            outcome=INVALID,
+            host=path,
+            detail=f"an unexpected failure ({type(exc).__name__}) that the container log reports",
+        )
+        await db.commit()
+    except Exception:  # the database failed too: the line above is already the report, and this never raises
+        await db.rollback()
+        return None
+    return INVALID
 
 
 async def _take_file(db: AsyncSession, path: str, key: tuple, data: bytes | None, held: PatchPolicyDoc | None) -> str:
@@ -885,7 +991,10 @@ def sentence_for(
         return NOT_PUBLISHED_SENTENCE + copy_clause(as_of)
     if state == ALGORITHM_UNKNOWN:
         published = detail or "other algorithms"
-        return f"This build reads {ALGORITHM}; LoonSec now publishes only {published}. Update LoonInspect." + copy_clause(as_of)
+        return (
+            f"This build reads {ALGORITHM}; LoonSec's last exchange named only {published}. If the next exchange "
+            "names the same, update LoonInspect."
+        ) + copy_clause(as_of)
     if state == DOWNLOAD_FAILED:
         if source == SOURCE_FILE:
             head = f"The patch-policy file could not be read from {host or 'PATCH_POLICY_FEED_FILE'}: {detail}."

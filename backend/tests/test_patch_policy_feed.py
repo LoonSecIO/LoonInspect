@@ -193,6 +193,152 @@ def test_a_document_that_decompresses_past_the_ceiling_is_stopped_there(monkeypa
     assert _refusal(GZ) == "it decompresses past the 1024-byte ceiling this container accepts"
 
 
+# --- the check is total: whatever the bytes, a document or a refusal in words ------------------
+
+
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        (lambda t: t.update(timeline=["wireshark-tags"]), "it lacks wireshark wireshark/4.4 timeline as text"),
+        (lambda t: t.update(label={"en": "Wireshark 4.4"}), "it lacks wireshark wireshark/4.4 label as text"),
+        (lambda t: t.update(channel=1), "it lacks wireshark wireshark/4.4 channel as text"),
+        (lambda t: t.update(edition=False), "it lacks wireshark wireshark/4.4 edition as text"),
+        (
+            lambda t: t["exclusions"]["cves"][0].update(cve_id={"id": "CVE-2099-2003"}),
+            "it lacks wireshark wireshark/4.4 exclusions.cves, each with a cve_id",
+        ),
+        (
+            lambda t: t["not_detectable"].update(count=1, cves=[["CVE-2099-2009"]]),
+            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a cve_id",
+        ),
+        (
+            lambda t: t.update(promotions=[{"major": "4", "date": "2024-08-28"}]),
+            "it lacks wireshark wireshark/4.4 promotions as rows of {versions: [i, j], promoted: day}",
+        ),
+        (
+            lambda t: t.update(
+                promotions=[{"versions": [2, 3], "promoted": "2024-11-20"}, {"versions": [1, 1], "promoted": "2024-12-01"}]
+            ),
+            "it lacks wireshark wireshark/4.4 promotions as rows of {versions: [i, j], promoted: day}",
+        ),
+        (
+            lambda t: t.update(promotions=[{"versions": [0, 4], "promoted": "2024-08-28"}]),
+            "it lacks wireshark wireshark/4.4 promotions as rows of {versions: [i, j], promoted: day}",
+        ),
+    ],
+)
+def test_a_value_of_the_wrong_shape_is_refused_in_words_not_raised(change, said) -> None:
+    """Each of these once raised a bare TypeError out of the check, or would have answered every
+    `GET /api/patch-policy/apps` with a 500 after it was stored. The check runs at container
+    startup when PATCH_POLICY_FEED_FILE is set, so a shape it cannot word must still be refused."""
+    broken = copy.deepcopy(DOC)
+    change(_track(broken))
+    assert _refusal(_resigned(broken)).startswith(said)
+
+
+def test_an_app_whose_bundle_ids_are_not_a_list_of_ids_is_refused() -> None:
+    broken = copy.deepcopy(DOC)
+    broken["apps"][0]["bundle_ids"] = 7
+    assert _refusal(_resigned(broken)) == "it lacks chrome.bundle_ids as a list of bundle ids"
+
+
+def test_json_nested_past_the_parsers_depth_is_refused_in_words() -> None:
+    deep = b"[" * 200_000 + b"]" * 200_000
+    assert _refusal(deep) == "it is not JSON this container reads (it nests more deeply than any document does)"
+    assert _refusal(gzip.compress(deep, mtime=0)).startswith("it is not JSON this container reads")
+
+
+def test_anything_else_the_check_trips_over_is_a_refusal_naming_the_exception(monkeypatch) -> None:
+    """The net under the worded checks: a defect in the check itself is still `invalid`, the copy
+    held keeps answering, and the bracket names what to report (§32, state AB)."""
+
+    def trips(_body):
+        raise TypeError("a shape nobody worded")
+
+    monkeypatch.setattr(feed, "_first_problem", trips)
+    assert _refusal(GZ) == "its structure could not be checked (TypeError)"
+
+
+def test_a_row_with_a_detectable_day_must_say_it_uses_that_clock() -> None:
+    """The rule (detectable_at where known, NVD publication as the fallback) is checked, not
+    trusted: the day-walk places a row by whether it carries detectable_at, so a row saying
+    otherwise would be counted one way on the API and walked another."""
+    broken = copy.deepcopy(DOC)
+    newest = _track(broken, index=1)
+    row = next(r for r in newest["cves"] if r["cve_id"] == "CVE-2099-2004")
+    row["clock"] = "published"
+    newest["counts"]["clock"] = {"detectable_at": 1, "published": 2}
+    assert _refusal(_resigned(broken)) == (
+        "its own counts disagree (wireshark wireshark/newest: CVE-2099-2004 has a detectable_at day and says it uses "
+        "the published clock)"
+    )
+
+
+def test_every_document_the_check_accepts_is_one_the_route_can_serve() -> None:
+    """What `read_document` stores, `GET /api/patch-policy/apps` answers with on every load until
+    LoonSec publishes another: its response model is held to the fixture here."""
+    from app.schemas.patch_policy import PatchPolicyAppOut
+
+    body = feed.read_document(GZ).body
+    for app in feed.app_summaries(body):
+        PatchPolicyAppOut.model_validate(app)
+
+
+@pytest.mark.asyncio
+async def test_the_feed_file_read_never_raises_even_when_every_write_fails(monkeypatch, tmp_path) -> None:
+    """`load_feed_file` runs in the container's startup. A malformed file whose state row cannot
+    be written either — by a failure that is not the database's own error type — still answers,
+    and the file is marked seen so the next tick does not repeat it."""
+    from app.core.config import settings
+
+    path = tmp_path / "patch-policy.json"
+    path.write_bytes(b"[" * 200_000 + b"]" * 200_000)
+    monkeypatch.setattr(settings, "patch_policy_feed_file", str(path))
+    monkeypatch.setattr(feed, "_file_seen", None)
+
+    async def nothing_held(_db):
+        return None
+
+    class _Broken:
+        async def execute(self, *_args, **_kwargs):
+            raise AssertionError("every write fails")
+
+        async def commit(self) -> None:
+            pass
+
+        async def rollback(self) -> None:
+            pass
+
+    monkeypatch.setattr(feed, "current_doc", nothing_held)
+    assert await feed.load_feed_file(_Broken()) is None
+    assert feed._file_seen is not None and feed._file_seen[0] == str(path)
+
+
+@pytest.mark.asyncio
+async def test_startup_survives_a_feed_file_reader_that_raises(monkeypatch) -> None:
+    """The lifespan and the exchange tick call the file read through one guard: a defect in it is
+    a logged line beginning `patch-policy data`, never a container that will not start.
+
+    The logger is stood in for rather than read through caplog: importing `app.main` installs the
+    process's own log handler, which would replace caplog's when this test is the first to import it."""
+    from app import main
+
+    async def raises(_db):
+        raise RuntimeError("a defect")
+
+    logged: list[str] = []
+
+    class _Logger:
+        def exception(self, message: str, *args: object) -> None:
+            logged.append(message % args if args else message)
+
+    monkeypatch.setattr(main, "load_patch_policy_feed_file", raises)
+    monkeypatch.setattr(main, "logger", _Logger())
+    await main.read_patch_policy_feed_file(object())
+    assert len(logged) == 1
+    assert logged[0].startswith("patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure, not a refusal")
+
+
 # --- the pointer the exchange carries --------------------------------------------------------
 
 
