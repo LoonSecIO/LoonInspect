@@ -1,8 +1,8 @@
 import type { PatchRule, PolicyVersion } from "@/features/jamfPatch/types";
 
-// `GET /fleet-catalog/migration` and its two detail answers (#895–#899), each interface named for the
-// OpenAPI schema it mirrors. The server sends every field, and none holds a sentence: the page words
-// each code. A null count is "not assessed", never 0.
+// `GET /fleet-catalog/migration` and its two detail answers (#895–#899). Each interface's comment names
+// the OpenAPI schema it mirrors. The server sends every field, and none holds a sentence: the page
+// words each code. A null count is "not assessed", never 0.
 
 export type PolicyState = "within" | "out" | "exempt" | "unassessed";
 export type ReviewPriority = "review_now" | "plan_update" | "review_identity" | "monitor";
