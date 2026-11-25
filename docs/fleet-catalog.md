@@ -18,7 +18,9 @@ LoonInspect reads that folder once a day and shows it under **Devices › Applic
 catalog**: each title, Fleet's latest version of it, how many of this organization's Macs have
 it and how many of those are behind. In the background, slowly, it also reads the version
 history of the titles installed here from the same repository's commits: every version Fleet's
-catalog carried, and the day it took each.
+catalog carried, and the day it took each. The tab opens on
+[**Migration review**](#migration-review), the installed apps on the Macs in the device filter
+against both catalogs, with these titles beside it as **Fleet titles**.
 
 Each title also has a **Fleet source** link to its current `darwin.json` manifest on
 GitHub (#840). It is separate from the button that opens version history and works with
@@ -279,8 +281,8 @@ listing (#859). The record describes the titles held, not the last check, and ha
 - **`complete`**: a check finished the listing and skipped nothing.
 
 A check that fails before it changes a title leaves the value as it was. The tab never shows
-the value, and of the API only the migration report carries it, as `fleetCatalogReadiness`
-([below](#the-migration-report-api-only-so-far)). The tab shows the check's sentence instead: an
+the value itself, and of the API only the migration report carries it, as `fleetCatalogReadiness`
+([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
 
 **Besides the check and its schedule, one thing reads it: a saved application patch plan**
@@ -345,12 +347,34 @@ The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
 
-### The migration report (API only, so far)
+## Migration review
+
+**Migration review** (#904) lists each app Jamf inventoried on the Macs the device filter selects:
+the Macs that have it and their share of those in scope, its coverage in both catalogs, its
+patch-policy verdict and its installed builds' vulnerability evidence ([`troubleshooting.md`](troubleshooting.md) §27 step 12).
+
+- **The device filter is Installed Apps' and Patch Plans'**, carried between the tabs as
+  `deviceScope`, so all three count the same Macs. Without one, it counts every current Jamf Mac.
+- **Patch priority**, the default sort, weighs most a finding on CISA's Known Exploited
+  Vulnerabilities list, then a build outside its confirmed Jamf Patch rule, then findings Fleet's
+  latest would address. Less: how many Macs have the app (capped, so reach alone outranks none of
+  those three), a high or critical finding, a build behind Fleet's latest, how long a newer Jamf
+  release has waited, and a title Fleet updated twice or more in 90 days. Unknown evidence weighs
+  nothing. Ties go to the app on more Macs, then the name.
+- **Outside both catalogs** needs a *complete* Fleet snapshot ([above](#complete-or-partial)), not
+  merely a populated one, and synced Jamf Patch titles. Until both, it reads *Unknown*, never 0: a
+  partial snapshot may lack the very title.
+- **Evidence can trail its reason by up to an hour.** After a sweep first judges a build, the other
+  Macs' copies take the answer on the hourly refresh, so until then a row can count the build as not
+  assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
+  line that reads the build's one catalog answer and already rests on it.
+
+### The API
 
 `GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected
 Macs, with the Fleet titles that carry its bundle identifier. It needs `app:read` and `device:read`
 and takes `deviceScope`, the filter Installed Apps and Patch Plans use, so all three count the same
-Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag off it answers
+Macs. It asks GitHub and Jamf nothing. With the flag off it answers
 `enabled: false` and counts nothing.
 
 - **`scope`.** *Eligible* is every current Jamf Mac the filter's connection and style allow;
