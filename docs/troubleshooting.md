@@ -1019,10 +1019,38 @@ release validation is complete. All workers must use the same setting.
 - **A date stays old after sharing is turned off:** expected in this preview. The held
   release still assesses local inventory and displays its original date; no new delivery
   is implied. An older feed, missing coverage or incomplete IDs do not prove remediation.
-- **Missing selected intelligence or repeated organization-context refusal:** stop the
-  affected operation, preserve the logs, and contact support. Restore a known complete
-  database backup if reference data was removed; do not delete pointers or substitute
-  another organization's grant. No automatic pruning is enabled in this preview.
+- **“The selected intelligence is missing. Restore the database backup and contact
+  support.”** This organization's selected intelligence names a release the database
+  no longer holds. Every request that reads vulnerability answers is refused with this
+  sentence (HTTP 503): Devices, a device's page, Devices › Applications, the Catalog and
+  its Refresh, Posture › Vulnerabilities, saving a patch plan, and the Fleet migration
+  list. Devices › Applications and a device's **Update this device** show the sentence.
+  The Devices list, the Catalog and the other pages show their usual could-not-load
+  message. `docker compose logs app` carries the sentence on a line of its own once per
+  container start, and a Jamf sweep that meets it ends `failed` with the sentence as
+  the run's error. Pages that do not read vulnerability answers keep working. Neither
+  the application nor the manual cleanup below can remove a selected release, and no
+  automatic pruning is enabled in this preview. So the database was changed outside the
+  application, almost always by a restore that brought the selection back without the
+  release.
+  1. Check how the database was last restored. The restore in
+     [`operations.md` §3](operations.md#3-restore) loads a complete `pg_dump` with
+     `ON_ERROR_STOP=1`, and it cannot produce this state. These can: a data-only
+     restore, a restore with triggers disabled, a restore that carried on past an
+     error, or a dump that left out the vulnerability-corpus tables.
+  2. Restore a complete backup taken before the problem, as `operations.md` §3
+     describes, with the same `ENCRYPTION_KEY`. Do not delete the selection, point it
+     at another release by hand, or substitute another organization's grant: this
+     organization's assessments and their history name that release.
+  3. The database was never restored, or the sentence is still there after a complete
+     restore: contact support with the build (Settings › Support), when it started, and
+     the log line.
+- **“The corpus operation has no matching organization context. Retry from the intended
+  organization; if it repeats, contact support.”** It is answered the same way (HTTP 503,
+  logged once). It means a request's organization and its database session disagreed,
+  and nothing an operator configures causes that. Retry once from the intended
+  organization. If it repeats, stop the affected operation, keep the logs, and contact
+  support with the build and the page or action that showed it.
 
 Assessment-only entries in **Devices › Device history** keep the last inventory observation
 time and show a separate assessment time. They do not mean the device checked in again
