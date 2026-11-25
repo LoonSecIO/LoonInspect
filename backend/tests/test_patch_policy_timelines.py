@@ -864,28 +864,29 @@ async def test_parity_matched_unchecked_and_refused_per_app() -> None:
     assert states[("firefox/release", 2)] == ("matched", None, None, {})
     assert states[("firefox/release", 3)] == ("no_entry", None, None, {})
 
-    assert views.check_for(states, app_row, "firefox/release", 2) == {
+    # One check serves every source and aligned window of the track, so it names the walk it is of:
+    # the label alone (labels begin with the app's name), never "this view matches".
+    matched = {
         "state": "matched",
-        "detail": "Matches the totals LoonSec published for a 2-year window of Mozilla Firefox.",
+        "detail": "The walk of LoonSec's published dates for Mozilla Firefox (release) over 2 years matches the totals "
+        "LoonSec published with the data.",
     }
+    assert views.check_for(states, app_row, "firefox/release", 2) == matched
     unchecked = views.check_for(states, app_row, "firefox/release", 3)
     assert unchecked == {
         "state": "unchecked_window",
         "detail": "LoonSec has no check for a 3-year window of Mozilla Firefox; it is shown because the 2-year walk matched.",
     }
-    # Only the walk of LoonSec's published dates is checked, and a view on other dates says so.
-    assert views.check_for(states, app_row, "firefox/release", 2, source="jamf") == {
-        "state": "matched",
-        "detail": "The walk of LoonSec's published dates for a 2-year window of Mozilla Firefox matches the totals LoonSec "
-        "published. This view's dates come from this instance's copy of Jamf's public patch catalog, and its own "
-        "numbers are not checked.",
-    }
+    # Only the walk of LoonSec's published dates is checked: a matched window says which walk that
+    # was, on every view; an unchecked window on other dates, or cut to the common days, says so.
+    assert views.check_for(states, app_row, "firefox/release", 2, source="jamf") == matched
+    assert views.check_for(states, app_row, "firefox/release", 2, aligned=True) == matched
     assert views.check_for(states, app_row, "firefox/release", 3, source="fleet")["detail"] == (
         "LoonSec has no check for a 3-year window of Mozilla Firefox; it is shown because the 2-year walk of LoonSec's "
         "published dates matched. This view's dates come from this instance's Fleet history, and its own numbers are "
         "not checked."
     )
-    assert views.check_for(states, app_row, "firefox/release", 2, aligned=True)["detail"].endswith(
+    assert views.check_for(states, app_row, "firefox/release", 3, aligned=True)["detail"].endswith(
         "This view is cut to the days the sources share, and its own numbers are not checked."
     )
 

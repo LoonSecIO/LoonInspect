@@ -5,12 +5,17 @@ import { env } from "@/config/env";
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string | null;
+  /** The error body as it was read, or null when it was not JSON. Most callers want `detail`
+   *  alone; a route that answers a refusal with more beside it (the patch-policy walk's `reason`
+   *  and `facts`, #614) is read from here. */
+  readonly body: unknown;
 
-  constructor(status: number, detail: string | null) {
+  constructor(status: number, detail: string | null, body: unknown = null) {
     super(detail ?? `API request failed: ${status}`);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.body = body;
   }
 }
 
@@ -91,8 +96,10 @@ export async function apiRequest<TResponse>(
 
   if (!response.ok) {
     let detail: string | null = null;
+    let read: unknown = null;
     try {
       const body = await response.json();
+      read = body;
       if (body && typeof body.detail === "string") {
         detail = body.detail;
       } else if (Array.isArray(body?.detail)) {
@@ -119,7 +126,7 @@ export async function apiRequest<TResponse>(
       onUnauthorized();
     }
 
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, read);
   }
 
   if (response.status === 204) {

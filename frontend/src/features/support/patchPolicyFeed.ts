@@ -50,6 +50,8 @@ export interface PatchPolicySourceTrack {
   last: string | null;
   matched: number;
   otherTrack: number;
+  /** Versions of a channel LoonSec's data names and does not walk, set aside; absent from an older instance. */
+  otherChannel?: number;
   unmatched: number;
   since: string | null;
   until: string | null;

@@ -299,8 +299,10 @@ def check_for(
     for is said as that, LoonSec's data failing the walk's own check as that, and anything else
     as `unchecked`. These refusals are the app's, whatever its track, window or source.
 
-    Only the walk of LoonSec's published dates at a default window is checked, so a view on
-    Jamf's or Fleet's dates, or cut to the common window, says that its own numbers are not."""
+    Only the walk of LoonSec's published dates at a default window is checked. A matched window's
+    sentence names that walk, which is true of every view of the track; an unchecked window's
+    sentence on Jamf's or Fleet's dates, or cut to the common window, adds that the view's own
+    numbers are not checked."""
     name = str(app_row.get("name") or app_row["app"])
     labels = {str(t.get("track")): str(t.get("label") or t.get("track")) for t in app_row.get("tracks") or []}
     for judged in states.values():
@@ -312,15 +314,12 @@ def check_for(
     elif aligned:
         unchecked_view = " This view is cut to the days the sources share, and its own numbers are not checked."
     if states.get((track, years), _Judged("")).state == _MATCHED:
-        if not unchecked_view:
-            return {
-                "state": CHECK_MATCHED,
-                "detail": f"Matches the totals LoonSec published for a {years}-year window of {name}.",
-            }
+        # Every source and every aligned window of the track is served under this one check, so the
+        # sentence names the walk that was checked rather than saying the view itself matched.
         return {
             "state": CHECK_MATCHED,
-            "detail": f"The walk of LoonSec's published dates for a {years}-year window of {name} matches the totals "
-            f"LoonSec published.{unchecked_view}",
+            "detail": f"The walk of LoonSec's published dates for {labels.get(track, track)} over {years} years matches the "
+            "totals LoonSec published with the data.",
         }
     # The same track's other window first, then the app's other tracks, in the document's order.
     order = sorted(states, key=lambda key: (key[0] != track, list(labels).index(key[0]) if key[0] in labels else 0, key[1]))
