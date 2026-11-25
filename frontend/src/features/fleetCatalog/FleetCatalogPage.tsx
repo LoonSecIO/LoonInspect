@@ -1,18 +1,22 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
 import { PERMISSIONS } from "@/features/auth/types";
+import { installedAppsPath } from "@/features/catalog/patchPlanNavigation";
 import { getFleetCatalog, refreshFleetCatalog } from "@/features/fleetCatalog/api";
 import {
   emptyState,
   historyStatusOf,
   manifestUrl,
+  scopedCount,
   sortTitles,
   statusOf,
   titleMatches,
   type FleetSortKey,
+  type ScopedCounts,
   type SortDir
 } from "@/features/fleetCatalog/catalogView";
 import { FleetTitleHistory } from "@/features/fleetCatalog/FleetTitleHistory";
@@ -23,10 +27,22 @@ const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 const LICENCE_URL = "https://github.com/fleetdm/fleet/blob/main/ee/LICENSE";
-const COLUMNS = 6;
+const COLUMNS = 7;
 
 function when(value: string | null): string {
   return value === null ? "" : new Date(value).toLocaleString();
+}
+
+/** What Fleet titles hands the page (#905): the search and the box, kept in the address; the counts read for its device
+ *  filter, whose `deviceScope` is absent with no filter; and `onRefresh`, which reads them again after Check now. */
+export interface CatalogScope {
+  search: string;
+  setSearch: (search: string) => void;
+  installedOnly: boolean;
+  setInstalledOnly: (value: boolean) => void;
+  counts: ScopedCounts;
+  deviceScope?: string;
+  onRefresh: () => void;
 }
 
 /**
@@ -38,9 +54,10 @@ function when(value: string | null): string {
  * title's Read history (#838) are the controls that do, and only for an account that may sync
  * a catalog. A title's row opens its version history.
  */
-export function FleetCatalogPage() {
-  const { t, locale } = useLocale();
+export function FleetCatalogPage({ scope }: { scope: CatalogScope }) {
+  const { t } = useLocale();
   const canCheck = useHasPermission(PERMISSIONS.PATCH_CATALOG_SYNC);
+  const { search, installedOnly, counts } = scope;
 
   const [catalog, setCatalog] = useState<FleetCatalog | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +65,6 @@ export function FleetCatalogPage() {
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  // Installed titles only, by default, as the Jamf Patch tab opens on titles with devices:
-  // the question the tab answers first is "what do we have that Fleet tracks".
-  const [installedOnly, setInstalledOnly] = useState(true);
   const [sortKey, setSortKey] = useState<FleetSortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   // The titles whose version history is open under their row.
@@ -91,12 +104,12 @@ export function FleetCatalogPage() {
     );
   }
 
-  /** The one read of the list, held against the toggle (the server filters on it) and the
-   *  dictionary (the failure line is written in it), so either one moving re-reads. `live`
+  /** The one read of the list, the whole catalog (the box filters what is held), against the
+   *  dictionary (the failure line is written in it), so its moving re-reads. `live`
    *  is how the effect drops a read a later one superseded (CONTRIBUTING.md, #479). */
   const load = useCallback(
     (live: () => boolean = () => true): Promise<void> =>
-      getFleetCatalog(installedOnly)
+      getFleetCatalog(false)
         .then((response) => {
           if (live()) setCatalog(response);
         })
@@ -106,7 +119,7 @@ export function FleetCatalogPage() {
         .finally(() => {
           if (live()) setLoading(false);
         }),
-    [installedOnly, t]
+    [t]
   );
 
   // Adjusted during the render that moved the inputs, keyed on the effect's whole
@@ -141,7 +154,8 @@ export function FleetCatalogPage() {
         setError(null);
         return load();
       })
-      .finally(() => setChecking(false));
+      // The counts too, with this page left mounted: the sentence above, the sort and open histories stay.
+      .finally(() => { setChecking(false); scope.onRefresh(); });
   }
 
   function handleSort(key: FleetSortKey) {
@@ -149,21 +163,22 @@ export function FleetCatalogPage() {
       setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortDir(key === "deviceCount" || key === "devicesBehind" || key === "versionChangedAt" ? "desc" : "asc");
+      setSortDir(["deviceCount", "scopedCount", "devicesBehind", "versionChangedAt"].includes(key) ? "desc" : "asc");
     }
   }
 
   const visible = useMemo(
     () =>
       sortTitles(
-        (catalog?.items ?? []).filter((title) => titleMatches(title, searchTerm)),
+        (catalog?.items ?? []).filter((title) => (!installedOnly || (scopedCount(counts, title.slug) ?? 0) > 0) && titleMatches(title, search)),
         sortKey,
-        sortDir
+        sortDir,
+        counts
       ),
-    [catalog, searchTerm, sortKey, sortDir]
+    [catalog, counts, installedOnly, search, sortKey, sortDir]
   );
 
-  const empty = catalog === null ? null : emptyState(catalog, visible, { searching: searchTerm.trim() !== "", installedOnly });
+  const empty = catalog === null ? null : emptyState(catalog, visible, { searching: search.trim() !== "", installedOnly });
   const emptyMessage = (() => {
     if (catalog === null) return null;
     switch (empty) {
@@ -188,10 +203,16 @@ export function FleetCatalogPage() {
   const status = statusOf(state);
   const historyStatus = historyStatusOf(state);
 
-  function sortableHeader(key: FleetSortKey, label: string) {
+  /** Installed apps on the Macs counted here: the `deviceScope` as sent, none with no filter, searched by bundle ID. */
+  function planHref(bundleId: string): string {
+    const query = new URLSearchParams(scope.deviceScope === undefined ? { q: bundleId } : { deviceScope: scope.deviceScope, q: bundleId });
+    return `${installedAppsPath}?${query}`;
+  }
+
+  function sortableHeader(key: FleetSortKey, label: string, hint?: string) {
     const indicator = key !== sortKey ? "" : sortDir === "asc" ? " ▲" : " ▼";
     return (
-      <th className="cursor-pointer select-none px-4 py-2 font-medium hover:text-foreground" onClick={() => handleSort(key)}>
+      <th className="cursor-pointer select-none px-4 py-2 font-medium hover:text-foreground" title={hint} onClick={() => handleSort(key)}>
         {label}
         {indicator}
       </th>
@@ -202,8 +223,7 @@ export function FleetCatalogPage() {
     <section className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">{t.fleetCatalog.eyebrow}</p>
-          <h1 className="text-3xl font-bold tracking-tight">{t.fleetCatalog.title}</h1>
+          <h2 className="text-xl font-semibold">{t.fleetCatalog.titlesHeading}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t.fleetCatalog.description}</p>
         </div>
         {canCheck && (
@@ -266,13 +286,14 @@ export function FleetCatalogPage() {
       <div className="flex flex-wrap gap-3">
         <input
           className={`${inputClasses} min-w-[240px] flex-1`}
+          aria-label={t.fleetCatalog.searchPlaceholder}
           placeholder={t.fleetCatalog.searchPlaceholder}
           data-page-search=""
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          value={search}
+          onChange={(e) => scope.setSearch(e.target.value)}
         />
         <label className="flex items-center gap-2 text-sm" title={t.fleetCatalog.installedOnlyHint}>
-          <input type="checkbox" checked={installedOnly} onChange={(e) => setInstalledOnly(e.target.checked)} />
+          <input type="checkbox" checked={installedOnly} onChange={(e) => scope.setInstalledOnly(e.target.checked)} />
           {t.fleetCatalog.installedOnly}
         </label>
       </div>
@@ -285,6 +306,7 @@ export function FleetCatalogPage() {
               {sortableHeader("bundleId", t.fleetCatalog.tableBundleId)}
               {sortableHeader("latestVersion", t.fleetCatalog.tableLatestVersion)}
               {sortableHeader("deviceCount", t.fleetCatalog.tableDeviceCount)}
+              {sortableHeader("scopedCount", t.fleetCatalog.tableScopedCount, t.fleetCatalog.tableScopedCountHint)}
               {sortableHeader("devicesBehind", t.fleetCatalog.tableDevicesBehind)}
               {sortableHeader("versionChangedAt", t.fleetCatalog.tableVersionChanged)}
             </tr>
@@ -343,14 +365,17 @@ export function FleetCatalogPage() {
                       >
                         {t.fleetCatalog.sourceLink}
                       </a>
-                      {title.deviceCount > 0 && <a className="mt-1 block text-xs underline" href={`/devices/applications?q=${encodeURIComponent(title.name)}`}>
-                        {locale === "de" ? "Patchplan erstellen" : "Build a patch plan"}
-                      </a>}
+                      {(scopedCount(counts, title.slug) ?? 0) > 0 && <Link className="mt-1 block w-fit text-xs underline" to={planHref(title.bundleId)}>
+                        {t.fleetCatalog.buildPlan}
+                      </Link>}
                     </td>
                     <td className="px-4 py-2">{title.bundleId}</td>
                     <td className="px-4 py-2 tabular-nums">{title.latestVersion}</td>
                     <td className={`px-4 py-2 tabular-nums ${title.deviceCount === 0 ? "text-muted-foreground" : ""}`}>
                       {title.deviceCount}
+                    </td>
+                    <td className="px-4 py-2 tabular-nums">{scopedCount(counts, title.slug) ?? (
+                      <span className="text-muted-foreground" title={t.fleetCatalog.scopedUnknownHint}>{t.fleetCatalog.scopedUnknown}</span>)}
                     </td>
                     {/* A title on no Mac has nobody behind it and nobody current: a dash, not a
                         zero that would read as "every Mac is up to date". */}

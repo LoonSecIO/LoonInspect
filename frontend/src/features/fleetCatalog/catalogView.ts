@@ -70,10 +70,17 @@ export function emptyState(
   return "noMatch";
 }
 
-export type FleetSortKey = "name" | "bundleId" | "latestVersion" | "deviceCount" | "devicesBehind" | "versionChangedAt";
+export type FleetSortKey = "name" | "bundleId" | "latestVersion" | "deviceCount" | "scopedCount" | "devicesBehind" | "versionChangedAt";
 export type SortDir = "asc" | "desc";
+/** Each title's Macs among those the device filter selects, by slug: the migration report's `fleetDeviceCounts`. */
+export type ScopedCounts = Readonly<Record<string, number>>;
 
-function sortValue(title: FleetCatalogTitle, key: FleetSortKey): string | number {
+/** A title's *Macs in scope* (#905), or null when Fleet listed it after the counts were read. Own keys only. */
+export function scopedCount(counts: ScopedCounts, slug: string): number | null {
+  return Object.hasOwn(counts, slug) ? counts[slug] : null;
+}
+
+function sortValue(title: FleetCatalogTitle, key: FleetSortKey, counts: ScopedCounts): string | number {
   switch (key) {
     case "name":
       return title.name.toLowerCase();
@@ -83,6 +90,8 @@ function sortValue(title: FleetCatalogTitle, key: FleetSortKey): string | number
       return title.latestVersion;
     case "deviceCount":
       return title.deviceCount;
+    case "scopedCount":
+      return scopedCount(counts, title.slug) ?? 0;
     case "devicesBehind":
       return title.devicesBehind;
     case "versionChangedAt":
@@ -112,20 +121,25 @@ export function historyStatusOf(state: FleetCatalogState | null): FleetHistorySt
  *
  * By the date the version moved, a title with no date goes last in both directions: its
  * version has not moved while this instance was watching and its history is not read, which
- * is neither the oldest move nor the newest.
+ * is neither the oldest move nor the newest. By *Macs in scope*, a title `counts` does not
+ * hold yet goes last the same way: it is neither the most nor the fewest.
  */
 export function sortTitles(
   titles: readonly FleetCatalogTitle[],
   key: FleetSortKey,
-  dir: SortDir
+  dir: SortDir,
+  counts: ScopedCounts = {}
 ): FleetCatalogTitle[] {
   const sign = dir === "asc" ? 1 : -1;
   return [...titles].sort((a, b) => {
     if (key === "versionChangedAt" && (movedAt(a) === null) !== (movedAt(b) === null)) {
       return movedAt(a) === null ? 1 : -1;
     }
-    const left = sortValue(a, key);
-    const right = sortValue(b, key);
+    if (key === "scopedCount" && (scopedCount(counts, a.slug) === null) !== (scopedCount(counts, b.slug) === null)) {
+      return scopedCount(counts, a.slug) === null ? 1 : -1;
+    }
+    const left = sortValue(a, key, counts);
+    const right = sortValue(b, key, counts);
     const order =
       typeof left === "number" && typeof right === "number"
         ? left - right

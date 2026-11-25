@@ -4,6 +4,7 @@ import {
   emptyState,
   historyStatusOf,
   movedAt,
+  scopedCount,
   sortTitles,
   statusOf,
   titleMatches
@@ -172,6 +173,13 @@ describe("sortTitles", () => {
   it("sorts by the history's date where there is one, which can be older than any move seen here (#838)", () => {
     const dated = { ...alpha, inCatalogSince: "2026-09-01T09:00:00Z", historyReadAt: "2026-11-15T12:00:00Z" };
     expect(slugs(sortTitles([dated, beta, gamma], "versionChangedAt", "asc"))).toEqual(["alpha", "gamma", "beta"]);
+  });
+
+  it("sorts by the device filter's counts, a title they do not hold yet last in both directions (#905)", () => {
+    const counts = { alpha: 2, gamma: 5 }; // Fleet listed beta after these were read.
+    expect(slugs(sortTitles([alpha, beta, gamma], "scopedCount", "desc", counts))).toEqual(["gamma", "alpha", "beta"]);
+    expect(slugs(sortTitles([beta, gamma, alpha], "scopedCount", "asc", counts))).toEqual(["alpha", "gamma", "beta"]);
+    expect(scopedCount(counts, "toString")).toBeNull(); // own keys only
   });
 });
 
