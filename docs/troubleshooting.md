@@ -4244,9 +4244,8 @@ refusal: the sentence is the whole report.
    result; the same pair is the same numbers.
 10. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
     not date the exact build LoonSec's data names as a CVE's fix: Fleet's history holds only the
-    builds Fleet's catalog carried, from the day it began, and a vendor can ship a fix build on one
-    platform only (Chrome's Linux-only 131.0.6778.85, where the Mac got .86). Such a CVE is not left
-    out. As ruled on 2026-11-25, the walk counts the next dated version at or above the fix on the
+    builds Fleet's catalog carried, from the day it began. Such a CVE is not left out. As ruled on
+    2026-11-25, the walk counts the next dated version at or above the fix on the
     fix's line that the CVE's affected range does not cover (a version the CVE still affects never
     stands in for its fix; one held affected only by rule 5 can), and that version's day is the
     fix's day for every rule, the one that keeps an older-dated build of another release train
@@ -4258,12 +4257,17 @@ refusal: the sentence is the whole report.
     each is its own entry, counted on its own:
     - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where the version
       LoonSec points at is not that exact one (null otherwise): the next listed version above it,
-      or, where that one is still in the CVE's range, the first listed version above the range;
+      or, where that one is still in the CVE's range, the first listed version above the range.
+      NVD can name a build the Mac never got: for Chrome's Linux-only 142.0.7444.59, LoonSec
+      points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
     - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
       not clearing it: a device clears the CVE when it installs a version outside the CVE's
       affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
-      `dated_as` even inside another of the CVE's runs (installing it then clears nothing); a
-      later version standing in for an undated fix is always outside the range;
+      `dated_as`, since LoonSec's data is the authority on its own fixes, and a later version
+      standing in for an undated fix is always outside the range. LoonSec's data never points a
+      fix inside its own CVE's affected range: an entry whose `fix` the row's `affected_text`
+      covers is walked as given, though installing that fix clears nothing, and is reportable
+      state **AD**, with the CVE row;
     - `how` is `fix` when the timeline dates the fix itself, `next_dated` when it dates a later
       version outside the range instead, and `undated` when it dates nothing at or above the fix on
       that line outside the range, or LoonSec's data names no fix version there. An `undated` line
@@ -4292,7 +4296,9 @@ Public), or a Jamf or Fleet timeline is refused over builds of a channel the dat
 `other_channels` and does not list in full (`too_many_unmatched`, with Firefox ESR builds among
 `facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the sentence as
 worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf` from
-`GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
+`GET /api/patch-policy/apps`, and the build from Settings › Support (§8). A walk that was shown is
+reportable state **AD** too when a CVE row's `fix_dated_by` names a `fix` the row's own
+`affected_text` covers (§33 step 10): report that CVE row with the same.
 
 **AE.** A patch-policy walk is refused as a defect in LoonInspect: its own totals disagree
 (`invariant`), the timeline or the request it built is refused (`timeline_invalid`,

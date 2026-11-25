@@ -1236,8 +1236,9 @@ def test_fix_dated_by_lists_every_visited_line_in_the_documents_order() -> None:
 
 def test_a_version_the_cve_still_affects_never_dates_its_fix_and_installing_a_fix_in_range_clears_nothing() -> None:
     """A fix never stands in for itself inside its own CVE's range. One line: 1.0 (d-100), 2.0 (a fix: as
-    where an unmarked ESR bound sits inside a release run on a single-line track), 3.0 (d60), 4.0 (d90: the
-    other fix). CVE-412: det d40, one run 1.0..3.0, fixes 2.0 and 4.0.
+    where an unmarked ESR bound sat inside a release run on a single-line track, before LoonSec's data
+    stopped pointing a fix inside its own CVE's range; such a document is still walked as given), 3.0
+    (d60), 4.0 (d90: the other fix). CVE-412: det d40, one run 1.0..3.0, fixes 2.0 and 4.0.
 
     A timeline that does not date 2.0: 3.0 is dated and at or above it, but inside the run, so it cannot
     stand in for the fix; 2.0 is dated by 4.0 on d90, the first dated version above the run.
@@ -1397,6 +1398,32 @@ def test_fixes_the_document_points_at_one_version_are_one_entry_each_in_its_orde
     assert fleet["counts"]["fix_dating"] == {"fix": 0, "next_dated": 3, "undated": 0}
     assert (row["outcomes"]["1d"]["intervals"], row["outcomes"]["1d"]["cleared_by"]) == ([[d(40), d(89)]], "3.0")
     assert invariant_failures(public) == [] and invariant_failures(fleet) == []
+
+
+def test_fix_dated_by_follows_the_documents_order_where_it_is_not_sorted() -> None:
+    """The order is the document's, not one the walk sorts into: a higher fix first, then, at one
+    version, `named` 1.9 before 1.7.5 before the entry with none. LoonSec's data writes its own order
+    (the entry without `named` first, then by `named`); the walk keeps whichever it is given, so a sort
+    of the walk's own would show here. 1.0 (d-100), 2.0 (d60), 3.0 (d90). CVE-423: det d40, run 1.0,
+    four fixes, each dated by itself and each counted."""
+    versions = [version("1.0", d(-100)), version("2.0", d(60)), version("3.0", d(90))]
+    fixes = [
+        {"line": "", "index": 2},
+        {"line": "", "index": 1, "named": "1.9"},
+        {"line": "", "index": 1, "named": "1.7.5"},
+        {"line": "", "index": 1},
+    ]
+    result = fix_dating_walk(versions, [cve("CVE-2026-0423", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=fixes)])
+    [row] = result["cves"]
+    assert [(entry["fix"], entry["named"], entry["how"]) for entry in row["fix_dated_by"]] == [
+        ("3.0", None, "fix"),
+        ("2.0", "1.9", "fix"),
+        ("2.0", "1.7.5", "fix"),
+        ("2.0", None, "fix"),
+    ]
+    assert result["counts"]["fix_dating"] == {"fix": 4, "next_dated": 0, "undated": 0}
+    assert row["outcomes"]["1d"]["cleared_by"] == "2.0"
+    assert invariant_failures(result) == []
 
 
 def test_a_document_with_or_without_the_retired_reason_word_walks_the_same() -> None:

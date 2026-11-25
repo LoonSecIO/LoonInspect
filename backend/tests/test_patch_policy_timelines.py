@@ -718,6 +718,21 @@ def test_a_timeline_that_spells_mozillas_esr_suffix_is_matched_without_it_and_a_
     }
     joined = timelines.split([("2.0esr", day("2026-01-01"))], two, "demo/release")
     assert (joined.matched, joined.other) == ((), ("2.0esr",))
+    # Another track that lists only the bare spelling takes the suffixed key by it, and the key is set
+    # aside under the spelling that track lists: `3.0esr` is demo/esr's 3.0, never `3.0esr`.
+    bare_other = {
+        "app": "demo",
+        "tracks": [
+            {"track": "demo/release", "versions": [{"v": "2.0", "keys": ["2.0"]}]},
+            {"track": "demo/esr", "versions": [{"v": "3.0", "keys": ["3.0"]}]},
+        ],
+    }
+    joined = timelines.split([("3.0esr", day("2026-01-01")), ("2.0", day("2026-01-02"))], bare_other, "demo/release")
+    assert (joined.matched, joined.other, joined.unmatched) == (("2.0",), ("3.0",), ())
+    # Only Mozilla's whole `esr` suffix is dropped: a spelling that merely ends in one of its letters
+    # stays as given, and unmatched.
+    joined = timelines.split([("129.0r", day("2024-08-06")), ("129.0s", day("2024-08-06"))], doc["apps"][0], "firefox/release")
+    assert (joined.matched, joined.unmatched) == ((), ("129.0r", "129.0s"))
 
     # End to end: Jamf's ESR title spelled with the suffix, beside the release title, still walks the
     # release track with the ESR builds set aside.
