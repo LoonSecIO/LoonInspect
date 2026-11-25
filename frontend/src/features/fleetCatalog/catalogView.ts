@@ -23,6 +23,15 @@ export function statusOf(state: FleetCatalogState | null): FleetStatus {
   return checkFailed(state) ? "failed" : "answered";
 }
 
+/**
+ * Fleet's manifest for a title on GitHub, the one place its address is written (#901): on `main`
+ * for the tab's source link, or at a commit, where it is what Fleet would install for the version
+ * that commit dated.
+ */
+export function manifestUrl(slug: string, ref = "main"): string {
+  return `https://github.com/fleetdm/fleet/blob/${ref}/ee/maintained-apps/outputs/${encodeURIComponent(slug)}/darwin.json`;
+}
+
 export function titleMatches(title: FleetCatalogTitle, term: string): boolean {
   const needle = term.trim().toLowerCase();
   if (needle === "") return true;
