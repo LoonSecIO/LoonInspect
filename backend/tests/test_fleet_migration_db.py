@@ -109,7 +109,7 @@ async def test_population_and_identity_share_a_cohort(db, github, inventory, vie
     # The detail (#899) counts the same Macs, each once: older when any copy is older, unknown when one cannot be ordered.
     detail = await _read(viewer, _filter(source, "contact") | {"targetVersion": "1.5"}, f"/apps/{alpha}")
     assert detail["scope"] == report["scope"] and detail["installedMacs"] == 1 and detail["impactUnavailable"] is None
-    assert [b["version"] for b in detail["builds"]] == ["1.0", "2.0"] and detail["item"]["appHash"] == alpha
+    assert [b["version"] for b in detail["builds"]] == ["1.0", "2.0"] and list(detail["installedEvidence"]) == [alpha]
     assert detail["impact"] == {"targetVersion": "1.5", "installedMacs": 1, "olderMacs": 1, "atOrAboveMacs": 0, "unknownMacs": 0}
     later = await _read(viewer, _filter(source, "inventory") | {"targetVersion": "1.5"}, f"/apps/{alpha}")
     assert (later["impact"]["installedMacs"], later["impact"]["olderMacs"]) == (1, 0)
