@@ -605,32 +605,104 @@ def refusal(document_: dict[str, Any], observed: dict[str, Any], **kwargs: Any) 
 
 
 def test_a_timeline_with_no_matched_versions_is_refused_with_its_sentence() -> None:
+    """The sentence says what to do next by source: LoonSec's own dates are reported; a timeline read on
+    this instance may be the wrong title, and Public walks LoonSec's dates instead."""
     doc, _ = golden_a()
-    refused = refusal(doc, timeline([{"version": "5.0", "date": d(1)}, {"version": "6.0", "date": d(2)}]))
+    stray = [{"version": "5.0", "date": d(1)}, {"version": "6.0", "date": d(2)}]
+    refused = refusal(doc, timeline(stray))
     assert refused.reason == "no_matched_versions"
     assert refused.sentence == (
         "None of the 2 versions in the timeline from Vendor tags is a version LoonSec's patch-policy data lists for "
-        "Demo Demo, so there is nothing to install and nothing was walked. Check that the timeline is Demo's."
+        "Demo Demo, so there is nothing to install and nothing was walked. These dates are LoonSec's own and the same "
+        "on every instance: report the sentence with the data's date (Settings › Support)."
     )
     assert refused.detail["unmatched"] == ["5.0", "6.0"]
     assert refusal(doc, timeline([])).reason == "no_matched_versions"
+    jamf = refusal(doc, timeline(stray, source="jamf"))
+    assert jamf.sentence.endswith(
+        "nothing was walked. If the timeline is not Demo's, LoonInspect picked the wrong title: report the sentence "
+        "(Settings › Support). These dates come from this instance's copy of Jamf's public patch catalog. Choose "
+        "Public as the source to walk LoonSec's published dates for Demo instead."
+    )
 
 
-def test_above_five_percent_unmatched_is_refused_and_below_it_is_listed() -> None:
+def test_above_five_percent_unmatched_in_reach_is_refused_and_below_it_is_listed() -> None:
+    """Golden A's window is d31 to d180, so the versions in reach are those dated d-28 (d31 - 59) to d180:
+    1.0, 1.1 and 1.2 of the matched ones (0.9, d-31, is older; 1.3 is undated) and the stray 1.0-hotfix
+    (d5). 1 of 4 is 25%: refused, with the span and the next check in the sentence."""
     doc, observed = golden_a()
     noisy = copy.deepcopy(observed)
     noisy["observations"].append({"version": "1.0-hotfix", "date": d(5)})
     refused = refusal(doc, noisy)
     assert refused.reason == "too_many_unmatched"
-    assert refused.sentence.startswith("1 of 6 versions in the timeline from Vendor tags (16.7%) match no version")
-    assert refused.detail["unmatched"] == ["1.0-hotfix"]
+    assert refused.sentence.startswith(
+        "1 of the 4 versions the timeline from Vendor tags dates from 2025-12-04 to 2026-06-30, the days a device in "
+        "this view could install them, match no version LoonSec's patch-policy data lists for Demo Demo (25.0%). "
+        "Above 5% the walk is refused"
+    )
+    assert refused.sentence.endswith("report the sentence with the data's date (Settings › Support).")
+    assert refused.detail["in_reach"] == {
+        "since": "2025-12-04",
+        "until": "2026-06-30",
+        "matched": 3,
+        "unmatched": ["1.0-hotfix"],
+        "share": 0.25,
+    }
 
-    # Twenty-five matched versions and one stray: 1 in 26 is 3.8%, under the line, and listed.
+    # Twenty-five matched versions and one stray, all in reach: 1 in 26 is 3.8%, under the line, and listed.
     many = [version(f"1.{n}", d(n * 3)) for n in range(25)]
     track = {"track": "demo/stable", "label": "Demo", "path": {"kind": "latest"}, "versions": many, "cves": []}
     stray = timeline([{"version": v["v"], "date": v["date"]} for v in many] + [{"version": "1.99-rc", "date": d(4)}])
     result = walk(document([track]), app="demo", track="demo/stable", timeline=stray)
     assert result["inputs"]["timeline"]["unmatched"] == ["1.99-rc"]
+    assert result["inputs"]["timeline"]["in_reach"]["matched"] == 25
+    assert result["inputs"]["timeline"]["in_reach"]["unmatched"] == ["1.99-rc"]
+
+
+def test_the_unmatched_share_counts_only_the_versions_in_reach() -> None:
+    """Plan 4.4 refuses above 5% unmatched *steps*. A hundred old matched versions cannot hide three
+    misses among the window's eight releases, and two misses from years before the window cannot refuse
+    a window whose every release matches."""
+    old = [version(f"1.{n}", d(-2000 + n * 10)) for n in range(100)]
+    new = [version(f"2.{n}", d(n * 20)) for n in range(8)]
+    track = {"track": "demo/stable", "label": "Demo", "path": {"kind": "latest"}, "versions": old + new, "cves": []}
+    spelled = [{"version": v["v"], "date": v["date"]} for v in old] + [
+        {"version": v["v"] + ("-b1" if at in (1, 5, 7) else ""), "date": v["date"]} for at, v in enumerate(new)
+    ]
+    # All time: 3 unmatched of 108 (2.8%). In reach of 2024-06-30..2026-06-30: 3 of 8 (37.5%).
+    refused = refusal(document([track]), timeline(spelled, source="jamf"))
+    assert refused.reason == "too_many_unmatched"
+    assert refused.detail["in_reach"]["unmatched"] == ["2.1-b1", "2.5-b1", "2.7-b1"]
+    assert refused.detail["in_reach"]["matched"] == 5
+    assert "(37.5%)" in refused.sentence
+    assert refused.sentence.endswith("Choose Public as the source to walk LoonSec's published dates for Demo instead.")
+
+    many = [version(f"1.{n}", d(n * 3)) for n in range(25)]
+    track = {"track": "demo/stable", "label": "Demo", "path": {"kind": "latest"}, "versions": many, "cves": []}
+    ancient = [{"version": f"0.{n}", "date": f"2019-0{n + 1}-01"} for n in range(2)]
+    # All time: 2 unmatched of 27 (7.4%). In reach: none.
+    result = walk(
+        document([track]),
+        app="demo",
+        track="demo/stable",
+        timeline=timeline([{"version": v["v"], "date": v["date"]} for v in many] + ancient),
+    )
+    assert result["inputs"]["timeline"]["unmatched"] == ["0.0", "0.1"]
+    assert result["inputs"]["timeline"]["in_reach"]["unmatched"] == []
+
+
+def test_exactly_five_percent_unmatched_walks_and_more_is_refused() -> None:
+    """Nineteen matched versions in reach and one stray is 5.0%, at the line, and walks; drop one matched
+    version from the timeline and 1 in 19 (5.3%) is refused."""
+    many = [version(f"1.{n}", d(n * 3)) for n in range(19)]
+    track = {"track": "demo/stable", "label": "Demo", "path": {"kind": "latest"}, "versions": many, "cves": []}
+    named = [{"version": v["v"], "date": v["date"]} for v in many]
+    stray = {"version": "1.99-rc", "date": d(4)}
+    result = walk(document([track]), app="demo", track="demo/stable", timeline=timeline([*named, stray]))
+    assert result["inputs"]["timeline"]["in_reach"]["share"] == 0.05
+    refused = refusal(document([track]), timeline([*named[:-1], stray]))
+    assert refused.reason == "too_many_unmatched"
+    assert "(5.3%)" in refused.sentence
 
 
 def test_an_empty_window_is_refused_with_its_reasons() -> None:
@@ -668,13 +740,91 @@ def test_bad_requests_are_refused() -> None:
     assert refusal(doc, timeline([{"version": "1.0", "date": "yesterday"}])).reason == "timeline_invalid"
 
 
+def _track(doc: dict[str, Any]) -> dict[str, Any]:
+    return doc["apps"][0]["tracks"][0]
+
+
+MALFORMED = [
+    ("doc_id", lambda doc: doc.pop("doc_id")),
+    ("as_of", lambda doc: doc.__setitem__("as_of", "yesterday")),
+    ("apps", lambda doc: doc.__setitem__("apps", {})),
+    ("apps[0]", lambda doc: doc["apps"].insert(0, "demo")),
+    ("tracks", lambda doc: doc["apps"][0].__setitem__("tracks", {"demo/stable": {}})),
+    ("definitions", lambda doc: doc.__setitem__("definitions", ["ranges"])),
+    ("clocks", lambda doc: doc.__setitem__("clocks", "NVD")),
+    ("sources", lambda doc: doc.__setitem__("sources", ["vendor"])),
+    ("sources.detectable", lambda doc: doc["sources"].__setitem__("detectable", "x")),
+    ("sources.timelines", lambda doc: doc["sources"].__setitem__("timelines", ["vendor"])),
+    ("exclusion_reasons", lambda doc: doc.__setitem__("exclusion_reasons", ["rejected", 3])),
+    ("path", lambda doc: _track(doc).__setitem__("path", "hold")),
+    ("check", lambda doc: _track(doc).__setitem__("check", ["2y"])),
+    ("exclusions", lambda doc: _track(doc).__setitem__("exclusions", ["CVE-2026-0009"])),
+    ("not_detectable", lambda doc: _track(doc).__setitem__("not_detectable", ["CVE-2026-0012"])),
+    ("not_detectable.count", lambda doc: _track(doc).__setitem__("not_detectable", {"count": "n/a"})),
+    ("not_detectable.cves", lambda doc: _track(doc).__setitem__("not_detectable", {"count": 1, "cves": "CVE-2026-0012"})),
+    ("not_detectable.cves", lambda doc: _track(doc).__setitem__("not_detectable", {"count": 1, "cves": ["CVE-2026-0011"]})),
+    ("not_detectable.cves", lambda doc: _track(doc).__setitem__("not_detectable", {"count": 1, "cves": ["CVE-2026-0009"]})),
+    ("cves[0]", lambda doc: _track(doc)["cves"][0].__setitem__("detectable_not_before", "junk")),
+]
+
+
+@pytest.mark.parametrize(("where", "mutate"), MALFORMED, ids=[f"{at}-{where}" for at, (where, _) in enumerate(MALFORMED)])
+def test_a_malformed_document_is_refused_as_the_documents_fault_in_words(where: str, mutate: Any) -> None:
+    """Every shape the walk reads is checked before it is read: a malformed document is refused as
+    LoonSec's data, naming the place, never a Python exception (a 500 with no words) and never blamed
+    on the request or read as absence ("No reference yet"). A CVE listed both as not detectable and as
+    a row to walk or exclude is malformed: a CVE is in exactly one of the three lists."""
+    doc, observed = golden_a()
+    mutate(doc)
+    refused = refusal(doc, observed)
+    assert refused.reason == "document_invalid", refused.sentence
+    assert refused.detail["where"] == where
+    assert refused.sentence.startswith("LoonSec's patch-policy data")
+    assert refused.sentence.endswith("report the sentence with the data's date (Settings › Support).")
+
+
+def test_public_timeline_refuses_a_malformed_release_date_as_the_documents_fault() -> None:
+    doc, _ = golden_a()
+    _track(doc)["versions"][1]["date"] = "junk"
+    with pytest.raises(WalkRefused) as caught:
+        public_timeline(doc, app="demo", track="demo/stable")
+    assert (caught.value.reason, caught.value.detail["where"]) == ("document_invalid", "versions[1].date")
+
+
 def test_a_held_line_the_timeline_never_dates_is_refused() -> None:
     """Fleet follows only Wireshark's newest line: a 4.4 hold over a timeline with no 4.4 release."""
     doc, _ = golden_b()
-    newest_only = timeline([{"version": "4.6.0", "date": d(75)}, {"version": "4.2.0", "date": d(-92)}])
-    refused = refusal(doc, newest_only, track="demo/4.4")
+    newest_only = [{"version": "4.6.0", "date": d(75)}, {"version": "4.2.0", "date": d(-92)}]
+    refused = refusal(doc, timeline(newest_only), track="demo/4.4")
     assert refused.reason == "ceiling_line_undated"
     assert "dates no Demo 4.4 release" in refused.sentence
+    assert refused.sentence.endswith("report the sentence with the data's date (Settings › Support).")
+    fleet = refusal(doc, timeline(newest_only, source="fleet"), track="demo/4.4")
+    assert fleet.sentence.endswith(
+        "nothing was walked. These dates come from this instance's Fleet history. Choose Public as the source to "
+        "walk LoonSec's published dates for Demo instead."
+    )
+
+
+def test_a_timeline_dating_only_releases_above_the_promotion_table_has_nothing_to_install() -> None:
+    """Golden C's 12.0.1 is above the table's newest row. A timeline dating only it leaves the waiting
+    device nothing to install: refused as such, not as an empty window."""
+    doc, _ = golden_c()
+    refused = refusal(doc, timeline([{"version": "12.0.1", "date": d(59)}]))
+    assert refused.reason == "nothing_to_install"
+    assert "above the newest major LoonSec's promotion table lists" in refused.sentence
+    assert refused.detail["above_table"] == ["12.0.1"]
+
+    held, _ = golden_b()
+    above = refusal(held, timeline([{"version": "4.6.0", "date": d(75)}], source="jamf"), track="demo/4.4")
+    assert above.reason == "nothing_to_install"
+    assert "(every version it names that LoonSec lists is undated or above the 4.4 line)" in above.sentence
+    assert above.sentence.endswith("Choose Public as the source to walk LoonSec's published dates for Demo instead.")
+    plain, _ = golden_a()
+    undated = refusal(plain, timeline([{"version": "1.3", "date": None}, {"version": "1.3-rc", "date": d(4)}]))
+    assert undated.reason == "nothing_to_install"
+    assert "(every version it names that LoonSec lists is undated), so nothing was walked. 1 of the versions" in undated.sentence
+    assert undated.detail["unmatched"] == ["1.3-rc"]
 
 
 def test_public_timeline_reads_the_documents_dates_and_refuses_without_them() -> None:
@@ -709,6 +859,22 @@ def test_the_same_input_walks_to_the_same_run_in_any_observation_order() -> None
     assert walk(doc, app="demo", track="demo/stable", timeline=jamf)["input_id"] != first["input_id"]
 
 
+def test_everything_a_walk_reads_from_the_timeline_is_in_its_input_id() -> None:
+    """The memo key holds every timeline field the output carries: one date moved (Jamf's hourly sync
+    rewriting a date) is a new input, and so is the timeline's clock text, which the output repeats in
+    `clocks.release_date`. The same input_id with a different run_id would be a defect."""
+    doc, observed = golden_a()
+    first = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    moved = copy.deepcopy(observed)
+    moved["observations"][2]["date"] = d(61)
+    again = walk(doc, app="demo", track="demo/stable", timeline=moved)
+    assert again["input_id"] != first["input_id"]
+    reclocked = dict(observed, clock="another sentence about the release date")
+    clocked = walk(doc, app="demo", track="demo/stable", timeline=reclocked)
+    assert clocked["clocks"]["release_date"] != first["clocks"]["release_date"]
+    assert clocked["input_id"] != first["input_id"] and clocked["run_id"] != first["run_id"]
+
+
 def test_parity_with_the_documents_check() -> None:
     """Plan 4.7: the public walk at the default window equals the document's `check`, or nothing is shown."""
     doc, observed = golden_a()
@@ -734,6 +900,95 @@ def test_window_for_names_the_window_without_walking() -> None:
     assert (aligned["window"]["since"], aligned["window"]["until"]) == ("2026-03-01", "2026-05-31")
     assert {row["reason"] for row in aligned["window"]["shortened_by"]} == {"common_window"}
     assert aligned["check"]["state"] == "not_applicable"
+    # A timeline the walk would refuse allows no window to align to either.
+    noisy = copy.deepcopy(observed)
+    noisy["observations"].append({"version": "1.0-hotfix", "date": d(5)})
+    with pytest.raises(WalkRefused) as caught:
+        window_for(doc, app="demo", track="demo/stable", timeline=noisy)
+    assert caught.value.reason == "too_many_unmatched"
+
+
+# --- Rules a one-line change could break unseen ---------------------------------------------
+
+
+def test_exclusions_do_not_depend_on_the_stops_asked_for() -> None:
+    """Exclusions are judged on the lines any of the six stops visits, so asking for one stop excludes
+    what asking for all six does. Here only the 60-day device visits line 1, where the CVE's range is
+    ambiguous: it is excluded under the 1-day stop too, or replayed + excluded could not equal in_window
+    across views of one window.
+
+    1.0 (line 1, d-100) and 2.0 (line 2, d0); the window opens d31 (clock_coverage). The 1-day device
+    runs 2.0 from d0; the 60-day device runs 1.0 until 2.0's install on d59."""
+    track = {
+        "track": "demo/stable",
+        "label": "Demo",
+        "path": {"kind": "latest"},
+        "versions": [version("1.0", d(-100), "1"), version("2.0", d(0), "2")],
+        "cves": [
+            cve("CVE-2026-0301", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1, "2")], ambiguous_lines=["1"])
+        ],
+    }
+    doc = document([track], coverage="2026-01-31")
+    observed = timeline([{"version": "1.0", "date": d(-100)}, {"version": "2.0", "date": d(0)}])
+    every = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    assert every["policies"]["1d"]["initial_version"] == "2.0" and every["policies"]["60d"]["initial_version"] == "1.0"
+    one = walk(doc, app="demo", track="demo/stable", timeline=observed, stops=("1d",))
+    assert one["exclusions"] == every["exclusions"]
+    assert one["exclusions"]["by_reason"]["branch_ambiguity"] == 1
+    assert one["counts"] == every["counts"]
+
+
+def test_a_release_dated_the_same_day_as_the_fix_is_clean_under_rule_5() -> None:
+    """Rule 5 needs a release dated *before* the fix. Golden C with 11.0.1 dated d19, the day 10.0.2 (the
+    fix) is dated: 11.0.1 no longer predates the fix, so CVE-201 closes on d15 (10.0.3) for good."""
+    doc, _ = golden_c()
+    _track(doc)["versions"][4]["date"] = d(19)
+    observed = timeline([{"version": v["v"], "date": v["date"]} for v in _track(doc)["versions"]])
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    clean = outcome(result, "CVE-2026-0201", "1d")
+    assert (clean["intervals"], clean["cleared_on"], clean["cleared_by"]) == ([[d(5), d(14)]], d(15), "10.0.3")
+
+
+def test_a_channel_start_binds_the_window() -> None:
+    """A track that names its channel's first day starts 59 days after it: d0 + 59 = d59, later than the
+    detectable record's d31."""
+    doc, observed = golden_a()
+    _track(doc).update(channel_start=d(0), channel="stable")
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    assert result["window"]["since"] == d(59)
+    [shortened] = result["window"]["shortened_by"]
+    assert (shortened["reason"], shortened["date"]) == ("channel_start", d(59))
+    assert shortened["sentence"] == "The stable channel begins on 2026-01-01, and the 60-day stop needs 59 days of it."
+
+
+def test_a_timeline_read_before_the_documents_date_ends_the_window_the_day_before() -> None:
+    doc, observed = golden_a()
+    result = walk(doc, app="demo", track="demo/stable", timeline=dict(observed, as_of="2026-06-01"))
+    assert result["window"]["until"] == "2026-05-31"
+    assert [row["reason"] for row in result["window"]["shortened_by"]] == ["clock_coverage", "timeline_as_of"]
+
+
+def test_a_fix_on_another_line_is_not_a_fix_installed_first() -> None:
+    """Golden B plus CVE-106: affected 4.4.0 only, with a fix listed only on 4.2 (4.2.2, index 2). The
+    1-day device runs 4.4.2 (index 6) on d100: ranked above the 4.2 fix, but on another line, so the CVE
+    was never seen because 4.4.2 is outside the range, not because its fix came first."""
+    doc, observed = golden_b()
+    _track(doc)["cves"].append(
+        cve("CVE-2026-0106", published=d(100), detectable=d(100), affected=[[4, 4]], fixes=[fix(2, "4.2")])
+    )
+    result = walk(doc, app="demo", track="demo/4.4", timeline=observed)
+    assert outcome(result, "CVE-2026-0106", "1d")["why"] == "outside_affected_range"
+    assert outcome(result, "CVE-2026-0106", "60d")["outcome"] == "exposed"
+
+
+def test_uncertain_over_one_day_counts_more_than_a_day_and_not_one() -> None:
+    """detectable_at one day after detectable_not_before is the day grain's own uncertainty; two days is
+    counted."""
+    doc, observed = golden_a()
+    _track(doc)["cves"][0]["detectable_not_before"] = d(39)  # CVE-1, detectable d40: one day
+    _track(doc)["cves"][1]["detectable_not_before"] = d(43)  # CVE-2, detectable d45: two days
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    assert result["counts"]["uncertain_over_1d"] == 1
 
 
 # --- Seeded property tests --------------------------------------------------------------------

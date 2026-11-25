@@ -7,6 +7,8 @@ returns the walk as data: a per-day series of open CVEs, every CVE's outcome und
 the totals, the installs, the exclusions, how the timeline joined the document, and an
 `input_id` that names the inputs so a caller can memoise the answer. The API that serves it
 (`/api/patch-policy/walk`) and the page that draws it are later slices; nothing calls this yet.
+Each `REFUSED_*` sentence says what failed, why and what to check; the API makes them reachable
+as 409 details, so its pull request lands each one's troubleshooting step (§22) with it.
 
 **Pure.** No database, no network, no inventory, no wall clock: the window's last day comes
 from the dates the inputs carry. The same inputs give the same bytes, so `run_id` (the digest
@@ -57,8 +59,11 @@ WINDOW_YEARS = (2, 3)
 DEFAULT_YEARS = 2
 SOURCES = ("public", "jamf", "fleet")
 PUBLIC = "public"
-# Above this share of a timeline's versions matching nothing in the document, the timeline is
-# refused for the app and track: each unmatched version is an install the walk would skip.
+# Above this share of the versions a device in the view could install matching nothing in the
+# document, the timeline is refused for the app and track (plan 4.4, "above 5% unmatched steps"):
+# an unmatched version is never installed, so each one in reach is an install the walk would skip.
+# Measured over the versions in reach (`_reach`), not every version the timeline ever named, so
+# old matched versions cannot dilute a gap in the window and old misses cannot refuse a full one.
 UNMATCHED_LIMIT = 0.05
 
 PATH_HOLD, PATH_LATEST = "hold", "latest"
@@ -135,12 +140,16 @@ DEFINITIONS = {
     "join": "A timeline's version is matched to the track's version list by exact, lowercased "
     "spelling (`versions[].keys`); no version is compared by number on this instance. A version "
     "the track does not list but another track of the app does is the other track's "
-    "(`other_track`). A version no track lists is unmatched and never installed; when more than 5% "
-    "of the distinct versions a timeline names, other tracks' left out, are unmatched, the "
-    "timeline is refused for the app and track. A version the timeline names without a date is "
-    "never installed either (`undated`). A "
-    "version the timeline names more than once is dated by its earliest date, and the "
-    "disagreement is counted (`conflicts`).",
+    "(`other_track`). A version no track lists is unmatched and never installed (`unmatched`). "
+    "The versions in reach are those a device in this view could install: the timeline dates "
+    "them from 59 days before the window's first day to its last day. A matched version in "
+    "reach is counted once, by its place in the version list, and only when the track's path "
+    "installs it; every unmatched version in reach is counted, because an unmatched version "
+    "cannot be placed on a line. When more than 5% of the versions in reach are unmatched, "
+    "the timeline is refused for the app and track (`in_reach`); unmatched versions outside "
+    "that span are listed and do not count. A version the timeline names without a date is "
+    "never installed either (`undated`). A version the timeline names more than once is dated "
+    "by its earliest date, and the disagreement is counted (`conflicts`).",
     "path": "`hold` installs only versions up to and including the track's ceiling line; `latest` "
     "installs every version the track lists.",
     "availability": "A release is available on the day the timeline dates it. Where the track "
@@ -194,8 +203,9 @@ DEFINITIONS = {
     "six stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
     "ambiguous on such a line, and `fixed_version_not_in_timeline` when its fix on such a line "
     "is a version this timeline does not date.",
-    "input_id": "The digest of the document's id, the app and track, the timeline's digest and "
-    "date, the stops and the window asked for. The same inputs walk to the same `run_id`.",
+    "input_id": "The digest of the document's id, the app and track, the timeline's source, name, "
+    "date, clock and the digest of its dated versions, the stops and the window asked for. The "
+    "same inputs walk to the same `run_id`.",
 }
 
 COMPAT_V1_DEFINITIONS = {
@@ -311,21 +321,59 @@ class _Timeline:
 class _Join:
     dates: dict[int, dt.date]
     named: set[int]
-    matched_keys: set[str]
     unmatched: list[str]
+    # Each unmatched spelling's earliest date (None when the timeline never dates it), for `_reach`.
+    unmatched_dates: dict[str, dt.date | None]
     other_track: int
     conflicts: int
     observations: int
 
 
-def _invalid(where: str, what: str, name: str, label: str) -> WalkRefused:
+def _invalid(where: str, what: str, name: str | None = None, label: str | None = None) -> WalkRefused:
+    named = " ".join(part for part in (name, label) if part)
+    about = f" for {named}" if named else ""
     return WalkRefused(
         REFUSED_DOCUMENT,
-        f"LoonSec's patch-policy data for {name} {label} failed this build's check ({where}: {what}), so nothing "
+        f"LoonSec's patch-policy data{about} failed this build's check ({where}: {what}), so nothing "
         "was walked. The data is the same for every instance and none of yours is read: report the sentence with "
         "the data's date (Settings › Support).",
         {"where": where, "what": what},
     )
+
+
+def _mapping_or_absent(
+    container: Mapping[str, Any], key: str, where: str, name: str | None = None, label: str | None = None
+) -> Mapping[str, Any]:
+    """`container[key]` when it is an object, `{}` when it is absent or null; refused as anything else."""
+    value = container.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise _invalid(where, f"not an object ({type(value).__name__})", name, label)
+    return value
+
+
+def _check_document(document: Mapping[str, Any]) -> None:
+    """The document-wide shapes the walk reads, refused in words rather than met with a crash."""
+    doc_id = document.get("doc_id")
+    if not isinstance(doc_id, str) or not doc_id:
+        raise _invalid("doc_id", "absent, so no walk of it could be named")
+    try:
+        as_of = day_of(document.get("as_of"))
+    except (TypeError, ValueError):
+        as_of = None
+    if as_of is None:
+        raise _invalid("as_of", f"{document.get('as_of')!r} is not a date")
+    if not isinstance(document.get("apps"), list):
+        raise _invalid("apps", "not a list")
+    for key in ("definitions", "clocks"):
+        _mapping_or_absent(document, key, key)
+    sources = _mapping_or_absent(document, "sources", "sources")
+    for key in ("detectable", "timelines"):
+        _mapping_or_absent(sources, key, f"sources.{key}")
+    listed = document.get("exclusion_reasons")
+    if listed is not None and (not isinstance(listed, list) or not all(isinstance(r, str) and r for r in listed)):
+        raise _invalid("exclusion_reasons", "not a list of reasons")
 
 
 def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
@@ -342,12 +390,18 @@ def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any],
             f"This build reads {ALGORITHM}; the patch-policy data on this instance is {document.get('algorithm')!r}. "
             "Update LoonInspect.",
         )
-    apps = document.get("apps")
-    row = next((a for a in apps if isinstance(a, Mapping) and a.get("app") == app), None) if isinstance(apps, list) else None
+    _check_document(document)
+    apps = document["apps"]
+    for at, entry in enumerate(apps):
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("app"), str):
+            raise _invalid(f"apps[{at}]", "not an app with an id")
+    row = next((a for a in apps if a["app"] == app), None)
     if row is None:
         raise WalkRefused(REFUSED_APP, f"No reference yet for {app}. That is not a count of zero.")
-    tracks = row.get("tracks") if isinstance(row.get("tracks"), list) else []
-    chosen = next((t for t in tracks if isinstance(t, Mapping) and t.get("track") == track), None)
+    tracks = row.get("tracks")
+    if not isinstance(tracks, list) or not all(isinstance(t, Mapping) for t in tracks):
+        raise _invalid("tracks", "not a list of tracks", str(row.get("name") or app))
+    chosen = next((t for t in tracks if t.get("track") == track), None)
     if chosen is None:
         held = ", ".join(str(t.get("track")) for t in tracks if isinstance(t, Mapping)) or "none"
         raise WalkRefused(
@@ -399,16 +453,25 @@ def _runs(value: Any, count: int, where: str, name: str, label: str) -> tuple[tu
     return tuple(runs)
 
 
-def _rows(track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str) -> list[_Row]:
+def _rows(
+    track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str
+) -> tuple[list[_Row], int]:
+    """The track's CVE rows, walked and excluded, and its count of CVEs not yet detectable.
+
+    A CVE is in exactly one of `cves[]`, `exclusions.cves` and `not_detectable.cves`. One the
+    document lists both as not detectable and as a row would be walked by its publication date
+    while the document also counts it among the CVEs never counted (plan 4.1), so the overlap is
+    refused."""
     count = len(versions)
     rows: list[_Row] = []
     seen: set[str] = set()
 
     def clocked(entry: Mapping[str, Any], where: str) -> tuple[dt.date | None, dt.date | None]:
         try:
+            day_of(entry.get("detectable_not_before"))
             return day_of(entry.get("published")), day_of(entry.get("detectable_at"))
         except (TypeError, ValueError) as exc:
-            raise _invalid(where, "published or detectable_at is not a date", name, label) from exc
+            raise _invalid(where, "published, detectable_at or detectable_not_before is not a date", name, label) from exc
 
     def add(entry: Any, where: str, exclusion: str | None) -> None:
         if not isinstance(entry, Mapping) or not isinstance(entry.get("cve_id"), str) or not entry["cve_id"]:
@@ -462,7 +525,7 @@ def _rows(track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[
         raise _invalid("cves", "absent", name, label)
     for at, entry in enumerate(cves):
         add(entry, f"cves[{at}]", None)
-    excluded = (track.get("exclusions") or {}).get("cves") or []
+    excluded = _mapping_or_absent(track, "exclusions", "exclusions", name, label).get("cves") or []
     if not isinstance(excluded, list):
         raise _invalid("exclusions.cves", "not a list", name, label)
     for at, entry in enumerate(excluded):
@@ -470,7 +533,25 @@ def _rows(track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[
         if reason not in reasons:
             raise _invalid(f"exclusions.cves[{at}].reason", f"{reason!r} is not a reason this build knows", name, label)
         add(entry, f"exclusions.cves[{at}]", reason)
-    return sorted(rows, key=lambda row: row.cve_id)
+
+    not_detectable = _mapping_or_absent(track, "not_detectable", "not_detectable", name, label)
+    held = not_detectable.get("count", 0)
+    if not isinstance(held, int) or isinstance(held, bool) or held < 0:
+        raise _invalid("not_detectable.count", f"{held!r} is not a count", name, label)
+    listed = not_detectable.get("cves") or []
+    if not isinstance(listed, list) or not all(isinstance(cve_id, str) and cve_id for cve_id in listed):
+        raise _invalid("not_detectable.cves", "not a list of CVE ids", name, label)
+    if len(set(listed)) != len(listed) or len(listed) > held:
+        raise _invalid("not_detectable.cves", f"{len(listed)} listed against a count of {held}", name, label)
+    both = sorted(seen.intersection(listed))
+    if both:
+        raise _invalid(
+            "not_detectable.cves",
+            f"{both[0]} is also listed as a CVE to walk or as excluded, and a CVE is in exactly one of the three",
+            name,
+            label,
+        )
+    return sorted(rows, key=lambda row: row.cve_id), held
 
 
 def _timeline(timeline: Any) -> _Timeline:
@@ -523,26 +604,25 @@ def _join(versions: list[_Version], other_keys: set[str], timeline: _Timeline) -
     own = {key: version.index for version in versions for key in version.keys}
     dated: dict[int, set[dt.date]] = {}
     named: set[int] = set()
-    matched_keys: set[str] = set()
-    unmatched: set[str] = set()
+    unmatched: dict[str, dt.date | None] = {}
     others: set[str] = set()
     for version, day in timeline.observations:
         key = version.lower()
         if key in own:
             index = own[key]
             named.add(index)
-            matched_keys.add(key)
             if day is not None:
                 dated.setdefault(index, set()).add(day)
         elif key in other_keys:
             others.add(key)
         else:
-            unmatched.add(key)
+            earlier = unmatched.get(key)
+            unmatched[key] = day if earlier is None or (day is not None and day < earlier) else earlier
     return _Join(
         dates={index: min(days) for index, days in dated.items()},
         named=named,
-        matched_keys=matched_keys,
         unmatched=sorted(unmatched),
+        unmatched_dates=unmatched,
         other_track=len(others),
         conflicts=sum(1 for days in dated.values() if len(days) > 1),
         observations=len(timeline.observations),
@@ -561,9 +641,11 @@ class _Prepared:
     label: str
     versions: list[_Version]
     rows: list[_Row]
+    not_detectable: int
     reasons: tuple[str, ...]
     timeline: _Timeline
     join: _Join
+    path_kind: str
     path_end: int
     ceiling_line: str | None
     promoted: bool
@@ -572,47 +654,67 @@ class _Prepared:
     compat_v1: bool
 
 
+def _source_words(timeline: _Timeline) -> str:
+    """Where a timeline's dates come from, in the words the page's source toggle uses."""
+    return {
+        PUBLIC: "LoonSec's published release dates",
+        "jamf": "this instance's copy of Jamf's public patch catalog",
+        "fleet": "this instance's Fleet history",
+    }[timeline.source]
+
+
+def _next_check(timeline: _Timeline, name: str) -> str:
+    """What an operator can do about a timeline the walk refused: report LoonSec's own dates, or
+    walk them instead of a timeline read on this instance."""
+    if timeline.source == PUBLIC:
+        return (
+            "These dates are LoonSec's own and the same on every instance: report the sentence with the data's date "
+            "(Settings › Support)."
+        )
+    return (
+        f"These dates come from {_source_words(timeline)}. Choose Public as the source to walk LoonSec's published "
+        f"dates for {name} instead."
+    )
+
+
 def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool) -> _Prepared:
     app_row, track_row = _find_track(document, app, track)
     name = str(app_row.get("name") or app)
     label = str(track_row.get("label") or track)
     versions = _versions(track_row, name, label)
     listed = document.get("exclusion_reasons")
-    reasons = tuple(listed) if isinstance(listed, list) and listed else EXCLUSION_REASONS
+    reasons = tuple(listed) if listed else EXCLUSION_REASONS
     reasons = reasons + tuple(reason for reason in (BRANCH_AMBIGUITY, FIX_NOT_IN_TIMELINE) if reason not in reasons)
-    rows = _rows(track_row, versions, reasons, name, label)
+    rows, not_detectable = _rows(track_row, versions, reasons, name, label)
+    path = _mapping_or_absent(track_row, "path", "path", name, label)
+    _mapping_or_absent(track_row, "check", "check", name, label)
     read = _timeline(timeline)
 
     other_keys = {
         str(key).lower()
-        for other in app_row.get("tracks") or []
-        if isinstance(other, Mapping) and other.get("track") != track
-        for entry in other.get("versions") or []
-        if isinstance(entry, Mapping)
-        for key in entry.get("keys") or []
+        for other in app_row["tracks"]
+        if other.get("track") != track and isinstance(other.get("versions"), list)
+        for entry in other["versions"]
+        if isinstance(entry, Mapping) and isinstance(entry.get("keys"), list)
+        for key in entry["keys"]
     }
     join = _join(versions, other_keys, read)
-    where = f"the timeline from {read.name}"
     if not join.named:
         listed_count = len({version.lower() for version, _ in read.observations})
+        found = (
+            ""
+            if read.source == PUBLIC
+            else f" If the timeline is not {name}'s, LoonInspect picked the wrong title: report the sentence "
+            "(Settings › Support)."
+        )
         raise WalkRefused(
             REFUSED_NO_MATCH,
-            f"None of the {listed_count} versions in {where} is a version LoonSec's patch-policy data lists for {name} "
-            f"{label}, so there is nothing to install and nothing was walked. Check that the timeline is {name}'s.",
+            f"None of the {listed_count} versions in the timeline from {read.name} is a version LoonSec's patch-policy "
+            f"data lists for {name} {label}, so there is nothing to install and nothing was walked.{found} "
+            + _next_check(read, name),
             {"unmatched": join.unmatched, "other_track": join.other_track},
         )
-    share = len(join.unmatched) / (len(join.unmatched) + len(join.matched_keys))
-    if share > UNMATCHED_LIMIT:
-        raise WalkRefused(
-            REFUSED_UNMATCHED,
-            f"{len(join.unmatched)} of {len(join.unmatched) + len(join.matched_keys)} versions in {where} "
-            f"({share:.1%}) match no version LoonSec's patch-policy data lists for {name}; above "
-            f"{UNMATCHED_LIMIT:.0%} the walk is refused, because each unmatched version is an install it would skip. "
-            "The unmatched versions are listed beside this sentence.",
-            {"unmatched": join.unmatched, "share": round(share, 4)},
-        )
 
-    path = track_row.get("path") if isinstance(track_row.get("path"), Mapping) else {}
     kind = path.get("kind", PATH_LATEST)
     if kind not in (PATH_HOLD, PATH_LATEST):
         raise _invalid("path.kind", f"{kind!r} is neither hold nor latest", name, label)
@@ -648,9 +750,11 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
         label=label,
         versions=versions,
         rows=rows,
+        not_detectable=not_detectable,
         reasons=reasons,
         timeline=read,
         join=join,
+        path_kind=kind,
         path_end=path_end,
         ceiling_line=ceiling,
         promoted=bool(runs),
@@ -695,14 +799,12 @@ def _window(prepared: _Prepared, years: int, until: Any, common: Sequence[Any] |
     if years not in WINDOW_YEARS:
         raise WalkRefused(REFUSED_REQUEST, f"A window is {' or '.join(map(str, WINDOW_YEARS))} years; {years!r} was asked for.")
     document, timeline, name, label = prepared.document, prepared.timeline, prepared.name, prepared.label
+    doc_as_of = day_of(document["as_of"])  # checked by `_check_document`
     try:
-        doc_as_of = day_of(document.get("as_of"))
         requested_until = day_of(until) if until is not None else None
         common_since, common_until = (day_of(common[0]), day_of(common[1])) if common else (None, None)
     except (TypeError, ValueError, IndexError) as exc:
         raise WalkRefused(REFUSED_REQUEST, f"The window asked for is not a pair of dates ({exc}).") from None
-    if doc_as_of is None:
-        raise _invalid("as_of", "absent", name, label)
     requested_until = requested_until or doc_as_of - _DAY
     requested_since = years_before(requested_until, years)
 
@@ -713,14 +815,29 @@ def _window(prepared: _Prepared, years: int, until: Any, common: Sequence[Any] |
         starts.append((COMMON_WINDOW, common_since, sentence))
         ends.append((COMMON_WINDOW, common_until, sentence))
     if not prepared.available:
+        unmatched = prepared.join.unmatched
         raise WalkRefused(
             REFUSED_NOTHING_TO_INSTALL,
             f"The timeline from {timeline.name} dates no {name} release the {label} device could install"
-            + (" (every release it dates is above the promotion table's newest row)" if prepared.above_table else "")
-            + ", so nothing was walked.",
+            + (
+                " (every release it dates is above the newest major LoonSec's promotion table lists)"
+                if prepared.above_table
+                else f" (every version it names that LoonSec lists is undated or above the {prepared.ceiling_line} line)"
+                if prepared.ceiling_line is not None
+                else " (every version it names that LoonSec lists is undated)"
+            )
+            + ", so nothing was walked. "
+            + (
+                f"{len(unmatched)} of the versions it names match nothing LoonSec lists; they are listed beside this sentence. "
+                if unmatched
+                else ""
+            )
+            + _next_check(timeline, name),
+            {"unmatched": unmatched, "above_table": [prepared.versions[i].v for i in prepared.above_table]},
         )
     if not prepared.compat_v1:
-        coverage = ((document.get("sources") or {}).get("detectable") or {}).get("coverage_since")
+        sources = document.get("sources") or {}  # it and `detectable` are checked by `_check_document`
+        coverage = (sources.get("detectable") or {}).get("coverage_since")
         try:
             coverage_day = day_of(coverage)
         except (TypeError, ValueError):
@@ -751,7 +868,7 @@ def _window(prepared: _Prepared, years: int, until: Any, common: Sequence[Any] |
                 raise WalkRefused(
                     REFUSED_CEILING_UNDATED,
                     f"The timeline from {timeline.name} dates no {name} {prepared.ceiling_line} release, so the {label} "
-                    "device has no line to hold and nothing was walked.",
+                    "device has no line to hold and nothing was walked. " + _next_check(timeline, name),
                 )
             line_day, line_index = min(on_line)
             starts.append(
@@ -822,11 +939,7 @@ def _window(prepared: _Prepared, years: int, until: Any, common: Sequence[Any] |
             f"{since} and end {until_day}: {because}",
             {"window": window},
         )
-    if (
-        prepared.compat_v1
-        and (prepared.track.get("path") or {}).get("kind") == PATH_HOLD
-        and prepared.track.get("line_components")
-    ):
+    if prepared.compat_v1 and prepared.path_kind == PATH_HOLD and prepared.track.get("line_components"):
         # v1's held line: the line of the newest release the timeline dated by the window's first day.
         current = max((index for index, day in prepared.join.dates.items() if day <= since), default=None)
         if current is not None:
@@ -844,6 +957,49 @@ def _promotion_runs(prepared: _Prepared) -> list[tuple[int, int, dt.date]]:
     return runs
 
 
+def _reach(prepared: _Prepared, since: dt.date, until: dt.date) -> dict[str, Any]:
+    """The versions a device in this view could install, and how many of them the document lists.
+
+    A device installs a release at most 59 days after it becomes available, so every release a
+    stop installs inside [since, until] became available in [since - 59, until]. (The release a
+    slow device opens the window on can be older, and counts only when it falls in that span.) A
+    matched version counts once (by its place in the list), only on the track's path, on the day
+    it becomes available; an unmatched one counts on the earliest day the timeline gives it, and
+    always, because nothing places it on a line. Refused above `UNMATCHED_LIMIT` (plan 4.4)."""
+    first = since - dt.timedelta(days=LONGEST_WAIT)
+    matched = sorted({index for index, day in prepared.available if first <= day <= until})
+    unmatched = sorted(key for key, day in prepared.join.unmatched_dates.items() if day is not None and first <= day <= until)
+    total = len(matched) + len(unmatched)
+    share = len(unmatched) / total if total else 0.0
+    reach = {
+        "since": first.isoformat(),
+        "until": until.isoformat(),
+        "matched": len(matched),
+        "unmatched": unmatched,
+        "share": round(share, 4),
+    }
+    if share > UNMATCHED_LIMIT:
+        timeline, name, label = prepared.timeline, prepared.name, prepared.label
+        raise WalkRefused(
+            REFUSED_UNMATCHED,
+            f"{len(unmatched)} of the {total} versions the timeline from {timeline.name} dates from {first} to {until}, "
+            f"the days a device in this view could install them, match no version LoonSec's patch-policy data lists for "
+            f"{name} {label} ({share:.1%}). Above {UNMATCHED_LIMIT:.0%} the walk is refused, because a version that "
+            "matches nothing is never installed and the walk would keep the device on the version before it. The "
+            "unmatched versions are listed beside this sentence. " + _next_check(timeline, name),
+            {"in_reach": reach},
+        )
+    return reach
+
+
+def _checked_window(
+    prepared: _Prepared, years: int, until: Any, common: Sequence[Any] | None
+) -> tuple[dt.date, dt.date, dict[str, Any], dict[str, Any]]:
+    """The window, and the versions in reach of it once they pass the unmatched limit."""
+    since, until_day, window = _window(prepared, years, until, common)
+    return since, until_day, window, _reach(prepared, since, until_day)
+
+
 def window_for(
     document: Any,
     *,
@@ -856,7 +1012,7 @@ def window_for(
 ) -> dict[str, Any]:
     """The window one timeline allows, without walking it: for aligning several views (`common`)."""
     prepared = _prepare(document, app, track, timeline, compat_v1=False)
-    return _window(prepared, years, until, common)[2]
+    return _checked_window(prepared, years, until, common)[2]
 
 
 # --- The device -------------------------------------------------------------------------------
@@ -980,7 +1136,7 @@ def walk(
         raise WalkRefused(REFUSED_REQUEST, f"The stops asked for are {list(stops)}; each is one of {', '.join(STOPS)}, once.")
     stops = tuple(stop for stop in STOPS if stop in stops)
     prepared = _prepare(document, app, track, timeline, compat_v1)
-    since, until_day, window = _window(prepared, years, until, common)
+    since, until_day, window, reach = _checked_window(prepared, years, until, common)
     judge = _Judge(prepared)
 
     every = {stop: _steps(stop, prepared.available, since, until_day) for stop in STOPS}
@@ -1027,11 +1183,11 @@ def walk(
             "track": track,
             "label": prepared.label,
             "path": {
-                "kind": (prepared.track.get("path") or {}).get("kind", PATH_LATEST),
+                "kind": prepared.path_kind,
                 "ceiling_line": prepared.ceiling_line,
                 "waits_for_promotion": prepared.promoted,
             },
-            "timeline": _join_report(prepared),
+            "timeline": _join_report(prepared, reach),
             "stops": list(stops),
             "compat_v1": compat_v1,
         },
@@ -1046,7 +1202,7 @@ def walk(
             "before_window_unwalked": len(unwalked),
             "after_window": len(placed["after"]),
             "without_clock": len(placed["unclocked"]),
-            "not_detectable": int((prepared.track.get("not_detectable") or {}).get("count") or 0),
+            "not_detectable": prepared.not_detectable,
             "uncertain_over_1d": sum(1 for row in replayed if _uncertain(row, compat_v1)),
             "replayed_by_clock": _by_clock(replayed, clock_name),
             "placed_by_clock": _by_clock([row for key in ("before", "in", "after") for row in placed[key]], clock_name),
@@ -1116,7 +1272,7 @@ def _by_clock(rows: list[_Row], forced: str | None) -> dict[str, int]:
     return {clock: counted[clock] for clock in CLOCKS_USED}
 
 
-def _join_report(prepared: _Prepared) -> dict[str, Any]:
+def _join_report(prepared: _Prepared, reach: dict[str, Any]) -> dict[str, Any]:
     join, timeline = prepared.join, prepared.timeline
     dates = sorted(join.dates.values())
     return {
@@ -1132,6 +1288,7 @@ def _join_report(prepared: _Prepared) -> dict[str, Any]:
         "other_track": join.other_track,
         "undated": len(join.named - join.dates.keys()),
         "conflicts": join.conflicts,
+        "in_reach": reach,
     }
 
 
@@ -1309,7 +1466,13 @@ def input_id(
             "doc_id": document.get("doc_id"),
             "app": app,
             "track": track,
-            "timeline": {"source": read.source, "name": read.name, "as_of": read.as_of.isoformat(), "digest": read.digest},
+            "timeline": {
+                "source": read.source,
+                "name": read.name,
+                "as_of": read.as_of.isoformat(),
+                "clock": read.clock,
+                "digest": read.digest,
+            },
             "stops": [stop for stop in STOPS if stop in stops],
             "window": {
                 "years": years,
@@ -1469,17 +1632,20 @@ def public_timeline(document: Any, *, app: str, track: str) -> dict[str, Any]:
             REFUSED_NO_PUBLIC_TIMELINE,
             f"LoonSec holds no public release dates for {name} yet. Jamf or Fleet may: they are read from this instance.",
         )
+    label = str(track_row.get("label") or track)
     source = ((document.get("sources") or {}).get("timelines") or {}).get(source_id)
     if not isinstance(source, Mapping):
-        raise _invalid(f"sources.timelines.{source_id}", "absent", name, str(track_row.get("label") or track))
+        raise _invalid(f"sources.timelines.{source_id}", "absent", name, label)
     observations = []
-    for entry in track_row.get("versions") or []:
-        if isinstance(entry, Mapping) and entry.get("date"):
-            keys = [str(key).lower() for key in entry.get("keys") or []]
-            spelled = str(entry.get("v", "")).lower()
-            observations.append(
-                {"version": spelled if spelled in keys else (keys[0] if keys else spelled), "date": entry["date"]}
-            )
+    for at, entry in enumerate(_versions(track_row, name, label)):
+        stamp = track_row["versions"][at].get("date")
+        try:
+            dated = day_of(stamp)
+        except (TypeError, ValueError):
+            raise _invalid(f"versions[{at}].date", f"{stamp!r} is not a date", name, label) from None
+        if dated:
+            spelled = entry.v.lower()
+            observations.append({"version": spelled if spelled in entry.keys else entry.keys[0], "date": stamp})
     return {
         "source": PUBLIC,
         "name": source.get("name") or str(source_id),
