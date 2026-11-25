@@ -4221,7 +4221,9 @@ stored, and nothing is deleted to make room for one.
    last finished a build, changed or not, and the exchange passes that on (`feed.builtAt`). A
    recent build never makes an old copy current: a publisher that runs every night while
    LoonSec's NVD data stands still makes the same document each night, and that is what this
-   state is for. What `feed.builtAt` says is the cause, and the sentence goes on with it:
+   state is for. What `feed.builtAt` says is the cause, judged by this instance's clock
+   (`feed.publisherRunning`: `true` when that build is under three days old, `false` when it is
+   older), and the page names the same cause from it. The sentence goes on with it:
    - ***…: LoonSec's publisher last ran on …, but its NVD data has not advanced since …*** → the
      publisher is running (its last build is under three days old) and LoonSec's NVD data has
      not moved since the copy's date, so each night's build is the copy you hold. Nothing on
@@ -4266,8 +4268,9 @@ matters:
 - *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
   LoonSec's publisher has finished no build that reached this instance since that day.
 
-Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf` and `feed.builtAt`
-from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
+Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt` and
+`feed.publisherRunning` from `GET /api/patch-policy/apps`, and the build from Settings › Support
+(§8).
 
 **AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
 proxy between the container and the store; or the check, or the file read, fails with an
@@ -4401,17 +4404,21 @@ refusal: the sentence is the whole report.
      this instance has read that catalog only in part…*** (the page's own words: *Fleet's catalog
      has been read only in part on this instance, and the part read holds no Mac title for …*).
      The titles held are partial or unread
-     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial), §27 step 6): a check skipped
-     titles this build could not read, a check was cut short after it had changed some, or the
-     1.3.0 upgrade marked a catalog already read as partial. A title missing from a catalog read
-     only in part is not proof that Fleet has none, so the source does not say `not_held`; when
-     the last check left words, the sentence goes on with them (*The last check said: …*). The
-     Fleet catalog's status line says which case it is: a check cut short, or the upgrade, is
-     cleared by the next check (within the hour) or **Check now**; titles this build could not
-     read stay unread until Fleet next changes its catalog, and *unrecognized Mac manifest path*
-     or *unrecognized Mac index entry* among them means updating LoonInspect (§27 step 6). Once a
-     check reads the whole catalog the source dates the track or reads `not_held`. Until then,
-     choose another source.
+     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). A title missing from a catalog
+     read only in part is not proof that Fleet has none, so the source does not say `not_held`.
+     The sentence goes on with the cause, as the Fleet catalog tab's status line has it:
+     - *The last check did not get an answer: …* → a check was cut short after it had read or
+       changed some titles. The rest is that check's own sentence, walked in §27 step 3; the
+       next check that gets an answer reads the rest.
+     - *The last check said: …* → the last check skipped titles this build could not read (§27
+       step 6). They stay unread until Fleet next changes its catalog, and *unrecognized Mac
+       manifest path* or *unrecognized Mac index entry* among them means updating LoonInspect.
+     - *The last check left no words for it…* → the 1.3.0 upgrade marked a catalog already read
+       as partial, once, and left its status line as it was (§27 step 6, last case). The next
+       check, within the hour, or **Check now** clears it.
+
+     Once a check reads the whole catalog the source dates the track or reads `not_held`. Until
+     then, choose another source.
    - `history_unread`: ***Fleet's version history for … has not been read on this instance
      yet.*** The background reads the titles installed on this organization's Macs, two minutes
      apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the

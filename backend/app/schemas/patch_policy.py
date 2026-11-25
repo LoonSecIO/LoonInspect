@@ -60,6 +60,10 @@ class PatchPolicyFeedOut(_Out):
     # cause: within three days, the publisher runs and its NVD data has not advanced; older, the
     # publisher has stopped.
     built_at: datetime | None = None
+    # Which of those two causes this instance judged, by its own clock: true while `builtAt` is
+    # within three days of now (the publisher is running), false once it is older (stopped), null
+    # when `builtAt` is. The page names the cause from it, so it says what `sentence` says.
+    publisher_running: bool | None = None
 
 
 class PatchPolicyClockCountsOut(_Out):

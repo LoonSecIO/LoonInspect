@@ -525,7 +525,7 @@ describe("with LoonSec's data, the page walks it", () => {
   it("says when the data held is old, above the walk", async () => {
     feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([appFixture()], { state: "stale" }));
     await open();
-    // The fixture's last build is long past three days before any clock this runs on: the publisher stopped.
+    // The instance judged the fixture's last build (2025-01-11) stopped (`publisherRunning: false`), and the page says so.
     expect(text()).toContain("Showing patch-policy data dated 2025-01-11, more than three days old: LoonSec's publisher last ran on 2025-01-11, more than three days ago");
     expect(asked()).toHaveLength(1);
   });

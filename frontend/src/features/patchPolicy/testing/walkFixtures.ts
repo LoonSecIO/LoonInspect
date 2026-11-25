@@ -274,6 +274,8 @@ export function feedFixture(overrides: Partial<PatchPolicyFeed> = {}): PatchPoli
     detail: null,
     fromFile: false,
     builtAt: "2025-01-11T20:30:00Z",
+    // The instance's own judgement of that build: long past three days old, so stopped.
+    publisherRunning: false,
     ...overrides
   };
 }

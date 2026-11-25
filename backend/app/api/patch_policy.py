@@ -46,8 +46,9 @@ async def patch_policy_apps(db: AsyncSession = Depends(get_db)) -> PatchPolicyAp
     copy arrived, the last attempt's failure when it failed (`not_published`,
     `algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),
     `stale` for a copy dated (`asOf`) more than three days ago, whatever LoonSec's last build
-    (`builtAt`) says, which names only the cause, and `current`. Every state's sentence says what
-    it means and what to check (docs/troubleshooting.md §32).
+    (`builtAt`) says, which names only the cause (`publisherRunning`, judged by this instance's
+    clock), and `current`. Every state's sentence says what it means and what to check
+    (docs/troubleshooting.md §32).
 
     `apps` is null, never empty, when no copy answers for this organization. Each app carries its
     tracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,
@@ -73,6 +74,7 @@ async def patch_policy_apps(db: AsyncSession = Depends(get_db)) -> PatchPolicyAp
         detail=view.detail,
         from_file=view.from_file,
         built_at=view.built_at,
+        publisher_running=view.publisher_running,
     )
     if view.document is None:
         return PatchPolicyAppsOut(feed=feed, apps=None)

@@ -7,8 +7,8 @@ the derivation. Day numbers in the derivations count from 2026-01-01 = d0 (so d5
 d180 = 2026-06-30). The property tests draw documents from a seeded generator (`random.Random(seed)`,
 no hypothesis dependency) and hold the plan's invariants on every one that walks. The frozen check, last,
 holds this walk to the totals it once wrote into a document shaped like a published one
-(`fixtures/patch_policy/frozen_check.json`): LoonSec's published check is held to every instance's
-copy of this module, so a walk that counts differently is a new algorithm.
+(`fixtures/patch_policy/frozen_check.<algorithm>.json`): LoonSec's published check is held to every instance's
+copy of this module, so a walk that counts differently is a new algorithm, with a file of its own.
 """
 
 from __future__ import annotations
@@ -1753,16 +1753,29 @@ def test_the_module_reads_no_clock_database_or_network() -> None:
 
 # --- The frozen check: what this walk counted, held --------------------------------------------
 
-# A `patch_policy_reference` of two invented apps whose every track's `check` this walk wrote
-# once (`write_frozen`). An instance holds a published document's check to its own copy of this
-# module (plan 4.7), so this is the cross-version test the hand goldens above are not.
-FROZEN = Path(__file__).parent / "fixtures" / "patch_policy" / "frozen_check.json"
+# A `patch_policy_reference` of invented apps whose every track's `check` this walk wrote once
+# (`write_frozen`), one file per algorithm. An instance holds a published document's check to its
+# own copy of this module (plan 4.7), so this is the cross-version test the hand goldens above are
+# not: a walk that counts differently is a new algorithm, with its own file beside the old ones.
+FROZEN_DIR = Path(__file__).parent / "fixtures" / "patch_policy"
 FROZEN_WRITE = "cd backend && uv run --frozen python -m tests.test_patch_policy_walk --write"
 
 
-def frozen_checks(doc: dict[str, Any]) -> dict[tuple[str, str], dict[str, dict[str, Any]]]:
-    """Each track's `check` as this walk writes it, by (app, track): every window length the walk
-    offers, every stop's `check_totals`, over the track's public timeline. The shape LoonVD
+def frozen_path(algorithm: str, directory: Path = FROZEN_DIR) -> Path:
+    """The frozen check one algorithm wrote: `frozen_check.patch_walk-1.json` for patch_walk/1."""
+    return directory / f"frozen_check.{algorithm.replace('/', '-')}.json"
+
+
+FROZEN = frozen_path(walk_module.ALGORITHM)
+
+
+class FrozenRefused(Exception):
+    """`write_frozen` would change a check the walk under the same algorithm already wrote."""
+
+
+def frozen_checks(doc: dict[str, Any], module: Any = walk_module) -> dict[tuple[str, str], dict[str, dict[str, Any]]]:
+    """Each track's `check` as `module`'s walk writes it, by (app, track): every window length the
+    walk offers, every stop's `check_totals`, over the track's public timeline. The shape LoonVD
     publishes. Walked on a copy without the checks it holds, so a walk that disagrees is compared
     here, in words, rather than refused as parity. A window the walk refuses is a broken fixture,
     and raises."""
@@ -1774,58 +1787,124 @@ def frozen_checks(doc: dict[str, Any]) -> dict[tuple[str, str], dict[str, dict[s
     written = {}
     for app in doc["apps"]:
         for track in app["tracks"]:
-            timeline = public_timeline(doc, app=app["app"], track=track["track"])
+            timeline = module.public_timeline(doc, app=app["app"], track=track["track"])
             check = {}
-            for years in walk_module.WINDOW_YEARS:
-                result = walk(doc, app=app["app"], track=track["track"], timeline=timeline, years=years)
-                check[f"{years}y"] = {stop: check_totals(result, stop) for stop in STOPS}
+            for years in module.WINDOW_YEARS:
+                result = module.walk(doc, app=app["app"], track=track["track"], timeline=timeline, years=years)
+                check[f"{years}y"] = {stop: module.check_totals(result, stop) for stop in module.STOPS}
             written[(app["app"], track["track"])] = check
     return written
 
 
-def write_frozen() -> None:
-    """Rewrite every track's `check` in `FROZEN` from today's walk, and its `doc_id`. Run only
-    when a ruling moves the counts (see the test's failure words); the body is left as it is."""
+def first_difference(held: dict[str, Any], walked: dict[str, Any]) -> tuple[str, str, str, Any, Any] | None:
+    """The first (window, stop, key, walked, held) where a held check and a walked one differ, in
+    the walk's order of windows, stops and keys; None when they are the same. A window or stop
+    either side lacks differs at its first key."""
+    for window in sorted(set(held) | set(walked), key=lambda name: (name not in walked, name)):
+        stops_held, stops_walked = held.get(window) or {}, walked.get(window) or {}
+        for stop in [*STOPS, *sorted(set(stops_held) - set(STOPS))]:
+            now, then = stops_walked.get(stop) or {}, stops_held.get(stop) or {}
+            for key in [*CHECK_KEYS, *sorted(set(then) - set(CHECK_KEYS))]:
+                if now.get(key) != then.get(key):
+                    return window, stop, key, now.get(key), then.get(key)
+    return None
+
+
+def _counts_differently(path: Path, where: str, key: str, walked: Any, frozen: Any) -> str:
+    """The words for a walk that no longer counts the check it wrote: the change is a new
+    algorithm, and nothing rewrites the old algorithm's check."""
+    return (
+        f"patch_policy_walk now counts differently from the check it wrote in tests/fixtures/patch_policy/{path.name} "
+        f"({where}: {key} is {walked!r} here and {frozen!r} in the check). A counting change is a new algorithm "
+        "(LoonVD's contract: \"A walk that counts differently is a new algorithm\"): LoonSec publishes each track's "
+        f"check from its pinned copy of this walk, so every instance still on {walk_module.ALGORITHM} would refuse the "
+        "app as parity. Revert the counting change. A ruled one ships as a new algorithm with the N-1 plan (the old "
+        "one kept published for at least 90 days, ruled R11): bump ALGORITHM, and --write then writes the new "
+        f"algorithm's frozen check in a file of its own beside {path.name}, which stays as it is. --write never "
+        "rewrites a check under the algorithm that wrote it."
+    )
+
+
+def _algorithm_number(path: Path, directory: Path = FROZEN_DIR) -> int:
+    """N of the patch_walk/N whose frozen check `path` is, read from the document and held to its name."""
+    algorithm = json.loads(path.read_text())["algorithm"]
+    assert frozen_path(algorithm, directory) == path, f"{path.name} holds {algorithm}: a frozen check is named by its algorithm"
+    family, _, number = algorithm.partition("/")
+    assert family == "patch_walk" and number.isdigit(), f"{path.name}: {algorithm!r} is not patch_walk/N"
+    return int(number)
+
+
+def write_frozen(directory: Path = FROZEN_DIR, module: Any = walk_module) -> tuple[Path, list[str]]:
+    """Write the frozen check of `module`'s algorithm, and say which tracks it wrote.
+
+    With that algorithm's file present it fills only a track whose `check` is empty (a new case, or
+    one whose case was changed on purpose and its check emptied in the same change), and refuses,
+    writing nothing, when any check already there differs from this walk: a counting change under
+    the same algorithm is the change the frozen check exists to stop. With no file for it (a new
+    algorithm) it writes one beside the others from the newest one's body, every track's check
+    walked afresh, and leaves the older files as they are. The `doc_id` is recomputed whenever it
+    writes; a file with nothing to fill is left alone."""
     from app.core import patch_policy_feed as feed
 
-    doc = json.loads(FROZEN.read_text())
-    written = frozen_checks(doc)
-    for app in doc["apps"]:
-        for track in app["tracks"]:
-            track["check"] = written[(app["app"], track["track"])]
+    path = frozen_path(module.ALGORITHM, directory)
+    filled: list[str] = []
+    if path.exists():
+        doc = json.loads(path.read_text())
+        if doc["algorithm"] != module.ALGORITHM:
+            raise FrozenRefused(f"{path.name} holds {doc['algorithm']!r}, not {module.ALGORITHM}: name it by its algorithm.")
+        written = frozen_checks(doc, module)
+        for app in doc["apps"]:
+            for track in app["tracks"]:
+                walked = written[(app["app"], track["track"])]
+                if not track.get("check"):
+                    track["check"] = walked
+                    filled.append(track["track"])
+                    continue
+                differs = first_difference(track["check"], walked)
+                if differs:
+                    window, stop, key, now, then = differs
+                    raise FrozenRefused(
+                        "Nothing written. "
+                        + _counts_differently(path, f"{track['track']}, {window}, {stop}", key, now, then)
+                        + ' To change a case on purpose, empty that track\'s check ("check": {}) in the same change; '
+                        "--write fills only an empty one."
+                    )
+        if not filled:
+            return path, []
+    else:
+        older = sorted(directory.glob("frozen_check.*.json"), key=lambda found: _algorithm_number(found, directory))
+        if not older:
+            raise FrozenRefused(f"No frozen check in {directory} to start {module.ALGORITHM}'s from.")
+        doc = json.loads(older[-1].read_text())
+        doc["algorithm"] = module.ALGORITHM
+        written = frozen_checks(doc, module)
+        for app in doc["apps"]:
+            for track in app["tracks"]:
+                track["check"] = written[(app["app"], track["track"])]
+                filled.append(track["track"])
     doc["doc_id"] = feed.canonical_doc_id(doc)
-    FROZEN.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
-
-
-def _counts_differently(where: str, key: str, walked: Any, frozen: Any) -> str:
-    return (
-        f"patch_policy_walk now counts differently from the check it wrote in tests/fixtures/patch_policy/"
-        f"{FROZEN.name} ({where}: {key} is {walked!r} here and {frozen!r} in the check). A counting change is a new "
-        f"algorithm, patch_walk/2, published beside {walk_module.ALGORITHM} (LoonVD's contract: \"A walk that counts "
-        "differently is a new algorithm\"): LoonSec publishes each track's check from its pinned copy of this walk, so "
-        "every instance still on the other walk would refuse the app as parity. Revert the counting change, or bump "
-        "ALGORITHM to patch_walk/2 with the N-1 plan (patch_walk/1 kept published for at least 90 days, ruled R11); "
-        f"only then rewrite the check: {FROZEN_WRITE}"
-    )
+    path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+    return path, filled
 
 
 def test_the_walk_still_counts_the_check_it_wrote() -> None:
-    """Every stop of every window of every track of `FROZEN` walks to exactly the check this walk
-    wrote for it. The document holds what a real one does in small: one line with a train per
-    major and a backport shipped two days after the next major (rule 5 keeps 116.0 affected until
-    115.0.2's day), three lines with a track held to one of them and fixes on several, a CVE NVD
-    names no fix for, a fix only an undated build carries, a fix NVD names by a build the track
-    does not list, and a CVE on the ESR edition set aside (`other_edition_only`) beside the ESR
-    channel the app names under `other_channels` and does not walk. Its CVE ids are fictional."""
+    """Every stop of every window of every track of this algorithm's frozen check walks to exactly
+    the check this walk wrote for it. The document holds what a real one does in small: one line
+    with a train per major and a backport shipped two days after the next major (rule 5 keeps 116.0
+    affected until 115.0.2's day), three lines with a track held to one of them and fixes on several,
+    a CVE NVD names no fix for, a fix only an undated build carries, a fix NVD names by a build the
+    track does not list, a CVE on the ESR edition set aside (`other_edition_only`) beside the ESR
+    channel the app names under `other_channels` and does not walk, and the day boundaries the hand
+    goldens pin (Example Editor: `COUNTING_MUTANTS` names each rule). Its CVE ids are fictional."""
     from app.core import patch_policy_feed as feed
 
+    assert FROZEN.exists(), (
+        f"This walk is {walk_module.ALGORITHM} and no frozen check is written for it: {FROZEN_WRITE} writes "
+        f"{FROZEN.name} beside the older algorithms' files, which stay."
+    )
     raw = FROZEN.read_bytes()
     doc = json.loads(raw)
-    assert doc["algorithm"] == walk_module.ALGORITHM, (
-        f"{FROZEN.name} holds {doc['algorithm']}'s check and this walk is {walk_module.ALGORITHM}: a new algorithm "
-        f"keeps the old walk's check beside its own fixture, never in its place (LoonVD's contract: \"A walk that "
-        'counts differently is a new algorithm").'
-    )
+    assert doc["algorithm"] == walk_module.ALGORITHM, f"{FROZEN.name} holds {doc['algorithm']}: name it by its algorithm"
     # A document an instance would store: checked whole, its doc_id its contents.
     feed.read_document(raw, expected_doc_id=doc["doc_id"])
 
@@ -1834,26 +1913,185 @@ def test_the_walk_still_counts_the_check_it_wrote() -> None:
         for track in app["tracks"]:
             frozen = track["check"]
             assert set(frozen) == {f"{years}y" for years in walk_module.WINDOW_YEARS}, (
-                f"{track['track']} has no frozen check for every window; {FROZEN_WRITE}"
+                f"{track['track']} has no frozen check for every window; {FROZEN_WRITE} fills an empty one"
             )
             for window, stops in frozen.items():
                 assert set(stops) == set(STOPS), f"{track['track']} {window} lacks a stop"
-                for stop in STOPS:
-                    walked, held = written[(app["app"], track["track"])][window][stop], stops[stop]
-                    if walked != held:
-                        key = next(k for k in CHECK_KEYS if walked[k] != held.get(k))
-                        where = f"{track['track']}, {window}, {stop}"
-                        pytest.fail(_counts_differently(where, key, walked[key], held.get(key)))
-                # As an instance runs it: the public walk at the default window matches.
-                years = int(window[:-1])
+            differs = first_difference(frozen, written[(app["app"], track["track"])])
+            if differs:
+                window, stop, key, walked, held = differs
+                pytest.fail(_counts_differently(FROZEN, f"{track['track']}, {window}, {stop}", key, walked, held))
+            for window in frozen:
+                # As an instance runs it: the public walk at each window matches.
                 result = walk(
                     doc,
                     app=app["app"],
                     track=track["track"],
                     timeline=public_timeline(doc, app=app["app"], track=track["track"]),
-                    years=years,
+                    years=int(window[:-1]),
                 )
                 assert result["check"]["state"] == "matched"
+
+
+def test_every_algorithm_keeps_its_own_frozen_check() -> None:
+    """One file per algorithm, named by it, from patch_walk/1 to this walk's: a new algorithm's check
+    is written beside the old ones, never in their place. A file of an algorithm this build no
+    longer reads is kept as the record of what that walk counted."""
+    numbers = sorted(_algorithm_number(path) for path in FROZEN_DIR.glob("frozen_check.*.json"))
+    current = int(walk_module.ALGORITHM.rpartition("/")[2])
+    assert numbers == list(range(1, current + 1)), (
+        f"frozen checks held for patch_walk/{numbers}; every algorithm from patch_walk/1 to {walk_module.ALGORITHM} "
+        "keeps its own file"
+    )
+    assert not (FROZEN_DIR / "frozen_check.json").exists(), "frozen_check.json is named by no algorithm"
+
+
+def _frozen_copy(tmp_path: Path) -> Path:
+    copied = tmp_path / FROZEN.name
+    copied.write_bytes(FROZEN.read_bytes())
+    return copied
+
+
+def test_write_refuses_to_rewrite_a_check_under_the_algorithm_that_wrote_it(tmp_path: Path, monkeypatch) -> None:
+    """The forbidden path stays shut: a counting change with ALGORITHM unchanged (the report day
+    counted as day zero, here) makes `--write` refuse, say where it differs, and write nothing. So
+    does a check edited by hand."""
+    copied = _frozen_copy(tmp_path)
+    before = copied.read_bytes()
+    with monkeypatch.context() as patched:
+        patched.setattr(walk_module, "REPORT_DAY_IS_DAY", 0)
+        with pytest.raises(FrozenRefused) as counted:
+            write_frozen(tmp_path)
+    words = str(counted.value)
+    assert words.startswith("Nothing written. patch_policy_walk now counts differently from the check it wrote")
+    assert f"in tests/fixtures/patch_policy/{FROZEN.name} (browser/release, 2y, 1d: exposure_days is 227 here and 221 in" in words
+    assert "--write never rewrites a check under the algorithm that wrote it" in words
+    assert copied.read_bytes() == before
+
+    edited = json.loads(before)
+    edited["apps"][1]["tracks"][0]["check"]["3y"]["30d"]["exposure_days"] += 1
+    copied.write_text(json.dumps(edited, indent=1, ensure_ascii=False) + "\n")
+    tampered = copied.read_bytes()
+    with pytest.raises(FrozenRefused, match=r"\(analyzer/4\.2, 3y, 30d: exposure_days is \d+ here and \d+ in the check\)"):
+        write_frozen(tmp_path)
+    assert copied.read_bytes() == tampered
+
+
+def test_write_fills_only_a_track_whose_check_is_empty(tmp_path: Path) -> None:
+    """A new case is a track with no check: `--write` fills it and leaves every other one as it was,
+    and the same walk fills it with exactly what it wrote before. With nothing to fill it writes
+    nothing."""
+    copied = _frozen_copy(tmp_path)
+    before = copied.read_bytes()
+    assert write_frozen(tmp_path) == (copied, [])
+    assert copied.read_bytes() == before
+    emptied = json.loads(before)
+    emptied["apps"][0]["tracks"][0]["check"] = {}
+    copied.write_text(json.dumps(emptied, indent=1, ensure_ascii=False) + "\n")
+    assert write_frozen(tmp_path) == (copied, ["browser/release"])
+    assert copied.read_bytes() == before
+
+
+def test_a_new_algorithm_writes_its_own_check_beside_the_old_one(tmp_path: Path, monkeypatch) -> None:
+    """The documented path works: with ALGORITHM bumped, `--write` writes the new algorithm's file
+    from the old one's body and leaves the old file as it was. (The same walk under a new name
+    writes the same totals; a ruled change would move them in the new file only.)"""
+    copied = _frozen_copy(tmp_path)
+    before = copied.read_bytes()
+    monkeypatch.setattr(walk_module, "ALGORITHM", "patch_walk/2")
+    path, filled = write_frozen(tmp_path)
+    assert path == tmp_path / "frozen_check.patch_walk-2.json"
+    assert copied.read_bytes() == before
+    old, new = json.loads(before), json.loads(path.read_text())
+    assert new["algorithm"] == "patch_walk/2" and new["doc_id"] != old["doc_id"]
+    assert filled == [track["track"] for app in old["apps"] for track in app["tracks"]]
+    assert {k: v for k, v in new.items() if k not in ("algorithm", "doc_id")} == {
+        k: v for k, v in old.items() if k not in ("algorithm", "doc_id")
+    }
+
+
+# Single-line counting changes the frozen check must catch: each is a rule the hand goldens above
+# pin, so each moves some total of the frozen document (`test_the_frozen_check_moves_on_every_
+# counting_change_it_pins`). An edit to the walk that moves one of these lines fails that test by
+# name; re-point the entry at the line that now does it.
+COUNTING_MUTANTS = {
+    "rule 5 off": (
+        "            if own < self.dates[dated_as]:\n                return True",
+        "            if False:\n                return True",
+    ),
+    "rule 5 exempts no train": (
+        "if dated_as is None or version.train in (self.versions[fix].train, self.versions[dated_as].train):",
+        "if dated_as is None:",
+    ),
+    "rule 5 exempts the fix's train only": (
+        "version.train in (self.versions[fix].train, self.versions[dated_as].train)",
+        "version.train == self.versions[fix].train",
+    ),
+    "rule 5 counts a build dated the fix's day": ("if own < self.dates[dated_as]:", "if own <= self.dates[dated_as]:"),
+    "no next dated version stands in for a fix": (
+        "prepared.effective_fixes[key] = (found, NEXT_DATED) if found is not None else (None, FIX_UNDATED)",
+        "prepared.effective_fixes[key] = (None, FIX_UNDATED)",
+    ),
+    "a version in the run stands in for its fix": ("if run < 0 or row.runs[run][1] < dated[at]:", "if True:"),
+    "the report day is day zero": ("REPORT_DAY_IS_DAY = 1\n", "REPORT_DAY_IS_DAY = 0\n"),
+    "never keeps the version before the window's first day": (
+        "return [(since, max((index for index, day in available if day <= since), default=None))]",
+        "return [(since, max((index for index, day in available if day < since), default=None))]",
+    ),
+    "a stop installs a version due on the window's first day late": (
+        "current = max((index for index, day in installs if day <= since), default=None)",
+        "current = max((index for index, day in installs if day < since), default=None)",
+    ),
+    "two versions due the same day install the first": ("(day not in due or index > due[day])", "(day not in due)"),
+    "a CVE clocked on the window's first day is before it": (
+        "in_window = clock_day >= since",
+        "in_window = clock_day > since",
+    ),
+    "exposure counts from the window's first day, not the CVE's clock": (
+        "found = _intervals(row, steps, max(clock_day, since), until, judge)",
+        "found = _intervals(row, steps, since, until, judge)",
+    ),
+    "carried in reaches the window's second day": (
+        "elif found and found[0][0] == since:",
+        "elif found and found[0][0] <= since + _DAY:",
+    ),
+    "open at the window's end reaches its last day but one": (
+        "open_at_window_end = bool(found) and found[-1][1] == until",
+        "open_at_window_end = bool(found) and found[-1][1] >= until - _DAY",
+    ),
+    "the fix itself installed is outside the range": (
+        "line == versions[at].line and at >= fix for line, fix in row.fixes",
+        "line == versions[at].line and at > fix for line, fix in row.fixes",
+    ),
+}
+
+
+@pytest.mark.parametrize("mutant", list(COUNTING_MUTANTS))
+def test_the_frozen_check_moves_on_every_counting_change_it_pins(mutant: str, monkeypatch) -> None:
+    """Each of `COUNTING_MUTANTS`, applied to a copy of the walk, moves some total of the frozen
+    check (or makes its walk refuse): an edit to the fixture that drops the case one of them needs
+    fails here, by name, rather than leaving that rule unwatched across versions."""
+    import importlib.util
+
+    old, new = COUNTING_MUTANTS[mutant]
+    source = Path(walk_module.__file__).read_text()
+    assert source.count(old) == 1, (
+        f"{mutant!r}: its line is not in patch_policy_walk.py exactly once; re-point it at the line that now does this"
+    )
+    name = f"tests._patch_policy_walk_mutant_{list(COUNTING_MUTANTS).index(mutant)}"
+    mutated = importlib.util.module_from_spec(importlib.util.spec_from_loader(name, loader=None))
+    monkeypatch.setitem(sys.modules, name, mutated)  # a dataclass reads its module while the class is built
+    exec(compile(source.replace(old, new), walk_module.__file__, "exec"), mutated.__dict__)
+
+    doc = json.loads(FROZEN.read_text())
+    held = {(app["app"], track["track"]): track["check"] for app in doc["apps"] for track in app["tracks"]}
+    try:
+        walked = frozen_checks(doc, mutated)
+    except mutated.WalkRefused:
+        return  # the frozen test fails on the refusal too
+    assert any(first_difference(held[key], walked[key]) for key in held), (
+        f"{mutant!r} counts differently, and no total of {FROZEN.name} moves: the fixture lacks the case it needs"
+    )
 
 
 def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
@@ -1898,6 +2136,12 @@ def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
 
 if __name__ == "__main__":
     if sys.argv[1:] != ["--write"]:
-        raise SystemExit(f"usage: {FROZEN_WRITE}\nRewrites the check in {FROZEN} from today's walk.")
-    write_frozen()
-    print(f"wrote {FROZEN}")
+        raise SystemExit(
+            f"usage: {FROZEN_WRITE}\nFills each empty check in {FROZEN.name} from today's walk, or writes a new "
+            "algorithm's file beside the old ones; it never rewrites a check that is there."
+        )
+    try:
+        written_to, tracks = write_frozen()
+    except FrozenRefused as refused:
+        raise SystemExit(str(refused)) from None
+    print(f"wrote {', '.join(tracks)} in {written_to}" if tracks else f"nothing to write: every check in {written_to} is there")

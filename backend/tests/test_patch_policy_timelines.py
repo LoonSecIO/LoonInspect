@@ -486,22 +486,42 @@ def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title() -> None
     with pytest.raises(timelines.Unavailable) as partial:
         timelines.fleet(history(snapshot="partial", snapshot_detail=SKIPPED), doc, "firefox", "firefox/release")
     assert partial.value.state == "catalog_partial"
-    assert partial.value.sentence == (
+    opening = (
         "Fleet's catalog, as this instance holds it, has no Mac title for Mozilla Firefox (bundle id org.mozilla.firefox), "
-        "but this instance has read that catalog only in part, so the title may be one it has not read yet. The last "
-        f"check said: {SKIPPED} The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a "
-        "check reads the whole catalog, this source dates the track or says Fleet holds no title for the app. Until "
-        "then, choose another source."
+        "but this instance has read that catalog only in part, so the title may be one it has not read yet."
+    )
+    closing = (
+        " Once a check reads the whole catalog, this source dates the track or says Fleet holds no title for the app; "
+        "until then, choose another source (docs/troubleshooting.md §33 step 5)."
+    )
+    assert partial.value.sentence == f"{opening} The last check said: {SKIPPED}{closing}"
+    # A check cut short after it had read some titles fails, and leaves them partial: its own words,
+    # as the status line has them (§27 step 3, walked from §33 step 5), not the skipped-titles case.
+    stopped = (
+        "api.github.com refused the request (HTTP 403). 3 of the 9 manifests that had changed were read and kept; the "
+        "next check reads the rest."
+    )
+    with pytest.raises(timelines.Unavailable) as cut:
+        timelines.fleet(
+            history(snapshot="partial", snapshot_detail=stopped, catalog_detail=stopped), doc, "firefox", "firefox/release"
+        )
+    assert cut.value.state == "catalog_partial"
+    assert cut.value.sentence == f"{opening} The last check did not get an answer: {stopped}{closing}"
+    # The 1.3.0 upgrade marks a catalog already read as partial and leaves no words: the sentence
+    # says so rather than pointing at a status line with nothing on it.
+    with pytest.raises(timelines.Unavailable) as upgraded:
+        timelines.fleet(history(snapshot="partial"), doc, "firefox", "firefox/release")
+    assert upgraded.value.sentence == opening + timelines.PARTIAL_NO_WORDS + closing
+    assert timelines.PARTIAL_NO_WORDS == (
+        " The last check left no words for it, which is how the 1.3.0 upgrade leaves a catalog it marked partial; the "
+        "next check, within the hour, or Check now on the Fleet catalog tab reads it again."
     )
     # Titles held (of other bundle ids) under a snapshot still marked unread: the same.
     with pytest.raises(timelines.Unavailable) as unread:
         timelines.fleet(history(snapshot="unread"), doc, "firefox", "firefox/release")
     assert unread.value.state == "catalog_partial"
     assert "The last check said" not in unread.value.sentence
-    assert unread.value.sentence.startswith(
-        "Fleet's catalog, as this instance holds it, has no Mac title for Mozilla Firefox (bundle id org.mozilla.firefox), "
-        "but this instance has read that catalog only in part"
-    )
+    assert unread.value.sentence == opening + timelines.PARTIAL_NO_WORDS + closing
     # Nothing held at all is still `catalog_unread`, whatever the snapshot says; a complete read is `not_held`.
     with pytest.raises(timelines.Unavailable) as nothing:
         timelines.fleet(history(catalog_read=False, snapshot="unread"), doc, "firefox", "firefox/release")
@@ -514,7 +534,7 @@ def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title() -> None
 PARTIAL_CUT = (
     " Fleet's catalog was read only in part, so the last check (2026-11-23) confirms no title's history past the day it "
     "was read (2026-11-20), and this view ends the day before; a check that reads the whole catalog carries it to that "
-    "check's day (docs/troubleshooting.md §27 step 6)."
+    "check's day (docs/troubleshooting.md §33 step 5)."
 )
 
 
@@ -587,7 +607,7 @@ def test_a_refusal_concluded_from_the_titles_read_says_the_catalog_was_read_only
     assert partial.value.sentence == complete.value.sentence + timelines.PARTIAL_TAIL
     assert timelines.PARTIAL_TAIL == (
         " This instance has read Fleet's catalog only in part, so another Fleet title under this bundle id may be among "
-        "those not read (docs/troubleshooting.md §27 step 6)."
+        "those not read (docs/troubleshooting.md §33 step 5)."
     )
     # The same for `no_versions`; a history not read yet is about that title, and says only that.
     empty = fleet_title("firefox", "org.mozilla.firefox", [])

@@ -605,6 +605,10 @@ def test_stale_says_why_the_copy_is_old() -> None:
         "more than three days old; the walk ends",
     ):
         assert cause in step, f"§32 does not walk the cause {cause!r}"
+    # The field that says which cause the instance judged is named where the causes are, and in AA's report.
+    seven = step.split(" 7. Showing patch-policy data dated", 1)[1].split(" 8. An instance with no network", 1)[0]
+    report = step.split(" AA. The exchange answers", 1)[1].split(" AB. ", 1)[0]
+    assert "`feed.publisherRunning`" in seven and "`feed.publisherRunning`" in report
 
 
 # --- the download it shares with the corpus ---------------------------------------------------

@@ -137,7 +137,13 @@ SNAPSHOT_COMPLETE = "complete"
 # complete: a title the read did not reach may be the one that would have dated the track.
 PARTIAL_TAIL = (
     " This instance has read Fleet's catalog only in part, so another Fleet title under this bundle id may be among "
-    "those not read (docs/troubleshooting.md §27 step 6)."
+    "those not read (docs/troubleshooting.md §33 step 5)."
+)
+# What the Fleet catalog's status line holds for a partial snapshot when the last check left no
+# words: the 1.3.0 upgrade marks a catalog already read as partial and leaves its line as it was.
+PARTIAL_NO_WORDS = (
+    " The last check left no words for it, which is how the 1.3.0 upgrade leaves a catalog it marked partial; the "
+    "next check, within the hour, or Check now on the Fleet catalog tab reads it again."
 )
 
 
@@ -727,17 +733,24 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
                 "catalog tab reads it at once (docs/troubleshooting.md §27).",
             )
         if partial:
-            # A title missing from a catalog read only in part is not proof that Fleet has none.
-            said = f" The last check said: {history.snapshot_detail}" if history.snapshot_detail else ""
+            # A title missing from a catalog read only in part is not proof that Fleet has none. The
+            # cause, as the status line has it: a check cut short after it had read some titles (it
+            # failed), titles it could not read (its words), or the upgrade (no words). §33 step 5
+            # walks all three.
+            if history.catalog_detail:
+                said = f" The last check did not get an answer: {history.catalog_detail}"
+            elif history.snapshot_detail:
+                said = f" The last check said: {history.snapshot_detail}"
+            else:
+                said = PARTIAL_NO_WORDS
             raise Unavailable(
                 FLEET,
                 FLEET_CATALOG_PARTIAL,
                 f"Fleet's catalog, as this instance holds it, has no Mac title for {name} (bundle id {bundles}), but this "
                 "instance has read that catalog only in part, so the title may be one it has not read yet."
                 + said
-                + " The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a check reads the "
-                "whole catalog, this source dates the track or says Fleet holds no title for the app. Until then, choose "
-                "another source.",
+                + " Once a check reads the whole catalog, this source dates the track or says Fleet holds no title for the "
+                "app; until then, choose another source (docs/troubleshooting.md §33 step 5).",
             )
         raise Unavailable(
             FLEET,
@@ -773,7 +786,7 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
                 f" Fleet's catalog was read only in part, so the last check ({answered.astimezone(dt.UTC):%Y-%m-%d}) "
                 f"confirms no title's history past the day it was read ({as_of_day.isoformat()}), and this view ends the "
                 "day before; a check that reads the whole catalog carries it to that check's day (docs/troubleshooting.md "
-                "§27 step 6)."
+                "§33 step 5)."
             )
     for title in read:
         if title.history_detail:

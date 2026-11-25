@@ -976,6 +976,10 @@ class FeedView:
     # When LoonSec's publisher last finished a build (the exchange's `built_at`), or None when that
     # is not known. `stale` is judged from `as_of` alone; this only picks the stale sentence's cause.
     built_at: datetime | None = None
+    # Whether that build is within `STALE_AFTER` of now by this instance's clock (`held_freshness`):
+    # the cause `sentence` names for a stale copy, sent so the page names the same one rather than
+    # judging it again by the browser's clock. None when `built_at` is.
+    publisher_running: bool | None = None
     document: Mapping[str, object] | None = field(default=None, repr=False)
 
 
@@ -1153,6 +1157,7 @@ async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedVie
         state=state,
         sentence=words,
         built_at=built_at,
+        publisher_running=running if built_at is not None else None,
         doc_id=held.doc_id,
         as_of=held.as_of,
         fetched_at=held.fetched_at,
