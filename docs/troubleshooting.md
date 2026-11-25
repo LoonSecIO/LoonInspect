@@ -4587,8 +4587,16 @@ refusal: the sentence is the whole report.
     - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where the version
       LoonSec points at is not that exact one (null otherwise): the next listed version above it,
       or, where that one is still in the CVE's range, the first listed version above the range.
-      NVD can name a build the Mac never got: for Chrome's Linux-only 142.0.7444.59, LoonSec
-      points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
+      NVD can name a build the Mac never got: for Chrome's Linux and Windows build 142.0.7444.59,
+      LoonSec points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
+    - for Chrome, NVD's build can be another platform's that Google numbered above the Mac's build
+      of the same release. LoonSec keeps NVD's bound, so the fix counts from the next Mac build at
+      or above it, a release late (NVD's 114.0.5735.110 and 144.0.7559.99 are two such), except
+      for three releases, as ruled on 2026-11-25: there LoonSec counts the fix from the Mac's own
+      build, read from Google's Chrome Releases post for that release, and `named` keeps NVD's
+      build (106.0.5249.61 for NVD's 106.0.5249.62, 135.0.7049.41/.42 for 135.0.7049.52, and
+      136.0.7103.48/.49 for 136.0.7103.59; a copy built before the ruling counts these a release
+      late as well). That is LoonSec's data, the same on every source, not a fault;
     - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
       not clearing it: a device clears the CVE when it installs a version outside the CVE's
       affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
