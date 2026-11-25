@@ -756,3 +756,23 @@ And **no model-written text reaches the page**: where slots 1 and 2 render the m
 Apple's on-device model repeated the instructions' own example as its note on statements it
 did not apply to. The gate is `require_ai` with `policy_statement` as the one disclosed field.
 
+## Fleet migration briefing (v1.4.0)
+
+**Generate briefing**, under Migration review's table on Devices › Applications › Fleet catalog ([`fleet-catalog.md`](fleet-catalog.md#migration-review)),
+asks the saved provider picked beside it which of the migration report's own counts should lead. The route is `backend/app/api/fleet_briefing.py`
+(#910); the panel is `frontend/src/features/fleetCatalog/FleetBriefing.tsx` (#911).
+
+The route reads the report for the Macs `deviceScope` selects; the body names only the provider. Seven fields can leave, each a count:
+`apps_overdue`, `apps_with_kev`, `ambiguous_apps`, `incomplete_comparisons`, `recurring_review`, `exact_candidates` and `scoped_macs`. Only the
+non-zero ones leave, with `scoped_macs` always, and no app, bundle ID, version, connection or Mac. When only the Mac count is left there is nothing
+to rank: it answers `nothing_to_rank` and sends nothing, before any AI gate. Otherwise, after the Fleet catalog flag and once the report's snapshot
+has ended, the gates run in the rule draft's order: the saved card, its endpoint, the model, then `require_ai` for `fleet_catalog_briefing`, whose
+share-log row names the destination, the model asked for and, as its fields, the codes that leave, committed before the call. The reply budget is
+the Changes Prompt's 200 tokens.
+
+The accepted reply is one to three distinct codes from the input, at most 512 characters, bare or in one whole ```` ```json ```` fence. Anything
+else, an empty reply or one whose budget went on thinking included, is `unusable`, and the page shows the report's first three counts; a provider
+failure shows them too, with the adapter's sentence. As with the rule draft, no model-written text reaches the page: it words each code itself. The
+audit action `ai.fleet-catalog-briefing.sent` records the outcome (`selected`, `unparseable` or `error`), the destination, the provider, the
+latency, and the highlight count or the error kind, never the counts or the reply. AI Activity lists the calls under *Fleet migration briefings*:
+an answered call is closed `completed` or `unusable`, and a failed one under its failure. Nothing is stored.

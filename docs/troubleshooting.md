@@ -3746,6 +3746,27 @@ nothing here is a permissions problem in Jamf.
       identifier.* or *The Fleet catalog has no matching macOS title for this inventory identity.* Under any other sentence, step 13
       routes it, and step 11 lists the identity causes. A title's own page always shows it.
     - A link under *Plan a Fleet pilot* no longer opens → Fleet or the tool's maintainers moved the page. Report it (§8) with the link.
+17. **Migration review shows no *Migration briefing*, or the briefing reads wrong.** The panel sits under the list's table and sends
+    nothing until **Generate briefing** is pressed ([`ai-layer.md`](ai-layer.md#fleet-migration-briefing-v140)). *… chose these counts
+    to lead with.* means the provider picked; every line under it is the report's own count for the Macs in the device filter. By what
+    the panel shows:
+    - No panel → it needs AI features, AI-inference consent and a saved provider, the Prompt bar's switches. Settings › AI's line
+      *Changes Prompt bar: hidden — …* names the one that is off (§11 step 1), and consent is granted on Settings › AI, not on
+      Settings › Data Sharing. `curl -s -b jar "$BASE/api/fleet-catalog/briefing"` answers `available`, and a `reason` when it is false.
+    - *The migration briefing could not check its settings: …* or *The migration briefing could not be prepared: …* → the reason
+      follows the colon, and `docker compose logs app --since 10m` has the error. A reason, or a sentence in their place, that names
+      the Fleet catalog flag, AI features, consent or a provider is the server's refusal, and the fix is that switch (step 1, §11 step 1).
+    - *The AI provider did not answer, so the report’s first counts are shown (…). Settings › AI has its test box.* → the text in
+      brackets is the provider's own reason, which §11 step 2 routes; **Send** in that test box tries the same card.
+    - *… answered, but not with counts this page can use, so the report’s first counts are shown.* → **Generate briefing** again, or
+      pick another provider.
+    - *Nothing to rank: apart from their count, the Macs in the device filter show none of the six things a briefing weighs, so nothing was sent.*
+      → nothing left this instance.
+
+    Each briefing sent writes a share-log row on Settings › Data Sharing: feature `fleet_catalog_briefing`, the codes that left as its
+    fields, and the model. The audit log records `ai.fleet-catalog-briefing.sent`, and AI Activity counts the call under *Fleet
+    migration briefings*; work there falling behind or stalled is §28's
+    [*AI Activity: missing usage or work falling behind*](#ai-activity-missing-usage-or-work-falling-behind).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.
