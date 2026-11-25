@@ -255,7 +255,7 @@ const SHIPPED: Record<string, {
     source: "chrome-stable",
     window: ["2024-11-23", "2026-11-17"],
     counts: [4382, 3415, 967],
-    neverSeen: [3400, 149, 50, 29, 15, 6],
+    neverSeen: [3411, 153, 50, 29, 15, 6],
     held: null,
     device: "skip",
     cut: ["promotion_table"]
