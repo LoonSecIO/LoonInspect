@@ -4398,7 +4398,9 @@ refusal: the sentence is the whole report.
      The last check read Fleet's whole catalog, and no Mac title carries the app's bundle id:
      Fleet does not maintain the app. Choose another source.
    - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
-     this instance has read that catalog only in part…*** The titles held are partial or unread
+     this instance has read that catalog only in part…*** (the page's own words: *Fleet's catalog
+     has been read only in part on this instance, and the part read holds no Mac title for …*).
+     The titles held are partial or unread
      ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial), §27 step 6): a check skipped
      titles this build could not read, a check was cut short after it had changed some, or the
      1.3.0 upgrade marked a catalog already read as partial. A title missing from a catalog read

@@ -58,3 +58,14 @@ def test_every_window_cut_has_its_words_in_both_languages() -> None:
 def test_the_fleet_flags_sentence_is_the_backends_word_for_word() -> None:
     """Plan 3.5: *Flag off* is `FLAG_OFF` verbatim, so the page prints it once, not twice."""
     assert f'    flag_off: () =>\n      "{fleet_catalog.FLAG_OFF}",' in _COPY
+
+
+def test_the_page_words_for_a_catalog_read_in_part_are_in_the_runbook() -> None:
+    """`catalog_partial` opens differently on the page than in the instance's sentence, so §33 step
+    5 quotes both, and a reader searching the runbook for what the page says finds the step."""
+    runbook = (Path(__file__).resolve().parents[2] / "docs" / "troubleshooting.md").read_text()
+    step = re.sub(r"\s+", " ", runbook.split("\n## 33. ", 1)[1].split("\n6. **The window.**", 1)[0]).replace("*", "")
+    english = re.search(r"^    catalog_partial: \(\{ app \}: ReasonContext\) =>\n      `([^`]*)`", _COPY, re.M)
+    assert english, "walkCopy.ts has no English sentence for catalog_partial"
+    opening = english.group(1).split("${app}")[0].strip()
+    assert opening in step, f"§33 step 5 does not quote the page's catalog_partial words: {opening!r}"

@@ -244,6 +244,27 @@ describe("the words for how a fix was dated", () => {
   });
 });
 
+describe("a Fleet catalog read only in part", () => {
+  const context = { app: "Example Browser", track: "Example Browser (release)", source: "this instance's Fleet history", sourceId: "fleet" as const };
+
+  it("says the title may be unread, not that Fleet holds none, and points at the catalog's status line", () => {
+    const english = walkEnglish.reasons.catalog_partial(context);
+    expect(english).toBe(
+      "Fleet's catalog has been read only in part on this instance, and the part read holds no Mac title for Example Browser: it may be among the titles not read yet. The Fleet catalog tab's status line says why. Choose another source until a check reads the whole catalog (troubleshooting.md §27 step 6, §33 step 5)."
+    );
+    // not_held's conclusion is the one a partial read cannot draw.
+    expect(english).not.toContain(walkEnglish.reasons.not_held(context).split(". ")[0]);
+  });
+
+  it("says the same in German", () => {
+    const german = walkGerman.reasons.catalog_partial(context);
+    expect(german).toContain("nur teilweise gelesen");
+    expect(german).toContain("keinen Mac-Titel für Example Browser");
+    expect(german).toContain("(troubleshooting.md §27 Schritt 6, §33 Schritt 5).");
+    expect(german).not.toContain(walkGerman.reasons.not_held(context).split(". ")[0]);
+  });
+});
+
 describe("the never stop's words", () => {
   it("splits never seen by why, in the singular and the plural, and says only what there is", () => {
     expect(patchPolicyEnglish.neverStays("4.2.5", 120, 113)).toBe(
