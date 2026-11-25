@@ -3570,7 +3570,9 @@ nothing here is a permissions problem in Jamf.
     partial or unread (steps 2, 3 and 6); `no_fleet_title`, no Fleet Mac title has the app's bundle
     ID (compare them as step 4 does); `identity_review`, the app has no bundle ID, two Fleet titles
     share it, several Jamf Patch titles match it or a match rests on an extension attribute
-    (`jamfTitles` lists them; settle the title under **Devices › Applications › Jamf Patch**); or
+    (`jamfTitles` lists the matching titles this instance has synced, so an app naming titles it has
+    not synced reads `identity_review` with `jamfTitles` empty; settle the title under
+    **Devices › Applications › Jamf Patch**); or
     `unordered_target`, the target holds no number (choose a numeric version from the history; a
     qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
 
