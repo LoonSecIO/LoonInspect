@@ -3714,10 +3714,12 @@ nothing here is a permissions problem in Jamf.
       → `docker compose logs app --since 10m | grep fleet-catalog/migration` lists each request with its `status_code`. A `500`, or a
       `"message": "request failed"` line, carries the error: report it (§8) with those lines. No line at all: the request never reached
       this instance, so look at a proxy, or the network between the browser and the instance.
-    - *Could not compare this target.* over any other sentence → that sentence is the server's own refusal: step 11.
+    - *Could not compare this target.* over *The Fleet catalog is off for this organization.* → step 1. Over any other sentence → that
+      sentence is the server's own refusal: step 11.
     - *Device impact is unavailable: Fleet’s catalog is not completely read. It returns after the next complete check.* → steps 2, 3 and 6.
     - *Device impact is unavailable until this app’s identity is reviewed: …*, or in a row *Identity requires review* or *Not judged until
-      this build’s identity is reviewed: …* → step 11 names the four causes, and the header's sentence says which (step 13). Fleet
+      this build’s identity is reviewed: …* → check each of the four causes step 11 lists. The header's sentence (step 13) singles out
+      only a missing bundle identifier, and a row can read *Identity requires review* under a header that names one Fleet title. Fleet
       channels that share a bundle identifier are compared on no page, a channel's own included: inventory cannot tell them apart.
     - *Device impact is unavailable: Fleet’s version … cannot be ordered against installed versions. …* → **Compare** a dotted release under
       **Fleet release history**.
@@ -3729,6 +3731,21 @@ nothing here is a permissions problem in Jamf.
       opens that title. A row out of policy by its releases limit shows no due date: the one sent is the days limit's, which can be ahead.
     - *Not judged: no Jamf Patch title matches this build.* → **Devices › Applications › Jamf Patch**, and §6 if that table is empty.
     - *Installed build outside corpus*, *Target build outside corpus*, *Corpus unavailable* or *Vulnerabilities: not assessed* → §5.
+16. **An app's page says where to start a pilot, or shows no *Plan a Fleet pilot*.** The line under the header counts the Macs in the
+    device filter with the app against Fleet's latest version, whatever target **Compare a target version** shows, as that panel's
+    **Below target** and **Version unknown** do for Fleet's latest (step 15). With no such Mac, or no device impact (the panel or the
+    evidence says why, step 15), there is no line. By the sentence:
+    - *Start the pilot with the … in-scope Macs below …* → the same Macs as **Below target** for Fleet's latest; a count that looks
+      wrong is step 15. A Mac counts as updated once Jamf's inventory reports the new build and a device sweep here has read it, so a
+      pilot install shows only after that.
+    - *No in-scope Mac is known to be below …, but … cannot be ordered against it. …* → open **Installed builds**: the versions meant
+      are those with no numeric order. They count under **Version unknown** (step 15), and nothing in this instance can order them.
+    - *Every in-scope Mac with this app is at or above …* → nothing to do until Fleet's catalog takes a newer version; step 2 says
+      when it reads.
+    - No *Plan a Fleet pilot* on an app's page → it shows only under the header's *One Fleet title matches this app’s bundle
+      identifier.* or *The Fleet catalog has no matching macOS title for this inventory identity.* Under any other sentence, step 13
+      routes it, and step 11 lists the identity causes. A title's own page always shows it.
+    - A link under *Plan a Fleet pilot* no longer opens → Fleet or the tool's maintainers moved the page. Report it (§8) with the link.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.
