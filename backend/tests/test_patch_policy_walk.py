@@ -1894,7 +1894,8 @@ def test_the_walk_still_counts_the_check_it_wrote() -> None:
     affected until 115.0.2's day), three lines with a track held to one of them and fixes on several,
     a CVE NVD names no fix for, a fix only an undated build carries, a fix NVD names by a build the
     track does not list, a CVE on the ESR edition set aside (`other_edition_only`) beside the ESR
-    channel the app names under `other_channels` and does not walk. Its CVE ids are fictional."""
+    channel the app names under `other_channels` and does not walk, and the day boundaries the hand
+    goldens pin (Example Editor: `COUNTING_MUTANTS` names each rule). Its CVE ids are fictional."""
     from app.core import patch_policy_feed as feed
 
     assert FROZEN.exists(), (
@@ -2007,6 +2008,90 @@ def test_a_new_algorithm_writes_its_own_check_beside_the_old_one(tmp_path: Path,
     assert {k: v for k, v in new.items() if k not in ("algorithm", "doc_id")} == {
         k: v for k, v in old.items() if k not in ("algorithm", "doc_id")
     }
+
+
+# Single-line counting changes the frozen check must catch: each is a rule the hand goldens above
+# pin, so each moves some total of the frozen document (`test_the_frozen_check_moves_on_every_
+# counting_change_it_pins`). An edit to the walk that moves one of these lines fails that test by
+# name; re-point the entry at the line that now does it.
+COUNTING_MUTANTS = {
+    "rule 5 off": (
+        "            if own < self.dates[dated_as]:\n                return True",
+        "            if False:\n                return True",
+    ),
+    "rule 5 exempts no train": (
+        "if dated_as is None or version.train in (self.versions[fix].train, self.versions[dated_as].train):",
+        "if dated_as is None:",
+    ),
+    "rule 5 exempts the fix's train only": (
+        "version.train in (self.versions[fix].train, self.versions[dated_as].train)",
+        "version.train == self.versions[fix].train",
+    ),
+    "rule 5 counts a build dated the fix's day": ("if own < self.dates[dated_as]:", "if own <= self.dates[dated_as]:"),
+    "no next dated version stands in for a fix": (
+        "prepared.effective_fixes[key] = (found, NEXT_DATED) if found is not None else (None, FIX_UNDATED)",
+        "prepared.effective_fixes[key] = (None, FIX_UNDATED)",
+    ),
+    "a version in the run stands in for its fix": ("if run < 0 or row.runs[run][1] < dated[at]:", "if True:"),
+    "the report day is day zero": ("REPORT_DAY_IS_DAY = 1\n", "REPORT_DAY_IS_DAY = 0\n"),
+    "never keeps the version before the window's first day": (
+        "return [(since, max((index for index, day in available if day <= since), default=None))]",
+        "return [(since, max((index for index, day in available if day < since), default=None))]",
+    ),
+    "a stop installs a version due on the window's first day late": (
+        "current = max((index for index, day in installs if day <= since), default=None)",
+        "current = max((index for index, day in installs if day < since), default=None)",
+    ),
+    "two versions due the same day install the first": ("(day not in due or index > due[day])", "(day not in due)"),
+    "a CVE clocked on the window's first day is before it": (
+        "in_window = clock_day >= since",
+        "in_window = clock_day > since",
+    ),
+    "exposure counts from the window's first day, not the CVE's clock": (
+        "found = _intervals(row, steps, max(clock_day, since), until, judge)",
+        "found = _intervals(row, steps, since, until, judge)",
+    ),
+    "carried in reaches the window's second day": (
+        "elif found and found[0][0] == since:",
+        "elif found and found[0][0] <= since + _DAY:",
+    ),
+    "open at the window's end reaches its last day but one": (
+        "open_at_window_end = bool(found) and found[-1][1] == until",
+        "open_at_window_end = bool(found) and found[-1][1] >= until - _DAY",
+    ),
+    "the fix itself installed is outside the range": (
+        "line == versions[at].line and at >= fix for line, fix in row.fixes",
+        "line == versions[at].line and at > fix for line, fix in row.fixes",
+    ),
+}
+
+
+@pytest.mark.parametrize("mutant", list(COUNTING_MUTANTS))
+def test_the_frozen_check_moves_on_every_counting_change_it_pins(mutant: str, monkeypatch) -> None:
+    """Each of `COUNTING_MUTANTS`, applied to a copy of the walk, moves some total of the frozen
+    check (or makes its walk refuse): an edit to the fixture that drops the case one of them needs
+    fails here, by name, rather than leaving that rule unwatched across versions."""
+    import importlib.util
+
+    old, new = COUNTING_MUTANTS[mutant]
+    source = Path(walk_module.__file__).read_text()
+    assert source.count(old) == 1, (
+        f"{mutant!r}: its line is not in patch_policy_walk.py exactly once; re-point it at the line that now does this"
+    )
+    name = f"tests._patch_policy_walk_mutant_{list(COUNTING_MUTANTS).index(mutant)}"
+    mutated = importlib.util.module_from_spec(importlib.util.spec_from_loader(name, loader=None))
+    monkeypatch.setitem(sys.modules, name, mutated)  # a dataclass reads its module while the class is built
+    exec(compile(source.replace(old, new), walk_module.__file__, "exec"), mutated.__dict__)
+
+    doc = json.loads(FROZEN.read_text())
+    held = {(app["app"], track["track"]): track["check"] for app in doc["apps"] for track in app["tracks"]}
+    try:
+        walked = frozen_checks(doc, mutated)
+    except mutated.WalkRefused:
+        return  # the frozen test fails on the refusal too
+    assert any(first_difference(held[key], walked[key]) for key in held), (
+        f"{mutant!r} counts differently, and no total of {FROZEN.name} moves: the fixture lacks the case it needs"
+    )
 
 
 def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
