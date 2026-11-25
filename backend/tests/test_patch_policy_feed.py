@@ -585,6 +585,19 @@ def test_stale_says_why_the_copy_is_old() -> None:
     )
     for sentence in (unknown, running, stopped):
         assert sentence.split(" 2026-")[0] in _EN_TS
+    # The page says each one word for word: its English templates, filled with the same values.
+    page = {
+        key: re.search(rf"\n {{8}}{key}: \([^)]*\) =>\s*`([^`]*)`", _EN_TS) for key in ("stale", "staleRunning", "staleStopped")
+    }
+    assert all(page.values()), f"en.ts has no template for {[key for key, found in page.items() if not found]}"
+    filled = {
+        key: found.group(1)
+        .replace("${asOf}", "2026-11-20")
+        .replace("${until}", "2026-11-19")
+        .replace("${builtAt}", "2026-11-24" if key == "staleRunning" else "2026-11-20")
+        for key, found in page.items()
+    }
+    assert filled == {"stale": unknown, "staleRunning": running, "staleStopped": stopped}
     step = re.sub(r"\s+", " ", _RUNBOOK.split('\n## 32. "', 1)[1].split("\n## 33. ", 1)[0]).replace("*", "")
     for cause in (
         "LoonSec's publisher last ran on …, but its NVD data has not advanced since",
