@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from app.schemas.fleet_assessment import FleetAssessmentOut
 from app.schemas.patch_plans import ReportModel
 
 
@@ -59,6 +60,9 @@ class ReportContext(ReportModel):
     jamf_catalog_ready: bool = False
     # One entry per reported app, keyed by `appHash`, from the same snapshot as the apps.
     installed_evidence: dict[str, InstalledEvidence] = Field(default_factory=dict)
+    # One #897 assessment per `exact` app, keyed by `appHash`, against Fleet's current version (#898). The list asks
+    # for neither per-build rows nor finding IDs, so each carries counts and codes only, and `builds` is empty.
+    app_assessments: dict[str, FleetAssessmentOut] = Field(default_factory=dict)
 
 
 class MigrationReport(ReportContext):

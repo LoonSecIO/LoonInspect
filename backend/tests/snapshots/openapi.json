@@ -4843,6 +4843,402 @@
         "title": "FindingDetectedOut",
         "type": "object"
       },
+      "FleetAssessmentOut": {
+        "properties": {
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "behindBuilds": {
+            "default": 0,
+            "title": "Behindbuilds",
+            "type": "integer"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/FleetBuildAssessmentOut"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "corpusAsOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusasof"
+          },
+          "exactBuilds": {
+            "default": 0,
+            "title": "Exactbuilds",
+            "type": "integer"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "management": {
+            "default": "observe",
+            "enum": [
+              "recurring",
+              "one_time",
+              "observe"
+            ],
+            "title": "Management",
+            "type": "string"
+          },
+          "netOnlyBuilds": {
+            "default": 0,
+            "title": "Netonlybuilds",
+            "type": "integer"
+          },
+          "oldestGapDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldestgapdays"
+          },
+          "outOfPolicyBuilds": {
+            "default": 0,
+            "title": "Outofpolicybuilds",
+            "type": "integer"
+          },
+          "policyExemptBuilds": {
+            "default": 0,
+            "title": "Policyexemptbuilds",
+            "type": "integer"
+          },
+          "policyUnassessedBuilds": {
+            "default": 0,
+            "title": "Policyunassessedbuilds",
+            "type": "integer"
+          },
+          "priority": {
+            "default": "monitor",
+            "enum": [
+              "review_now",
+              "plan_update",
+              "review_identity",
+              "monitor"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "priorityReason": {
+            "default": "none_behind",
+            "enum": [
+              "none_behind",
+              "unordered",
+              "identity",
+              "out_of_policy",
+              "kev",
+              "comparable"
+            ],
+            "title": "Priorityreason",
+            "type": "string"
+          },
+          "recentVersions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recentversions"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          },
+          "unorderedBuilds": {
+            "default": 0,
+            "title": "Unorderedbuilds",
+            "type": "integer"
+          },
+          "withinPolicyBuilds": {
+            "default": 0,
+            "title": "Withinpolicybuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "targetVersion"
+        ],
+        "title": "FleetAssessmentOut",
+        "type": "object"
+      },
+      "FleetBuildAssessmentOut": {
+        "properties": {
+          "addressedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressedids"
+          },
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "comparison": {
+            "enum": [
+              "exact",
+              "net_only",
+              "off",
+              "unknown_source",
+              "unknown_target",
+              "ambiguous"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "installedKev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installedkev"
+          },
+          "introducedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introducedids"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "policyDueAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policydueat"
+          },
+          "policyRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatchRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policySource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "override"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policysource"
+          },
+          "policyState": {
+            "default": "unassessed",
+            "enum": [
+              "within",
+              "out",
+              "exempt",
+              "unassessed"
+            ],
+            "title": "Policystate",
+            "type": "string"
+          },
+          "policyTitleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policytitleid"
+          },
+          "policyUnassessed": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identity",
+                  "no_jamf_title",
+                  "no_rule",
+                  "not_judged"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policyunassessed"
+          },
+          "policyVerdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyVersionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remainingIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainingids"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comparison",
+          "deviceCount",
+          "name",
+          "version"
+        ],
+        "title": "FleetBuildAssessmentOut",
+        "type": "object"
+      },
       "FleetCandidate": {
         "properties": {
           "bundleId": {
@@ -7339,6 +7735,13 @@
       },
       "MigrationReport": {
         "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
           "asOf": {
             "format": "date-time",
             "title": "Asof",

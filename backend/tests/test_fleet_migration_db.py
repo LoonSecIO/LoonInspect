@@ -19,7 +19,7 @@ from app.main import app
 from app.models.schema import Device, FeatureFlag, FleetCatalogState, InstalledApp, Tenant
 from app.schemas.patch_plans import DeviceScope
 from tests.patch_plan_fixtures import accounts, admin, flag_off, flag_on, github, inventory, viewer  # noqa: F401
-from tests.test_fleet_assessment_db import AS_OF, EPOCH, answer, counts, statements
+from tests.test_fleet_assessment_db import ALPHA_BETA, AS_OF, EPOCH, answer, counts, statements
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="requires a disposable PostgreSQL database"),
@@ -45,7 +45,7 @@ async def _read(client, params=None):
 async def test_read_is_flag_gated(admin, flag_off):  # noqa: F811
     report = await _read(admin)
     assert not report["enabled"] and not report["items"] and not report["fleetDeviceCounts"] and not any(report["scope"].values())
-    assert report["installedEvidence"] == {}
+    assert report["installedEvidence"] == report["appAssessments"] == {}
 
 
 def _answering(monkeypatch, as_of):
@@ -89,6 +89,9 @@ async def test_population_and_identity_share_a_cohort(db, inventory, viewer, fla
     assert rows[gamma]["match"] == "ambiguous" and [c["slug"] for c in rows[gamma]["fleetCandidates"]] == ["gamma", "gamma@6+"]
     assert rows[UNMATCHED]["match"] == "none" and rows[NO_ID]["match"] == "unknown"
     assert report["fleetDeviceCounts"]["alpha"] == 1  # Alpha and Alpha Beta share its bundle identifier on that Mac.
+    assessed = report["appAssessments"]
+    assert set(assessed) == {alpha, ALPHA_BETA}  # The two `exact` items, and no per-build rows on the list.
+    assert [assessed[alpha][key] for key in ("targetVersion", "behindBuilds", "builds")] == ["2.0", 1, []]
     # No conditions: the departed Mac, the other connection's Mac and the iPad still count nowhere.
     every = await _read(viewer, _filter(source))
     rows = {item["appHash"]: item for item in every["items"]}
@@ -122,6 +125,7 @@ async def test_migration_does_not_expose_another_tenants_inventory(db, inventory
     source = DeviceScope(connection_id=inventory[0])
     own = await read_migration(source, db)  # The same read, from its own organization.
     assert own.scope.eligible_macs == 3 and own.items and set(own.installed_evidence) == {item.app_hash for item in own.items}
+    assert own.app_assessments
     tenant_id = uuid.uuid4()
     async with unscoped_session() as global_db:
         global_db.add(Tenant(id=tenant_id, slug=f"migration-{tenant_id.hex}", name="Migration fixture", kind="operational"))
@@ -138,7 +142,7 @@ async def test_migration_does_not_expose_another_tenants_inventory(db, inventory
             await global_db.execute(delete(Tenant).where(Tenant.id == tenant_id))
             await global_db.commit()
     assert report.enabled and report.scope.eligible_macs == 0 and not report.items
-    assert report.fleet_device_counts["alpha"] == 0 and report.installed_evidence == {}
+    assert report.fleet_device_counts["alpha"] == 0 and report.installed_evidence == report.app_assessments == {}
 
 
 async def test_an_incomplete_snapshot_keeps_candidates_without_judging_coverage(db, inventory, viewer, flag_on):  # noqa: F811
@@ -151,3 +155,4 @@ async def test_an_incomplete_snapshot_keeps_candidates_without_judging_coverage(
     rows = {item["appHash"]: item for item in report["items"]}
     assert rows[alpha]["match"] == "unknown" and [title["slug"] for title in rows[alpha]["fleetCandidates"]] == ["alpha"]
     assert rows[UNMATCHED]["match"] == "unknown" and rows[gamma]["match"] == "ambiguous"
+    assert report["appAssessments"] == {}
