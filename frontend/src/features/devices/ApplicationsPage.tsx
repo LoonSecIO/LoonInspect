@@ -6,7 +6,7 @@ import { useFlagGate } from "@/features/settings/flagStore";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/i18n/LocaleContext";
 
-import { applicationFilters, patchPlanHref } from "@/features/catalog/patchPlanNavigation";
+import { applicationFilters, fleetCatalogHref, patchPlanHref } from "@/features/catalog/patchPlanNavigation";
 
 const tabClasses = "border-b-2 px-1 pb-2 text-sm font-medium transition-colors";
 const tabStateClasses = (isActive: boolean) =>
@@ -85,7 +85,7 @@ export function ApplicationsPage() {
         )}
         {fleetCatalogEnabled && (
           <NavLink
-            to="/devices/applications/fleet-catalog"
+            to={fleetCatalogHref(params)}
             className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
           >
             {t.fleetCatalog.tabLabel}
