@@ -344,7 +344,7 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                         {row.clock && <span className="block text-xs text-muted-foreground">{words.clocked[row.clock] ?? row.clock}</span>}
                       </td>
                       <td className={cell}>{words.exclusionReasons[row.reason] ?? copy.reasons[row.reason] ?? row.reason}</td>
-                      <td className={`${cell} text-muted-foreground`}>{row.detail ?? "—"}</td>
+                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>{row.detail ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
