@@ -304,12 +304,16 @@ def parse_index(body: bytes, *, skipped: set[str] | None = None) -> dict[str, tu
 
     A row this container could not hold whole (a name or identifier past the column, or
     missing) is left out rather than cut to fit, and its manifest is then reported skipped.
+    So is a slug listed twice with a different name or identifier: no copy is taken as
+    Fleet's, so a title held already keeps its row and a new one stays unlisted (#927). Two
+    copies that agree are one title.
     """
     index = _json(body, host=RAW_HOST, what="the catalog's index (apps.json)")
     apps = index.get("apps") if isinstance(index, dict) else None
     if not isinstance(apps, list):
         raise _not_the_catalogue("the catalog's index (apps.json) holds no list of apps")
     titles: dict[str, tuple[str, str]] = {}
+    unsettled: set[str] = set()  # a slug with a row this container cannot hold, or copies that disagree
     for app in apps:
         if not isinstance(app, dict) or app.get("platform") != "darwin":
             continue
@@ -321,12 +325,14 @@ def parse_index(body: bytes, *, skipped: set[str] | None = None) -> dict[str, tu
             continue
         name = name.strip() if isinstance(name, str) else ""
         identifier = identifier.strip() if isinstance(identifier, str) else ""
-        if name and identifier and len(name) <= 255 and len(identifier) <= 255:
-            if skipped is not None and key in titles and titles[key] != (name, identifier):
-                skipped.add(key)
-            titles[key] = (name, identifier)
-        elif skipped is not None:
-            skipped.add(key)
+        title = (name, identifier)
+        whole = bool(name and identifier) and len(name) <= 255 and len(identifier) <= 255
+        # Held the first time the slug is seen; a later copy that differs unsettles it.
+        if not whole or titles.setdefault(key, title) != title:
+            unsettled.add(key)
+    if skipped is not None:
+        skipped.update(unsettled)
+    titles = {key: title for key, title in titles.items() if key not in unsettled}
     if not titles:
         raise _not_the_catalogue("the catalog's index (apps.json) lists no Mac app")
     return titles
