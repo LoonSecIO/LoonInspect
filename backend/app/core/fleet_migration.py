@@ -1,4 +1,4 @@
-"""Installed Jamf Mac apps beside the Fleet titles that carry their bundle identifiers (#895)."""
+"""Installed Jamf Mac apps beside the Fleet titles carrying their bundle identifiers (#895), and observed upgrades (#900)."""
 
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -217,8 +217,8 @@ def _mac(columns):
 
 
 async def _first_upgrades(db: AsyncSession, identities, window, slug: str, since: datetime, now: datetime) -> dict:
-    """Each Mac's first recorded upgrade in `window` to a version `slug`'s history dated, with that date, by (connection,
-    Jamf id, version), when on or after it. A pair goes when its Mac upgraded to the version before the window too."""
+    """(connection, Jamf id, version) -> (first recorded upgrade in `window`, Fleet's date), for versions `slug`'s history
+    dated, kept when on or after that date. A pair goes when its Mac upgraded to the version before the window too."""
     log, fleet = window.c, FleetAppVersion
     old, new, ordered = _ordered(log.old_value, log.new_value)
     dated = select(*_mac(log), old, new, fleet.seen_at, func.min(log.observed_at)).select_from(window)
