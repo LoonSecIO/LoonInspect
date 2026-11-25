@@ -298,9 +298,12 @@ async def test_adoption_lag_dates_each_first_observed_upgrade_once_per_mac_and_v
     row = {"mdm_connection_id": source, "subject_kind": "computer", "section": "applications", "change": "updated"}
     row |= {"collected_at": now, "trigger": "sweep", "level": "normal", "policy_version": "1"}
 
-    def change(mac, previous, version, days, *, name="Alpha", bundle=ALPHA, short=None):
+    def change(mac, previous, version, days, *, name="Alpha", bundle=ALPHA, short=None, builds=None):
+        old = {"version": previous} if previous else {}  # None: that side holds no version.
         new = {"version": version} | ({"cfBundleShortVersionString": short} if short else {})
-        moved = {"old_value": {"version": previous}, "new_value": new, "observed_at": now - timedelta(days=days)}
+        if builds:  # cfBundleVersion, before and after
+            old, new = old | {"cfBundleVersion": builds[0]}, new | {"cfBundleVersion": builds[1]}
+        moved = {"old_value": old, "new_value": new, "observed_at": now - timedelta(days=days)}
         return DeviceChange(**row, subject_id=mac, entry_identity={"name": name, "bundleId": bundle}, **moved)
 
     dates = [("alpha", "2.1", 10), ("alpha", "3.0", 10), ("alpha", "3.1", 5), ("alpha", "4.0", 10), ("alpha", "9.0", 120)]
@@ -314,6 +317,9 @@ async def test_adoption_lag_dates_each_first_observed_upgrade_once_per_mac_and_v
             change("2", "1", "2.1", 4),  # 6 days.
             change("2", "5.0", "3.0", 100),  # A rollback before the window does not drop the upgrade after it...
             change("2", "2.1", "3.0", 5),  # ...5 days.
+            change("2", "v2.0", "2.1", 120),  # Nor does an earlier move that cannot be ordered drop the upgrade to 2.1.
+            change("1", "4.0", "4.0", 3, builds=("400", "401")),  # Only cfBundleVersion moved: a change, never an upgrade.
+            change("1", None, "4.0", 3),  # One side missing: not a change.
             change("1", "5.0", "4.0", 2),
             change("1", "2", "4.0", 1, short="4.1"),
             change("1", "v2-beta", "4.0", 1),
@@ -338,6 +344,10 @@ async def test_adoption_lag_dates_each_first_observed_upgrade_once_per_mac_and_v
         for path in (f"/apps/{alpha}", "/titles/alpha"):
             timed = await observed(path)
             assert (timed["adoptionSamples"], timed["medianDaysAfterFleetPublication"]) == (4, 4.0)
+            # 14 rows in the window on Macs 1 and 2: 12 above, the cfBundleVersion-only one, and the inventory fixture's,
+            # written as the test began, the newest. Not the row dated tomorrow.
+            assert (timed["versionChanges"], timed["macs"]) == (14, 2)
+            assert now - timedelta(minutes=1) < datetime.fromisoformat(timed["lastAt"]) <= now
         timed = await observed(f"/apps/{alpha}", "contact")  # Mac 2 last checked in 90 days ago.
         assert (timed["adoptionSamples"], timed["medianDaysAfterFleetPublication"]) == (2, 2.5)
     reads = [sql for sql, _ in seen if "FROM device_changes" in sql]  # Each bounded by the window, or to the paired Macs.

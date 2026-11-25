@@ -2,7 +2,7 @@
 /** The Fleet catalog tab on main's device filter (#904, #905): each view asks for the report for the address's `deviceScope`
  *  as it stands, an answer the filter has moved past never paints, and every word is #903's or main's. `apiRequest` is stubbed by URL. */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation, useNavigationType } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError, apiRequest } from "@/config/api";
 import { readScope } from "@/features/catalog/deviceScope";
@@ -44,11 +44,22 @@ const asked = () => request.mock.calls.filter(([path]) => path.startsWith("/flee
 const posts = () => request.mock.calls.filter(([path, init]) => path.startsWith("/fleet-catalog/briefing") && init?.method === "POST");
 const filterOf = (path: string) => new URLSearchParams(path.split("?")[1]).get("deviceScope");
 const row = (name: string) => within(screen.getByText(name).closest("tr")!);
-const open = (query = "") =>
-  render(<MemoryRouter initialEntries={["/devices/applications/fleet-catalog" + query]}><LocaleProvider><FleetCatalogHome /></LocaleProvider></MemoryRouter>);
+/** The address's query and how the last move made it (PUSH or REPLACE), as attributes so no query can match them. */
+function Address() {
+  return <span data-testid="address" data-search={useLocation().search} data-type={useNavigationType()} />;
+}
+const address = () => { const { search, type } = screen.getByTestId("address").dataset; return [new URLSearchParams(search).get("q"), type]; };
+const open = (query = "") => render(<MemoryRouter initialEntries={["/devices/applications/fleet-catalog" + query]}><LocaleProvider><FleetCatalogHome />
+  <Address /></LocaleProvider></MemoryRouter>);
+/** Applies the builder's connection `id`, once its options are in. */
+async function apply(id: string) {
+  await screen.findByRole("option", { name: "Jamf 7" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Jamf connection" }), { target: { value: id } });
+  fireEvent.click(screen.getByRole("button", { name: "Apply device filter" }));
+}
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  return { promise: new Promise<T>(done => { resolve = done; }), resolve: (value: T) => resolve(value) };
+  let resolve!: (value: T) => void, reject!: (reason: unknown) => void;
+  return { promise: new Promise<T>((done, fail) => { resolve = done; reject = fail; }), resolve: (value: T) => resolve(value), reject: (reason: unknown) => reject(reason) };
 }
 beforeEach(() => { localStorage.clear(); permission.held = false; });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -220,6 +231,63 @@ it("keeps Check now's refusal, the sort and the table while the counts are read 
   await waitFor(() => expect(asked()).toHaveLength(3));
   await waitFor(() => expect(screen.queryByText(words.loading)).toBeNull());
   expect([screen.queryByRole("alert"), Boolean(screen.queryByText(refusal)), order()]).toEqual([null, true, sorted]);
+});
+
+it("never shows a refusal for a filter Migration review has moved past", async () => {
+  const late = deferred<MigrationPortfolio>();
+  let n = 0;
+  serve(() => n++ ? report([app("Current")]) : late.promise);
+  open(`?${new URLSearchParams({ deviceScope: JSON.stringify({ match: "all", connectionId: 3, rules: [] }) })}`);
+  await apply("7");
+  await screen.findByText("Current");
+  await act(async () => late.reject(new ApiError(422, "Moved past.")));
+  expect([Boolean(screen.queryByText("Current")), screen.queryByRole("alert"), asked().length]).toEqual([true, null, 2]);
+});
+
+it("never paints a Fleet titles report the filter has moved past, and hides one filter's titles until the next one's report lands", async () => {
+  const answers = Array.from({ length: 4 }, () => deferred<MigrationPortfolio>()), counts = (stable: number) => report([], { fleetDeviceCounts: { stable } });
+  let n = 0;
+  serve(() => answers[n++].promise);
+  open(`?view=catalog&${new URLSearchParams({ deviceScope: JSON.stringify({ match: "all", connectionId: 3, rules: [] }) })}`);
+  await apply("7");
+  fireEvent.click(screen.getByRole("button", { name: "Clear filter" })); // connection 3's and 7's reads are both out of date now
+  const scoped = () => row("Public stable").getAllByRole("cell")[4].textContent;
+  await act(async () => answers[2].resolve(counts(1)));
+  expect(await waitFor(scoped)).toBe("1");
+  await act(async () => { answers[0].resolve(counts(3)); answers[1].reject(new ApiError(422, "Moved past.")); });
+  expect([scoped(), screen.queryByText(words.loading), screen.queryByRole("alert")]).toEqual(["1", null, null]);
+  await apply("7");
+  expect([screen.queryByText("Public stable"), screen.queryByText(words.loading)]).toEqual([null, expect.anything()]); // not the cleared filter's
+  await act(async () => answers[3].resolve(counts(7)));
+  expect(await waitFor(scoped)).toBe("7");
+  expect(asked().map(([path]) => JSON.parse(filterOf(path)!).connectionId)).toEqual([3, 7, undefined, 7]);
+});
+
+it("writes each view's search to the address in place, so Back never steps through keystrokes", async () => {
+  serve(() => report([app("Alpha")]));
+  open();
+  fireEvent.change(await screen.findByRole("searchbox", { name: words.search }), { target: { value: "alp" } });
+  expect(address()).toEqual(["alp", "REPLACE"]);
+  fireEvent.click(screen.getByRole("link", { name: words.segments.titles }));
+  expect(address()).toEqual(["alp", "PUSH"]);
+  fireEvent.change(await screen.findByRole("textbox", { name: en.fleetCatalog.searchPlaceholder }), { target: { value: "stable" } });
+  expect(address()).toEqual(["stable", "REPLACE"]);
+});
+
+it("says each view is loading, Fleet titles only that the flag is off when it is, and a refusal's own sentence there", async () => {
+  const pending = deferred<MigrationPortfolio>(), refusal = "The device filter is invalid. Check each condition or clear the filter and try again.";
+  serve(() => pending.promise);
+  open();
+  expect(await screen.findByText(words.loading)).toBeTruthy(); // Migration review's
+  fireEvent.click(screen.getByRole("link", { name: words.segments.titles }));
+  expect(screen.getByText(words.loading)).toBeTruthy(); // Fleet titles' own
+  await act(async () => pending.resolve(report([], { enabled: false })));
+  expect([screen.queryByText(words.loading), Boolean(screen.queryByText(en.fleetCatalog.emptyFlagOff)),
+    screen.queryByRole("heading", { name: en.fleetCatalog.titlesHeading })]).toEqual([null, true, null]);
+  cleanup();
+  serve(() => Promise.reject(new ApiError(422, refusal)));
+  open("?view=catalog&deviceScope=%7Bbroken");
+  expect((await screen.findByRole("alert")).textContent).toBe(refusal + words.retry);
 });
 
 it("reads in German, its own numbers grouped the German way", async () => {
