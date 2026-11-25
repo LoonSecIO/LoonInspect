@@ -1020,17 +1020,25 @@ def test_uncertain_over_one_day_counts_more_than_a_day_and_not_one() -> None:
 # than d31 - 59), and one CVE detectable d40 whose range is the oldest release alone.
 
 
-def fix_dating_walk(versions: list[dict[str, Any]], cves: list[dict[str, Any]], **doc_extra: Any) -> dict[str, Any]:
+def fix_dating_walk(
+    versions: list[dict[str, Any]],
+    cves: list[dict[str, Any]],
+    *,
+    promotions: list[dict[str, Any]] | None = None,
+    observed: dict[str, Any] | None = None,
+    **doc_extra: Any,
+) -> dict[str, Any]:
     track = {
         "track": "demo/stable",
         "label": "Demo",
         "path": {"kind": "latest"},
+        "promotions": promotions,
         "timeline": "vendor",
         "versions": versions,
         "cves": cves,
     }
     doc = {**document([track], coverage="2026-01-31"), **doc_extra}
-    observed = timeline([{"version": v["v"], "date": v["date"]} for v in versions if v["date"]])
+    observed = observed or timeline([{"version": v["v"], "date": v["date"]} for v in versions if v["date"]])
     return walk(doc, app="demo", track="demo/stable", timeline=observed)
 
 
@@ -1195,6 +1203,143 @@ def test_the_fix_dating_count_must_tally_the_rows() -> None:
             assert set(entry) == {"line", "fix", "named", "dated_as", "on", "how"}
     result["counts"]["fix_dating"]["fix"] += 1
     assert "counts.fix_dating does not tally the rows' fix_dated_by" in invariant_failures(result)
+
+
+def test_fix_dated_by_lists_every_visited_line_in_the_documents_order() -> None:
+    """Two lines, both visited. 4.2.0 (d-100), 4.2.1 (undated: the fix on 4.2), 4.2.2 (d70), 4.4.0 (d50),
+    4.4.1 (d80: the fix on 4.4). CVE-411: det d40, range 4.2.0 and 4.4.0. Every device runs 4.2.0 on d31
+    and the day stops move to 4.4.0, so both lines are visited and both fixes are listed, in `fixes[]`
+    order: 4.2.1 dated by 4.2.2 on d70 (`next_dated`), 4.4.1 by itself on d80 (`fix`).
+      1d: 4.2.0 to d49, 4.4.0 on d50 (in range), 4.2.2 on d70 (ranked below 4.4.0: no event), 4.4.1 on
+          d80 -> [d40,d79] = 40 days, cleared by 4.4.1.
+      never: runs 4.2.0 -> [d40,d180] = 141 days, open."""
+    versions = [
+        version("4.2.0", d(-100), "4.2"),
+        version("4.2.1", None, "4.2"),
+        version("4.2.2", d(70), "4.2"),
+        version("4.4.0", d(50), "4.4"),
+        version("4.4.1", d(80), "4.4"),
+    ]
+    row = cve("CVE-2026-0411", published=d(40), detectable=d(40), affected=[[0, 0], [3, 3]], fixes=[fix(1, "4.2"), fix(4, "4.4")])
+    result = fix_dating_walk(versions, [row])
+    [listed] = result["cves"]
+    assert listed["fix_dated_by"] == [
+        {"line": "4.2", "fix": "4.2.1", "named": None, "dated_as": "4.2.2", "on": d(70), "how": "next_dated"},
+        {"line": "4.4", "fix": "4.4.1", "named": None, "dated_as": "4.4.1", "on": d(80), "how": "fix"},
+    ]
+    assert result["counts"]["fix_dating"] == {"fix": 1, "next_dated": 1, "undated": 0}
+    one, never = listed["outcomes"]["1d"], listed["outcomes"]["never"]
+    assert (one["intervals"], one["cleared_by"]) == ([[d(40), d(79)]], "4.4.1")
+    assert (never["exposure_days"], never["open_at_window_end"]) == (141, True)
+    assert invariant_failures(result) == []
+
+
+def test_installing_the_version_that_dated_a_fix_inside_the_range_clears_nothing() -> None:
+    """Dating a fix is not clearing it. One line: 1.0 (d-100), 2.0 (undated: a fix), 3.0 (d60), 4.0 (d90:
+    the other fix). CVE-412: det d40, one run 1.0..3.0 (as where an ESR fix sits inside a release run on a
+    single-line track), fixes 2.0 and 4.0. 2.0 is dated by 3.0 on d60, which is inside the run.
+      1d: 1.0, 3.0 on d60 (still in range), 4.0 on d90 -> [d40,d89] = 50 days, cleared by 4.0, not 3.0."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100)), version("2.0", None), version("3.0", d(60)), version("4.0", d(90))],
+        [cve("CVE-2026-0412", published=d(40), detectable=d(40), affected=[[0, 2]], fixes=[fix(1), fix(3)])],
+    )
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "2.0", "named": None, "dated_as": "3.0", "on": d(60), "how": "next_dated"},
+        {"line": "", "fix": "4.0", "named": None, "dated_as": "4.0", "on": d(90), "how": "fix"},
+    ]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["exposure_days"], one["cleared_by"]) == ([[d(40), d(89)]], 50, "4.0")
+    assert "Dating a fix is not clearing it" in result["definitions"]["fix_dating"]
+
+
+def test_the_fix_is_dated_by_the_timelines_day_not_by_when_a_device_may_install_it() -> None:
+    """The next dated version is found among every version the timeline dates, and its day is the
+    timeline's, whatever the promotion table says about installing it.
+
+    Promotion-delayed: 1.0 (d-100), 1.1 (undated: the fix), 1.2 (d60, its major promoted d100, so
+    available d100: the effective fix), 2.0 (d70, available d70). CVE-413: det d40, range 1.0, fix 1.1.
+    The fix's day is d60, so 2.0 (dated d70) is clean under rule 5 and the 1-day device clears on d70:
+    [d40,d69] = 30 days. Were the fix's day 1.2's availability, d100, rule 5 would hold 2.0 affected
+    to the window's end.
+
+    Above the table: 1.0 (d-100), 1.1 (undated: the fix), 2.0 (d150, above the table's newest row, so
+    never installed, and the window ends d149). The timeline dates 2.0, so it dates the fix
+    (`next_dated`) though no device can install it, and CVE-414 stays open on 1.0: [d40,d149]."""
+    delayed = fix_dating_walk(
+        [version("1.0", d(-100)), version("1.1", None), version("1.2", d(60)), version("2.0", d(70))],
+        [cve("CVE-2026-0413", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])],
+        promotions=[
+            {"major": "1.0", "promoted": d(-200), "versions": [0, 0]},
+            {"major": "1.1", "promoted": d(100), "versions": [1, 2]},
+            {"major": "2", "promoted": d(-200), "versions": [3, 3]},
+        ],
+    )
+    [row] = delayed["cves"]
+    assert row["fix_dated_by"] == [{"line": "", "fix": "1.1", "named": None, "dated_as": "1.2", "on": d(60), "how": "next_dated"}]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["cleared_on"], one["cleared_by"]) == ([[d(40), d(69)]], d(70), "2.0")
+
+    above = fix_dating_walk(
+        [version("1.0", d(-100)), version("1.1", None), version("2.0", d(150))],
+        [cve("CVE-2026-0414", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])],
+        promotions=[{"major": "1", "promoted": d(-200), "versions": [0, 1]}],
+    )
+    assert above["window"]["until"] == d(149)
+    [row] = above["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "1.1", "named": None, "dated_as": "2.0", "on": d(150), "how": "next_dated"}
+    ]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["open_at_window_end"]) == ([[d(40), d(149)]], True)
+
+
+def test_a_later_train_build_shipped_before_the_fix_stands_in_for_it() -> None:
+    """On a line that holds several trains, the next dated version can be a build of a later train
+    that the vendor shipped before the fix. 1.0 (d-100, train 1), 1.5 (d100, train 1: the fix), 2.0
+    (d50, train 2), 2.1 (d120, train 2). CVE-415: det d40, range 1.0, fix 1.5.
+      Public dates 1.5: rule 5 holds 2.0 (d50, before d100, of another train) affected, so the 1-day
+          device runs 1.0, then 2.0 from d50, and clears on 2.1 (d120): [d40,d119] = 80 days.
+      A timeline without 1.5 dates the fix by 2.0 on d50 (before the fix's own day). 2.0 stands in
+          for the fix and is spared: [d40,d49] = 10 days, cleared by 2.0."""
+    versions = [
+        version("1.0", d(-100), train="1"),
+        version("1.5", d(100), train="1"),
+        version("2.0", d(50), train="2"),
+        version("2.1", d(120), train="2"),
+    ]
+    rows = [cve("CVE-2026-0415", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])]
+    public = outcome(fix_dating_walk(versions, rows), "CVE-2026-0415", "1d")
+    assert (public["intervals"], public["cleared_by"]) == ([[d(40), d(119)]], "2.1")
+    gap = timeline([{"version": v["v"], "date": v["date"]} for v in versions if v["v"] != "1.5"], source="fleet")
+    result = fix_dating_walk(versions, rows, observed=gap)
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [{"line": "", "fix": "1.5", "named": None, "dated_as": "2.0", "on": d(50), "how": "next_dated"}]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["cleared_by"]) == ([[d(40), d(49)]], "2.0")
+
+
+def test_a_v1_verdict_the_document_does_not_list_is_refused_as_the_documents_fault() -> None:
+    """In conformance mode a row's `v1_exclusion` is its reason. Since 2026-11-25 the walk no longer adds
+    `fixed_version_not_in_timeline` to every reason list, so a document that uses that word as a v1
+    verdict without listing it is refused naming the row (`document_invalid`), as an unlisted
+    `exclusions.cves[].reason` is, rather than walked into a `by_reason` that cannot count it
+    (`invariant`, which would blame LoonInspect). Listed, it walks and counts. Outside conformance mode
+    the verdict is not read."""
+    doc, observed = golden_a()
+    for row in _track(doc)["cves"]:
+        row["v1_exclusion"] = "fixed_version_not_in_timeline" if row["cve_id"] == "CVE-2026-0003" else None
+    with pytest.raises(WalkRefused) as caught:
+        walk(doc, app="demo", track="demo/stable", timeline=observed, compat_v1=True)
+    assert caught.value.reason == "document_invalid"
+    assert caught.value.detail["where"] == "cves[2].v1_exclusion"
+    assert "'fixed_version_not_in_timeline' is not a reason this build knows" in caught.value.sentence
+    assert walk(doc, app="demo", track="demo/stable", timeline=observed)["counts"]["replayed"] == 5
+
+    doc["exclusion_reasons"] = [*walk_module.EXCLUSION_REASONS, "fixed_version_not_in_timeline"]
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed, compat_v1=True)
+    assert result["exclusions"]["by_reason"]["fixed_version_not_in_timeline"] == 1
+    assert invariant_failures(result) == []
 
 
 # --- Seeded property tests --------------------------------------------------------------------

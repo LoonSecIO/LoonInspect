@@ -186,9 +186,13 @@ DEFINITIONS = {
     "fix_dating": "Ruled 2026-11-25: count the next dated version at or above the fix. A fix "
     "this timeline does not date excludes nothing. Its effective fix is the lowest-ranked "
     "version at or above it, on the fix's own line, that this timeline dates, and that "
-    "version's day is the fix's day for every rule that reads it, rule 5 included; a device "
-    "clears the CVE on that line when it installs that version, or a later one rule 5 does not "
-    "hold affected. Where the timeline dates no version at or above the fix on its line, or "
+    "version's day is the fix's day for every rule that reads it, rule 5 included. Dating a fix "
+    "is not clearing it: a device clears the CVE when it installs a version outside the CVE's "
+    "affected runs that rule 5 does not hold affected, and the version that dated a fix, the fix "
+    "itself included, can be inside another of the CVE's runs. On a line that holds several "
+    "release trains, that version can also be a build of a later train shipped before the fix; "
+    "rule 5 spares it as the fix's stand-in. Where the timeline dates no version at or above the "
+    "fix on its line, or "
     "LoonSec's data names no fix version on the line, the line has no fix a device could "
     "install, and the CVE is walked there by its affected runs alone. Each CVE row says, for "
     "each line the path visits, which version "
@@ -501,14 +505,16 @@ def _runs(value: Any, count: int, where: str, name: str, label: str) -> tuple[tu
 
 
 def _rows(
-    track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str
+    track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str, compat_v1: bool = False
 ) -> tuple[list[_Row], int]:
     """The track's CVE rows, walked and excluded, and its count of CVEs not yet detectable.
 
     A CVE is in exactly one of `cves[]`, `exclusions.cves` and `not_detectable.cves`. One the
     document lists both as not detectable and as a row would be walked by its publication date
     while the document also counts it among the CVEs never counted (plan 4.1), so the overlap is
-    refused."""
+    refused. In conformance mode a row's `v1_exclusion` is its reason, so it must be one the
+    document lists, the same as `exclusions.cves[].reason`: otherwise `by_reason` could not count
+    it and the walk would blame itself (`invariant`) for the data's word."""
     count = len(versions)
     rows: list[_Row] = []
     seen: set[str] = set()
@@ -555,6 +561,8 @@ def _rows(
             ambiguous = frozenset(lines)
         clock, clock_day = (CLOCK_DETECTABLE, detectable) if detectable else (CLOCK_PUBLISHED, published)
         v1 = entry.get("v1_exclusion")
+        if compat_v1 and exclusion is None and v1 is not None and v1 not in reasons:
+            raise _invalid(f"{where}.v1_exclusion", f"{v1!r} is not a reason this build knows", name, label)
         rows.append(
             _Row(
                 cve_id=cve_id,
@@ -744,7 +752,7 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
     listed = document.get("exclusion_reasons")
     reasons = tuple(listed) if listed else EXCLUSION_REASONS
     reasons = reasons + ((BRANCH_AMBIGUITY,) if BRANCH_AMBIGUITY not in reasons else ())
-    rows, not_detectable = _rows(track_row, versions, reasons, name, label)
+    rows, not_detectable = _rows(track_row, versions, reasons, name, label, compat_v1)
     path = _mapping_or_absent(track_row, "path", "path", name, label)
     _mapping_or_absent(track_row, "check", "check", name, label)
     read = _timeline(timeline)
