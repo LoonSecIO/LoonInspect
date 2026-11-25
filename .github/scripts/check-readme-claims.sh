@@ -229,6 +229,9 @@ RETENTION_NOT_A_CLOCK=(
   backend/app/mdm/org_units.py:JamfOrgUnit
   # A title Fleet's catalog no longer lists (#794): by what the source says, not by age.
   backend/app/core/fleet_catalog.py:FleetMaintainedApp
+  # LoonSec's patch-policy document past the last two copies (#614): by count when a newer one
+  # is stored, never by age, so a stopped publisher leaves the held copy answering.
+  backend/app/core/patch_policy_feed.py:PatchPolicyDoc
 )
 
 # `comm` wants one line per item and an empty set as an empty stream, not a blank line.

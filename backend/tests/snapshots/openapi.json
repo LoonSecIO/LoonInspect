@@ -8564,6 +8564,439 @@
         "title": "PatchManagementProvider",
         "type": "string"
       },
+      "PatchPolicyAppOut": {
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "bundleIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bundleids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/PatchPolicySourcesOut"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PatchPolicyTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "app",
+          "bundleIds",
+          "name",
+          "sources",
+          "tracks"
+        ],
+        "title": "PatchPolicyAppOut",
+        "type": "object"
+      },
+      "PatchPolicyAppsOut": {
+        "properties": {
+          "apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PatchPolicyAppOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apps"
+          },
+          "feed": {
+            "$ref": "#/components/schemas/PatchPolicyFeedOut"
+          }
+        },
+        "required": [
+          "apps",
+          "feed"
+        ],
+        "title": "PatchPolicyAppsOut",
+        "type": "object"
+      },
+      "PatchPolicyClockCountsOut": {
+        "properties": {
+          "detectableAt": {
+            "title": "Detectableat",
+            "type": "integer"
+          },
+          "published": {
+            "title": "Published",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "detectableAt",
+          "published"
+        ],
+        "title": "PatchPolicyClockCountsOut",
+        "type": "object"
+      },
+      "PatchPolicyFeedOut": {
+        "description": "LoonSec's patch-policy data on this instance, as this organization reads it (#614).",
+        "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "attemptedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attemptedat"
+          },
+          "coverageSince": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragesince"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "docId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docid"
+          },
+          "fetchedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetchedat"
+          },
+          "fromFile": {
+            "default": false,
+            "title": "Fromfile",
+            "type": "boolean"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "httpStatus": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Httpstatus"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "stored",
+                  "unchanged",
+                  "not_published",
+                  "algorithm_unknown",
+                  "download_failed",
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "exchange",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "state": {
+            "enum": [
+              "tier_off",
+              "never",
+              "current",
+              "stale",
+              "not_published",
+              "algorithm_unknown",
+              "download_failed",
+              "invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "algorithm",
+          "sentence",
+          "state"
+        ],
+        "title": "PatchPolicyFeedOut",
+        "type": "object"
+      },
+      "PatchPolicySourceOut": {
+        "description": "One timeline source for an app: whether it can date the app's versions, its first and\nlast dated day, the sentence when it cannot, and its own ids (timeline ids for `public`).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          }
+        },
+        "required": [
+          "available",
+          "first",
+          "ids",
+          "last",
+          "sentence"
+        ],
+        "title": "PatchPolicySourceOut",
+        "type": "object"
+      },
+      "PatchPolicySourcesOut": {
+        "properties": {
+          "fleet": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          },
+          "jamf": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          },
+          "public": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          }
+        },
+        "required": [
+          "fleet",
+          "jamf",
+          "public"
+        ],
+        "title": "PatchPolicySourcesOut",
+        "type": "object"
+      },
+      "PatchPolicyTrackOut": {
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "clock": {
+            "$ref": "#/components/schemas/PatchPolicyClockCountsOut"
+          },
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "edition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition"
+          },
+          "excluded": {
+            "title": "Excluded",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "listed": {
+            "title": "Listed",
+            "type": "integer"
+          },
+          "notDetectable": {
+            "title": "Notdetectable",
+            "type": "integer"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          },
+          "versions": {
+            "title": "Versions",
+            "type": "integer"
+          },
+          "versionsDated": {
+            "title": "Versionsdated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidates",
+          "channel",
+          "clock",
+          "default",
+          "edition",
+          "excluded",
+          "label",
+          "listed",
+          "notDetectable",
+          "timeline",
+          "track",
+          "versions",
+          "versionsDated"
+        ],
+        "title": "PatchPolicyTrackOut",
+        "type": "object"
+      },
       "PatchRule": {
         "description": "The organization's rule: the closed vocabulary of `app.mdm.patch.policy`. Both limits\nnull is how the rule is cleared \u2014 nothing is judged, which is every tenant's start.",
         "properties": {
@@ -18205,6 +18638,28 @@
         "summary": "Outbox Depth",
         "tags": [
           "outbox"
+        ]
+      }
+    },
+    "/api/patch-policy/apps": {
+      "get": {
+        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy more than three days old, and `current`. Every state's sentence says what\nit means and what to check (docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and which sources can date its versions: the\npublic timeline when the document holds one; the Jamf and Fleet positions answer\n`available: false` until they are built.",
+        "operationId": "patch_policy_apps_api_patch_policy_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyAppsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Patch Policy Apps",
+        "tags": [
+          "patch-policy"
         ]
       }
     },

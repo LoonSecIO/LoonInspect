@@ -1,0 +1,743 @@
+{
+  "kind": "patch_policy_reference",
+  "schema": 1,
+  "doc_id": "efbbf29ac1a047e9b7989971c138ae7f0e30b492c3692c0f8988ee1c401b5409",
+  "as_of": "2026-11-23T20:00:00Z",
+  "algorithm": "patch_walk/1",
+  "definitions_version": "2",
+  "engine": {
+    "parser_version": "fixture",
+    "version_compare": "v0",
+    "rules_digest": "0359c42999a747c0cb3c09c734da37298b6fe8ce9c91dd7c7206c61de39c465f"
+  },
+  "definitions": {
+    "fixture": "A hand-made document for LoonInspect's tests (plan section 3.1). Its CVE ids are fictional (CVE-2099-*) and none of its numbers describe a real app.",
+    "detectable_at": "The first UTC day LoonSec's record of NVD changes held both a CVSS metric (Primary or Secondary) and a configuration for the CPE pair that survives the track's edition filter. Latched."
+  },
+  "clocks": {
+    "detectable_at": "The detectable_at definition's day, when it is known (`clock: detectable_at`).",
+    "published": "NVD `published`, truncated to the UTC date: the clock a row uses when its detectable_at is not known (`clock: published`).",
+    "kev_date_added": "CISA KEV dateAdded as NVD mirrors it in `cisaExploitAdd`.",
+    "release_date": "The date the track's public timeline gives a version; each timeline says what its dates mean."
+  },
+  "sources": {
+    "nvd": {
+      "as_of": "2026-11-23T20:00:00Z"
+    },
+    "detectable": {
+      "name": "LoonSec's record of NVD changes",
+      "coverage_since": "2024-05-21",
+      "as_of": "2026-11-23T20:00:00Z",
+      "gaps": [],
+      "seam": {
+        "api_until": "2026-06-16T21:00Z",
+        "raw_log_since": "2026-06-16T21:00Z"
+      }
+    },
+    "kev": {
+      "via": "NVD cisaExploitAdd"
+    },
+    "timelines": {
+      "chrome-mac-stable": {
+        "name": "Google Chrome VersionHistory, mac stable channel",
+        "url": "https://versionhistory.googleapis.com/v1/chrome/platforms/mac/channels/stable/versions/all/releases",
+        "fetched_at": "2026-11-23T18:00:00Z",
+        "sha256": "fd2da8e6600ad3c5b4317440ed892680a80a512fe67b107b691cc6d4901f43a3",
+        "clock": "The first UTC day the version was served at a fraction above zero.",
+        "terms": "Google APIs Terms of Service"
+      },
+      "wireshark-tags": {
+        "name": "Wireshark release tags on GitLab",
+        "url": "https://gitlab.com/wireshark/wireshark/-/tags",
+        "fetched_at": "2026-11-23T18:00:00Z",
+        "sha256": "c61dbf440987eb10451004ece65d123938da2a9f28608974b386c4f595a8e26c",
+        "clock": "The date of the release tag; rc tags and odd-minor development series are dropped.",
+        "terms": "GPL-2.0 project repository, public tags"
+      }
+    }
+  },
+  "exclusion_reasons": [
+    "rejected",
+    "no_configuration_for_pair",
+    "excluded_platform",
+    "configuration_declined",
+    "only_prerelease_criteria",
+    "no_fixed_version_determinable",
+    "fixed_version_not_in_catalog",
+    "branch_ambiguity",
+    "other_edition_only",
+    "fixed_version_not_in_timeline"
+  ],
+  "apps": [
+    {
+      "app": "chrome",
+      "name": "Google Chrome",
+      "bundle_ids": [
+        "com.google.Chrome"
+      ],
+      "cpe_pairs": [
+        "google:chrome"
+      ],
+      "identity": {
+        "basis": "hand",
+        "evidence": "https://www.google.com/chrome/"
+      },
+      "tracks": [
+        {
+          "track": "chrome/stable",
+          "label": "Chrome (stable)",
+          "default": true,
+          "channel": "stable",
+          "edition": "any",
+          "line_components": 0,
+          "path": {
+            "kind": "latest"
+          },
+          "promotions": [
+            {
+              "versions": [
+                0,
+                2
+              ],
+              "promoted": "2025-09-30"
+            },
+            {
+              "versions": [
+                3,
+                3
+              ],
+              "promoted": "2025-10-28"
+            }
+          ],
+          "timeline": "chrome-mac-stable",
+          "versions": [
+            {
+              "v": "141.0.7390.54",
+              "keys": [
+                "141.0.7390.54"
+              ],
+              "line": "",
+              "train": "141.0.7390",
+              "date": "2025-09-30"
+            },
+            {
+              "v": "141.0.7390.66",
+              "keys": [
+                "141.0.7390.66"
+              ],
+              "line": "",
+              "train": "141.0.7390",
+              "date": "2025-10-07"
+            },
+            {
+              "v": "141.0.7390.108",
+              "keys": [
+                "141.0.7390.108"
+              ],
+              "line": "",
+              "train": "141.0.7390",
+              "date": "2025-10-21"
+            },
+            {
+              "v": "142.0.7444.59",
+              "keys": [
+                "142.0.7444.59"
+              ],
+              "line": "",
+              "train": "142.0.7444",
+              "date": "2025-10-28"
+            }
+          ],
+          "cves": [
+            {
+              "cve_id": "CVE-2099-1001",
+              "published": "2025-10-06",
+              "severity": "high",
+              "kev_date_added": null,
+              "detectable_at": "2025-10-07",
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": "raw_log",
+              "clock": "detectable_at",
+              "affected": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "",
+                  "index": 1
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "before 141.0.7390.66"
+            },
+            {
+              "cve_id": "CVE-2099-1002",
+              "published": "2025-10-20",
+              "severity": "critical",
+              "kev_date_added": "2025-10-24",
+              "detectable_at": "2025-10-21",
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": "raw_log",
+              "clock": "detectable_at",
+              "affected": [
+                [
+                  0,
+                  1
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "",
+                  "index": 2
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "before 141.0.7390.108"
+            },
+            {
+              "cve_id": "CVE-2099-1003",
+              "published": "2025-11-03",
+              "severity": "medium",
+              "kev_date_added": null,
+              "detectable_at": null,
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": null,
+              "clock": "published",
+              "affected": [
+                [
+                  0,
+                  3
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "",
+                  "index": null
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "through 142.0.7444.59"
+            }
+          ],
+          "exclusions": {
+            "by_reason": {
+              "rejected": 0,
+              "no_configuration_for_pair": 0,
+              "excluded_platform": 0,
+              "configuration_declined": 0,
+              "only_prerelease_criteria": 0,
+              "no_fixed_version_determinable": 1,
+              "fixed_version_not_in_catalog": 0,
+              "branch_ambiguity": 0,
+              "other_edition_only": 0,
+              "fixed_version_not_in_timeline": 0
+            },
+            "cves": [
+              {
+                "cve_id": "CVE-2099-1004",
+                "reason": "no_fixed_version_determinable",
+                "published": "2025-10-14"
+              }
+            ]
+          },
+          "not_detectable": {
+            "count": 1,
+            "cves": [
+              {
+                "cve_id": "CVE-2099-1005",
+                "published": "2025-10-15"
+              }
+            ]
+          },
+          "check": {},
+          "counts": {
+            "versions": 4,
+            "versions_dated": 4,
+            "candidates": 5,
+            "listed": 3,
+            "excluded": 1,
+            "not_detectable": 1,
+            "clock": {
+              "detectable_at": 2,
+              "published": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "app": "wireshark",
+      "name": "Wireshark",
+      "bundle_ids": [
+        "org.wireshark.Wireshark"
+      ],
+      "cpe_pairs": [
+        "wireshark:wireshark"
+      ],
+      "identity": {
+        "basis": "hand",
+        "evidence": "https://www.wireshark.org/download.html"
+      },
+      "tracks": [
+        {
+          "track": "wireshark/4.4",
+          "label": "Wireshark 4.4",
+          "default": true,
+          "channel": "stable",
+          "edition": "any",
+          "line_components": 2,
+          "path": {
+            "kind": "hold",
+            "ceiling_line": "4.4"
+          },
+          "promotions": null,
+          "timeline": "wireshark-tags",
+          "versions": [
+            {
+              "v": "4.4.0",
+              "keys": [
+                "4.4.0"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-08-28"
+            },
+            {
+              "v": "4.4.1",
+              "keys": [
+                "4.4.1"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-10-09"
+            },
+            {
+              "v": "4.4.2",
+              "keys": [
+                "4.4.2"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-11-20"
+            },
+            {
+              "v": "4.4.3",
+              "keys": [
+                "4.4.3"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2025-01-08"
+            }
+          ],
+          "cves": [
+            {
+              "cve_id": "CVE-2099-2001",
+              "published": "2024-11-20",
+              "severity": "high",
+              "kev_date_added": null,
+              "detectable_at": "2024-11-21",
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": "api",
+              "clock": "detectable_at",
+              "affected": [
+                [
+                  0,
+                  1
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "4.4",
+                  "index": 2
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "4.4.0 to 4.4.1"
+            },
+            {
+              "cve_id": "CVE-2099-2002",
+              "published": "2025-01-10",
+              "severity": "medium",
+              "kev_date_added": null,
+              "detectable_at": null,
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": null,
+              "clock": "published",
+              "affected": [
+                [
+                  0,
+                  3
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "4.4",
+                  "index": null
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "4.4.0 to 4.4.3"
+            }
+          ],
+          "exclusions": {
+            "by_reason": {
+              "rejected": 0,
+              "no_configuration_for_pair": 1,
+              "excluded_platform": 0,
+              "configuration_declined": 0,
+              "only_prerelease_criteria": 0,
+              "no_fixed_version_determinable": 0,
+              "fixed_version_not_in_catalog": 0,
+              "branch_ambiguity": 0,
+              "other_edition_only": 0,
+              "fixed_version_not_in_timeline": 0
+            },
+            "cves": [
+              {
+                "cve_id": "CVE-2099-2003",
+                "reason": "no_configuration_for_pair",
+                "published": "2024-12-02"
+              }
+            ]
+          },
+          "not_detectable": {
+            "count": 0,
+            "cves": []
+          },
+          "check": {},
+          "counts": {
+            "versions": 4,
+            "versions_dated": 4,
+            "candidates": 3,
+            "listed": 2,
+            "excluded": 1,
+            "not_detectable": 0,
+            "clock": {
+              "detectable_at": 1,
+              "published": 1
+            }
+          }
+        },
+        {
+          "track": "wireshark/newest",
+          "label": "Wireshark (newest line)",
+          "default": false,
+          "channel": "stable",
+          "edition": "any",
+          "line_components": 2,
+          "path": {
+            "kind": "latest"
+          },
+          "promotions": null,
+          "timeline": "wireshark-tags",
+          "versions": [
+            {
+              "v": "4.4.0",
+              "keys": [
+                "4.4.0"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-08-28"
+            },
+            {
+              "v": "4.4.1",
+              "keys": [
+                "4.4.1"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-10-09"
+            },
+            {
+              "v": "4.4.2",
+              "keys": [
+                "4.4.2"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2024-11-20"
+            },
+            {
+              "v": "4.4.3",
+              "keys": [
+                "4.4.3"
+              ],
+              "line": "4.4",
+              "train": "4.4",
+              "date": "2025-01-08"
+            },
+            {
+              "v": "4.6.0",
+              "keys": [
+                "4.6.0"
+              ],
+              "line": "4.6",
+              "train": "4.6",
+              "date": "2025-10-08"
+            },
+            {
+              "v": "4.6.1",
+              "keys": [
+                "4.6.1"
+              ],
+              "line": "4.6",
+              "train": "4.6",
+              "date": "2025-11-05"
+            }
+          ],
+          "cves": [
+            {
+              "cve_id": "CVE-2099-2001",
+              "published": "2024-11-20",
+              "severity": "high",
+              "kev_date_added": null,
+              "detectable_at": "2024-11-21",
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": "api",
+              "clock": "detectable_at",
+              "affected": [
+                [
+                  0,
+                  1
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "4.4",
+                  "index": 2
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "4.4.0 to 4.4.1"
+            },
+            {
+              "cve_id": "CVE-2099-2002",
+              "published": "2025-01-10",
+              "severity": "medium",
+              "kev_date_added": null,
+              "detectable_at": null,
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": null,
+              "clock": "published",
+              "affected": [
+                [
+                  0,
+                  3
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "4.4",
+                  "index": null
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "4.4.0 to 4.4.3"
+            },
+            {
+              "cve_id": "CVE-2099-2004",
+              "published": "2025-10-20",
+              "severity": "high",
+              "kev_date_added": null,
+              "detectable_at": "2025-10-22",
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": "raw_log",
+              "clock": "detectable_at",
+              "affected": [
+                [
+                  4,
+                  4
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "4.6",
+                  "index": 5
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "4.6.0"
+            }
+          ],
+          "exclusions": {
+            "by_reason": {
+              "rejected": 0,
+              "no_configuration_for_pair": 1,
+              "excluded_platform": 0,
+              "configuration_declined": 0,
+              "only_prerelease_criteria": 0,
+              "no_fixed_version_determinable": 0,
+              "fixed_version_not_in_catalog": 0,
+              "branch_ambiguity": 0,
+              "other_edition_only": 0,
+              "fixed_version_not_in_timeline": 0
+            },
+            "cves": [
+              {
+                "cve_id": "CVE-2099-2003",
+                "reason": "no_configuration_for_pair",
+                "published": "2024-12-02"
+              }
+            ]
+          },
+          "not_detectable": {
+            "count": 0,
+            "cves": []
+          },
+          "check": {},
+          "counts": {
+            "versions": 6,
+            "versions_dated": 6,
+            "candidates": 4,
+            "listed": 3,
+            "excluded": 1,
+            "not_detectable": 0,
+            "clock": {
+              "detectable_at": 2,
+              "published": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "app": "vlc",
+      "name": "VLC media player",
+      "bundle_ids": [
+        "org.videolan.vlc"
+      ],
+      "cpe_pairs": [
+        "videolan:vlc_media_player"
+      ],
+      "identity": {
+        "basis": "homebrew_cask",
+        "evidence": "https://formulae.brew.sh/cask/vlc"
+      },
+      "tracks": [
+        {
+          "track": "vlc/latest",
+          "label": "VLC",
+          "default": true,
+          "channel": "stable",
+          "edition": "any",
+          "line_components": 2,
+          "path": {
+            "kind": "latest"
+          },
+          "promotions": null,
+          "timeline": null,
+          "versions": [
+            {
+              "v": "3.0.20",
+              "keys": [
+                "3.0.20"
+              ],
+              "line": "3.0",
+              "train": "3.0",
+              "date": null
+            },
+            {
+              "v": "3.0.21",
+              "keys": [
+                "3.0.21"
+              ],
+              "line": "3.0",
+              "train": "3.0",
+              "date": null
+            }
+          ],
+          "cves": [
+            {
+              "cve_id": "CVE-2099-3001",
+              "published": "2025-06-10",
+              "severity": "medium",
+              "kev_date_added": null,
+              "detectable_at": null,
+              "detectable_not_before": null,
+              "detectable_censored": false,
+              "detectable_source": null,
+              "clock": "published",
+              "affected": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "fixes": [
+                {
+                  "line": "3.0",
+                  "index": 1
+                }
+              ],
+              "ambiguous_lines": [],
+              "edition_signal": null,
+              "configurations_changed_after_detectable": false,
+              "affected_text": "before 3.0.21"
+            }
+          ],
+          "exclusions": {
+            "by_reason": {
+              "rejected": 0,
+              "no_configuration_for_pair": 0,
+              "excluded_platform": 0,
+              "configuration_declined": 0,
+              "only_prerelease_criteria": 0,
+              "no_fixed_version_determinable": 0,
+              "fixed_version_not_in_catalog": 0,
+              "branch_ambiguity": 0,
+              "other_edition_only": 0,
+              "fixed_version_not_in_timeline": 0
+            },
+            "cves": []
+          },
+          "not_detectable": {
+            "count": 0,
+            "cves": []
+          },
+          "check": {},
+          "counts": {
+            "versions": 2,
+            "versions_dated": 0,
+            "candidates": 1,
+            "listed": 1,
+            "excluded": 0,
+            "not_detectable": 0,
+            "clock": {
+              "detectable_at": 0,
+              "published": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
