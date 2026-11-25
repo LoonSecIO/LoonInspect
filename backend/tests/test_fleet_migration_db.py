@@ -4,11 +4,13 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from sqlalchemy import delete, select, update
 
+from app.api import fleet_migration
 from app.api.fleet_migration import read_migration
 from app.core.database import session_for_tenant, unscoped_session
 from app.core.feature_flags import FLEET_MAINTAINED_APPS_FLAG
@@ -17,6 +19,7 @@ from app.main import app
 from app.models.schema import Device, FeatureFlag, FleetCatalogState, InstalledApp, Tenant
 from app.schemas.patch_plans import DeviceScope
 from tests.patch_plan_fixtures import accounts, admin, flag_off, flag_on, github, inventory, viewer  # noqa: F401
+from tests.test_fleet_assessment_db import AS_OF, EPOCH, answer, counts, statements
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="requires a disposable PostgreSQL database"),
@@ -42,6 +45,39 @@ async def _read(client, params=None):
 async def test_read_is_flag_gated(admin, flag_off):  # noqa: F811
     report = await _read(admin)
     assert not report["enabled"] and not report["items"] and not report["fleetDeviceCounts"] and not any(report["scope"].values())
+    assert report["installedEvidence"] == {}
+
+
+def _answering(monkeypatch, as_of):
+    async def earned(session):
+        return SimpleNamespace(as_of=as_of)
+
+    monkeypatch.setattr(fleet_migration, "earned_corpus", earned)
+    monkeypatch.setattr(fleet_migration, "loaded_epoch_signature", lambda: EPOCH)
+
+
+async def test_installed_evidence_repeats_each_apps_stored_answers(db, inventory, viewer, flag_on, monkeypatch):  # noqa: F811
+    source, alpha, _ = inventory
+    await answer(db, alpha, {"1.0": counts(3, high=3), "2.0": counts(9, kev=1), "unread": counts(0)})
+    with statements() as seen:
+        _answering(monkeypatch, None)  # No corpus, or data sharing off.
+        off = await _read(viewer, _filter(source))
+        _answering(monkeypatch, AS_OF)
+        report = await _read(viewer, _filter(source))
+    nobody_looked = dict.fromkeys(("affectedBuilds", "highOrCriticalBuilds", "kevBuilds"))
+    assert off["installedEvidence"] == {
+        item["appHash"]: {"assessment": "off", "asOf": None, "assessedBuilds": 0, "unknownBuilds": item["versionCount"]}
+        | nobody_looked
+        for item in off["items"]
+    }
+    evidence = report["installedEvidence"]
+    assert set(evidence) == {item["appHash"] for item in report["items"]}
+    assert evidence[alpha] == {"assessment": "covered", "asOf": "2026-11-24", "assessedBuilds": 3, "unknownBuilds": 0} | {
+        "affectedBuilds": 2,
+        "highOrCriticalBuilds": 1,
+        "kevBuilds": 1,
+    }
+    assert not [sql for sql, _ in seen if "vuln_corpus_release_rows" in sql or "vuln_library_rows" in sql]
 
 
 async def test_population_and_identity_share_a_cohort(db, inventory, viewer, flag_on):  # noqa: F811
@@ -84,7 +120,8 @@ async def test_counts_need_device_read_and_a_valid_filter(admin, flag_on):  # no
 
 async def test_migration_does_not_expose_another_tenants_inventory(db, inventory, flag_on):  # noqa: F811
     source = DeviceScope(connection_id=inventory[0])
-    assert (await read_migration(source, db)).scope.eligible_macs == 3  # The same read, from its own organization.
+    own = await read_migration(source, db)  # The same read, from its own organization.
+    assert own.scope.eligible_macs == 3 and own.items and set(own.installed_evidence) == {item.app_hash for item in own.items}
     tenant_id = uuid.uuid4()
     async with unscoped_session() as global_db:
         global_db.add(Tenant(id=tenant_id, slug=f"migration-{tenant_id.hex}", name="Migration fixture", kind="operational"))
@@ -101,7 +138,7 @@ async def test_migration_does_not_expose_another_tenants_inventory(db, inventory
             await global_db.execute(delete(Tenant).where(Tenant.id == tenant_id))
             await global_db.commit()
     assert report.enabled and report.scope.eligible_macs == 0 and not report.items
-    assert report.fleet_device_counts["alpha"] == 0
+    assert report.fleet_device_counts["alpha"] == 0 and report.installed_evidence == {}
 
 
 async def test_an_incomplete_snapshot_keeps_candidates_without_judging_coverage(db, inventory, viewer, flag_on):  # noqa: F811

@@ -11,6 +11,8 @@ or a Jamf match on an assumed extension attribute: build by build, the three ide
 `assumed` build, `len(ids) <= 1`). Where one holds, neither surface names a Fleet target until the
 identity is reviewed: Patch Plans offers none, and here an older build reads `ambiguous` and the
 app `review_identity`. The app-level differences between the two rules belong to #895, not here.
+
+`installed_evidence` is the one reader: it repeats each installed build's stored answer and asks the corpus nothing.
 """
 
 from __future__ import annotations
@@ -19,13 +21,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import String, any_, bindparam, case, func, select
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.application_risk import stored_answer
 from app.core.content_keys import app_full_key
 from app.core.patch_plans import release_order
 from app.core.vuln import AssessedBuild
 from app.mdm.patch import policy
 from app.mdm.patch.matching import BASIS_REQUIREMENTS
-from app.models.schema import FleetMaintainedApp
+from app.models.schema import FleetMaintainedApp, InstalledApp
 from app.schemas.fleet_assessment import FleetAssessmentOut, FleetBuildAssessmentOut
+from app.schemas.fleet_migration import InstalledEvidence
 from app.schemas.jamf_patch import PolicyVersionOut
 from app.schemas.settings import PatchRule
 
@@ -48,6 +56,50 @@ class _Build:
     key: str
     device_count: int
     matches: list[_Match] = field(default_factory=list)
+
+
+def _in_array(column, name: str, values: Sequence[str]):
+    # One bind, even when a large estate has more exact builds than asyncpg's parameter limit.
+    return column == any_(bindparam(name, list(values), type_=ARRAY(String)))
+
+
+async def installed_evidence(
+    db: AsyncSession, devices, *, as_of: date | None, epoch: str | None, app_hashes: Sequence[str] | None = None
+) -> dict[str, InstalledEvidence]:
+    """Each app's distinct builds on `devices` (anything with an `id` column), every app there unless
+    `app_hashes` names some. A build is assessed only when every selected copy carries an answer
+    Installed Apps would serve (`stored_answer`); its counts are that answer's, never a sum."""
+    app = InstalledApp
+    known, counts = stored_answer(epoch)
+    builds = (
+        select(
+            app.app_hash,
+            func.bool_and(func.coalesce(known, False)).label("assessed"),
+            *(func.max(case((known, counts[band]))).label(band) for band in ("total", "critical", "high", "kev")),
+        )
+        .join(devices, devices.c.id == app.device_id)
+        .group_by(app.app_hash, app.version_hash)
+    )
+    if app_hashes is not None:
+        builds = builds.where(_in_array(app.app_hash, "app_hashes", app_hashes))
+    b = builds.subquery()
+    query = select(
+        b.c.app_hash,
+        func.count().filter(b.c.assessed).label("assessed_builds"),
+        func.count().filter(~b.c.assessed).label("unknown_builds"),
+        func.count().filter(b.c.assessed, b.c.total > 0).label("affected_builds"),
+        func.count().filter(b.c.assessed, b.c.critical + b.c.high > 0).label("high_or_critical_builds"),
+        func.count().filter(b.c.assessed, b.c.kev > 0).label("kev_builds"),
+    ).group_by(b.c.app_hash)
+    evidence = {}
+    for row in (await db.execute(query)).all():
+        values = dict(row._mapping)
+        state = "partial" if row.unknown_builds else "covered"
+        if epoch is None or not row.assessed_builds:  # Nobody looked: no finding counts, never zeros.
+            state = "off" if epoch is None else "unknown_app"
+            values.update(affected_builds=None, high_or_critical_builds=None, kev_builds=None)
+        evidence[values.pop("app_hash")] = InstalledEvidence(assessment=state, as_of=None if epoch is None else as_of, **values)
+    return evidence
 
 
 def _ambiguous(build: _Build, shared_bundle: bool) -> bool:
