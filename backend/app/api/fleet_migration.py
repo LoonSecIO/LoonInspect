@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.settings import patching_rules
 from app.core import fleet_catalog
 from app.core.auth import require
 from app.core.device_scope import parse_scope
 from app.core.device_scope_queries import get_scope_snapshot_db, prepare_scope
-from app.core.fleet_assessment import installed_evidence
+from app.core.fleet_assessment import app_assessments, installed_evidence
 from app.core.fleet_migration import catalog_device_counts, cohort, local_apps, title_index
 from app.core.permissions import Permission
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
@@ -46,6 +47,11 @@ async def _report_context(db: AsyncSession, scope: DeviceScope, now: datetime):
     return context, devices, jamf
 
 
+def _safe_apps(items, titles):
+    """Each `exact` app with its one Fleet title: the only identities an assessment may speak for."""
+    return {item.app_hash: titles[item.bundle_id][0] for item in items if item.match == "exact"}
+
+
 @router.get("", response_model=MigrationReport)
 async def migration_report(
     scope: DeviceScope = Depends(device_filter), db: AsyncSession = Depends(get_scope_snapshot_db)
@@ -69,4 +75,7 @@ async def read_migration(scope: DeviceScope, db: AsyncSession) -> MigrationRepor
         items=items,
         installed_evidence=await installed_evidence(db, devices, as_of=stamp, epoch=epoch),
         fleet_device_counts=await catalog_device_counts(db, devices, items, titles),
+        app_assessments=await app_assessments(
+            db, _safe_apps(items, titles), eligible_devices=devices, corpus=corpus, epoch=epoch, rules=await patching_rules(db)
+        ),
     )

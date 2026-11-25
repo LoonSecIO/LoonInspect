@@ -344,15 +344,26 @@ Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag o
   any finding, with a high or critical one, and with one on CISA's Known Exploited
   Vulnerabilities list, never findings added across builds. Under `off` and `unknown_app` they
   are null, not zero: nobody looked.
+- **`appAssessments`.** One entry per `exact` app, keyed by `appHash`: its builds on the selected
+  Macs against the version its one Fleet title lists now. It counts the builds behind that version,
+  the findings updating them would close, open or leave, and the builds out of, within or exempt
+  from the confirmed patch rule. `priority`, `priorityReason`, `management`, `comparison` and each
+  verdict are codes. The list carries no per-build rows and no finding IDs. A build's verdict is
+  `policy.judge`'s for its one Jamf Patch title, the same as on the title page
+  ([troubleshooting §23](troubleshooting.md#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)).
+  An installed build's findings are its stored answer as served, so one judged by another corpus
+  release is unknown, never clean. Only a target version no selected Mac carries is asked of the
+  corpus, from the same release.
 - **One known difference from a patch plan.** When an app's one Jamf Patch title is in the synced
   Jamf Patch catalog but missing from some of its builds or Macs, this reads `exact`, while a
   patch plan withholds Fleet's version as its target and asks for identity review.
 
 ## What it leaves out
 
-- **No vulnerability or patch judgement of Fleet's titles.** Fleet's titles are not joined to
-  the vulnerability corpus, are not a Jamf Patch title match, and do not count as a public source
-  where the product asks whether one knows an app.
+- **No vulnerability or patch judgement of Fleet's titles.** The corpus is asked about a Fleet
+  version only as the version an installed app's builds would move to (`appAssessments`), under
+  that app's own name and bundle identifier. Fleet's titles are not a Jamf Patch title match, and
+  do not count as a public source where the product asks whether one knows an app.
 - **Dataset scope.** The migration report repeats the answer each installed build already
   carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
   catalogs, the Jamf matches and the organization's patch rules unchanged.
