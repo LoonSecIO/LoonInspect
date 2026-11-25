@@ -14,9 +14,10 @@ question a version history is read with: *what would this release put on a Mac*.
 holds no row for reads `unknown_app`, dated, never zero — a title nothing names an app for
 (#385's `unnamed`) has no key to ask with and reads the same.
 
-**It reads the library and not the tenant's catalog**, which is the one place this differs
-from every other reader (`vuln_read`): `app_catalog` holds an answer only for builds the
-fleet has shown, and most of a title's versions are on no Mac. The gate does not move —
+**It reads the library and not the tenant's catalog**, one of the two readers that do; the
+other is `fleet_assessment._answers`, for a Fleet target version no selected Mac carries.
+Every other reader (`vuln_read`) reads the catalog, where `app_catalog` holds an answer only
+for builds the fleet has shown, and most of a title's versions are on no Mac. The gate does not move —
 `earned_corpus` decides whether anything answers for this tenant at all, and under tenant
 selection the rows are the selected release's and no other's. One statement per title.
 """

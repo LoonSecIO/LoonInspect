@@ -3537,10 +3537,31 @@ nothing here is a permissions problem in Jamf.
    latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
    finding follows from a version is not this tab's question: it judges nothing but older or
    not.
-6. **The status line ends with manifests that *could not be read … and were left as held*.**
-   The check succeeded. The named titles had a manifest this build could not read a version
-   from; they keep what they showed, or stay unlisted if they were new, until Fleet next
-   changes its catalog. Nothing to do.
+6. **The status line ends with manifests that *could not be read … and were left as held*, or
+   says *The held snapshot still has unread Mac titles*.** The check succeeded. The named
+   titles are ones this build could not read: a manifest or an index entry it cannot read, or
+   a title the file listing and the index disagree about. They keep what they showed, or stay
+   unlisted if they were new, until Fleet next changes its catalog, and the titles held are
+   partial ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). While Fleet changes
+   nothing, each later check's line reads
+   *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.*
+   That is the same state, not a new failure, and on its own it needs nothing. Three cases do:
+   - *unrecognized Mac manifest path* or *unrecognized Mac index entry* among the names → Fleet
+     listed a Mac title in a form this build cannot read. Update LoonInspect. On the latest
+     release, report it (§8) with the sentence.
+   - *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.* under a
+     saved patch plan's **Open review items at plan creation**, or in its PDF → the plan was
+     built while the titles held were unread or partial, so it drew no conclusion from Fleet:
+     a Fleet title it found is listed for identity review, and no Fleet version became its
+     target. A saved plan keeps the item. Once the status line shows a check that got an
+     answer and carries neither sentence, build a new plan (§30). Until then, check the app's
+     Fleet title by hand with its **Fleet source** link on this tab; a title the tab does not
+     list is not proof that Fleet has none.
+   - A plan shows that item while the status line carries no sentence → the instance was
+     upgraded to 1.3.0 after its last check, and the upgrade marks a catalog that had been
+     read as partial, once. The next scheduled check, within the hour, or **Check now**
+     clears it, reading only the manifests the instance lacks. If the line reads
+     *Fleet's catalog has not been read yet*, that is step 2; *did not get an answer* is step 3.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
@@ -3579,6 +3600,33 @@ nothing here is a permissions problem in Jamf.
     back shows the move this instance saw, not its first arrival. Nothing to do; **Read again**
     cannot see further than the commits do. The dates are when Fleet's catalog
     took each version, hours to a day after Homebrew and the vendor, never before.
+11. **An app's or a title's migration detail is refused, or its `impact` is null.**
+    `GET /api/fleet-catalog/migration/apps/<appHash>` and `…/titles/<slug>` answer for the Macs
+    the device filter (`deviceScope`) selects ([`fleet-catalog.md`](fleet-catalog.md), *Migration
+    detail*). By the refusal:
+    - *Fleet's catalog is not read while the Fleet catalog flag is off for this organization.*
+      (409) → step 1.
+    - *No Mac the device filter selects has this app in its inventory* (404) → the filter's
+      connection, a contact or inventory window, or another condition leaves out every Mac with
+      the app. Widen or clear `deviceScope`; **Devices › Applications › Installed** under the same
+      filter lists the app once a selected Mac has it. An app removed from every Mac answers this
+      under any filter.
+    - *Fleet's catalog, as this instance last read it, holds no Mac title …* (404) → the copy this
+      instance holds has no such slug; a title Fleet stopped listing is removed with its history.
+      **Check now** reads the catalog again (steps 2 and 3).
+    - *Fleet's version history, as this instance holds it, does not list …* (422) → `targetVersion`
+      is neither Fleet's latest nor in the title's history. Leave it out for the latest or choose a
+      listed version; **Read history** reads it again (step 8; step 10 for a version it leaves out).
+
+    With `impact: null`, `impactUnavailable` names why: `catalog_incomplete`, the snapshot is
+    partial or unread (steps 2, 3 and 6); `no_fleet_title`, no Fleet Mac title has the app's bundle
+    ID (compare them as step 4 does); `identity_review`, the app has no bundle ID, two Fleet titles
+    share it, several Jamf Patch titles match it or a match rests on an extension attribute
+    (`jamfTitles` lists the matching titles this instance has synced, so an app naming titles it has
+    not synced reads `identity_review` with `jamfTitles` empty; settle the title under
+    **Devices › Applications › Jamf Patch**); or
+    `unordered_target`, the target holds no number (choose a numeric version from the history; a
+    qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.
@@ -3788,7 +3836,9 @@ Start in **Settings → AI connections**, with the intended organization selecte
 - **A plan says “requires investigation” or has conditional matches:** inspect each
   source, its read date and the open review items. A public Jamf title or Fleet package
   does not prove that a deployment policy exists in this Jamf instance. Validate the
-  bundle, version and installer before filling in the operator review notes.
+  bundle, version and installer before filling in the operator review notes. A review item
+  *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.* is
+  §27 step 6.
 - **Installomator is unavailable or no label was found:** check outbound HTTPS to
   `api.github.com` and `raw.githubusercontent.com`, including GitHub rate limits. A missing
   name-derived label can be an alias; search the upstream project and review its script.

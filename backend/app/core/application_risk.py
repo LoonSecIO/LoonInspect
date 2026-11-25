@@ -21,15 +21,21 @@ def _count(band):
     )
 
 
+def stored_answer(epoch: str | None):
+    """`(known, counts)` over an `installed_apps` row's stored answer, in SQL. `known` holds only for an answer
+    served under `epoch` whose every count parses. With nothing answering it is `literal(False)`, never
+    `served(..., epoch=None)`: that compiles to `vuln_signature IS NULL` and would serve an unsigned row."""
+    app = InstalledApp
+    counts = {band: _count(band) for band in COUNTS}
+    if epoch is None:
+        return literal(False), counts
+    return and_(served(app.vuln_assessment, app.vuln_signature, epoch=epoch), *(v.is_not(None) for v in counts.values())), counts
+
+
 def application_rows(scope, app_scope: ApplicationScope, epoch: str | None, *, app_hashes=None, now=None):
     """One row per app, counting a repeated path only once per device/build."""
     app = InstalledApp
-    counts = {band: _count(band) for band in COUNTS}
-    known = (
-        and_(served(app.vuln_assessment, app.vuln_signature, epoch=epoch), *(value.is_not(None) for value in counts.values()))
-        if epoch is not None
-        else literal(False)
-    )
+    known, counts = stored_answer(epoch)
     builds = select(
         app.app_hash,
         app.device_id,
