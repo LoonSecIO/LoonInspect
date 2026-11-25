@@ -817,7 +817,29 @@ and step 2 ends with how to tell that apart from a broken exchange.
      all** is not proof the pass did not run — it writes nothing when nothing moved, which
      is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
      now, and judge by what the page says afterwards;
-   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
+   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now:
+     every app version it holds, whatever the device filter above the list says, and
+     without asking Jamf or LoonSec for anything. The button is shown only to a role that
+     may sync a catalog (`patch:catalog-sync`: Analyst and Administrator). **No button
+     there** means this account is a Viewer or an Auditor: ask an Analyst or an
+     Administrator to press it, or wait for the hourly pass. What it says when it finishes:
+     - *Re-judged N app versions of this organization.* — the pass ran and the list was
+       read again, so what the list says now is the answer;
+     - *Nothing to re-judge: this organization has no app versions in its catalog yet.* —
+       no device has been processed for this organization, so there is nothing for a
+       corpus to answer about. § 2 is the path for a sweep that reports nothing;
+     - *The catalog could not be re-judged, and this instance gave no reason …* — the press
+       did not finish, and the list still shows the last pass's answers. If the page itself
+       still loads, `docker compose logs app --since 10m | grep "/api/catalog/refresh"`
+       finds the press: a `request failed` line there carries the exception that stopped
+       the pass. The same line on a second press is reportable state **H**; include it;
+     - *Insufficient permissions* — this account's role changed after it signed in, so the
+       page still offered the button. Reload the page; the button goes with the permission.
+
+     Jamf Patch's **Sync now** is a different control: it reads Jamf's patch catalog first
+     and then re-judges only the rows that catalog or the corpus moved since they were
+     judged, so it does not stand in for this button in step 4.
+
    If an hour has passed, the log shows the pass running, and the same builds still read
    amber, that is reportable state **H**.
 4. **One app, and only that one, says *outside the corpus* after every refresh.** Look for
@@ -3666,7 +3688,7 @@ nothing here is a permissions problem in Jamf.
     - *Vulnerabilities: not assessed* under **Findings on installed builds** → §5 steps 1 and 2; *Outside the corpus* → §5. The counts
       are distinct builds on the Macs in the device filter, so a build on 500 Macs counts once where Installed Apps counts 500.
     - *Each Mac keeps its own copy of a build’s answer, which the hourly refresh brings up to date, so for up to an hour after a corpus release or a sweep these counts can differ from the verdict above.*
-      → right after a corpus release or a device sweep, the findings can read *Outside the corpus* or *Vulnerabilities: not assessed*
+      → right after a corpus release or a device sweep, the findings can read *Outside the corpus* or count a build under *Unassessed builds*
       while the verdict line or **Patching policy** already counts a finding, or the reverse. The two read different copies of a
       build's answer, the findings each Mac's and the verdict the build's own; they agree after the hourly refresh, and **Sync now**
       under Devices › Applications › Jamf Patch runs it at once (`patch:catalog-sync`). Still apart after that: §5 step 3.
@@ -3674,7 +3696,7 @@ nothing here is a permissions problem in Jamf.
       *A 0 here can mean the change log is not recording applications (Settings › Change tracking), and a change log kept under 90 days counts only the days it keeps.*
       → Settings › Change tracking: *High only* records no application changes; *High + normal*, the default, does. A Mac's changes
       count from its second sweep, and only Macs the device filter selects count, so widen or clear the filter.
-      `CHANGE_LOG_RETENTION_DAYS` under 90 leaves fewer days to count, whatever the sentence's 90 says (§24 step 1 prints the value).
+      `CHANGE_LOG_RETENTION_DAYS` set between 1 and 89 leaves fewer days to count, whatever the sentence's 90 says (§24 step 1 prints the value).
     - *No recorded upgrade on these Macs in this window could be paired with a version Fleet’s history has dated.* → the history on the
       same page says *Not read yet* (step 8), or the versions the Macs moved to are ones it could not date (step 10). Versions that are
       not plain dotted numbers, a short version that disagrees with the version, and a first upgrade recorded before Fleet dated the
@@ -3684,6 +3706,29 @@ nothing here is a permissions problem in Jamf.
       (steps 3 and 6), or no Fleet title carries the bundle ID (step 4).
     - No **Build a patch plan for these Macs** → it needs `patch:plan-write` (Admin, Analyst) and a Mac in the device filter with the
       app. The plan opens with the page's device filter (§30).
+15. **An app's page cannot compare a target version, or a build's row reads wrong.** **Compare a target version** counts the Macs in the
+    device filter with the app (**Matched Macs**) as **Below target**, **At or above target** or **Version unknown** against Fleet's latest
+    version, or the one a **Compare** under **Fleet release history** chose (step 11's detail, asked for that version). **Vulnerability and
+    policy evidence** gives each older installed build what that version changes and its patch-rule verdict. By the sentence:
+    - *Could not compare this target.* over *No reason came back. Retry; if it fails again, the app container’s log shows the request and its error.*
+      → `docker compose logs app --since 10m | grep fleet-catalog/migration` lists each request with its `status_code`. A `500`, or a
+      `"message": "request failed"` line, carries the error: report it (§8) with those lines. No line at all: the request never reached
+      this instance, so look at a proxy, or the network between the browser and the instance.
+    - *Could not compare this target.* over any other sentence → that sentence is the server's own refusal: step 11.
+    - *Device impact is unavailable: Fleet’s catalog is not completely read. It returns after the next complete check.* → steps 2, 3 and 6.
+    - *Device impact is unavailable until this app’s identity is reviewed: …*, or in a row *Identity requires review* or *Not judged until
+      this build’s identity is reviewed: …* → step 11 names the four causes, and the header's sentence says which (step 13). Fleet
+      channels that share a bundle identifier are compared on no page, a channel's own included: inventory cannot tell them apart.
+    - *Device impact is unavailable: Fleet’s version … cannot be ordered against installed versions. …* → **Compare** a dotted release under
+      **Fleet release history**.
+    - *No Fleet title matches this app’s bundle identifier, so there is no target to compare against.* → compare bundle IDs as step 4 does.
+    - *No comparable older build in this scope.*, *… cannot be ordered against … left out of this table.* or *Finding IDs are capped. Only
+      the change in total can be compared.* → nothing to fix: no build is older than the target, the unordered ones' Macs count under
+      **Version unknown**, or a build has more findings than its ID list keeps.
+    - A verdict in the Jamf Patch title page's words → §23; the rule line under it (*Title-specific rule* or *Organization default rule*)
+      opens that title. A row out of policy by its releases limit shows no due date: the one sent is the days limit's, which can be ahead.
+    - *Not judged: no Jamf Patch title matches this build.* → **Devices › Applications › Jamf Patch**, and §6 if that table is empty.
+    - *Installed build outside corpus*, *Target build outside corpus*, *Corpus unavailable* or *Vulnerabilities: not assessed* → §5.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.

@@ -110,11 +110,19 @@ describe("the version history panel", () => {
     expect(screen.queryByText(en.fleetCatalog.cadenceMedianGap)).toBeNull();
   });
 
-  it("reads the median gap in the reader's language", async () => {
+  it("reads the median gap and each version's date in the reader's language", async () => {
     locale.current = "de";
     await show(HISTORY, { detail: true });
 
-    expect(screen.getByText("44,6 Tage")).toBeTruthy();
+    expect([screen.getByText("44,6 Tage"), screen.getByText("20.11.2026")].every(Boolean)).toBe(true);
     expect(en.fleetCatalog.cadenceDays("1", true)).toBe("1 day");
+  });
+
+  it("finds a version with spaces around the search, and in any case (#912)", async () => {
+    await show({ ...HISTORY, versions: [...HISTORY.versions, { ...HISTORY.versions[2], version: "1.7 ESR" }] }, { detail: true });
+    for (const [query, version] of [[" 1.9 ", "1.9"], ["esr", "1.7 ESR"]]) {
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: query } });
+      expect(Array.from(screen.getByRole("table").querySelectorAll("tbody tr td:first-child")).map((cell) => cell.textContent)).toEqual([version]);
+    }
   });
 });

@@ -5,6 +5,7 @@ import type {
   CatalogListResponse,
   CatalogLookup,
   CatalogOrder,
+  CatalogRefreshResult,
   CatalogVulnFilter
 } from "@/features/catalog/types";
 
@@ -51,4 +52,12 @@ export function lookupCatalog(params: { appHash?: string; versionHash?: string }
   if (params.versionHash) query.set("versionHash", params.versionHash);
   else if (params.appHash) query.set("appHash", params.appHash);
   return apiRequest<CatalogLookup[]>(`/catalog/lookup?${query.toString()}`);
+}
+
+/** Re-judge every catalog row of this organization now (#931): the Catalog tab's *Refresh*,
+ *  which troubleshooting §5 and the Vulnerabilities page name. `patch:catalog-sync`. The
+ *  device filter does not narrow it, and it makes no outbound call — Jamf Patch's *Sync now*
+ *  is the one that reads Jamf's catalog first. */
+export function refreshCatalog(): Promise<CatalogRefreshResult> {
+  return apiRequest<CatalogRefreshResult>("/catalog/refresh", { method: "POST" });
 }

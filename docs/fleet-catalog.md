@@ -228,7 +228,7 @@ stores it.
 - **They need the change log.** Applications are recorded only with **Settings › Change
   tracking** at *High + normal* (the default) or *Everything*, with applications not switched
   off, and a Mac's first sweep is its baseline, so it counts from its second. They count only what
-  the log still keeps: with `CHANGE_LOG_RETENTION_DAYS` ([change log](change-log.md) §6) under 90 they
+  the log still keeps: with `CHANGE_LOG_RETENTION_DAYS` ([change log](change-log.md) §6) set between 1 and 89 they
   cover fewer days while `windowDays` still says 90, and with applications not recorded
   `versionChanges` and `adoptionSamples` read 0, which measured nothing.
 - **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
@@ -389,6 +389,14 @@ and, for an Admin or Analyst, **Build a patch plan for these Macs**, which opens
 nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
 on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
 
+**Compare a target version** (#908), on a page with one Fleet title to compare and a selected Mac with the app, counts those Macs (*Matched Macs*) as
+*Below target*, *At or above target* or *Version unknown* (no numeric order) against Fleet's latest version, from the page's own answer. **Compare** on a row
+of the release history asks the same detail for that version; **Use latest Fleet version** goes back. Under it, **Vulnerability and policy evidence** counts
+every installed build within, out of, exempt from or without a patch-rule judgement, then gives each older build its Macs, what the target changes (addressed,
+introduced and remaining findings where both builds have a whole corpus answer, the change in total where a list is capped, else which side the corpus lacks),
+its known exploited findings, and the Jamf Patch title page's verdict with its rule and due date. With `vuln:read` each finding ID opens its own page. Where
+there is no impact, the panel or the evidence says why ([`troubleshooting.md`](troubleshooting.md) §27 step 15).
+
 ### The API
 
 `GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected
@@ -450,7 +458,8 @@ Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
   do not count as a public source where the product asks whether one knows an app.
 - **Dataset scope.** The migration report repeats the answer each installed build already
   carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
-  catalogs, the Jamf matches and the organization's patch rules unchanged.
+  catalogs, the Jamf matches and the organization's patch rules unchanged. Choosing a Fleet target
+  recalculates only the local projection. It changes neither catalog nor the organization's patch rules.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**

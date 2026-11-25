@@ -1,4 +1,4 @@
-import type { FleetAssessment } from "./migrationTypes";
+import type { FleetAssessment, ImpactUnavailable } from "./migrationTypes";
 
 // The Fleet app and title page's words (#906; #907, #908 and #909 extend them), the German typed against the English. A refusal's
 // `detail` other than the flag's 409 is shown as sent (see `features/ai/activityCopy.ts`). Counts arrive formatted, with a singular flag.
@@ -44,7 +44,35 @@ export const fleetDetailEnglish = {
     `Median ${days} ${oneDay ? "day" : "days"} after Fleet dated the version, across ${pairs} Mac/version ${onePair ? "pair" : "pairs"}.`,
   observedNoLag: "No recorded upgrade on these Macs in this window could be paired with a version Fleet’s history has dated.",
   observedNotMeasured: "Upgrade timing is measured only for an app matched to one Fleet title.",
-  observedNote: "From the change log: the interval ends when a sweep first recorded the upgrade on a Mac, so how often inventory is collected adds to it."
+  observedNote: "From the change log: the interval ends when a sweep first recorded the upgrade on a Mac, so how often inventory is collected adds to it.",
+  // Compare a target version (#908): #899's impact and #897's rows for Fleet's latest or a dated version. A row's verdict is the Jamf
+  // Patch title page's sentence or rule word, picked by code, and its counts take that page's legend (`jamfPatch.rules`).
+  impact: "Compare a target version", target: "Fleet target", fetchImpact: "Loading target comparison…", resetTarget: "Use latest Fleet version",
+  installedScope: "Matched Macs", older: "Below target", atOrAbove: "At or above target", chooseFromHistory: "Select another target from the release history below.",
+  pinCheck: "Before pinning this version, check that Fleet still offers it under Actions › Versions.", impactError: "Could not compare this target.",
+  impactNoReason: "No reason came back. Retry; if it fails again, the app container’s log shows the request and its error.",
+  // `identity_review` also covers an app with no bundle ID and an assumed Jamf match (§27 step 11), so the sentence names all four.
+  impactUnavailable: (reason: ImpactUnavailable, target: string): string => ({
+    catalog_incomplete: "Device impact is unavailable: Fleet’s catalog is not completely read. It returns after the next complete check.",
+    no_fleet_title: "No Fleet title matches this app’s bundle identifier, so there is no target to compare against.",
+    identity_review: "Device impact is unavailable until this app’s identity is reviewed: it has no bundle identifier, more than one Fleet channel or Jamf title fits it, or its Jamf match is assumed.",
+    unordered_target: `Device impact is unavailable: Fleet’s version ${target} cannot be ordered against installed versions. Choose a dotted release from the history below.`
+  } satisfies Record<ImpactUnavailable, string>)[reason],
+  findings: "Vulnerability and policy evidence", allPolicy: "Policy across all installed builds", exempt: "Exempt", unassessed: "No policy judgment",
+  scanner: "Findings come from the vulnerability corpus’s answer for each exact build, not from a scan of these Macs.",
+  findingScope: "Comparisons cover older installed builds. Each row compares one observed build with the selected target.",
+  noOlder: "No comparable older build in this scope.", risk: "Findings at target", due: (date: string) => `Due ${date}`,
+  unordered: (builds: string, one: boolean, target: string) => one
+    ? `${builds} installed build has a version string that cannot be ordered against ${target}. It is listed under Installed builds and left out of this table.`
+    : `${builds} installed builds have version strings that cannot be ordered against ${target}. They are listed under Installed builds and left out of this table.`,
+  exactDelta: (addressed: string, introduced: string, remaining: string) => `${addressed} addressed · ${introduced} introduced · ${remaining} remaining`,
+  netDelta: (net: number, n: string) => net === 0 ? "Same total findings" : `${n} ${net > 0 ? "fewer" : "more"} ${Math.abs(net) === 1 ? "finding" : "findings"} in total`,
+  capped: "Finding IDs are capped. Only the change in total can be compared.", proof: "Inspect finding IDs",
+  addressed: "Addressed at target", introduced: "Introduced at target", remaining: "Present on both builds", ambiguousBuild: "Identity requires review",
+  off: "Corpus unavailable", unknown_source: "Installed build outside corpus", unknown_target: "Target build outside corpus",
+  kev: (n: string) => `Known exploited on installed build: ${n}`, defaultRule: "Organization default rule", overrideRule: "Title-specific rule",
+  policyIdentity: "Not judged until this build’s identity is reviewed: more than one Fleet or Jamf title fits it, or its Jamf match is assumed.",
+  policyNoTitle: "Not judged: no Jamf Patch title matches this build."
 };
 
 export type FleetDetailCopy = typeof fleetDetailEnglish;
@@ -85,5 +113,30 @@ export const fleetDetailGerman: FleetDetailCopy = {
     `Median ${days} ${oneDay ? "Tag" : "Tage"} nach Fleets Datierung der Version, bei ${pairs} ${onePair ? "Mac/Versions-Paar" : "Mac/Versions-Paaren"}.`,
   observedNoLag: "Kein erfasstes Upgrade auf diesen Macs in diesem Zeitraum ließ sich einer Version zuordnen, die Fleets Verlauf datiert hat.",
   observedNotMeasured: "Der Zeitpunkt von Upgrades wird nur für eine App gemessen, die genau einem Fleet-Titel zugeordnet ist.",
-  observedNote: "Aus dem Änderungsprotokoll: Das Intervall endet, wenn ein Sweep das Upgrade auf einem Mac zuerst erfasst hat; wie oft das Inventar erfasst wird, verlängert es."
+  observedNote: "Aus dem Änderungsprotokoll: Das Intervall endet, wenn ein Sweep das Upgrade auf einem Mac zuerst erfasst hat; wie oft das Inventar erfasst wird, verlängert es.",
+  impact: "Zielversion vergleichen", target: "Fleet-Ziel", fetchImpact: "Zielvergleich wird geladen…", resetTarget: "Neueste Fleet-Version verwenden",
+  installedScope: "Passende Macs", older: "Unter der Zielversion", atOrAbove: "Auf oder über der Zielversion", chooseFromHistory: "Ein anderes Ziel wählen Sie im Versionsverlauf unten.",
+  pinCheck: "Prüfen Sie vor dem Festlegen dieser Version, ob Fleet sie unter Actions › Versions noch anbietet.", impactError: "Dieses Ziel konnte nicht verglichen werden.",
+  impactNoReason: "Es kam kein Grund zurück. Versuchen Sie es erneut; scheitert es wieder, zeigt das Protokoll des App-Containers die Anfrage und ihren Fehler.",
+  impactUnavailable: (reason, target) => ({
+    catalog_incomplete: "Die Geräteauswirkung ist nicht verfügbar: Fleets Katalog ist nicht vollständig gelesen. Sie kehrt nach der nächsten vollständigen Prüfung zurück.",
+    no_fleet_title: "Kein Fleet-Titel entspricht der Bundle-Kennung dieser App, daher gibt es kein Ziel zum Vergleichen.",
+    identity_review: "Die Geräteauswirkung ist nicht verfügbar, bis die Identität dieser App geprüft ist: Sie hat keine Bundle-Kennung, mehr als ein Fleet-Kanal oder Jamf-Titel passt zu ihr, oder ihre Jamf-Zuordnung ist angenommen.",
+    unordered_target: `Die Geräteauswirkung ist nicht verfügbar: Fleets Version ${target} lässt sich nicht gegen installierte Versionen einordnen. Wählen Sie eine Version in Punktnotation aus dem Verlauf unten.`
+  } satisfies Record<ImpactUnavailable, string>)[reason],
+  findings: "Schwachstellen- und Richtliniennachweise", allPolicy: "Richtlinie über alle installierten Builds", exempt: "Ausgenommen", unassessed: "Ohne Richtlinienurteil",
+  scanner: "Die Funde stammen aus der Antwort des Schwachstellen-Korpus für jeden exakten Build, nicht aus einem Scan dieser Macs.",
+  findingScope: "Verglichen werden ältere installierte Builds. Jede Zeile vergleicht einen beobachteten Build mit dem gewählten Ziel.",
+  noOlder: "Kein vergleichbarer älterer Build im Gerätefilter.", risk: "Funde in der Zielversion", due: date => `Fällig am ${date}`,
+  unordered: (builds, one, target) => one
+    ? `${builds} installierter Build hat eine Versionsangabe, die sich nicht gegen ${target} einordnen lässt. Er steht unter „Installierte Builds“ und fehlt in dieser Tabelle.`
+    : `${builds} installierte Builds haben Versionsangaben, die sich nicht gegen ${target} einordnen lassen. Sie stehen unter „Installierte Builds“ und fehlen in dieser Tabelle.`,
+  exactDelta: (addressed, introduced, remaining) => `${addressed} behoben · ${introduced} neu · ${remaining} verbleibend`,
+  netDelta: (net, n) => net === 0 ? "Gesamtzahl der Funde unverändert" : `Insgesamt ${n} ${Math.abs(net) === 1 ? "Fund" : "Funde"} ${net > 0 ? "weniger" : "mehr"}`,
+  capped: "Die Fund-IDs sind begrenzt. Vergleichbar ist nur die Änderung der Gesamtzahl.", proof: "Fund-IDs prüfen",
+  addressed: "In der Zielversion behoben", introduced: "In der Zielversion neu", remaining: "In beiden Builds vorhanden", ambiguousBuild: "Identität muss geprüft werden",
+  off: "Korpus nicht verfügbar", unknown_source: "Installierter Build außerhalb des Korpus", unknown_target: "Ziel-Build außerhalb des Korpus",
+  kev: n => `Bekannt ausgenutzte Funde im installierten Build: ${n}`, defaultRule: "Standardregel der Organisation", overrideRule: "Titelspezifische Regel",
+  policyIdentity: "Nicht beurteilt, bis die Identität dieses Builds geprüft ist: Mehr als ein Fleet- oder Jamf-Titel passt zu ihm, oder seine Jamf-Zuordnung ist angenommen.",
+  policyNoTitle: "Nicht beurteilt: Kein Jamf-Patch-Titel passt zu diesem Build."
 };
