@@ -4123,7 +4123,9 @@ stored, and nothing is deleted to make room for one.
    last finished a build, changed or not, and the exchange passes that on (`feed.builtAt`). A
    recent build never makes an old copy current: a publisher that runs every night while
    LoonSec's NVD data stands still makes the same document each night, and that is what this
-   state is for. What `feed.builtAt` says is the cause, and the sentence goes on with it:
+   state is for. What `feed.builtAt` says is the cause, judged by this instance's clock
+   (`feed.publisherRunning`: `true` when that build is under three days old, `false` when it is
+   older), and the page names the same cause from it. The sentence goes on with it:
    - ***…: LoonSec's publisher last ran on …, but its NVD data has not advanced since …*** → the
      publisher is running (its last build is under three days old) and LoonSec's NVD data has
      not moved since the copy's date, so each night's build is the copy you hold. Nothing on
@@ -4168,8 +4170,9 @@ matters:
 - *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
   LoonSec's publisher has finished no build that reached this instance since that day.
 
-Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf` and `feed.builtAt`
-from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
+Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt` and
+`feed.publisherRunning` from `GET /api/patch-policy/apps`, and the build from Settings › Support
+(§8).
 
 **AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
 proxy between the container and the store; or the check, or the file read, fails with an

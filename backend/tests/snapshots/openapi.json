@@ -8782,6 +8782,17 @@
             ],
             "title": "Outcome"
           },
+          "publisherRunning": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publisherrunning"
+          },
           "sentence": {
             "title": "Sentence",
             "type": "string"
@@ -19007,7 +19018,7 @@
     },
     "/api/patch-policy/apps": {
       "get": {
-        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy dated (`asOf`) more than three days ago, whatever LoonSec's last build\n(`builtAt`) says, which names only the cause, and `current`. Every state's sentence says what\nit means and what to check (docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,\nwhether a walk of it can be shown, each track's answer with the default two-year window it\nwould cover, and otherwise the state word and sentence that say why not\n(docs/troubleshooting.md \u00a733). Jamf and Fleet are read from this instance's own copies.",
+        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy dated (`asOf`) more than three days ago, whatever LoonSec's last build\n(`builtAt`) says, which names only the cause (`publisherRunning`, judged by this instance's\nclock), and `current`. Every state's sentence says what it means and what to check\n(docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,\nwhether a walk of it can be shown, each track's answer with the default two-year window it\nwould cover, and otherwise the state word and sentence that say why not\n(docs/troubleshooting.md \u00a733). Jamf and Fleet are read from this instance's own copies.",
         "operationId": "patch_policy_apps_api_patch_policy_apps_get",
         "responses": {
           "200": {

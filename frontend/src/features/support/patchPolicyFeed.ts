@@ -38,6 +38,10 @@ export interface PatchPolicyFeed {
    *  It never decides `stale` (the copy's own `asOf` does): it names the cause, the publisher still
    *  running over NVD data that has not advanced, or the publisher stopped (`publisherRunning`). */
   builtAt: string | null;
+  /** Which of those two causes the instance judged, by its own clock: true while `builtAt` is within
+   *  three days of its now, false once older, null when `builtAt` is. The page names the cause from
+   *  it, so the page's sentence and `sentence` never name different causes. */
+  publisherRunning: boolean | null;
 }
 
 /** One source against one track: whether a walk of it can be shown at the default two-year window,
@@ -114,17 +118,17 @@ const day = (value: string | null): string | null => (value ? value.slice(0, 10)
 export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Whether LoonSec's publisher is still running: its last build (`builtAt`) no more than three days
- *  before `now`. It picks between the two stale sentences by the backend's `held_freshness` rule,
- *  read against this browser's clock rather than the instance's, so the page and the instance's own
- *  sentence can name different causes only for a build that turns three days old within the two
- *  clocks' difference. */
+ *  before `now`, the backend's `held_freshness` rule. Read against this browser's clock, so it is the
+ *  fallback only, for an answer that carries no `publisherRunning`: the instance's own judgement is
+ *  what its sentence says, and a browser whose clock is off near the three-day boundary would
+ *  otherwise name the other cause. */
 export function publisherRunning(builtAt: string, now: Date): boolean {
   return now.getTime() - Date.parse(builtAt) <= STALE_AFTER_MS;
 }
 
 /** The state's sentence, the way `sentence_for` builds it: the state's words, then the copy that
- *  still answers (or that there is none) after a failure. `now` decides only which cause a stale
- *  copy names (`publisherRunning`). */
+ *  still answers (or that there is none) after a failure. A stale copy's cause is the instance's
+ *  `feed.publisherRunning`; `now` is read only when that is missing (`publisherRunning`). */
 export function describeFeed(feed: PatchPolicyFeed, words: FeedWords, now: Date = new Date()): string {
   const s = words.states;
   const asOf = day(feed.asOf);
@@ -139,7 +143,11 @@ export function describeFeed(feed: PatchPolicyFeed, words: FeedWords, now: Date 
       return s.current(asOf ?? "—");
     case "stale":
       if (!feed.builtAt) return s.stale(asOf ?? "—", feed.until ?? "—");
-      return (publisherRunning(feed.builtAt, now) ? s.staleRunning : s.staleStopped)(asOf ?? "—", day(feed.builtAt) ?? "—", feed.until ?? "—");
+      return ((feed.publisherRunning ?? publisherRunning(feed.builtAt, now)) ? s.staleRunning : s.staleStopped)(
+        asOf ?? "—",
+        day(feed.builtAt) ?? "—",
+        feed.until ?? "—"
+      );
     case "not_published":
       return `${s.not_published} ${copy()}`;
     case "algorithm_unknown":

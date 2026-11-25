@@ -647,17 +647,18 @@ async def test_stale_is_judged_from_the_copys_date_and_loonsecs_last_build_names
     await _hold(db, held, built_at="2026-11-29T07:12:03Z")
     young = await feed.feed_view(db, now=datetime(2026, 11, 25, tzinfo=UTC))
     assert young.state == "current" and young.built_at == datetime(2026, 11, 29, 7, 12, 3, tzinfo=UTC)
+    assert young.publisher_running is True
     # On the 30th the copy is more than three days old, though the build is a day old: stale, and
     # the publisher is running over NVD data that has not advanced.
     running = await feed.feed_view(db, now=datetime(2026, 11, 30, tzinfo=UTC))
-    assert running.state == "stale"
+    assert running.state == "stale" and running.publisher_running is True
     assert running.sentence == (
         "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
         "but its NVD data has not advanced since 2026-11-23, and the walk ends 2026-11-22."
     )
     # On 3 December the build is more than three days old too: the publisher has stopped.
     stopped = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
-    assert stopped.state == "stale"
+    assert stopped.state == "stale" and stopped.publisher_running is False
     assert stopped.sentence == (
         "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
         "more than three days ago, and the walk ends 2026-11-22."
@@ -672,5 +673,22 @@ async def test_stale_is_judged_from_the_copys_date_and_loonsecs_last_build_names
     # An exchange that does not say leaves it unknown, and the sentence names only the copy's date.
     await _hold(db, held)
     unknown = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
-    assert unknown.built_at is None and unknown.state == "stale"
+    assert unknown.built_at is None and unknown.state == "stale" and unknown.publisher_running is None
     assert unknown.sentence == "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."
+
+
+async def test_the_route_sends_the_cause_this_instance_judged_so_the_page_names_the_same(db, held, viewer) -> None:  # noqa: F811
+    """`publisherRunning` is the instance's own judgement, by its clock, of the cause its sentence
+    names; the page names the cause from it rather than from the browser's clock (LI-5). Built a
+    day and five days before the instance's now, so it holds whatever day the suite runs."""
+    await _empty(db)
+    now = datetime.now(UTC)
+    await _hold(db, held, built_at=(now - timedelta(days=1)).isoformat())
+    body = (await viewer.get("/api/patch-policy/apps")).json()
+    assert body["feed"]["publisherRunning"] is True
+    await _hold(db, held, built_at=(now - timedelta(days=5)).isoformat())
+    body = (await viewer.get("/api/patch-policy/apps")).json()
+    assert body["feed"]["publisherRunning"] is False
+    await _hold(db, held)
+    body = (await viewer.get("/api/patch-policy/apps")).json()
+    assert body["feed"]["builtAt"] is None and body["feed"]["publisherRunning"] is None
