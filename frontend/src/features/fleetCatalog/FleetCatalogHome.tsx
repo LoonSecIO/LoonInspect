@@ -81,10 +81,10 @@ function MigrationReview() {
   const page = Math.min(pages, Math.max(1, Math.floor(Number(params.get("page"))) || 1));
   const start = (page - 1) * pageSize;
   function change(key: string, next: string) {
-    const query = new URLSearchParams(params);
-    if (key !== "page") query.delete("page");
-    if (next) query.set(key, next); else query.delete(key);
-    setParams(query, { replace: key === "q" });
+    const address = new URLSearchParams(params);
+    if (key !== "page") address.delete("page");
+    if (next) address.set(key, next); else address.delete(key);
+    setParams(address, { replace: key === "q" });
   }
 
   return <div className="space-y-5">
@@ -95,10 +95,10 @@ function MigrationReview() {
       {scopeCounts.map(key => <div key={key}><dt className="text-xs font-medium text-muted-foreground">{words.scope[key]}</dt>
         <dd className="text-xl font-semibold tabular-nums">{report.scope[key].toLocaleString(locale)}</dd></div>)}
     </dl>}
-    {current?.failed && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">{current.failed.detail ?? words.loadFailed}
+    {current?.failed && <div role="alert" className="flex flex-wrap items-center gap-3 text-sm"><span className="text-destructive">{current.failed.detail ?? words.loadFailed}</span>
       <Button variant="outline" onClick={() => setRevision(n => n + 1)}>{words.retry}</Button></div>}
     {!current && <p role="status" className="text-sm text-muted-foreground">{words.loading}</p>}
-    {current?.report?.enabled === false && <p>{t.fleetCatalog.emptyFlagOff}</p>}
+    {current?.report?.enabled === false && <p className="text-sm text-muted-foreground">{t.fleetCatalog.emptyFlagOff}</p>}
     {report && counts && <>
       {!report.fleetCatalogReady && <p className="text-sm">{report.fleetCatalogReadiness === "partial" ? words.partialCatalog : words.notRead}{" "}
         <Link className="underline" to={viewHref(params, true)}>{words.segments.titles}</Link></p>}
