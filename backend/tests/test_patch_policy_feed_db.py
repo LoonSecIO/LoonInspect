@@ -314,6 +314,30 @@ async def test_a_copy_more_than_three_days_old_reads_stale_with_the_day_the_walk
     assert old.sentence == "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."
 
 
+async def test_a_fresh_build_over_a_four_day_old_copy_reads_stale_with_the_stalled_nvd_sentence(db, clean) -> None:
+    """The exchange says LoonSec's publisher finished a build half an hour ago, over the same
+    document: its NVD state has not advanced in four days. The copy's own date decides (stale), and
+    the build only names the cause."""
+    offer = feed.read_offer(
+        {
+            "patch_walk/1": {
+                "signature": DOC["doc_id"],
+                "asof": "2026-11-23T20:00:00Z",
+                "url": LINK,
+                "built_at": "2026-11-27T21:00:00Z",
+            }
+        }
+    )
+    assert await feed.deliver_from_exchange(db, offer, transport=_serving(GZ)) == "stored"
+    view = await feed.feed_view(db, now=datetime(2026, 11, 27, 21, 30, tzinfo=UTC))
+    assert view.built_at == datetime(2026, 11, 27, 21, tzinfo=UTC)
+    assert view.state == "stale"
+    assert view.sentence == (
+        "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-27, "
+        "but its NVD data has not advanced since 2026-11-23, and the walk ends 2026-11-22."
+    )
+
+
 # --- the air-gapped path -------------------------------------------------------------------------
 
 

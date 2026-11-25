@@ -4117,18 +4117,26 @@ stored, and nothing is deleted to make room for one.
 
    The next exchange tries again. The same sentence after the next day's exchange, with no
    proxy in the way, is reportable state **AB**.
-7. ***Showing patch-policy data dated …; LoonSec last confirmed it current on …, more than three
-   days ago, and the walk ends …*** LoonSec rebuilds the document every night and says when it
-   last did, changed or not, and the exchange passes that on (`feed.builtAt`). The copy held was
-   last confirmed more than three days ago: no exchange since has brought a newer confirmation.
-   Read the last exchange on Settings › Data Sharing: *failed* is §5 step 6. *Sent* means
-   LoonSec has not confirmed a document since, which is reportable state **AA** once it has
-   lasted past the next exchange.
-
-   ***Showing patch-policy data dated …, more than three days old; the walk ends …*** is the same
-   state where LoonSec's confirmation is not known (`feed.builtAt` is null: an exchange from an
-   older LoonSec, or the file of step 8), so the copy's own date decides. Read the last exchange
-   the same way. On an instance that reads the file (step 8), put a newer file in its place.
+7. ***Showing patch-policy data dated …, more than three days old…*** The copy held is more than
+   three days old by its own date (`feed.asOf`, the NVD state LoonSec built it from), and that
+   date alone decides it. LoonSec's publisher builds the document every night and says when it
+   last finished a build, changed or not, and the exchange passes that on (`feed.builtAt`). A
+   recent build never makes an old copy current: a publisher that runs every night while
+   LoonSec's NVD data stands still makes the same document each night, and that is what this
+   state is for. What `feed.builtAt` says is the cause, and the sentence goes on with it:
+   - ***…: LoonSec's publisher last ran on …, but its NVD data has not advanced since …*** → the
+     publisher is running (its last build is under three days old) and LoonSec's NVD data has
+     not moved since the copy's date, so each night's build is the copy you hold. Nothing on
+     this instance is wrong, and neither the next exchange nor **Send now** changes it. If it
+     reads the same after the next day's exchange, that is reportable state **AA**.
+   - ***…: LoonSec's publisher last ran on …, more than three days ago, …*** → no build LoonSec
+     finished since has reached this instance. Read the last exchange on Settings › Data
+     Sharing: *failed* is §5 step 6. *Sent* means LoonSec's publisher has finished no build
+     since, which is reportable state **AA** once it has lasted past the next exchange.
+   - ***…, more than three days old; the walk ends …*** → LoonSec's last build is not known
+     (`feed.builtAt` is null: an exchange from an older LoonSec, or the file of step 8), so the
+     sentence names only the copy's date. Read the last exchange the same way. On an instance
+     that reads the file (step 8), put a newer file in its place.
 8. **An instance with no network: `PATCH_POLICY_FEED_FILE`.** Put the document (the
    `.json.gz` file LoonSec provides) on the data volume and name it in `.env`:
    `docker compose cp patch-policy.json.gz app:/app/data/patch-policy.json.gz`, then
@@ -4151,8 +4159,15 @@ running, the held copy keeps answering, and the next exchange or change to the f
 Report it as state **AB**, with that line, the error type and stack locations logged with it, and
 the build (§8).
 
-**AA.** The exchange answers and LoonSec names no patch-policy document, or names one it last
-confirmed (or, when it does not say, dated) more than three days ago, on two consecutive days.
+**AA.** The exchange answers and LoonSec names no patch-policy document, or names one dated more
+than three days ago (step 7), on two consecutive days. The sentence's cause is the part that
+matters:
+- *…LoonSec's publisher last ran on …, but its NVD data has not advanced since …* → LoonSec's
+  publisher is running and its NVD data has stood still: LoonSec's to fix, and nothing an
+  instance can change.
+- *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
+  LoonSec's publisher has finished no build that reached this instance since that day.
+
 Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf` and `feed.builtAt`
 from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
 

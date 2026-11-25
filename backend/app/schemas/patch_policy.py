@@ -55,9 +55,10 @@ class PatchPolicyFeedOut(_Out):
     # True when PATCH_POLICY_FEED_FILE is set: the document is read from that file, and the
     # exchange's link is not followed.
     from_file: bool = False
-    # When LoonSec last confirmed the copy that answers current, as the exchange said; null when
-    # it did not say (an older LoonSec, or the file). `stale` is judged from it when it is known,
-    # and from `asOf` when it is not.
+    # When LoonSec's publisher last finished a build, as the exchange said; null when it did not
+    # say (an older LoonSec, or the file). `stale` is judged from `asOf` alone; this names the
+    # cause: within three days, the publisher runs and its NVD data has not advanced; older, the
+    # publisher has stopped.
     built_at: datetime | None = None
 
 

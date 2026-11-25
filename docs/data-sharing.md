@@ -455,11 +455,14 @@ that reads the document to a link of the corpus's shape, all three keys or none:
                                     "built_at": "2026-11-24T07:12:03Z" } }
 ```
 
-`built_at` is additive and optional: when LoonSec's publisher last built the document and found
-it current, which it refreshes nightly whether or not the document changed. The container keeps
-it with the attempt that found the copy current, and the copy reads *stale* once that is more
-than three days old; without it (an older LoonSec, or the file below) the copy's own `as_of`
-decides, as before.
+`built_at` is additive and optional: when LoonSec's publisher last finished a build, which it
+rewrites nightly whether or not the document changed. The copy reads *stale* once its own `as_of`
+is more than three days old, whatever `built_at` says: a publisher that keeps running over NVD
+data that has not advanced makes no new document, so a fresh `built_at` can sit over old data.
+The container keeps `built_at` with the attempt that found the copy and uses it only to say why
+a stale copy is old: the publisher running over NVD data that has not advanced, or the publisher
+stopped. Without it (an older LoonSec, or the file below) the sentence names only the copy's
+date ([`troubleshooting.md`](troubleshooting.md) §32 step 7).
 
 The document is LoonSec's patch-policy reference: one object for every app LoonSec
 references, built from NVD records, LoonSec's record of NVD changes, and public release records

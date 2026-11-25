@@ -4,8 +4,9 @@ Postgres (#614).
 `test_patch_policy_timelines.py` proves the adapters and the trim without a database. What needs
 one is the route end to end: the held copy behind the tier gate, this instance's copy of Jamf's
 catalog and Fleet's history read from their own tables, the Fleet flag per organization, parity
-per app, `align=common`, the 409 sentences, LoonSec's `built_at` deciding `stale`, and that none of
-it reads a device. Gated on RUN_DB_TESTS like the other database suites.
+per app, `align=common`, the 409 sentences, the copy's `as_of` deciding `stale` and LoonSec's
+`built_at` naming its cause, and that none of it reads a device. Gated on RUN_DB_TESTS like the
+other database suites.
 
 The tables are global, so the document's apps carry bundle ids no other test or catalog uses, the
 rows written here have ids of their own, and every fixture removes what it wrote.
@@ -540,28 +541,38 @@ async def test_neither_route_reads_a_device(db, held, jamf, fleet, viewer) -> No
             assert table not in statement, statement
 
 
-# --- LoonSec's last confirmation decides stale ------------------------------------------------------
+# --- the copy's own date decides stale; LoonSec's last build names the cause -----------------------
 
 
-async def test_stale_is_judged_from_loonsecs_last_confirmation_when_the_exchange_gives_one(db, held, viewer) -> None:  # noqa: F811
+async def test_stale_is_judged_from_the_copys_date_and_loonsecs_last_build_names_the_cause(db, held, viewer) -> None:  # noqa: F811
     await _empty(db)
+    # A copy dated 2026-11-23, and a publisher that finished a build over it on the 29th.
     await _hold(db, held, built_at="2026-11-29T07:12:03Z")
-    # A copy dated 2026-11-23, confirmed on the 29th: current on the 30th, though its own date is old.
-    current = await feed.feed_view(db, now=datetime(2026, 11, 30, tzinfo=UTC))
-    assert current.state == "current" and current.built_at == datetime(2026, 11, 29, 7, 12, 3, tzinfo=UTC)
-    stale = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
-    assert stale.state == "stale"
-    assert stale.sentence == (
-        "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-29, more than three days "
-        "ago, and the walk ends 2026-11-22."
+    young = await feed.feed_view(db, now=datetime(2026, 11, 25, tzinfo=UTC))
+    assert young.state == "current" and young.built_at == datetime(2026, 11, 29, 7, 12, 3, tzinfo=UTC)
+    # On the 30th the copy is more than three days old, though the build is a day old: stale, and
+    # the publisher is running over NVD data that has not advanced.
+    running = await feed.feed_view(db, now=datetime(2026, 11, 30, tzinfo=UTC))
+    assert running.state == "stale"
+    assert running.sentence == (
+        "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
+        "but its NVD data has not advanced since 2026-11-23, and the walk ends 2026-11-22."
     )
-    # The next exchange finds the copy unchanged and confirms it again.
+    # On 3 December the build is more than three days old too: the publisher has stopped.
+    stopped = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
+    assert stopped.state == "stale"
+    assert stopped.sentence == (
+        "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
+        "more than three days ago, and the walk ends 2026-11-22."
+    )
+    # The next exchange finds the copy unchanged and a newer build: still stale, running again.
     await _hold(db, held, built_at="2026-12-02T07:00:00Z")
-    assert (await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))).state == "current"
+    again = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
+    assert again.state == "stale" and "LoonSec's publisher last ran on 2026-12-02, but its NVD data" in again.sentence
     body = (await viewer.get("/api/patch-policy/apps")).json()
     assert body["feed"]["builtAt"] == "2026-12-02T07:00:00Z"
 
-    # An exchange that does not say leaves it unknown, and the copy's own date decides again.
+    # An exchange that does not say leaves it unknown, and the sentence names only the copy's date.
     await _hold(db, held)
     unknown = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
     assert unknown.built_at is None and unknown.state == "stale"
