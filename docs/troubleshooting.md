@@ -4597,13 +4597,21 @@ refusal: the sentence is the whole report.
       NVD can name a build the Mac never got: for Chrome's Linux and Windows build 142.0.7444.59,
       LoonSec points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
     - for Chrome, NVD's build can be another platform's that Google numbered above the Mac's build
-      of the same release. LoonSec keeps NVD's bound, so the fix counts from the next Mac build at
-      or above it, a release late (NVD's 114.0.5735.110 and 144.0.7559.99 are two such), except
-      for three releases, as ruled on 2026-11-25: there LoonSec counts the fix from the Mac's own
-      build, read from Google's Chrome Releases post for that release, and `named` keeps NVD's
-      build (106.0.5249.61 for NVD's 106.0.5249.62, 135.0.7049.41/.42 for 135.0.7049.52, and
-      136.0.7103.48/.49 for 136.0.7103.59; a copy built before the ruling counts these a release
-      late as well). That is LoonSec's data, the same on every source, not a fault;
+      of the same release. LoonSec keeps NVD's bound, and the fix counts from the first Mac build
+      at or above it, which is a release late where NVD named such a build. As ruled on
+      2026-11-25, three releases are corrected, and only for the CVEs that release's own Chrome
+      Releases post names as fixed by it: a CVE on the post whose range NVD ends at the release's
+      build counts from the Mac's own build read from that post, and `named` keeps NVD's build
+      (106.0.5249.61 for NVD's 106.0.5249.62, 135.0.7049.41/.42 for 135.0.7049.52, and
+      136.0.7103.48/.49 for 136.0.7103.59). Any other CVE NVD ends at one of those builds keeps
+      NVD's range. One does: CVE-2025-3066, which NVD ends at 135.0.7049.52, is not on the
+      2025-04-01 post that 135.0.7049.41/.42 shipped with; Google's 2025-04-08 post names it fixed
+      in 135.0.7049.84/.85, and NVD's own description says "prior to 135.0.7049.84". Its `fix`
+      135.0.7049.84 beside `named` 135.0.7049.52 is the build that fixed it, not a fault. NVD's
+      114.0.5735.110 and 144.0.7559.99 keep NVD's bound too: LoonSec has not read which Mac build
+      carries those fixes, so they can count a release late. A copy built before the ruling counts
+      all three releases from the first Mac build at or above NVD's. That is LoonSec's data, the
+      same on every source, not a fault;
     - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
       not clearing it: a device clears the CVE when it installs a version outside the CVE's
       affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
