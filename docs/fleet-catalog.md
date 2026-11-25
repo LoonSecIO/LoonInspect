@@ -3,7 +3,8 @@
 Status: **built, behind a flag that ships off**, 2026-11-15
 ([#794](https://github.com/LoonSecIO/LoonInspect/issues/794)); each title's version history
 from Fleet's commits, 2026-11-21 ([#838](https://github.com/LoonSecIO/LoonInspect/issues/838),
-[below](#version-history)) · the flag is
+[below](#version-history)); whether the titles held are complete, 2026-11-23
+([#859](https://github.com/LoonSecIO/LoonInspect/issues/859), [below](#complete-or-partial)) · the flag is
 `fleet_maintained_apps` ([the register](feature-flags.md)) · when the tab is missing, empty or
 says its last check got no answer, [`troubleshooting.md`](troubleshooting.md) §27 · read
 against GitHub once, on 2026-11-15, with the numbers under [Validation](#validation).
@@ -121,8 +122,11 @@ with what it found. The daily check is the scheduler's and is in the container l
 What one check asks:
 
 1. **The folder's listing**, one request to the GitHub API. It names the `outputs` tree by
-   its git sha. The same sha as the last complete read is the same content, so the check
-   stops here. This is every check on a day Fleet changed nothing: one request.
+   its git sha. When it matches the last listing a check finished, whether that check read
+   every title or skipped some, the content is the same, so the check stops after this
+   request and the titles held keep the coverage they had,
+   [complete or partial](#complete-or-partial). This is every check on a day Fleet changed
+   nothing: one request.
 2. **The tree, listed whole**, one more API request. The listing GitHub's Contents API gives
    for a folder stops at 1,000 entries and this folder holds more, so the Git Trees API is
    asked instead. It gives every Mac manifest's blob sha.
@@ -136,9 +140,9 @@ does not count.
 
 Then the titles are written: a new title is added, a title whose version changed keeps the
 old version as *previous* and the time as *when it moved*, a title the index renamed takes
-the new name, and **a title Fleet no longer lists is removed**. The first reading of a title
-is not a move, so its *previous* and *moved* stay empty until the version changes while this
-instance is watching.
+the new name, and **a title that neither the tree nor the index lists any more is removed**.
+The first reading of a title is not a move, so its *previous* and *moved* stay empty until
+the version changes while this instance is watching.
 
 The hosts are fixed in the code and no setting points the check elsewhere. A redirect is not
 followed; it is reported. Before dialling, each name is resolved and refused if it resolves to
@@ -213,21 +217,68 @@ on the tab's status line and, for a failed check, in the container log.
 
 | Outcome | Means | The titles held |
 | --- | --- | --- |
-| `ok` | The catalog had changed and was read. A sentence follows only if some manifests could not be read as a title with a version; they are named, left as they were, and read again when Fleet next changes its catalog. | Now what Fleet publishes. |
-| `unchanged` | GitHub answered and nothing had moved. | As they were. |
+| `ok` | The catalog had changed and was read. A sentence follows only if some titles were skipped: a manifest or an index entry this build could not read, or a title the index and the file listing disagree about. They are named (a name this build cannot read as *unrecognized Mac manifest path* or *unrecognized Mac index entry*), left as they were, and read again when Fleet next changes its catalog. | What Fleet publishes, except the titles the sentence names: each keeps the copy held before, or stays unlisted if it is new. |
+| `unchanged` | GitHub answered and nothing had moved. While the titles held are [partial](#complete-or-partial), it says so: *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.* | As they were. |
 | `refused` | GitHub's rate limit answered (a 403 or 429 carrying its limit headers). | As they were. |
 | `unreachable` | No answer, an answer GitHub does not give (a proxy's 403, a 502), or a name that resolved to an address this instance will not dial. | As they were. |
 | `unexpected` | An answer that was not Fleet's catalog: a page that is not JSON, a redirect, a folder that is gone, a listing GitHub cut short, an index with no Mac app. | As they were. |
 
 **A failed check never removes or blanks what is held.** Three rules make that true. A check
 that fails before reading manifests writes nothing but its own outcome. A check cut short
-part-way through the manifests keeps the ones it read, says how many, and does not record the
-new tree sha, so the next check lists the tree again and reads only the rest. And titles are
-removed only by a complete read that no longer lists them, never by a listing that failed or
-was cut short.
+part-way through the manifests keeps the ones it read and says how many. Once it has changed
+the titles held, it also clears the tree sha and marks them partial, so the next check lists
+the whole tree again and reads only the rest, even if Fleet has since gone back to the tree
+that sha named: a half-applied read cannot pass for a complete one. A check cut short before
+it changed any title leaves the sha and the coverage as they were. And a title is
+removed only by a check that finished the whole listing and found it in neither the tree nor
+the index, never by a listing that failed or was cut short.
 
 Before the first check there is no outcome at all, and the tab says the catalog has not been
 read yet. That is its own state, not an empty catalog.
+
+### Complete or partial
+
+Since 1.3.0 the instance also records whether the titles it holds are a whole copy of Fleet's
+listing (#859). The record describes the titles held, not the last check, and has three values:
+
+- **`unread`**: no check has finished a listing or changed a title yet. A new instance starts
+  here, and one that had never read the catalog stays here through the 1.3.0 upgrade.
+- **`partial`**: a check finished the listing and skipped a title (the `ok` row above), a check
+  cut short had already changed the titles held, or the 1.3.0 upgrade found a catalog already
+  read (below).
+- **`complete`**: a check finished the listing and skipped nothing.
+
+A check that fails before it changes a title leaves the value as it was. The tab never shows
+the value, and the API has no field for it. The tab shows the check's sentence instead: an
+`ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
+
+**Besides the check and its schedule, one thing reads it: a saved application patch plan**
+([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
+titles that carry each selected app's bundle identifier, and the value decides what it may
+conclude from them:
+
+- **Complete.** A plan marks a Fleet title as the app's match, and can propose Fleet's latest
+  version as the target, only from a complete catalog with exactly one title for the bundle
+  ID. It reads no Fleet title as no Fleet coverage only from a complete catalog, recording
+  *No matching Fleet title in the completed cached catalog.*
+- **Unread or partial.** A plan lists every Fleet title it finds for identity review,
+  proposes no Fleet version as the target, and records
+  *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.*
+  under **Open review items at plan creation**, in the plan and in its PDF: the title that
+  would match may be one this instance has not read. A saved plan keeps the item; a plan
+  built once the catalog is complete does not carry it.
+
+**Upgrading to 1.3.0.** During the 1.3.0 upgrade, an existing cache is marked partial until
+the next eligible scheduled check reconciles it. 1.3.0 reads titles whose directory names
+contain `@` or `+`, of the form `python@3.13+`, which earlier builds left out without saying
+so: a catalog an earlier build read whole can lack those titles. The migration (`b13008440001`)
+runs once: where a catalog had been read, it marks the titles partial and clears the tree
+sha, so the next check cannot stop at its first request. It removes no title and no history.
+`due()` then makes the scheduler's next hourly look check at once, rather than a day after the
+last check; after a failed last check, the usual retry within the hour applies. **Check now**
+does the same with a person waiting. Either check lists the tree, reads the index, and reads
+only the manifests the instance lacks and those Fleet has changed since, never the whole
+catalog again.
 
 ## The tab
 
@@ -248,9 +299,10 @@ the version before it.
   Unticked, the whole catalog is listed. A title on no Mac shows a dash under *Macs behind*,
   not a zero.
 - **The status line** says when GitHub was last asked and what it answered. After a failed
-  check it shows the sentence and says the titles below are as read on the earlier date. Under
-  it, how many of the titles installed here have their version history read, and the
-  sentence when the last history read held back or failed.
+  check it shows the sentence and says the titles below are as read on the earlier date.
+  While the titles held are [partial](#complete-or-partial), an unchanged check's line says
+  unread Mac titles remain. Under it, how many of the titles installed here have their
+  version history read, and the sentence when the last history read held back or failed.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move
   this instance saw, or that there is neither yet.
@@ -296,7 +348,8 @@ Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag o
   else; the two hosts are fixed.
 - **A skipped manifest waits for Fleet's next change.** While the tree sha does not move, the
   check stops at its first request, so a manifest it could not read is not retried until
-  Fleet changes the folder again.
+  Fleet changes the folder again. Until then the titles stay partial, and each unchanged
+  check says so.
 
 ## Validation
 
