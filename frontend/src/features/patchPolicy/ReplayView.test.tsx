@@ -312,7 +312,22 @@ describe("ReplayView on every shipped replay", () => {
       "This replays Firefox's release channel. Firefox ESR is not replayed yet, though the app list may show it under this row, because the two share a bundle ID."
     );
     expect(drawn("1d", patchPolicyGerman, replay!, firefox.name)).toContain("Firefox ESR wird noch nicht nachgespielt");
-    expect(drawn("1d", copy, replay!, firefox.name)).toContain("NVD lists only another edition (ESR) as affected, not this release channel 50");
+    expect(drawn("1d", copy, replay!, firefox.name)).toContain(
+      "NVD lists only another edition (ESR) as affected: no release this channel was shipping when the CVE was published 11"
+    );
+    expect(drawn("1d", patchPolicyGerman, replay!, firefox.name)).toContain(
+      "NVD führt nur eine andere Edition (ESR) als betroffen: kein Release, das dieser Kanal bei Veröffentlichung der CVE auslieferte 11"
+    );
+  });
+
+  it("Firefox: ranges that end on ESR lines but hold the release current when NVD published are replayed", async () => {
+    // CVE-2026-74934: NVD's Firefox ranges all end on ESR lines, and `141.0 ..< 153.1.0` holds
+    // 153.0.4, the release current the day before NVD published it; the release fix is 154.0.
+    const firefox = REPLAY_INDEX.find((entry) => entry.id === "firefox")!;
+    const { replay } = await loadReplay(firefox);
+    const row = ledgerRow(markupOf("7d", copy, replay!, firefox.name), "CVE-2026-74934");
+    expect(row.outcome).toBe("Exposed 6 days, until 154.0 on 2026-08-24");
+    expect(replay!.exclusions.cves.map((excluded) => excluded.cve_id)).not.toContain("CVE-2026-74934");
   });
 
   it("Firefox: a CVE NVD states several ranges for shows every fix with its range, not the oldest alone", async () => {

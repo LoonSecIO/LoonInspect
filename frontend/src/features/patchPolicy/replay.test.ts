@@ -244,8 +244,8 @@ const SHIPPED: Record<string, {
   firefox: {
     source: "firefox-release",
     window: ["2024-11-23", "2026-11-23"],
-    counts: [1121, 679, 442],
-    neverSeen: [678, 6, 5, 2, 1, 17],
+    counts: [1121, 718, 403],
+    neverSeen: [717, 6, 5, 2, 1, 17],
     held: null,
     device: "take",
     cut: []
@@ -263,8 +263,8 @@ const SHIPPED: Record<string, {
   thunderbird: {
     source: "thunderbird-release",
     window: ["2024-11-23", "2026-11-23"],
-    counts: [1011, 561, 450],
-    neverSeen: [453, 6, 3, 1, 1, 19],
+    counts: [1011, 601, 410],
+    neverSeen: [493, 6, 3, 1, 1, 19],
     held: null,
     device: "take",
     cut: []

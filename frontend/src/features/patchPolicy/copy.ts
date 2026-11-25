@@ -151,7 +151,7 @@ export const patchPolicyEnglish = {
     fixed_version_not_in_catalog: "The fixed version is not a release on this replay's release timeline",
     fixed_version_not_in_timeline: "The fixed version is not a release on this replay's release timeline",
     branch_ambiguity: "The affected range covers a release line whose fix it does not name",
-    other_edition_only: "NVD lists only another edition (ESR) as affected, not this release channel"
+    other_edition_only: "NVD lists only another edition (ESR) as affected: no release this channel was shipping when the CVE was published"
   } as Record<string, string>,
   excludedList: (excluded: number) => `The ${excluded} excluded ${plural(excluded, "CVE", "CVEs")}`,
   colStatus: "NVD status when the file was made",
@@ -313,7 +313,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     fixed_version_not_in_catalog: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
     fixed_version_not_in_timeline: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
     branch_ambiguity: "Der betroffene Bereich umfasst eine Release-Linie, deren Fix er nicht nennt",
-    other_edition_only: "NVD führt nur eine andere Edition (ESR) als betroffen, nicht diesen Release-Kanal"
+    other_edition_only: "NVD führt nur eine andere Edition (ESR) als betroffen: kein Release, das dieser Kanal bei Veröffentlichung der CVE auslieferte"
   },
   excludedList: (excluded: number) => `${mehrzahl(excluded, "Die eine ausgeschlossene CVE", `Die ${excluded} ausgeschlossenen CVEs`)}`,
   colStatus: "NVD-Status bei Erstellung der Datei",
