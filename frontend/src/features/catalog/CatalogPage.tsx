@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/config/api";
 import { useHasPermission } from "@/features/auth/store";
+import { PERMISSIONS } from "@/features/auth/types";
 import { DeviceScopeBuilder } from "./DeviceScopeBuilder";
 import { patchPlanHref } from "./patchPlanNavigation";
 import { defaultScope } from "./patchPlanTypes";
 import { LoonLoading } from "@/components/icons/LoonLoading";
-import { listCatalog } from "@/features/catalog/api";
+import { listCatalog, refreshCatalog } from "@/features/catalog/api";
 import { LatestCell, PatchAnswerCell, TitlesCell } from "@/features/catalog/PatchAnswerCell";
 import type { CatalogEntry, CatalogJamfFilter } from "@/features/catalog/types";
 import { AssessmentCell, CorpusBanner } from "@/features/vulnerabilities/AppAssessment";
@@ -92,6 +94,40 @@ function ScopedCatalog({ deviceScope, initialSearch }: { deviceScope: string; in
   const installedOnly = true;
   const [sortKey, setSortKey] = useState<SortKey>("deviceCount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // *Refresh* (#931): the forced re-judge troubleshooting §5 and the Vulnerabilities page send
+  // the operator to. Shown only where the route would answer, as Fleet's *Check now* is.
+  // The outcome is kept as data, not as a sentence, so a locale switch re-words it.
+  const canRefresh = useHasPermission(PERMISSIONS.PATCH_CATALOG_SYNC);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshed, setRefreshed] = useState<number | null>(null);
+  const [refreshFailure, setRefreshFailure] = useState<{ detail: string | null } | null>(null);
+  const [reload, setReload] = useState(0);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    setRefreshed(null);
+    setRefreshFailure(null);
+    refreshCatalog()
+      .then(({ evaluated }) => {
+        if (!alive.current) return;
+        setRefreshed(evaluated);
+        setReload((n) => n + 1);
+      })
+      // The server's sentence when it sent one; else the page's own, which names what to check.
+      .catch((caught: unknown) => {
+        if (alive.current) setRefreshFailure({ detail: caught instanceof ApiError ? caught.detail : null });
+      })
+      .finally(() => {
+        if (alive.current) setRefreshing(false);
+      });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +152,7 @@ function ScopedCatalog({ deviceScope, initialSearch }: { deviceScope: string; in
     return () => {
       cancelled = true;
     };
-  }, [jamfFilter, installedOnly, deviceScope, t]);
+  }, [jamfFilter, installedOnly, deviceScope, t, reload]);
 
   const visible = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -155,11 +191,24 @@ function ScopedCatalog({ deviceScope, initialSearch }: { deviceScope: string; in
 
   return (
     <section className="space-y-4">
-      {canPlan && <div className="flex flex-wrap items-center gap-3">
-        <Button disabled={!selected.length || selected.length > 50} onClick={() => openPlan(selected)}>Plan for {selected.length} selected apps</Button>
-        {selected.length > 0 && <Button variant="ghost" onClick={() => setSelected([])}>Clear selection</Button>}
-        {selected.length > 50 && <p role="status" className="text-sm">Select up to 50 applications per report.</p>}
+      {(canPlan || canRefresh) && <div className="flex flex-wrap items-center gap-3">
+        {canPlan && <>
+          <Button disabled={!selected.length || selected.length > 50} onClick={() => openPlan(selected)}>Plan for {selected.length} selected apps</Button>
+          {selected.length > 0 && <Button variant="ghost" onClick={() => setSelected([])}>Clear selection</Button>}
+          {selected.length > 50 && <p role="status" className="text-sm">Select up to 50 applications per report.</p>}
+        </>}
+        {canRefresh && (
+          <Button variant="outline" className="ml-auto" title={t.catalog.refreshHint} disabled={refreshing} onClick={handleRefresh}>
+            {refreshing ? t.catalog.refreshing : t.catalog.refresh}
+          </Button>
+        )}
       </div>}
+      {refreshed !== null && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {refreshed === 0 ? t.catalog.refreshedNone : t.catalog.refreshed(refreshed)}
+        </p>
+      )}
+      {refreshFailure && <p role="alert" className="text-sm text-destructive">{refreshFailure.detail ?? t.catalog.refreshFailed}</p>}
       <p className="text-sm text-muted-foreground">{t.catalog.description} Selecting an application includes all its installed versions in the applied device scope.</p>
 
       <CorpusBanner corpusAsOf={corpusAsOf} t={t} />

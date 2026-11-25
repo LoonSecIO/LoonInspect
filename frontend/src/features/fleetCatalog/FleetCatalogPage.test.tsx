@@ -108,7 +108,7 @@ const COUNTS = { alpha: 2, gamma: 0 };
 function Scoped() {
   const [search, setSearch] = useState("");
   const [installedOnly, setInstalledOnly] = useState(true);
-  return <FleetCatalogPage scope={{ search, setSearch, installedOnly, setInstalledOnly, counts: COUNTS, onRefresh: refreshed }} />;
+  return <FleetCatalogPage scope={{ search, setSearch, installedOnly, setInstalledOnly, counts: COUNTS, onRefresh: refreshed, titleHref: slug => `/titles/${slug}` }} />;
 }
 
 /** Renders the page and lets the first read land. */
@@ -234,9 +234,10 @@ describe("the Fleet catalog tab", () => {
   it("opens a title's history from its row, and Read history reads it and lists the versions newest first", async () => {
     await open(catalog());
     api.getTitleHistory.mockResolvedValue(NEVER_READ);
+    expect(screen.getByRole("link", { name: "Alpha" }).getAttribute("href")).toBe("/titles/alpha"); // the name opens its page (#906)
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+      fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyToggleLabel("Alpha") }));
     });
     expect(api.getTitleHistory).toHaveBeenCalledExactlyOnceWith("alpha");
     expect(screen.getByText(en.fleetCatalog.historyNotRead)).toBeTruthy();

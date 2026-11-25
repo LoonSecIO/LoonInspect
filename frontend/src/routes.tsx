@@ -31,6 +31,7 @@ import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
 import { FleetCatalogHome } from "@/features/fleetCatalog/FleetCatalogHome";
+import { FleetAppPage } from "@/features/fleetCatalog/FleetAppPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
@@ -67,6 +68,14 @@ export function AppRoutes() {
               titles, so the route says the area is off instead of drawing an empty table. */}
           <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
             <Route path="fleet-catalog" element={<FleetCatalogHome />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+            <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+              <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
+                <Route path="fleet-catalog/apps/:appHash" element={<FleetAppPage />} />
+                <Route path="fleet-catalog/titles/:slug" element={<FleetAppPage />} />
+              </Route>
+            </Route>
           </Route>
           {/* After the static children on purpose, so static-over-dynamic ranking
               is visible to a reader and not merely true to the router (#299). The key

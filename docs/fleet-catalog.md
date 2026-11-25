@@ -227,7 +227,10 @@ stores it.
   and `lastAt` is the newest, null with none. Rows dated after the request are left out.
 - **They need the change log.** Applications are recorded only with **Settings › Change
   tracking** at *High + normal* (the default) or *Everything*, with applications not switched
-  off, and a Mac's first sweep is its baseline, so it counts from its second.
+  off, and a Mac's first sweep is its baseline, so it counts from its second. They count only what
+  the log still keeps: with `CHANGE_LOG_RETENTION_DAYS` ([change log](change-log.md) §6) set between 1 and 89 they
+  cover fewer days while `windowDays` still says 90, and with applications not recorded
+  `versionChanges` and `adoptionSamples` read 0, which measured nothing.
 - **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
   dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
   this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair
@@ -347,10 +350,10 @@ when the version last moved with the version before it.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move
   this instance saw, or that there is neither yet.
-- **A title's name opens its version history**, newest first, each date linked to its commit
+- **A title's name opens its page** ([below](#migration-review)), and the arrow before it its version history, newest first, each date linked to its commit
   in Fleet's repository.
 
-The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`) and
+The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`), `GET /api/fleet-catalog/migration` for *Macs in scope* (`app:read` and `device:read`) and
 `POST /api/fleet-catalog/refresh` (`patch:catalog-sync`). A refresh that could not read GitHub
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
@@ -376,6 +379,23 @@ patch-policy verdict and its installed builds' vulnerability evidence ([`trouble
   Macs' copies take the answer on the hourly refresh, so until then a row can count the build as not
   assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
   line that reads the build's one catalog answer and already rests on it.
+
+**An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
+and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet titles that carry the bundle identifier, the
+Jamf Patch titles the builds were matched to, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13).
+It also shows the list's verdict and **Patching policy** word for the app, how often Fleet dated the title's versions, the findings the corpus holds for
+each installed build (distinct builds; *not assessed*, never 0, where nothing answers), the [observed upgrades](#observed-upgrades) on the selected Macs,
+and, for an Admin or Analyst, **Build a patch plan for these Macs**, which opens Patch Plans with the same device filter and the page's apps (§27 step 14). Opening it asks GitHub
+nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
+on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
+
+**Compare a target version** (#908), on a page with one Fleet title to compare and a selected Mac with the app, counts those Macs (*Matched Macs*) as
+*Below target*, *At or above target* or *Version unknown* (no numeric order) against Fleet's latest version, from the page's own answer. **Compare** on a row
+of the release history asks the same detail for that version; **Use latest Fleet version** goes back. Under it, **Vulnerability and policy evidence** counts
+every installed build within, out of, exempt from or without a patch-rule judgement, then gives each older build its Macs, what the target changes (addressed,
+introduced and remaining findings where both builds have a whole corpus answer, the change in total where a list is capped, else which side the corpus lacks),
+its known exploited findings, and the Jamf Patch title page's verdict with its rule and due date. With `vuln:read` each finding ID opens its own page. Where
+there is no impact, the panel or the evidence says why ([`troubleshooting.md`](troubleshooting.md) §27 step 15).
 
 ### The API
 
@@ -438,7 +458,8 @@ Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
   do not count as a public source where the product asks whether one knows an app.
 - **Dataset scope.** The migration report repeats the answer each installed build already
   carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
-  catalogs, the Jamf matches and the organization's patch rules unchanged.
+  catalogs, the Jamf matches and the organization's patch rules unchanged. Choosing a Fleet target
+  recalculates only the local projection. It changes neither catalog nor the organization's patch rules.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**
