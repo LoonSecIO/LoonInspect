@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { describeFeed, type PatchPolicyFeed } from "@/features/support/patchPolicyFeed";
+import { describe, expect, it, vi } from "vitest";
+import { STALE_AFTER_MS, describeFeed, publisherRunning, type PatchPolicyFeed } from "@/features/support/patchPolicyFeed";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
@@ -28,6 +28,8 @@ function feed(state: PatchPolicyFeed["state"], extra: Partial<PatchPolicyFeed> =
 }
 
 const held = { asOf: "2026-11-23T20:00:00Z", until: "2026-11-22", docId: "a5b281246cafda4b", fetchedAt: "2026-11-24T02:00:00Z" };
+/** The page's clock for every sentence below: four days and an hour after the copy's `asOf`. */
+const NOW = new Date("2026-11-27T21:00:00Z");
 
 // Each expectation is the backend's own sentence for the same state, copied from
 // `app.core.patch_policy_feed.sentence_for` (docs/troubleshooting.md §32 quotes them): the page and
@@ -46,9 +48,14 @@ const BACKEND: [string, PatchPolicyFeed, string][] = [
   ["current", feed("current", held), "Showing LoonSec's patch-policy data dated 2026-11-23."],
   ["stale", feed("stale", held), "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."],
   [
-    "stale, by LoonSec's last confirmation",
+    "stale, LoonSec's publisher running over NVD data that has not advanced",
+    feed("stale", { ...held, builtAt: "2026-11-27T07:12:03Z" }),
+    "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-27, but its NVD data has not advanced since 2026-11-23, and the walk ends 2026-11-22."
+  ],
+  [
+    "stale, LoonSec's publisher stopped",
     feed("stale", { ...held, builtAt: "2026-11-24T07:12:03Z" }),
-    "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-24, more than three days ago, and the walk ends 2026-11-22."
+    "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-24, more than three days ago, and the walk ends 2026-11-22."
   ],
   [
     "not published, no copy",
@@ -99,7 +106,33 @@ const BACKEND: [string, PatchPolicyFeed, string][] = [
 
 describe("describeFeed", () => {
   it.each(BACKEND)("says what the backend says: %s", (_name, value, sentence) => {
-    expect(describeFeed(value, words)).toBe(sentence);
+    expect(describeFeed(value, words, NOW)).toBe(sentence);
+  });
+
+  it("calls LoonSec's publisher running for three days after its last build, to the millisecond, as the backend does", () => {
+    const built = "2026-11-24T07:12:03Z";
+    const at = Date.parse(built);
+    expect(STALE_AFTER_MS).toBe(3 * 24 * 60 * 60 * 1000);
+    expect(publisherRunning(built, new Date(at + 60_000))).toBe(true);
+    expect(publisherRunning(built, new Date(at + STALE_AFTER_MS))).toBe(true);
+    expect(publisherRunning(built, new Date(at + STALE_AFTER_MS + 1))).toBe(false);
+    // The same copy reads either cause, by when the page is read: `builtAt` never makes it current.
+    const copy = feed("stale", { ...held, builtAt: built });
+    expect(describeFeed(copy, words, new Date(at + STALE_AFTER_MS))).toContain("but its NVD data has not advanced since 2026-11-23");
+    expect(describeFeed(copy, words, new Date(at + STALE_AFTER_MS + 1))).toContain("last ran on 2026-11-24, more than three days ago");
+  });
+
+  it("reads the page's own clock when it is given none", () => {
+    vi.useFakeTimers();
+    try {
+      const copy = feed("stale", { ...held, builtAt: "2026-11-24T07:12:03Z" });
+      vi.setSystemTime(new Date("2026-11-25T00:00:00Z"));
+      expect(describeFeed(copy, words)).toContain("but its NVD data has not advanced since");
+      vi.setSystemTime(new Date("2026-11-30T00:00:00Z"));
+      expect(describeFeed(copy, words)).toContain("more than three days ago");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("names the file, not the exchange, on an instance that reads PATCH_POLICY_FEED_FILE", () => {
@@ -108,9 +141,19 @@ describe("describeFeed", () => {
 
   it("has a German sentence for every state", () => {
     for (const [, value] of BACKEND) {
-      const german = describeFeed(value, de.support.patchPolicyFeed);
+      const german = describeFeed(value, de.support.patchPolicyFeed, NOW);
       expect(german).not.toBe("");
-      expect(german).not.toBe(describeFeed(value, words));
+      expect(german).not.toBe(describeFeed(value, words, NOW));
     }
+  });
+
+  it("names the stale copy's cause in German too", () => {
+    const german = de.support.patchPolicyFeed;
+    expect(describeFeed(feed("stale", { ...held, builtAt: "2026-11-27T07:12:03Z" }), german, NOW)).toBe(
+      "Angezeigt werden Patch-Policy-Daten vom 2026-11-23, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am 2026-11-27, aber seine NVD-Daten stehen seit dem 2026-11-23 still, und der Durchlauf endet am 2026-11-22."
+    );
+    expect(describeFeed(feed("stale", { ...held, builtAt: "2026-11-24T07:12:03Z" }), german, NOW)).toBe(
+      "Angezeigt werden Patch-Policy-Daten vom 2026-11-23, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am 2026-11-24, vor mehr als drei Tagen, und der Durchlauf endet am 2026-11-22."
+    );
   });
 });

@@ -34,8 +34,9 @@ export interface PatchPolicyFeed {
   httpStatus: number | null;
   detail: string | null;
   fromFile: boolean;
-  /** When LoonSec last confirmed the copy current, as the exchange said; null when it did not say.
-   *  `stale` is judged from it when it is known, and from `asOf` when it is not. */
+  /** When LoonSec's publisher last finished a build, as the exchange said; null when it did not say.
+   *  It never decides `stale` (the copy's own `asOf` does): it names the cause, the publisher still
+   *  running over NVD data that has not advanced, or the publisher stopped (`publisherRunning`). */
   builtAt: string | null;
 }
 
@@ -108,9 +109,23 @@ export type FeedWords = Translations["support"]["patchPolicyFeed"];
 /** The day a timestamp names, in UTC, as the backend writes it into its sentences. */
 const day = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
+/** The backend's `STALE_AFTER`: a copy older than this is stale, and a publisher whose last build is
+ *  older than this has stopped. */
+export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Whether LoonSec's publisher is still running: its last build (`builtAt`) no more than three days
+ *  before `now`. It picks between the two stale sentences by the backend's `held_freshness` rule,
+ *  read against this browser's clock rather than the instance's, so the page and the instance's own
+ *  sentence can name different causes only for a build that turns three days old within the two
+ *  clocks' difference. */
+export function publisherRunning(builtAt: string, now: Date): boolean {
+  return now.getTime() - Date.parse(builtAt) <= STALE_AFTER_MS;
+}
+
 /** The state's sentence, the way `sentence_for` builds it: the state's words, then the copy that
- *  still answers (or that there is none) after a failure. */
-export function describeFeed(feed: PatchPolicyFeed, words: FeedWords): string {
+ *  still answers (or that there is none) after a failure. `now` decides only which cause a stale
+ *  copy names (`publisherRunning`). */
+export function describeFeed(feed: PatchPolicyFeed, words: FeedWords, now: Date = new Date()): string {
   const s = words.states;
   const asOf = day(feed.asOf);
   const copy = (stillUsed = false) => (asOf === null ? words.noCopy : stillUsed ? words.stillUsed(asOf) : words.showingCopy(asOf));
@@ -123,9 +138,8 @@ export function describeFeed(feed: PatchPolicyFeed, words: FeedWords): string {
     case "current":
       return s.current(asOf ?? "—");
     case "stale":
-      return feed.builtAt
-        ? s.staleConfirmed(asOf ?? "—", day(feed.builtAt) ?? "—", feed.until ?? "—")
-        : s.stale(asOf ?? "—", feed.until ?? "—");
+      if (!feed.builtAt) return s.stale(asOf ?? "—", feed.until ?? "—");
+      return (publisherRunning(feed.builtAt, now) ? s.staleRunning : s.staleStopped)(asOf ?? "—", day(feed.builtAt) ?? "—", feed.until ?? "—");
     case "not_published":
       return `${s.not_published} ${copy()}`;
     case "algorithm_unknown":

@@ -749,8 +749,10 @@ export const de: Translations = {
         neverFile: "Die Patch-Policy-Daten von LoonSec wurden noch nicht aus PATCH_POLICY_FEED_FILE gelesen. Die Datei wird beim Start gelesen und erneut, sobald sie sich ändert; das Container-Log sagt, was gefunden wurde.",
         current: (asOf: string) => `Angezeigt werden die Patch-Policy-Daten von LoonSec vom ${asOf}.`,
         stale: (asOf: string, until: string) => `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt; der Durchlauf endet am ${until}.`,
-        staleConfirmed: (asOf: string, builtAt: string, until: string) =>
-          `Angezeigt werden Patch-Policy-Daten vom ${asOf}; LoonSec hat sie zuletzt am ${builtAt} als aktuell bestätigt, vor mehr als drei Tagen, und der Durchlauf endet am ${until}.`,
+        staleRunning: (asOf: string, builtAt: string, until: string) =>
+          `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am ${builtAt}, aber seine NVD-Daten stehen seit dem ${asOf} still, und der Durchlauf endet am ${until}.`,
+        staleStopped: (asOf: string, builtAt: string, until: string) =>
+          `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am ${builtAt}, vor mehr als drei Tagen, und der Durchlauf endet am ${until}.`,
         not_published: "Der letzte Austausch mit LoonSec enthielt keine Patch-Policy-Daten. Auf dieser Instanz ist nichts falsch; melden Sie es, wenn es länger als einen Tag anhält.",
         algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}. Nennt der nächste Austausch dasselbe, aktualisieren Sie LoonInspect.`,
         downloadFailed: (host: string, reason: string) => `Die Patch-Policy-Datei konnte nicht von ${host} heruntergeladen werden: ${reason}.`,

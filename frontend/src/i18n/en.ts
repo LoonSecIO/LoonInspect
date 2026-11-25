@@ -807,8 +807,12 @@ export const en = {
         neverFile: "LoonSec's patch-policy data has not been read from PATCH_POLICY_FEED_FILE yet. The file is read at startup and again whenever it changes; the container log says what was found.",
         current: (asOf: string) => `Showing LoonSec's patch-policy data dated ${asOf}.`,
         stale: (asOf: string, until: string) => `Showing patch-policy data dated ${asOf}, more than three days old; the walk ends ${until}.`,
-        staleConfirmed: (asOf: string, builtAt: string, until: string) =>
-          `Showing patch-policy data dated ${asOf}; LoonSec last confirmed it current on ${builtAt}, more than three days ago, and the walk ends ${until}.`,
+        // The two causes when the exchange said when LoonSec's publisher last finished a build: still
+        // running (within three days) over NVD data that has not advanced, or stopped.
+        staleRunning: (asOf: string, builtAt: string, until: string) =>
+          `Showing patch-policy data dated ${asOf}, more than three days old: LoonSec's publisher last ran on ${builtAt}, but its NVD data has not advanced since ${asOf}, and the walk ends ${until}.`,
+        staleStopped: (asOf: string, builtAt: string, until: string) =>
+          `Showing patch-policy data dated ${asOf}, more than three days old: LoonSec's publisher last ran on ${builtAt}, more than three days ago, and the walk ends ${until}.`,
         not_published: "LoonSec's last exchange carried no patch-policy data. Nothing on this instance is wrong; report it if it lasts a day.",
         algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec's last exchange named only ${published}. If the next exchange names the same, update LoonInspect.`,
         downloadFailed: (host: string, reason: string) => `The patch-policy file could not be downloaded from ${host}: ${reason}.`,
