@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FleetTitleHistory } from "@/features/fleetCatalog/FleetTitleHistory";
 import { historyActivity } from "@/features/fleetCatalog/historyActivity";
 import type { FleetTitleHistory as History } from "@/features/fleetCatalog/types";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 const locale = vi.hoisted(() => ({ current: "en" as "en" | "de" }));
@@ -89,7 +90,8 @@ describe("the version history panel", () => {
     expect(manifest.getAttribute("href")).toBe(
       `https://github.com/fleetdm/fleet/blob/${"b".repeat(40)}/ee/maintained-apps/outputs/example%40esr/darwin.json`
     );
-    expect(screen.queryByRole("link", { name: /^Manifest at this commit/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /^Manifest at this commit for 1\.9, / })).toBe(manifest); // WCAG 2.5.3, in both languages:
+    for (const words of [en.fleetCatalog, de.fleetCatalog]) expect(words.historyManifestLabel("1.9").startsWith(words.historyManifest)).toBe(true);
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([en.fleetCatalog.historyCompare("1.9")]);
     fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyCompare("1.9") }));
     expect(onSelectVersion).toHaveBeenCalledExactlyOnceWith("1.9");

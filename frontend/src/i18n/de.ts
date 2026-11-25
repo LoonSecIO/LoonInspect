@@ -3,6 +3,7 @@ import { patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { mcpGerman } from "@/features/mcp/copy";
 import { aiActivityGerman } from "@/features/ai/activityCopy";
 import { fleetPlanningGerman } from "@/features/fleetCatalog/planningCopy";
+import { fleetDetailGerman } from "@/features/fleetCatalog/detailCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
@@ -11,6 +12,7 @@ export const de: Translations = {
   mcp: mcpGerman,
   aiActivity: aiActivityGerman,
   fleetPlanning: fleetPlanningGerman,
+  fleetDetail: fleetDetailGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
@@ -1515,6 +1517,7 @@ export const de: Translations = {
       "Wann Fleets Katalog diese Version übernommen hat: das Datum des ersten Commits in Fleets Repository, der sie enthielt. Fleet übernimmt Versionen von Homebrew, daher liegt dies meist Stunden bis einen Tag nach der Veröffentlichung durch den Hersteller, nie davor.",
     notDated: "Ohne Datum",
     historyToggleHint: "Versionsgeschichte dieses Titels ein- oder ausblenden",
+    historyToggleLabel: (name: string) => `Versionsgeschichte von ${name}`,
     sourceLink: "Fleet-Quelle ↗",
     sourceLabel: (name: string) => `Fleet-Quelle von ${name} auf GitHub öffnen (im Browser)`,
     historyProgress: (read: number, installed: number) =>
@@ -1543,7 +1546,7 @@ export const de: Translations = {
     historySearch: "Fleet-Version suchen",
     historySearchNone: "Keine datierte Version passt zu dieser Suche.",
     historyManifest: "Manifest zu diesem Commit",
-    historyManifestLabel: (version: string) => `Fleets Manifest für ${version} beim Commit, der diese Version datiert hat`,
+    historyManifestLabel: (version: string) => `Manifest zu diesem Commit für ${version}, Fleets Manifest beim Commit, der diese Version datiert hat`,
     historyCompare: (version: string) => `${version} vergleichen`,
     historyTargetColumn: "Fleet-Ziel",
     cadenceTitle: "Updatehäufigkeit",

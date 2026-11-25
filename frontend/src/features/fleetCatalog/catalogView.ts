@@ -1,3 +1,4 @@
+import { fleetCatalogPath } from "@/features/catalog/patchPlanNavigation";
 import type { FleetCatalog, FleetCatalogOutcome, FleetCatalogState, FleetCatalogTitle } from "@/features/fleetCatalog/types";
 
 /**
@@ -30,6 +31,12 @@ export function statusOf(state: FleetCatalogState | null): FleetStatus {
  */
 export function manifestUrl(slug: string, ref = "main"): string {
   return `https://github.com/fleetdm/fleet/blob/${ref}/ee/maintained-apps/outputs/${encodeURIComponent(slug)}/darwin.json`;
+}
+
+/** An app's (by app hash) or a title's (by slug) own page (#906), with the list's whole query, which its Back link restores. */
+export function detailPath(kind: "apps" | "titles", id: string, list: URLSearchParams): string {
+  const query = list.toString();
+  return `${fleetCatalogPath}/${kind}/${encodeURIComponent(id)}${query ? `?${query}` : ""}`;
 }
 
 export function titleMatches(title: FleetCatalogTitle, term: string): boolean {

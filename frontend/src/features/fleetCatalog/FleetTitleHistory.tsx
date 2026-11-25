@@ -134,7 +134,7 @@ export function FleetTitleHistory({
         </label>
       )}
       {history.versions.length > 0 && matches.length === 0 && (
-        <p className="text-muted-foreground">{t.fleetCatalog.historySearchNone}</p>
+        <p role="status" className="text-muted-foreground">{t.fleetCatalog.historySearchNone}</p>
       )}
       {matches.length > 0 && wrap(
         <table className={detail ? "w-full" : "w-full max-w-xl"}>

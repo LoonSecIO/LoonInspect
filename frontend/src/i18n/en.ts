@@ -3,6 +3,7 @@ import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
 import { mcpEnglish } from "@/features/mcp/copy";
 import { aiActivityEnglish } from "@/features/ai/activityCopy";
 import { fleetPlanningEnglish } from "@/features/fleetCatalog/planningCopy";
+import { fleetDetailEnglish } from "@/features/fleetCatalog/detailCopy";
 import type { UpdateReason } from "@/features/system/api";
 import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
@@ -11,6 +12,7 @@ export const en = {
   mcp: mcpEnglish,
   aiActivity: aiActivityEnglish,
   fleetPlanning: fleetPlanningEnglish,
+  fleetDetail: fleetDetailEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
@@ -1671,6 +1673,7 @@ export const en = {
       "When Fleet's catalog took this version: the date of the first commit in Fleet's repository that carried it. Fleet takes versions from Homebrew, so this is usually hours to a day after the vendor's release, never before it.",
     notDated: "Not dated",
     historyToggleHint: "Show or hide this title's version history",
+    historyToggleLabel: (name: string) => `Version history of ${name}`,
     sourceLink: "Fleet source ↗",
     sourceLabel: (name: string) => `Open ${name}'s Fleet source on GitHub (opens in browser)`,
     historyProgress: (read: number, installed: number) =>
@@ -1700,7 +1703,7 @@ export const en = {
     historySearch: "Find a Fleet version",
     historySearchNone: "No dated version matches this search.",
     historyManifest: "Manifest at this commit",
-    historyManifestLabel: (version: string) => `Fleet's manifest for ${version} at the commit that dated it`,
+    historyManifestLabel: (version: string) => `Manifest at this commit for ${version}, Fleet's manifest at the commit that dated it`,
     historyCompare: (version: string) => `Compare ${version}`,
     historyTargetColumn: "Fleet target",
     cadenceTitle: "Update cadence",
