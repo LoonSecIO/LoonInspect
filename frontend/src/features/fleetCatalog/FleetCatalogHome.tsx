@@ -6,6 +6,7 @@ import { DeviceScopeBuilder } from "@/features/catalog/DeviceScopeBuilder";
 import { defaultScope } from "@/features/catalog/deviceScope";
 import { fleetCatalogPath } from "@/features/catalog/patchPlanNavigation";
 import { fleetScopeQuery, getMigrationReport } from "@/features/fleetCatalog/api";
+import { detailPath } from "@/features/fleetCatalog/catalogView";
 import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
 import type { MigrationPortfolio } from "@/features/fleetCatalog/migrationTypes";
 import { coverage, needsReview, policySummary, portfolioEmpty, portfolioRows, portfolioSorts, quickCounts, readFilter, readSort,
@@ -134,7 +135,7 @@ function MigrationReview() {
             const a = report.appAssessments[item.appHash];
             const evidence = report.installedEvidence[item.appHash];
             return <tr key={item.appHash} className="border-b last:border-0">
-              <td className={cell}><div className="font-semibold">{item.name}</div><div className={`break-all ${note}`}>{item.bundleId}</div></td>
+              <td className={cell}><Link className="block w-fit font-semibold text-primary hover:underline" to={detailPath("apps", item.appHash, params)}>{item.name}</Link><div className={`break-all ${note}`}>{item.bundleId}</div></td>
               <td className={`${cell} tabular-nums`}>{item.macs.toLocaleString(locale)}
                 {report.scope.selectedMacs > 0 && <div title={words.prevalence} className={note}>
                   {(item.macs / report.scope.selectedMacs).toLocaleString(locale, { style: "percent", maximumFractionDigits: 1 })}</div>}</td>
@@ -195,6 +196,6 @@ function FleetTitles() {
     {report?.enabled === false && <p className="text-sm text-muted-foreground">{t.fleetCatalog.emptyFlagOff}</p>}
     {report?.enabled && <FleetCatalogPage scope={{ search: params.get("q") ?? "", setSearch: q => change("q", q),
       installedOnly: params.get("installedOnly") === "1", setInstalledOnly: on => change("installedOnly", on ? "1" : ""),
-      counts: report.fleetDeviceCounts, deviceScope: params.get("deviceScope") ?? undefined, onRefresh: () => setRevision(n => n + 1) }} />}
+      counts: report.fleetDeviceCounts, deviceScope: params.get("deviceScope") ?? undefined, onRefresh: () => setRevision(n => n + 1), titleHref: slug => detailPath("titles", slug, params) }} />}
   </div>;
 }

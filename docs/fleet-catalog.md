@@ -347,10 +347,10 @@ when the version last moved with the version before it.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move
   this instance saw, or that there is neither yet.
-- **A title's name opens its version history**, newest first, each date linked to its commit
+- **A title's name opens its page** ([below](#migration-review)), and the arrow before it its version history, newest first, each date linked to its commit
   in Fleet's repository.
 
-The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`) and
+The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`), `GET /api/fleet-catalog/migration` for *Macs in scope* (`app:read` and `device:read`) and
 `POST /api/fleet-catalog/refresh` (`patch:catalog-sync`). A refresh that could not read GitHub
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
@@ -376,6 +376,12 @@ patch-policy verdict and its installed builds' vulnerability evidence ([`trouble
   Macs' copies take the answer on the hourly refresh, so until then a row can count the build as not
   assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
   line that reads the build's one catalog answer and already rests on it.
+
+**An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
+and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet and Jamf Patch titles that match the bundle
+identifier, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13). Opening it asks GitHub
+nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
+on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
 
 ### The API
 

@@ -43,6 +43,7 @@ export interface CatalogScope {
   counts: ScopedCounts;
   deviceScope?: string;
   onRefresh: () => void;
+  titleHref: (slug: string) => string; // a title's own page, with the view's whole query (#906)
 }
 
 /**
@@ -339,11 +340,12 @@ export function FleetCatalogPage({ scope }: { scope: CatalogScope }) {
                 <Fragment key={title.slug}>
                   <tr className={open.has(title.slug) ? "" : "border-b last:border-0"}>
                     <td className="px-4 py-2 font-medium">
-                      <button
+                      <span className="flex items-start gap-1"><button
                         type="button"
-                        className="text-left hover:underline"
+                        className="-ml-1 shrink-0 rounded p-1 hover:bg-muted"
                         aria-expanded={open.has(title.slug)}
                         aria-controls={`fleet-history-row-${title.slug}`}
+                        aria-label={t.fleetCatalog.historyToggleLabel(title.name)}
                         title={t.fleetCatalog.historyToggleHint}
                         onClick={() => toggleHistory(title.slug)}
                       >
@@ -353,9 +355,9 @@ export function FleetCatalogPage({ scope }: { scope: CatalogScope }) {
                           ) : (
                             <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0" />
                           )}
-                          {title.name}
                         </span>
                       </button>
+                      <Link className="text-primary hover:underline" to={scope.titleHref(title.slug)}>{title.name}</Link></span>
                       <a
                         className="mt-1 block w-fit text-xs font-normal text-muted-foreground underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                         href={manifestUrl(title.slug)}

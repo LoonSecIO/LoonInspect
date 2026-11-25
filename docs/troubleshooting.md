@@ -3589,7 +3589,7 @@ nothing here is a permissions problem in Jamf.
     qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
 12. **Migration review is empty, or a sentence stands above or in place of its list.** It counts the
     Macs the device filter above it selects, every current Jamf Mac when none is applied
-    ([`fleet-catalog.md`](fleet-catalog.md#migration-review)). By the sentence:
+    ([`fleet-catalog.md`](fleet-catalog.md#migration-review)); **Fleet titles** reads the same report, so the sentences beside **Retry** show on both views. By the sentence:
     - *No current Jamf Mac is on record for the filter’s Jamf connection, so there is nothing to review. Apps appear here once a device sweep collects a Mac.* → §1.
     - *No Mac matches the device filter. Widen or clear the filter.*, or beside **Retry**
       *The device filter is invalid. Check each condition or clear the filter and try again.*
@@ -3607,6 +3607,27 @@ nothing here is a permissions problem in Jamf.
 
     *Unknown* beside **Outside both catalogs** is not zero: an app is outside both only once Fleet's
     catalog is read whole and Jamf Patch titles are synced, and the sentence above says which is not.
+    In a row, *Coverage unknown* → open the app, whose page says why (step 13); *No exact comparison* → no build behind
+    Fleet's latest could be compared finding by finding (the corpus is off, a version is outside it, or a list is capped): §5.
+13. **An app's or a title's page shows a sentence where you expected its evidence.** A name on Migration review or
+    **Fleet titles** opens its page with the list's query, which reads step 11's detail for the same device filter. By the sentence:
+    - *This Fleet catalog record could not be read. Retry, or reload the Fleet catalog list; if the list fails too, the instance is not answering.*
+      → reload the list; if it fails too, step 1, then §4. *The Fleet catalog is off for this organization.* is step 1, and any other
+      sentence beside **Retry** is the server's own refusal: step 11.
+    - *No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+    - *Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch.*
+      → the next device sweep, or **Sync now**.
+    - *No Jamf Patch title this instance has synced matches these installations.* → search **Devices › Applications › Jamf Patch** for the app
+      with *Only titles with devices* unticked. No title there means Jamf publishes none for it; a title there that matches none of these Macs is §6 step 6.
+    - *Several channels or identities can fit the inventory evidence. Confirm the intended channel before planning an update.*
+      → open each title under **Fleet channels** and compare its manifest and history with the installed build.
+    - *Fleet coverage is unknown: the inventory reports no bundle identifier for this app, and Fleet titles are matched by bundle identifier.*
+      (the header reads *Bundle identifier unavailable*) → the **Application record**, for what the Mac reported.
+      *Fleet coverage is unknown: Fleet’s catalog has not been read whole, so a title for this app may be missing.* → steps 2, 3 and 6.
+    - *The Fleet catalog has no matching macOS title for this inventory identity.* → compare bundle IDs letter for letter, as in step 4.
+    - *No matching installations were observed in the selected scope.* on a title page → widen the scope on the list and open the title again.
+    - *This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.* → step 10.
+    - *No dated version matches this search.* → clear the search; step 10 explains an undated version.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.

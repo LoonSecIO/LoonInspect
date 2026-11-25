@@ -68,8 +68,6 @@ it("asks for the address's filter as it stands, aborts it for an applied one, an
   fireEvent.click(screen.getByRole("button", { name: "Clear filter" })); // These rows go at once, not when its answer lands.
   expect(screen.queryByText("Current")).toBeNull();
   expect(await screen.findByText("Current")).toBeTruthy();
-  // No app page until #906, and no briefing until #911.
-  expect(within(screen.getByRole("table")).queryAllByRole("link")).toHaveLength(0);
   expect(screen.queryByRole("button", { name: /briefing/i })).toBeNull();
 });
 
@@ -132,6 +130,7 @@ it("drops the page when a filter is applied, and from both segment links", async
   serve(() => report(Array.from({ length: 51 }, (_, n) => app(`App${String(n).padStart(2, "0")}`))));
   open("?page=2");
   expect(await screen.findByText(words.range(51, 51, 51))).toBeTruthy();
+  expect(row("App50").getByRole("link").getAttribute("href")).toBe("/devices/applications/fleet-catalog/apps/app50?page=2"); // #906, the whole query
   for (const name of [words.segments.review, words.segments.titles]) expect(screen.getByRole("link", { name }).getAttribute("href")).not.toContain("page");
   await screen.findByRole("option", { name: "Jamf 7" });
   fireEvent.change(screen.getByRole("combobox", { name: "Jamf connection" }), { target: { value: "7" } });
@@ -169,7 +168,7 @@ it("counts each Fleet title on the filter's Macs beside the organization's, and 
   expect([plan().pathname, Object.fromEntries(plan().searchParams)]).toEqual(["/devices/applications", { deviceScope: scope, q: "org.example.stable" }]);
   expect(readScope(plan().searchParams.get("deviceScope")!)).not.toBeNull();
   for (const name of ["Public example@esr", "Public new"]) expect(row(name).queryByRole("link", { name: en.fleetCatalog.buildPlan })).toBeNull();
-  expect(screen.getAllByRole("link").filter(link => link.getAttribute("href")?.includes("/fleet-catalog/titles/"))).toHaveLength(0); // #906's
+  expect(row("Public stable").getByRole("link", { name: "Public stable" }).getAttribute("href")).toBe(`/devices/applications/fleet-catalog/titles/stable?${new URLSearchParams({ view: "catalog", deviceScope: scope })}`);
   fireEvent.click(screen.getByRole("checkbox"));
   expect(screen.getByText("Public stable")).toBeTruthy();
   for (const name of ["Public example@esr", "Public new"]) expect(screen.queryByText(name)).toBeNull();
@@ -191,7 +190,7 @@ it("keeps Check now's refusal, the sort and the table while the counts are read 
   open("?view=catalog");
   await screen.findByText("Public new");
   fireEvent.click(screen.getByRole("columnheader", { name: en.fleetCatalog.tableScopedCount }));
-  const order = () => screen.getAllByRole("row").slice(1).map(tr => tr.querySelector("button")?.textContent);
+  const order = () => screen.getAllByRole("row").slice(1).map(tr => tr.querySelector("a")?.textContent);
   const sorted = ["Public stable", "Public example@esr", "Public new"]; // most first, and the title not counted yet last
   expect(order()).toEqual(sorted);
   fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.checkNow }));
