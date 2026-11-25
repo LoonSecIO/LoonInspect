@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppPicker } from "@/features/patchPolicy/AppPicker";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
-import { SLIDER_STOPS, readReplay, type PatchPolicyReplay, type SliderStop } from "@/features/patchPolicy/replay";
+import { SLIDER_STOPS, heldFixes, readReplay, type PatchPolicyReplay, type SliderStop } from "@/features/patchPolicy/replay";
 import { REPLAY_INDEX, loadReplay } from "@/features/patchPolicy/replayIndex";
 import { ReplayView } from "@/features/patchPolicy/ReplayView";
 import { heldLineReplay, singleLineReplay } from "@/features/patchPolicy/testing/replayFixtures";
@@ -22,6 +22,16 @@ const text = (markup: string) =>
 const markupOf = (stop: SliderStop, words = copy, replay = held, appName = "Example App") =>
   renderToStaticMarkup(<ReplayView replay={replay} appName={appName} stop={stop} onStop={() => {}} copy={words} />);
 const drawn = (stop: SliderStop, words = copy, replay = held, appName = "Example App") => text(markupOf(stop, words, replay, appName));
+/** One CVE's row in the per-CVE table, as its cells read: the CVE, the outcome, published, severity,
+ *  and each fix in the Fix column as its own line. */
+function ledgerRow(markup: string, cve: string): { outcome: string; fixes: string[] } {
+  const table = markup.split("<tbody>")[2];
+  const row = table.split("<tr").find((each) => each.includes(`>${cve}</td>`));
+  expect(row, `${cve} has no row in the per-CVE table`).toBeDefined();
+  const cells = row!.split("<td").slice(1);
+  const fixes = cells[4].split('<span class="block">').slice(1).map((each) => text(each).trim());
+  return { outcome: text(`<td${cells[1]}`).trim(), fixes };
+}
 
 describe("ReplayView on an app held on one release line", () => {
   it("at 1 day: 3 of 4 never seen, 1 exposed for 1 day, 3 update events", () => {
@@ -64,8 +74,8 @@ describe("ReplayView on an app held on one release line", () => {
 
   it("names the release-date source from the file, and never 'released on'", () => {
     const page = drawn("7d");
-    expect(page).toContain("Release dates come from Example App's release tags.");
-    expect(page).toContain("day one is the release's date in Example App's release tags.");
+    expect(page).toContain("Release dates: Example App's release tags.");
+    expect(page).toContain("Every release is installed by day 7, where day one is the date the release-date source above gives the release.");
     expect(page).toContain("Fix on 4.4, with its release date");
     expect(page).toContain("4.4.2, dated 2024-11-27");
     expect(page).toContain("The UTC date of the release's tag. Release-candidate tags are dropped.");
@@ -145,7 +155,8 @@ describe("ReplayView on an app held on one release line", () => {
     expect(page).toContain("1 von 4 Schwachstellen nie gesehen");
     expect(page).toContain("Eine Referenzanalyse, nicht die Exposition dieser Organisation");
     expect(page).toContain("Ein hypothetischer Mac, auf dem Example App läuft, gehalten auf der Release-Linie 4.4,");
-    expect(page).toContain("Die Release-Daten stammen aus Example App's release tags.");
+    expect(page).toContain("Release-Daten: Example App's release tags.");
+    expect(page).toContain("Tag eins ist das Datum, das die oben genannte Quelle der Release-Daten dem Release gibt.");
     expect(page).toContain("Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD");
     expect(page).toContain("Fix auf 4.4, mit seinem Release-Datum");
     expect(page).toContain("4.4.2, datiert 2024-11-27");
@@ -163,11 +174,38 @@ describe("ReplayView on an app replayed as one release line", () => {
     expect(page("7d", patchPolicyGerman)).toContain("Ein hypothetischer Mac, auf dem Example Browser läuft, nachgespielt");
   });
 
-  it("shows each CVE's fix on the one line, not 'none on this line'", () => {
+  it("shows each CVE's fix on the one line, not 'none on this line', and no range beside a fix that is alone", () => {
     const shown = page("1d");
     expect(shown).toContain("131.0.5, dated 2024-12-10");
     expect(shown).toContain("132.0.9, dated 2025-02-04");
     expect(shown).not.toContain(copy.noFixOnLine);
+    expect(shown).not.toContain("for versions");
+  });
+
+  it("shows every fix a CVE has on the one line, each with NVD's range it closes, never only the first", () => {
+    const several = readReplay({
+      ...singleLineReplay(),
+      ledger: (singleLineReplay().ledger as Record<string, unknown>[]).map((row) =>
+        row.cve_id !== "CVE-2099-1001"
+          ? row
+          : {
+              ...row,
+              fixes: [
+                { branch: "", fixed_version: "116.0", release_date: "2023-08-01", affected: { kind: "range", bounds: { versionStartIncluding: "115.0", versionEndExcluding: "115.18.0" } } },
+                { branch: "", fixed_version: "131.0.5", release_date: "2024-12-10", affected: { kind: "range", bounds: { versionEndExcluding: "131.0.5" } } }
+              ]
+            }
+      )
+    }).replay as PatchPolicyReplay;
+    const row = ledgerRow(markupOf("7d", copy, several, "Example Browser"), "CVE-2099-1001");
+    expect(row.outcome).toBe("Exposed 6 days, until 131.0.5 on 2024-12-16");
+    expect(row.fixes).toEqual([
+      "116.0, dated 2023-08-01, for versions from 115.0 (including) up to 115.18.0 (excluding)",
+      "131.0.5, dated 2024-12-10, for versions up to 131.0.5 (excluding)"
+    ]);
+    expect(ledgerRow(markupOf("7d", patchPolicyGerman, several, "Example Browser"), "CVE-2099-1001").fixes[1]).toBe(
+      "131.0.5, datiert 2024-12-10, für Versionen bis 131.0.5 (ausschließlich)"
+    );
   });
 
   it("hides the sentence about choosing another release line, at every stop", () => {
@@ -183,11 +221,23 @@ describe("ReplayView on an app replayed as one release line", () => {
     expect(page("7d")).not.toContain("The promotion table has no row yet");
   });
 
-  it("says so when the promotion table is behind the timeline", () => {
+  it("says so when the promotion table is behind the timeline, unless the window already ends before that major", () => {
     const behind = readReplay({ ...singleLineReplay(), early_stable_choice: { device: "skip", promotion_table_behind_timeline: true } }).replay as PatchPolicyReplay;
-    expect(drawn("7d", copy, behind, "Example Browser")).toContain(
-      "The promotion table has no row yet for the newest major version in Example Browser's version history (stable channel), so this Mac never installs that major here."
-    );
+    const sentence =
+      "The promotion table has no row yet for the newest major version the release-date source above dates, so this Mac never installs that major here.";
+    expect(drawn("7d", copy, behind, "Example Browser")).toContain(sentence);
+    // Cut at the promotion table, the window ends the day before that major's first date: the missing
+    // row limits nothing shown, and the shortened sentence gives the cause instead.
+    const cut = readReplay({
+      ...singleLineReplay(),
+      window: { since: "2024-11-23", until: "2026-11-17", requested_until: "2026-11-23", shortened_by: [{ reason: "promotion_table", date: "2026-11-17", sentence: "The timeline dates a major the table has no row for." }] },
+      early_stable_choice: { device: "skip", promotion_table_behind_timeline: true }
+    }).replay as PatchPolicyReplay;
+    for (const words of [copy, patchPolicyGerman]) {
+      const page = drawn("7d", words, cut, "Example Browser");
+      expect(page).not.toContain(words.promotionTableBehind);
+      expect(page).toContain(words.shortened("2026-11-17", "2026-11-23"));
+    }
   });
 
   it("counts what it replayed: 1 of 2 never seen at a day, none from a week on", () => {
@@ -226,16 +276,18 @@ describe("ReplayView on every shipped replay", () => {
     });
   }
 
-  it("Google Chrome: ends on 2026-11-17, waits for each major's promotion, and says the promotion table is behind", async () => {
+  it("Google Chrome: ends on 2026-11-17, waits for each major's promotion, and gives the window's cut, not the table, as the cause", async () => {
     const chrome = REPLAY_INDEX.find((entry) => entry.id === "chrome")!;
     const { replay } = await loadReplay(chrome);
     const page = drawn("7d", copy, replay!, chrome.name);
     expect(page).toContain("One hypothetical Mac that runs Google Chrome, replayed from 2024-11-23 to 2026-11-17");
     expect(page).toContain("This replay ends on 2026-11-17, before the 2026-11-23 it was asked to reach");
     expect(page).toContain("2024-11-23 → 2026-11-17 · asked to reach 2026-11-23");
-    expect(page).toContain("Release dates come from Google's Chrome VersionHistory API, platform mac, channel stable.");
+    expect(page).toContain("Release dates: Google's Chrome VersionHistory API, platform mac, channel stable.");
     expect(page).toContain("is installed no earlier than the promotion day");
-    expect(page).toContain("The promotion table has no row yet for the newest major version in Google's Chrome VersionHistory API");
+    // The file says the table is behind its timeline, and its window already ends the day before.
+    expect(replay!.early_stable_choice?.promotion_table_behind_timeline).toBe(true);
+    expect(page).not.toContain("The promotion table has no row yet");
     expect(page).toContain("149 of 3,415 vulnerabilities never seen");
     expect(page).not.toContain("held on");
   });
@@ -247,7 +299,7 @@ describe("ReplayView on every shipped replay", () => {
     expect(page).toContain("One hypothetical Mac that runs Wireshark, held on its 4.4 release line, replayed from 2024-11-23 to 2026-11-23");
     expect(page).toContain("16 of 115 vulnerabilities never seen");
     expect(page).toContain("16 of the 16 never seen were never in range: they affect only versions off the 4.4 line");
-    expect(page).toContain("Release dates come from The wireshark/wireshark repository's tags on GitLab (gitlab.com/wireshark/wireshark).");
+    expect(page).toContain("Release dates: The wireshark/wireshark repository's tags on GitLab (gitlab.com/wireshark/wireshark).");
     expect(page).toContain("Fix on 4.4, with its release date");
     expect(page).toContain("Following the newest release line instead");
     expect(page).not.toContain("promoted to stable");
@@ -261,6 +313,64 @@ describe("ReplayView on every shipped replay", () => {
     );
     expect(drawn("1d", patchPolicyGerman, replay!, firefox.name)).toContain("Firefox ESR wird noch nicht nachgespielt");
     expect(drawn("1d", copy, replay!, firefox.name)).toContain("NVD lists only another edition (ESR) as affected, not this release channel 50");
+  });
+
+  it("Firefox: a CVE NVD states several ranges for shows every fix with its range, not the oldest alone", async () => {
+    const firefox = REPLAY_INDEX.find((entry) => entry.id === "firefox")!;
+    const { replay } = await loadReplay(firefox);
+    const row = ledgerRow(markupOf("7d", copy, replay!, firefox.name), "CVE-2026-100756");
+    expect(row.outcome).toBe("Exposed 6 days, until 157.0 on 2026-10-05");
+    expect(row.fixes).toEqual([
+      "116.0, dated 2023-08-01, for versions from 115.0 (including) up to 115.42.0 (excluding)",
+      "141.0, dated 2025-07-22, for versions from 140.0.0 (including) up to 140.17.0 (excluding)",
+      "154.0, dated 2026-08-18, for versions from 153.0.0 (including) up to 153.4.0 (excluding)",
+      "157.0, dated 2026-09-29, for versions from 154.0.0 (including) up to 157.0.0 (excluding)"
+    ]);
+  });
+
+  it("Thunderbird: the fix that cleared a CVE is in its Fix cell", async () => {
+    const thunderbird = REPLAY_INDEX.find((entry) => entry.id === "thunderbird")!;
+    const { replay } = await loadReplay(thunderbird);
+    const row = ledgerRow(markupOf("7d", copy, replay!, thunderbird.name), "CVE-2024-11692");
+    expect(row.outcome).toBe("Exposed 6 days, until 133.0 on 2024-12-02");
+    expect(row.fixes).toEqual([
+      "129.0, dated 2024-08-06, for versions up to 128.5 (excluding)",
+      "133.0, dated 2024-11-26, for versions from 129.0 (including) up to 133.0 (excluding)"
+    ]);
+  });
+
+  it("every shipped file: each exposed CVE cleared by a fixed version lists that fix in its Fix cell, at every stop", async () => {
+    let held = 0;
+    for (const entry of REPLAY_INDEX) {
+      const { replay } = await loadReplay(entry);
+      const line = replay!.branch_choice.held_at_branch;
+      for (const stop of SLIDER_STOPS) {
+        for (const row of replay!.ledger.filter((each) => !each.exclusion)) {
+          const outcome = row.outcomes?.[stop];
+          const named = (row.fixes ?? []).filter((fix) => (fix.branch ?? "") === (line ?? "")).map((fix) => fix.fixed_version);
+          // A device that installs past the fix is cleared by a later build (Chrome skips builds):
+          // only a cleared_by that is itself a fix on the line is held here.
+          if (outcome?.outcome !== "exposed" || !outcome.cleared_by || !named.includes(outcome.cleared_by)) continue;
+          expect(heldFixes(row, line).map((fix) => fix.fixed_version), `${entry.id} ${stop} ${row.cve_id}`).toContain(outcome.cleared_by);
+          held += 1;
+        }
+      }
+    }
+    // Not vacuous: the shipped files clear thousands of CVEs by a fix's own version.
+    expect(held).toBeGreaterThan(1000);
+  });
+
+  it("the excluded list gives each CVE's NVD status as the file records it", async () => {
+    const firefox = REPLAY_INDEX.find((entry) => entry.id === "firefox")!;
+    const { replay } = await loadReplay(firefox);
+    for (const words of [copy, patchPolicyGerman]) {
+      const markup = markupOf("1d", words, replay!, firefox.name);
+      expect(text(markup)).toContain(words.colStatus);
+      const excluded = markup.split("<tbody>").at(-1)!;
+      const row = excluded.split("<tr").find((each) => each.includes(">CVE-2026-109704</td>"))!;
+      expect(text(row)).toContain("2026-10-13");
+      expect(text(row)).toContain(`${words.reasons.no_configuration_for_pair} Deferred NVD holds no configurations for this CVE`);
+    }
   });
 });
 

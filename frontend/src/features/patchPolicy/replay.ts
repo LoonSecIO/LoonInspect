@@ -4,16 +4,24 @@
  * no fetch, no router, no locale, so the same module can serve the page wherever it is lifted to.
  *
  * LoonVD computes every number (`docs/PATCH-POLICY-REPLAY.md` in LoonVD-Internal); nothing here
- * recomputes one. The contract is additive-only: unknown keys are ignored, and a file of another `kind`
- * or `schema`, or one whose own totals disagree, is refused whole rather than drawn in part.
+ * recomputes one. The contract is additive-only: unknown keys are ignored, and a file of another
+ * `kind`, `schema` or CVE clock, or one whose own totals disagree, is refused whole rather than drawn
+ * in part.
  *
  * Schema 2 is the replay that names its own release dates: `timeline` says where they come from and
- * what a date means, and each release and fix carries `release_date` on that timeline. Schema 1 named
- * no source in the file, so this page refuses it rather than print dates it cannot attribute.
+ * what a date means, and each release and fix carries `release_date` on that timeline. Schema 1 has
+ * no `timeline` block, the part of the file this page reads to name and link where its release dates
+ * come from, so this page refuses it rather than print dates without naming and linking their source.
+ *
+ * `cve_clock` names the clock every CVE is placed on. This page states one clock, NVD's publication
+ * date, in its own words, so a file on any other clock is refused rather than drawn under words that
+ * would misstate it.
  */
 
 export const REPLAY_KIND = "patch_policy_replay";
 export const REPLAY_SCHEMA = 2;
+/** The one CVE clock the page's words state: each CVE counts from the day NVD published it. */
+export const REPLAY_CVE_CLOCK = "published";
 
 /** The slider's stops, in order: the day policies, then Never. */
 export const SLIDER_STOPS = ["1d", "7d", "14d", "30d", "60d", "never"] as const;
@@ -35,12 +43,23 @@ export interface PolicyTotals {
   installs: { date: string; version: string }[];
 }
 
+/** One of NVD's statements of which versions a CVE affects, as the file carries it: a range with its
+ *  bounds, or one exact version. The page prints it and never evaluates it. */
+export interface AffectedStatement {
+  kind?: string;
+  version?: string;
+  bounds?: Record<string, unknown>;
+}
+
 export interface LedgerFix {
   /** The release line the fix is on: `"4.4"`, or `""` for an app replayed as one line. */
   branch?: string;
   fixed_version?: string | null;
   /** The fixed release's date on the file's own `timeline`. */
   release_date?: string | null;
+  /** The statement this fix closes. A CVE carries one fix per statement, so a CVE NVD states several
+   *  ranges for can carry several fixes on one line: an app replayed as one line puts them all there. */
+  affected?: AffectedStatement;
 }
 
 /** Where the file's release dates come from, in the file's own words. The page prints `name` and
@@ -78,6 +97,8 @@ export interface LedgerOutcome {
 export interface LedgerRow {
   cve_id: string;
   published?: string;
+  /** NVD's status for the record when the file was made (`Analyzed`, `Awaiting Analysis`, `Deferred`, …). */
+  status?: string | null;
   severity?: string | null;
   fixes?: LedgerFix[];
   exclusion?: string | null;
@@ -100,7 +121,9 @@ export interface PatchPolicyReplay {
    *  was asked to reach and `shortened_by` says why; the page prints both and computes neither. */
   window: { since: string; until: string; requested_until?: string; shortened_by?: WindowCut[] };
   definitions: Record<string, string>;
-  /** `published` is the CVE clock, which the page states: each CVE counts from NVD's publication date. */
+  /** The clock every CVE is placed on, by its key in `clocks`. The page reads only `published`. */
+  cve_clock: typeof REPLAY_CVE_CLOCK;
+  /** `published` defines the CVE clock the page states: each CVE counts from NVD's publication date. */
   clocks: Record<string, string> & { published: string };
   timeline: ReplayTimeline;
   counts: { cves_in_window: number; cves_replayed: number; cves_excluded: number };
@@ -125,6 +148,7 @@ export type Refusal =
   | { why: "unreadable" }
   | { why: "kind"; found: string }
   | { why: "schema"; found: string }
+  | { why: "clock"; found: string }
   | { why: "missing"; key: string }
   | { why: "totals"; detail: string };
 
@@ -221,6 +245,9 @@ export function readReplay(raw: unknown): ReadResult {
   if (!isRecord(raw)) return { refusal: { why: "unreadable" } };
   if (raw.kind !== REPLAY_KIND) return { refusal: { why: "kind", found: shown(raw.kind) } };
   if (raw.schema !== REPLAY_SCHEMA) return { refusal: { why: "schema", found: shown(raw.schema) } };
+  // Before any other key: the page's words state this clock, so a file on another one is not drawn.
+  if (raw.cve_clock === undefined) return { refusal: { why: "missing", key: "cve_clock" } };
+  if (raw.cve_clock !== REPLAY_CVE_CLOCK) return { refusal: { why: "clock", found: shown(raw.cve_clock) } };
   const key = firstMissing(raw);
   if (key) return { refusal: { why: "missing", key } };
   const replay = raw as unknown as PatchPolicyReplay;
@@ -233,12 +260,51 @@ export function replayedRows(replay: PatchPolicyReplay): LedgerRow[] {
   return replay.ledger.filter((row) => !row.exclusion);
 }
 
-/** The fix on the release line the device is held to, which is the one its installs can reach.
- *  A held line of `null` is the one line of an app replayed as one, whose fixes name the line `""`.
- *  `null` where the CVE names no fix on that line: those are the rows that were never in range. */
-export function heldFix(row: LedgerRow, line: string | null): LedgerFix | null {
+/** A fix that names its fixed version, which is the only kind the Fix column prints. */
+export type NamedFix = LedgerFix & { fixed_version: string };
+
+/** Every fix on the release line the device is held to, which are the ones its installs can reach,
+ *  oldest release first. A held line of `null` is the one line of an app replayed as one, whose fixes
+ *  all name the line `""`. There is one fix per statement NVD makes about the CVE, so a line can carry
+ *  several: a Mozilla CVE NVD states for the ESR lines and the release channel alike has one fix per
+ *  range, and which of them the device's versions fall in is LoonVD's judgement, not this page's. So
+ *  every one is returned, never the first. Empty where the CVE names no fix on that line: those are
+ *  the rows that were never in range. */
+export function heldFixes(row: LedgerRow, line: string | null): NamedFix[] {
   const held = line ?? "";
-  return row.fixes?.find((fix) => (fix.branch ?? "") === held) ?? null;
+  const fixes = (Array.isArray(row.fixes) ? row.fixes : []).filter(
+    (fix): fix is NamedFix => isRecord(fix) && (fix.branch ?? "") === held && isText(fix.fixed_version)
+  );
+  // By the date the file gives, so the list reads in order; an undated fix goes last, and a tie keeps
+  // the file's order (the sort is stable).
+  const order = (fix: LedgerFix) => (isText(fix.release_date) ? `0${fix.release_date}` : "1");
+  return fixes.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
+}
+
+/** One bound of an affected range, as the page words it: the version, and whether it is included. */
+export interface AffectedBound {
+  version: string;
+  including: boolean;
+}
+
+/** A statement the page can word: one exact version, or a range with a start, an end, or both. */
+export type AffectedRange = { exact: string } | { start?: AffectedBound; end?: AffectedBound };
+
+/** A fix's statement in the shape the page words, read defensively: `null` for one it cannot word
+ *  (absent, unbounded, or a kind it does not know), which then prints without a range. */
+export function affectedBounds(fix: LedgerFix): AffectedRange | null {
+  const affected = fix.affected;
+  if (!isRecord(affected)) return null;
+  if (affected.kind === "exact") return isText(affected.version) ? { exact: affected.version } : null;
+  if (affected.kind !== "range" || !isRecord(affected.bounds)) return null;
+  const { bounds } = affected;
+  const bound = (including: string, excluding: string): AffectedBound | undefined => {
+    const [kept, left] = [bounds[including], bounds[excluding]];
+    return isText(kept) ? { version: kept, including: true } : isText(left) ? { version: left, including: false } : undefined;
+  };
+  const start = bound("versionStartIncluding", "versionStartExcluding");
+  const end = bound("versionEndIncluding", "versionEndExcluding");
+  return start || end ? { ...(start && { start }), ...(end && { end }) } : null;
 }
 
 /** Where the file cut its window short: the last day it was asked to reach, when that is not the day

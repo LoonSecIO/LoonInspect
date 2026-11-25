@@ -2983,23 +2983,29 @@ the public release record its dates come from. The page is at `/posture/patch-po
      file's chunk, usually a page left open across an update of the instance. Reload.
    - *Its kind is …* or *Its schema is …* → the file is another kind of document, or a version of
      the replay this build does not read. *Its schema is 1, the earlier replay format…* is a file
-     that does not say where its release dates come from; this build reads only replays that do.
+     with no `timeline` block, the part of the file this page reads to name and link where its
+     release dates come from; this build reads only replays that have one.
+   - *Its CVE clock is …* → the file places each CVE on a clock other than NVD's publication date
+     (its `cve_clock` is not `published`). The page's words state that one clock, so the file is
+     refused rather than drawn under words that would misstate it.
    - *It lacks …* → a value the page draws is absent from the file; the sentence names it. A file
      must name its release-date source (`timeline.name`), say what one of its dates means
      (`timeline.clock`) and when that source was fetched (`timeline.fetched_at`), state its CVE
-     clock (`clocks.published`), and say which release line the Mac is held to
-     (`branch_choice.held_at_branch`).
+     clock (`cve_clock`, defined in `clocks.published`), and say which release line the Mac is
+     held to (`branch_choice.held_at_branch`).
    - *Its own totals disagree (…)* → the file's counts do not add up, in the file's own key names:
      for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
      sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
 
-   Reload once. None of the last three can be fixed on the instance, because the file is part of the
+   Reload once. None of the last four can be fixed on the instance, because the file is part of the
    build and no setting or data of yours is read: the same sentence after a reload is reportable
    state **Z**, below.
 5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
    *Evidence*: it is the replay's own identifier, and two pages showing the same run show the same
-   numbers. A different run is a different release record or window, and *Evidence* prints both:
-   the window, and the record's fetch time and SHA-256 under *Release dates*.
+   numbers. A different run is a different release record, a different window, or a later read of
+   NVD's records. *Evidence* prints the first two: the window, and the record's fetch time and
+   SHA-256 under *Release dates*. It does not print when NVD's records were read, so two runs whose
+   window and release record match differ by that read. Not a fault of the instance.
 6. **A date looks a day or two off the vendor's own release notes.** Every release date on this page
    comes from the release record that *Evidence › Release dates* names and links, and the line
    under it says, in the file's words, what one of its dates means: for example the first day a
@@ -3019,9 +3025,21 @@ the public release record its dates come from. The page is at `/posture/patch-po
    was made. A later build carries a later file. Not a fault of the instance.
 9. **The newest weeks replay few CVEs, and many are excluded as *NVD has not yet listed which
    versions are affected*.** NVD often publishes a CVE before it lists the versions the CVE
-   affects, and during a backlog at NVD that gap can last weeks. A CVE in that state cannot be
-   placed, so it is excluded and counted in the *Excluded* table, never guessed; excluded is not
-   safe. A later file replays it once NVD lists its versions. Not a fault of the instance.
+   affects. A CVE in that state cannot be placed, so it is excluded and counted in the *Excluded*
+   table, never guessed; excluded is not safe. A later file replays it only if NVD has listed its
+   versions by then, and the list of excluded CVEs says what to expect in its *NVD status when the
+   file was made* column. *Awaiting Analysis* and *Undergoing Analysis* are records NVD has received
+   and not finished. *Deferred* is NVD's mark for a record it does not plan to prioritize for that
+   work, so it may stay excluded; in the files this build ships, most of Firefox's and
+   Thunderbird's exclusions of this kind are *Deferred*. *Analyzed* is a record NVD finished without
+   listing a version of this app. Not a fault of the instance.
+10. **A CVE's *Fix* cell lists several fixes, some dated long before the CVE.** NVD can state
+    several affected ranges for one CVE, for example one for each Firefox ESR line beside the
+    release channel's, and the replay gives each range its own fix: the first release on this
+    replay's release timeline at or past the range's end. Each fix is printed with the range it
+    closes, in NVD's bounds. The one that matters to this Mac is the range its versions fell in,
+    which the file has already judged: the *Outcome* beside it names the release that cleared the
+    CVE, where one did. Not a fault of the instance.
 
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
 or the page says no reference replay ships with the build. Report the page's sentence as it is

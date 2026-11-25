@@ -92,6 +92,7 @@ export function heldLineReplay(): Record<string, unknown> {
       never: "The device stays on the version that was current when the window opened.",
       critical_or_kev: tabled
     },
+    cve_clock: "published",
     clocks,
     evidence: { branch_components: 2, parser_version: "v1", version_compare: "v0", observer: "macos" },
     counts: { cves_considered: 9, cves_outside_window: 4, cves_without_published: 0, cves_in_window: 5, cves_replayed: 4, cves_excluded: 1 },
@@ -209,6 +210,7 @@ export function singleLineReplay(): Record<string, unknown> {
       early_stable: "A build served before its major's promotion day is installed no earlier than that day.",
       critical_or_kev: tabled
     },
+    cve_clock: "published",
     clocks,
     evidence: { branch_components: 0, parser_version: "v1", version_compare: "v0", observer: "macos" },
     counts: { cves_considered: 6, cves_outside_window: 3, cves_without_published: 0, cves_in_window: 3, cves_replayed: 2, cves_excluded: 1 },

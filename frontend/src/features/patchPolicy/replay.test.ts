@@ -13,7 +13,8 @@ import {
   REPLAY_SCHEMA,
   SLIDER_STOPS,
   TABLED_POLICY,
-  heldFix,
+  affectedBounds,
+  heldFixes,
   isSliderStop,
   readReplay,
   replayedRows,
@@ -88,17 +89,50 @@ describe("the hand-made schema-2 replays", () => {
   it("the held line's fix is the one shown, and a CVE with no fix on that line shows none", () => {
     const rows = replayedRows(held);
     expect(rows).toHaveLength(4);
-    expect(heldFix(rows.find((each) => each.cve_id === "CVE-2099-0001")!, "4.4")).toEqual({ branch: "4.4", fixed_version: "4.4.2", release_date: "2024-11-27" });
-    expect(heldFix(rows.find((each) => each.cve_id === "CVE-2099-0002")!, "4.4")).toBeNull();
+    expect(heldFixes(rows.find((each) => each.cve_id === "CVE-2099-0001")!, "4.4")).toEqual([{ branch: "4.4", fixed_version: "4.4.2", release_date: "2024-11-27" }]);
+    expect(heldFixes(rows.find((each) => each.cve_id === "CVE-2099-0002")!, "4.4")).toEqual([]);
   });
 
   it("an app replayed as one line holds no line, and its fixes are on the line that has no name", () => {
     expect(single.branch_choice.held_at_branch).toBeNull();
     const rows = replayedRows(single);
     expect(rows).toHaveLength(2);
-    expect(heldFix(rows[0], null)).toEqual({ branch: "", fixed_version: "131.0.5", release_date: "2024-12-10" });
+    expect(heldFixes(rows[0], null)).toEqual([{ branch: "", fixed_version: "131.0.5", release_date: "2024-12-10" }]);
     // A file with several lines but no held one would show no fix on any row, never another line's.
-    expect(heldFix(read(heldLineReplay()).ledger[0], null)).toBeNull();
+    expect(heldFixes(read(heldLineReplay()).ledger[0], null)).toEqual([]);
+  });
+
+  it("every fix on the line, oldest first, never only the first the file lists: one per range NVD states", () => {
+    const esr = { kind: "range", bounds: { versionStartIncluding: "115.0", versionEndExcluding: "115.18.0" } };
+    const release = { kind: "range", bounds: { versionStartIncluding: "131.0", versionEndExcluding: "131.0.5" } };
+    const row = read(edited((file) => {
+      // The file's order puts the ESR range's fix first, as LoonVD sorts by the statement.
+      file.ledger[0].fixes = [
+        { branch: "", fixed_version: "131.0.5", release_date: "2024-12-10", affected: release },
+        { branch: "", fixed_version: "116.0", release_date: "2023-08-01", affected: esr },
+        { branch: "", fixed_version: null, release_date: null }
+      ].reverse();
+    }, singleLineReplay)).ledger[0];
+    expect(heldFixes(row, null).map((fix) => fix.fixed_version)).toEqual(["116.0", "131.0.5"]);
+    expect(affectedBounds(heldFixes(row, null)[1])).toEqual({ start: { version: "131.0", including: true }, end: { version: "131.0.5", including: false } });
+  });
+
+  it("words NVD's statement a fix closes from the file, and words none it cannot read", () => {
+    const range = (bounds: Record<string, unknown>) => affectedBounds({ affected: { kind: "range", bounds } })!;
+    expect(patchPolicyEnglish.affected(range({ versionStartIncluding: "154.0.0", versionEndExcluding: "157.0.0" }))).toBe(
+      "for versions from 154.0.0 (including) up to 157.0.0 (excluding)"
+    );
+    expect(patchPolicyEnglish.affected(range({ versionEndIncluding: "4.4.5" }))).toBe("for versions up to 4.4.5 (including)");
+    expect(patchPolicyEnglish.affected(range({ versionStartExcluding: "4.2.0", versionEndExcluding: "4.2.9" }))).toBe(
+      "for versions from 4.2.0 (excluding) up to 4.2.9 (excluding)"
+    );
+    expect(patchPolicyEnglish.affected(affectedBounds({ affected: { kind: "exact", version: "131.0.2" } })!)).toBe("for version 131.0.2");
+    expect(patchPolicyGerman.affected(range({ versionStartIncluding: "154.0.0", versionEndExcluding: "157.0.0" }))).toBe(
+      "für Versionen ab 154.0.0 (einschließlich) bis 157.0.0 (ausschließlich)"
+    );
+    for (const affected of [undefined, { kind: "range", bounds: {} }, { kind: "range" }, { kind: "prerelease", version: "1.0" }, { kind: "exact" }]) {
+      expect(affectedBounds({ affected }), JSON.stringify(affected)).toBeNull();
+    }
   });
 
   it("the tabled policy is in the file and is not a stop", () => {
@@ -146,15 +180,30 @@ describe("every indexed replay", () => {
     }
   });
 
-  it("is the file its entry names, listed in the README's sources table with that file's SHA-256", async () => {
+  it("is the file its entry names, listed in the README's sources table with that file's bytes and SHA-256", async () => {
     const readme = readFileSync(replayFile("README.md"), "utf8");
+    // One row per file, and one file per row: every row of the table, read by its file name.
+    const header = readme.split("\n").find((each) => each.startsWith("| File |"))!.split("|").map((cell) => cell.trim());
+    const [bytesAt, digestAt] = [header.indexOf("Bytes"), header.indexOf("SHA-256")];
+    const listed = readme
+      .split("\n")
+      .filter((each) => /^\| `[^`]+\.json` \|/.test(each))
+      .map((each) => {
+        const cells = each.split("|").map((cell) => cell.trim());
+        return [cells[1].slice(1, -1), { bytes: cells[bytesAt], digest: cells[digestAt] }] as const;
+      });
+    expect(listed.map(([file]) => file).sort(), "replays/README.md lists a file the index does not, or lists one twice").toEqual(
+      REPLAY_INDEX.map((entry) => entry.file).sort()
+    );
+    const rows = new Map(listed);
     for (const entry of REPLAY_INDEX) {
       expect(existsSync(replayFile(entry.file)), entry.file).toBe(true);
       const bytes = readFileSync(replayFile(entry.file));
       expect(await entry.load(), entry.file).toEqual(JSON.parse(bytes.toString("utf8")));
-      const row = readme.split("\n").find((each) => each.startsWith(`| \`${entry.file}\``));
+      const row = rows.get(entry.file);
       expect(row, `${entry.file} has no row in replays/README.md`).toBeDefined();
-      expect(row, entry.file).toContain(createHash("sha256").update(bytes).digest("hex"));
+      expect(Number(row!.bytes.replace(/,/g, "")), `${entry.file}: Bytes`).toBe(bytes.length);
+      expect(row!.digest, `${entry.file}: SHA-256`).toBe(`\`${createHash("sha256").update(bytes).digest("hex")}\``);
     }
   });
 
@@ -279,15 +328,31 @@ describe("readReplay refuses", () => {
     expect(readReplay(edited((file) => { delete file.kind; }))).toEqual({ refusal: { why: "kind", found: "absent" } });
   });
 
-  it("schema 1, the format that names no release-date source, in words that say so", () => {
+  it("schema 1, the format with no timeline block, in words that say so", () => {
     const refusal = readReplay(edited((file) => { file.schema = 1; })).refusal;
     expect(refusal).toEqual({ why: "schema", found: "1" });
     expect(patchPolicyEnglish.refused(refusal!)).toBe(
-      "Its schema is 1, the earlier replay format, which does not name where its release dates come from. This page reads schema 2 only."
+      "Its schema is 1, the earlier replay format, which has no timeline block, the part of the file this page reads to name and link where its release dates come from. This page reads schema 2 only."
     );
     expect(patchPolicyGerman.refused(refusal!)).toBe(
-      "Ihr schema ist 1, das frühere Replay-Format, das nicht angibt, woher seine Release-Daten stammen. Diese Seite liest nur schema 2."
+      "Ihr schema ist 1, das frühere Replay-Format ohne timeline-Block, den Teil der Datei, aus dem diese Seite die Quelle ihrer Release-Daten benennt und verlinkt. Diese Seite liest nur schema 2."
     );
+  });
+
+  it("a file on a CVE clock other than NVD's publication date, which the page's words would misstate", () => {
+    const refusal = readReplay(edited((file) => { file.cve_clock = "detectable_at"; })).refusal;
+    expect(refusal).toEqual({ why: "clock", found: '"detectable_at"' });
+    expect(patchPolicyEnglish.refused(refusal!)).toBe(
+      `Its CVE clock is "detectable_at". This page states one CVE clock, NVD's publication date (published), and would misstate any other.`
+    );
+    expect(patchPolicyGerman.refused(refusal!)).toBe(
+      `Ihre CVE-Uhr ist "detectable_at". Diese Seite nennt nur eine CVE-Uhr, das Veröffentlichungsdatum bei NVD (published), und würde jede andere falsch angeben.`
+    );
+    // Refused even when every other key is there, a definition of `published` included: that is the
+    // definition of a field, not the clock the file is on.
+    expect(read(heldLineReplay()).clocks.published).toBeDefined();
+    expect(readReplay(edited((file) => { file.cve_clock = null; })).refusal).toEqual({ why: "clock", found: "null" });
+    expect(readReplay(edited((file) => { delete file.cve_clock; })).refusal).toEqual({ why: "missing", key: "cve_clock" });
   });
 
   it("another schema, including the same number as text", () => {

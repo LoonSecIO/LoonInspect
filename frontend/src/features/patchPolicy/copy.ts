@@ -1,4 +1,4 @@
-import { REPLAY_SCHEMA, type Refusal, type SliderStop } from "@/features/patchPolicy/replay";
+import { REPLAY_SCHEMA, type AffectedRange, type Refusal, type SliderStop } from "@/features/patchPolicy/replay";
 
 /**
  * The words of the patch-policy reference page (#614, first slice), kept beside the feature the way
@@ -6,10 +6,11 @@ import { REPLAY_SCHEMA, type Refusal, type SliderStop } from "@/features/patchPo
  *
  * Five things these words must keep saying. A release date is the date the file's own timeline gives
  * it, and the page names that timeline from the file (`timeline.name`), never a source of its own and
- * never *released on*. The CVE clock is said: each CVE counts from NVD's publication date. The
- * replayed count is never called all the CVEs: the excluded ones are named and counted. An app with
- * no replay reads *no reference replay yet*, never zero. And the page is a reference analysis of a
- * hypothetical Mac, never this organization's exposure.
+ * never *released on*. The CVE clock is said: each CVE counts from NVD's publication date, the one
+ * clock a file may be on (`readReplay` refuses another). The replayed count is never called all the
+ * CVEs: the excluded ones are named and counted. An app with no replay reads *no reference replay
+ * yet*, never zero. And the page is a reference analysis of a hypothetical Mac, never this
+ * organization's exposure.
  */
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
@@ -45,8 +46,10 @@ export const patchPolicyEnglish = {
         return `Its kind is ${refusal.found}, and this page reads patch_policy_replay only.`;
       case "schema":
         return refusal.found === "1"
-          ? `Its schema is 1, the earlier replay format, which does not name where its release dates come from. This page reads schema ${REPLAY_SCHEMA} only.`
+          ? `Its schema is 1, the earlier replay format, which has no timeline block, the part of the file this page reads to name and link where its release dates come from. This page reads schema ${REPLAY_SCHEMA} only.`
           : `Its schema is ${refusal.found}, and this page reads schema ${REPLAY_SCHEMA} only.`;
+      case "clock":
+        return `Its CVE clock is ${refusal.found}. This page states one CVE clock, NVD's publication date (published), and would misstate any other.`;
       case "missing":
         return `It lacks ${refusal.key}, which this page draws.`;
       case "totals":
@@ -59,8 +62,10 @@ export const patchPolicyEnglish = {
   referenceTitle: "A reference analysis, not this organization's exposure",
   reference: (app: string, line: string | null, since: string, until: string) =>
     `One hypothetical Mac that runs ${app}${line ? `, held on its ${line} release line` : ""}, replayed from ${since} to ${until} against public CVE records. No inventory from this instance is read to draw it, nothing is sent anywhere, and no number here is stored as a measure of this fleet.`,
+  // The file's name for its source is printed as a label, never inside a sentence: the file's words
+  // cannot be edited to fit one (they may open with "The", or be in another language than the page).
   sources: (timeline: string) =>
-    `Release dates come from ${timeline}. The CVE clock is NVD's publication date: each CVE counts from the day NVD published it.`,
+    `Release dates: ${timeline}. The CVE clock is NVD's publication date: each CVE counts from the day NVD published it.`,
   releaseChannelOnly: (app: string) =>
     `This replays ${app}'s release channel. ${app} ESR is not replayed yet, though the app list may show it under this row, because the two share a bundle ID.`,
   shortened: (until: string, requested: string | null) =>
@@ -68,14 +73,14 @@ export const patchPolicyEnglish = {
 
   policyHeading: "Patch policy",
   stops: { "1d": "1 day", "7d": "7 days", "14d": "14 days", "30d": "30 days", "60d": "60 days", never: "Never" } satisfies Record<SliderStop, string>,
-  policySaid: (stop: SliderStop, timeline: string) =>
+  policySaid: (stop: SliderStop) =>
     stop === "never"
       ? "No release is installed: the Mac stays on the version it opened the window with."
-      : `Every release is installed by day ${parseInt(stop, 10)}, where day one is the release's date in ${timeline}.`,
+      : `Every release is installed by day ${parseInt(stop, 10)}, where day one is the date the release-date source above gives the release.`,
   waitsForPromotion:
     "A build served before its major version is promoted to stable is installed no earlier than the promotion day, and a major above the promotion table's newest row is not installed (early_stable, under Definitions).",
-  promotionTableBehind: (timeline: string) =>
-    `The promotion table has no row yet for the newest major version in ${timeline}, so this Mac never installs that major here.`,
+  promotionTableBehind:
+    "The promotion table has no row yet for the newest major version the release-date source above dates, so this Mac never installs that major here.",
 
   neverSeenLabel: "vulnerabilities never seen",
   of: "of",
@@ -112,6 +117,11 @@ export const patchPolicyEnglish = {
   colSeverity: "Severity (today's score)",
   colFix: (line: string | null) => `Fix${line ? ` on ${line}` : ""}, with its release date`,
   fix: (version: string, dated: string | null | undefined) => (dated ? `${version}, dated ${dated}` : version),
+  /** NVD's statement a fix closes, printed beside it when a CVE has more than one fix on the line. */
+  affected: (range: AffectedRange) =>
+    "exact" in range
+      ? `for version ${range.exact}`
+      : `for versions${range.start ? ` from ${range.start.version} (${range.start.including ? "including" : "excluding"})` : ""}${range.end ? ` up to ${range.end.version} (${range.end.including ? "including" : "excluding"})` : ""}`,
   noFixOnLine: "none on this line",
   colOutcome: (stop: string) => `Outcome at ${stop}`,
   outcome: {
@@ -144,6 +154,7 @@ export const patchPolicyEnglish = {
     other_edition_only: "NVD lists only another edition (ESR) as affected, not this release channel"
   } as Record<string, string>,
   excludedList: (excluded: number) => `The ${excluded} excluded ${plural(excluded, "CVE", "CVEs")}`,
+  colStatus: "NVD status when the file was made",
 
   definitionsHeading: "Definitions and clocks, in the file's own words",
   definitions: "Definitions",
@@ -200,8 +211,10 @@ export const patchPolicyGerman: PatchPolicyCopy = {
         return `Ihr kind ist ${refusal.found}; diese Seite liest nur patch_policy_replay.`;
       case "schema":
         return refusal.found === "1"
-          ? `Ihr schema ist 1, das frühere Replay-Format, das nicht angibt, woher seine Release-Daten stammen. Diese Seite liest nur schema ${REPLAY_SCHEMA}.`
+          ? `Ihr schema ist 1, das frühere Replay-Format ohne timeline-Block, den Teil der Datei, aus dem diese Seite die Quelle ihrer Release-Daten benennt und verlinkt. Diese Seite liest nur schema ${REPLAY_SCHEMA}.`
           : `Ihr schema ist ${refusal.found}; diese Seite liest nur schema ${REPLAY_SCHEMA}.`;
+      case "clock":
+        return `Ihre CVE-Uhr ist ${refusal.found}. Diese Seite nennt nur eine CVE-Uhr, das Veröffentlichungsdatum bei NVD (published), und würde jede andere falsch angeben.`;
       case "missing":
         return `Ihr fehlt ${refusal.key}, das diese Seite darstellt.`;
       case "totals":
@@ -215,7 +228,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   reference: (app: string, line: string | null, since: string, until: string) =>
     `Ein hypothetischer Mac, auf dem ${app} läuft${line ? `, gehalten auf der Release-Linie ${line}` : ""}, nachgespielt von ${since} bis ${until} gegen öffentliche CVE-Einträge. Dafür wird kein Inventar dieser Instanz gelesen, nichts wird irgendwohin gesendet, und keine Zahl hier wird als Messwert dieser Flotte gespeichert.`,
   sources: (timeline: string) =>
-    `Die Release-Daten stammen aus ${timeline}. Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD: Jede CVE zählt ab dem Tag, an dem NVD sie veröffentlicht hat.`,
+    `Release-Daten: ${timeline}. Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD: Jede CVE zählt ab dem Tag, an dem NVD sie veröffentlicht hat.`,
   releaseChannelOnly: (app: string) =>
     `Nachgespielt wird der Release-Kanal von ${app}. ${app} ESR wird noch nicht nachgespielt, auch wenn die App-Liste es unter dieser Zeile führen kann, weil beide dieselbe Bundle-ID haben.`,
   shortened: (until: string, requested: string | null) =>
@@ -223,14 +236,14 @@ export const patchPolicyGerman: PatchPolicyCopy = {
 
   policyHeading: "Patch-Richtlinie",
   stops: { "1d": "1 Tag", "7d": "7 Tage", "14d": "14 Tage", "30d": "30 Tage", "60d": "60 Tage", never: "Nie" },
-  policySaid: (stop: SliderStop, timeline: string) =>
+  policySaid: (stop: SliderStop) =>
     stop === "never"
       ? "Kein Release wird installiert: Der Mac bleibt auf der Version, mit der er das Zeitfenster begonnen hat."
-      : `Jedes Release ist bis Tag ${parseInt(stop, 10)} installiert; Tag eins ist das Datum des Release in ${timeline}.`,
+      : `Jedes Release ist bis Tag ${parseInt(stop, 10)} installiert; Tag eins ist das Datum, das die oben genannte Quelle der Release-Daten dem Release gibt.`,
   waitsForPromotion:
     "Ein Build, der vor der Beförderung seiner Hauptversion zu Stable ausgeliefert wurde, wird frühestens am Tag der Beförderung installiert, und eine Hauptversion oberhalb der neuesten Zeile der Beförderungstabelle wird nicht installiert (early_stable, unter Definitionen).",
-  promotionTableBehind: (timeline: string) =>
-    `Die Beförderungstabelle hat noch keine Zeile für die neueste Hauptversion in ${timeline}; dieser Mac installiert diese Hauptversion hier daher nie.`,
+  promotionTableBehind:
+    "Die Beförderungstabelle hat noch keine Zeile für die neueste Hauptversion, die die oben genannte Quelle der Release-Daten datiert; dieser Mac installiert diese Hauptversion hier daher nie.",
 
   neverSeenLabel: "Schwachstellen nie gesehen",
   of: "von",
@@ -267,6 +280,10 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   colSeverity: "Schweregrad (heutige Bewertung)",
   colFix: (line: string | null) => `Fix${line ? ` auf ${line}` : ""}, mit seinem Release-Datum`,
   fix: (version: string, dated: string | null | undefined) => (dated ? `${version}, datiert ${dated}` : version),
+  affected: (range: AffectedRange) =>
+    "exact" in range
+      ? `für Version ${range.exact}`
+      : `für Versionen${range.start ? ` ab ${range.start.version} (${range.start.including ? "einschließlich" : "ausschließlich"})` : ""}${range.end ? ` bis ${range.end.version} (${range.end.including ? "einschließlich" : "ausschließlich"})` : ""}`,
   noFixOnLine: "keiner auf dieser Linie",
   colOutcome: (stop: string) => `Ergebnis bei ${stop}`,
   outcome: {
@@ -299,6 +316,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     other_edition_only: "NVD führt nur eine andere Edition (ESR) als betroffen, nicht diesen Release-Kanal"
   },
   excludedList: (excluded: number) => `${mehrzahl(excluded, "Die eine ausgeschlossene CVE", `Die ${excluded} ausgeschlossenen CVEs`)}`,
+  colStatus: "NVD-Status bei Erstellung der Datei",
 
   definitionsHeading: "Definitionen und Uhren, im Wortlaut der Datei",
   definitions: "Definitionen",
