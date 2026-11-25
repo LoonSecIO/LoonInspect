@@ -56,8 +56,8 @@ they were written — §9 ends by saying the paths continue at §10.
   typed"](#20-sign-in-asks-for-a-six-digit-code-or-refuses-the-one-i-typed)
 - **§21** ["Request coverage or Report an incorrect match is refused, or a case never shows a
   status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
-- **§22** ["Patch policy is not in my sidebar, lists one app, or says its file was
-  refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
+- **§22** ["Patch policy is not in my sidebar, an app cannot be picked, or its file was
+  refused"](#22-patch-policy-is-not-in-my-sidebar-an-app-cannot-be-picked-or-its-file-was-refused)
 - **§23** ["Out of policy is missing, a title is not judged, or the rule draft fills
   nothing"](#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)
 - **§24** ["The change log keeps growing with `CHANGE_LOG_RETENTION_DAYS` set, or the Changes
@@ -105,7 +105,7 @@ ticket names one, this says which path it came off.
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
 | **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
 | **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
-| **Z** | §22 | A reference replay that shipped with the build is refused after a reload |
+| **Z** | §22 | A reference replay that shipped with the build is refused after a reload, or none ships |
 
 ## 0. The four things you can read
 
@@ -2994,13 +2994,14 @@ that log, then repeat the act.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
 
-## 22. "Patch policy is not in my sidebar, lists one app, or says its file was refused"
+## 22. "Patch policy is not in my sidebar, an app cannot be picked, or its file was refused"
 
 Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
-follows one Jamf patch title, replayed against public CVE records under each stop of a patch-policy
-slider. It is not this organization's exposure. It reads no inventory, sends nothing, and stores
-nothing; the replay is a file that ships inside the build, the same for every organization. The page
-is at `/posture/patch-policy` and needs **app:read**, which every role holds.
+runs one app, replayed against public CVE records under each stop of a patch-policy slider. It is
+not this organization's exposure. It reads no inventory, sends nothing, and stores nothing; each
+replay is a file that ships inside the build, the same for every organization, and the file names
+the public release record its dates come from. The page is at `/posture/patch-policy` and needs
+**app:read**, which every role holds.
 
 1. **The entry is not in the sidebar.** It is listed under Posture, last, for every account that
    holds **app:read**, with nothing to switch on. An administrator checks Settings › Feature Flags:
@@ -3009,43 +3010,91 @@ is at `/posture/patch-policy` and needs **app:read**, which every role holds.
    instance. If the flag is not listed, a missing entry means the account lacks app:read:
    `GET /api/auth/me` lists the account's permissions. The address opens either way for an
    account that holds it, so a link somebody sent still works.
-2. **Only Wireshark can be picked; every other app reads *No reference replay yet*.** Not a fault.
-   An app is selectable once a replay file for it ships with the build, and today one does. *No
-   reference replay yet* means nobody has replayed that app. It never means the app has no
-   vulnerabilities, and the page prints no count for it.
+2. **Only a few apps can be picked; every other app reads *No reference replay yet*.** Not a fault.
+   An app is selectable once a replay file for it ships with the build. *No reference replay yet*
+   means nobody has replayed that app. It never means the app has no vulnerabilities, and the page
+   prints no count for it. Firefox and Thunderbird are replayed on their release channel only: an
+   ESR title shares its app's bundle ID, so the list shows it under that app's row, and the page
+   says *… ESR is not replayed yet*. If no app can be picked and the page says *No reference
+   replay ships with this build*, the build carries no replay file at all: that is reportable state
+   **Z**, below.
 3. **The list has only the apps with a replay, under a sentence about Jamf's patch catalog.** The
    other rows come from the Jamf Patch titles this instance has synced, and the sentence says which
    of two things happened. *…holds no titles on this instance yet…* → no catalog refresh has
-   finished: that is §6. *…could not be read… a failed read, not an empty catalog* → the list
-   request failed; `GET /api/jamf-patch/titles?pageSize=1` says with what status. A `403` is an
-   account without `app:read`; anything else is §4. The replay itself does not need the catalog and
-   is drawn either way.
+   finished. The refresh runs at the top of every hour and needs no Jamf Pro connection: that is
+   §6. *…could not be read… a failed read, not an empty catalog* → the list request failed;
+   `GET /api/jamf-patch/titles?pageSize=1` says with what status. A `403` is an account without
+   `app:read`; anything else is §4. The replay itself does not need the catalog and is drawn
+   either way.
 4. **Where the replay would be, the page says *The reference replay for … is not shown, because its
    file was refused*.** The page checks the file before drawing any of it and refuses it whole, and
    the next sentence is the reason:
    - *The file did not load, or what loaded is not a replay* → the browser could not fetch the
      file's chunk, usually a page left open across an update of the instance. Reload.
    - *Its kind is …* or *Its schema is …* → the file is another kind of document, or a version of
-     the replay this build does not read.
-   - *It lacks …* → a value the page draws is absent from the file; the sentence names it.
+     the replay this build does not read. *Its schema is 1, the earlier replay format…* is a file
+     with no `timeline` block, the part of the file this page reads to name and link where its
+     release dates come from; this build reads only replays that have one.
+   - *Its CVE clock is …* → the file places each CVE on a clock other than NVD's publication date
+     (its `cve_clock` is not `published`). The page's words state that one clock, so the file is
+     refused rather than drawn under words that would misstate it.
+   - *It lacks …* → a value the page draws is absent from the file; the sentence names it. A file
+     must name its release-date source (`timeline.name`), say what one of its dates means
+     (`timeline.clock`) and when that source was fetched (`timeline.fetched_at`), state its CVE
+     clock (`cve_clock`, defined in `clocks.published`), and say which release line the Mac is
+     held to (`branch_choice.held_at_branch`).
    - *Its own totals disagree (…)* → the file's counts do not add up, in the file's own key names:
      for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
      sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
 
-   Reload once. None of the last three can be fixed on the instance, because the file is part of the
+   Reload once. None of the last four can be fixed on the instance, because the file is part of the
    build and no setting or data of yours is read: the same sentence after a reload is reportable
    state **Z**, below.
 5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
    *Evidence*: it is the replay's own identifier, and two pages showing the same run show the same
-   numbers. A different run is a different catalog snapshot or window, both printed beside it.
-6. **A date looks a day or two off the vendor's own release notes.** Release dates on this page are
-   the dates Jamf's patch catalog reports, and the page says so; they are not a claim about when the
-   vendor published. *Definitions and clocks, in the file's own words* at the foot of the page states
-   each clock and each counting rule.
+   numbers. A different run is a different release record, a different window, or a later read of
+   NVD's records. *Evidence* prints the first two: the window, and the record's fetch time and
+   SHA-256 under *Release dates*. It does not print when NVD's records were read, so two runs whose
+   window and release record match differ by that read. Not a fault of the instance.
+6. **A date looks a day or two off the vendor's own release notes.** Every release date on this page
+   comes from the release record that *Evidence › Release dates* names and links, and the line
+   under it says, in the file's words, what one of its dates means: for example the first day a
+   build was served, or the date of a release tag. A record of that kind and a release note can
+   differ by a day or two. *Definitions and clocks, in the file's own words* at the foot of the
+   page states each clock and each counting rule.
+7. **A CVE is counted from a day before NVD said which versions it affects.** The page's CVE clock
+   is NVD's publication date, and it says so twice: in the box at the top of the replay, and under
+   *Evidence › CVE clock*. Each CVE counts from the UTC day NVD published it, even when NVD named
+   the affected versions days later, so a Mac can be counted exposed on a day NVD's record could
+   not yet have matched the CVE to it. That is the clock the page states, not a fault.
+8. **One replay ends earlier than the others** (*This replay ends on …, before the … it was asked
+   to reach*). The file cut its own window short rather than count days it could not date, and
+   *Evidence › Window* prints its reason in the file's words. Google Chrome's is the usual case:
+   its Mac installs a new major version no earlier than the day Google promotes it to stable, so
+   its window stops the day before a major whose promotion day had not been read when the file
+   was made. A later build carries a later file. Not a fault of the instance.
+9. **The newest weeks replay few CVEs, and many are excluded as *NVD has not yet listed which
+   versions are affected*.** NVD often publishes a CVE before it lists the versions the CVE
+   affects. A CVE in that state cannot be placed, so it is excluded and counted in the *Excluded*
+   table, never guessed; excluded is not safe. A later file replays it only if NVD has listed its
+   versions by then, and the list of excluded CVEs says what to expect in its *NVD status when the
+   file was made* column. *Awaiting Analysis* and *Undergoing Analysis* are records NVD has received
+   and not finished. *Deferred* is NVD's mark for a record it does not plan to prioritize for that
+   work, so it may stay excluded; in the files this build ships, most of Firefox's and
+   Thunderbird's exclusions of this kind are *Deferred*. *Analyzed* is a record NVD finished without
+   listing a version of this app. Not a fault of the instance.
+10. **A CVE's *Fix* cell lists several fixes, some dated long before the CVE.** NVD can state
+    several affected ranges for one CVE, for example one for each Firefox ESR line beside the
+    release channel's, and the replay gives each range its own fix: the first release on this
+    replay's release timeline at or past the range's end. Each fix is printed with the range it
+    closes, in NVD's bounds. The one that matters to this Mac is the range its versions fell in,
+    which the file has already judged: the *Outcome* beside it names the release that cleared the
+    CVE, where one did. Not a fault of the instance.
 
-**Z.** A reference replay that shipped with the build is refused, and reads the same after a reload.
-Report the refusal sentence as the page words it, the app that was picked, and the build from
-Settings › Support (§8). Nothing of the organization's is involved, so there is no run or log to attach.
+**Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
+or the page says no reference replay ships with the build. Report the page's sentence as it is
+worded, the app that was picked, and the build from Settings › Support (§8). Nothing of the
+organization's is involved, so there is no run or log to attach.
 
 ## 23. "Out of policy is missing, a title is not judged, or the rule draft fills nothing"
 
