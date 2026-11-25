@@ -524,9 +524,10 @@ def test_the_pointer_is_read_tolerantly_and_says_which_of_four_things_it_is() ->
     assert refused.detail.startswith("the exchange named a link this container refuses (the patch-policy link must be")
 
 
-def test_the_entry_may_say_when_loonsec_last_confirmed_the_document_and_absence_is_not_known() -> None:
+def test_the_entry_may_say_when_loonsecs_publisher_last_built_and_absence_is_not_known() -> None:
     """`built_at` is additive (2026-11-24): an entry that carries it says when LoonSec's publisher
-    last confirmed the document current; one without it, or with something that is not an instant
+    last finished a build, changed or not, which only names why a stale copy is old (the copy's own
+    `as_of` decides stale, the next test); one without it, or with something that is not an instant
     with a zone, leaves that unknown, and is still a link."""
     from datetime import UTC, datetime
 
