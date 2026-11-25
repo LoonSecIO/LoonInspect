@@ -4288,17 +4288,21 @@ refusal: the sentence is the whole report.
      Fleet does not maintain the app. Choose another source.
    - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
      this instance has read that catalog only in part…*** The titles held are partial or unread
-     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial), §27 step 6): a check skipped
-     titles this build could not read, a check was cut short after it had changed some, or the
-     1.3.0 upgrade marked a catalog already read as partial. A title missing from a catalog read
-     only in part is not proof that Fleet has none, so the source does not say `not_held`; when
-     the last check left words, the sentence goes on with them (*The last check said: …*). The
-     Fleet catalog's status line says which case it is: a check cut short, or the upgrade, is
-     cleared by the next check (within the hour) or **Check now**; titles this build could not
-     read stay unread until Fleet next changes its catalog, and *unrecognized Mac manifest path*
-     or *unrecognized Mac index entry* among them means updating LoonInspect (§27 step 6). Once a
-     check reads the whole catalog the source dates the track or reads `not_held`. Until then,
-     choose another source.
+     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). A title missing from a catalog
+     read only in part is not proof that Fleet has none, so the source does not say `not_held`.
+     The sentence goes on with the cause, as the Fleet catalog tab's status line has it:
+     - *The last check did not get an answer: …* → a check was cut short after it had read or
+       changed some titles. The rest is that check's own sentence, walked in §27 step 3; the
+       next check that gets an answer reads the rest.
+     - *The last check said: …* → the last check skipped titles this build could not read (§27
+       step 6). They stay unread until Fleet next changes its catalog, and *unrecognized Mac
+       manifest path* or *unrecognized Mac index entry* among them means updating LoonInspect.
+     - *The last check left no words for it…* → the 1.3.0 upgrade marked a catalog already read
+       as partial, once, and left its status line as it was (§27 step 6, last case). The next
+       check, within the hour, or **Check now** clears it.
+
+     Once a check reads the whole catalog the source dates the track or reads `not_held`. Until
+     then, choose another source.
    - `history_unread`: ***Fleet's version history for … has not been read on this instance
      yet.*** The background reads the titles installed on this organization's Macs, two minutes
      apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the

@@ -471,7 +471,7 @@ async def test_a_fleet_history_is_confirmed_past_its_read_only_by_a_complete_che
     assert partial["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK + (
         " Fleet's catalog was read only in part, so the last check (2026-11-22) confirms no title's history past the day "
         "it was read (2026-11-20), and this view ends the day before; a check that reads the whole catalog carries it to "
-        "that check's day (docs/troubleshooting.md §27 step 6)."
+        "that check's day (docs/troubleshooting.md §33 step 5)."
     )
     assert partial["window"]["until"] == "2026-11-19"
     # The note is not walked: the same days, the same digest, whichever snapshot.
@@ -512,13 +512,15 @@ async def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title(db,
     await snapshot(outcome="ok", checked_at=checked, snapshot_status="partial", detail=skipped)
     partial = await _walk(viewer, 409, app="chrome", source="fleet")
     assert (partial["reason"], partial["source"]) == ("catalog_partial", "fleet")
-    assert partial["detail"] == (
+    opening = (
         f"Fleet's catalog, as this instance holds it, has no Mac title for Google Chrome (bundle id {CHROME}), but this "
-        f"instance has read that catalog only in part, so the title may be one it has not read yet. The last check said: "
-        f"{skipped} The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a check reads the "
-        "whole catalog, this source dates the track or says Fleet holds no title for the app. Until then, choose another "
-        "source."
+        "instance has read that catalog only in part, so the title may be one it has not read yet."
     )
+    closing = (
+        " Once a check reads the whole catalog, this source dates the track or says Fleet holds no title for the app; "
+        "until then, choose another source (docs/troubleshooting.md §33 step 5)."
+    )
+    assert partial["detail"] == f"{opening} The last check said: {skipped}{closing}"
     apps = {app["app"]: app for app in (await viewer.get("/api/patch-policy/apps")).json()["apps"]}
     chrome = apps["chrome"]["sources"]["fleet"]
     assert (chrome["available"], chrome["state"], chrome["sentence"]) == (False, "catalog_partial", partial["detail"])
@@ -529,12 +531,28 @@ async def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title(db,
         FLEET_SLUG
     ]
 
+    # A check cut short after it had read some titles: failed, partial, and the sentence is that
+    # check's own, as the status line has it (§27 step 3), not the skipped-titles case.
+    cut = (
+        "No answer from raw.githubusercontent.com. 3 of the 9 manifests that had changed were read and kept; the next "
+        "check reads the rest."
+    )
+    await snapshot(outcome="unreachable", checked_at=checked, snapshot_status="partial", detail=cut)
+    stopped = await _walk(viewer, 409, app="chrome", source="fleet")
+    assert stopped["reason"] == "catalog_partial"
+    assert stopped["detail"] == f"{opening} The last check did not get an answer: {cut}{closing}"
+    # The 1.3.0 upgrade marks a read catalog partial and leaves the last check's line without words.
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="partial", detail=None)
+    upgraded = await _walk(viewer, 409, app="chrome", source="fleet")
+    assert upgraded["detail"] == opening + timelines.PARTIAL_NO_WORDS + closing
+
     # No state row at all: nothing has said the catalog is whole.
     await db.rollback()
     await db.execute(delete(FleetCatalogState))
     await db.commit()
     unread = await _walk(viewer, 409, app="chrome", source="fleet")
     assert unread["reason"] == "catalog_partial" and "The last check said" not in unread["detail"]
+    assert unread["detail"] == opening + timelines.PARTIAL_NO_WORDS + closing
 
 
 # --- what refuses every source ---------------------------------------------------------------------
