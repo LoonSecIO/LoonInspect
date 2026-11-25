@@ -34,14 +34,39 @@ export interface PatchPolicyFeed {
   httpStatus: number | null;
   detail: string | null;
   fromFile: boolean;
+  /** When LoonSec last confirmed the copy current, as the exchange said; null when it did not say.
+   *  `stale` is judged from it when it is known, and from `asOf` when it is not. */
+  builtAt: string | null;
+}
+
+/** One source against one track: whether a walk of it can be shown at the default two-year window,
+ *  and if not, why (`state` and `sentence`, docs/troubleshooting.md §33). */
+export interface PatchPolicySourceTrack {
+  track: string;
+  available: boolean;
+  state: string;
+  sentence: string | null;
+  first: string | null;
+  last: string | null;
+  matched: number;
+  otherTrack: number;
+  unmatched: number;
+  since: string | null;
+  until: string | null;
 }
 
 export interface PatchPolicySource {
   available: boolean;
+  state: string;
   first: string | null;
   last: string | null;
   sentence: string | null;
   ids: string[];
+  matched: number;
+  asOf: string | null;
+  /** Shown with every view of the source (Fleet's dates trail Homebrew's by hours). */
+  note: string | null;
+  tracks: PatchPolicySourceTrack[];
 }
 
 export interface PatchPolicyTrack {
@@ -98,7 +123,9 @@ export function describeFeed(feed: PatchPolicyFeed, words: FeedWords): string {
     case "current":
       return s.current(asOf ?? "—");
     case "stale":
-      return s.stale(asOf ?? "—", feed.until ?? "—");
+      return feed.builtAt
+        ? s.staleConfirmed(asOf ?? "—", day(feed.builtAt) ?? "—", feed.until ?? "—")
+        : s.stale(asOf ?? "—", feed.until ?? "—");
     case "not_published":
       return `${s.not_published} ${copy()}`;
     case "algorithm_unknown":

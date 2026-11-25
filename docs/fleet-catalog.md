@@ -26,7 +26,11 @@ in a new tab.
 
 It is a second public list of titles and latest versions, beside Jamf's patch catalog, and it
 needs no Jamf Pro connection. It is a display. Nothing here feeds the vulnerability join, the
-App Catalog's judgements, the wire or the posture tape, and LoonInspect installs nothing.
+App Catalog's judgements, the wire or the posture tape, and LoonInspect installs nothing. The
+one other reader is Posture › Patch policy's **Fleet** source (#614): a reference walk of one
+app's track over the days in this history, computed on this instance for an organization with
+the flag on, and neither stored nor sent anywhere ([`troubleshooting.md`](troubleshooting.md)
+§33).
 
 Fleet builds its Mac manifests from Homebrew metadata (the folder's own README says so), so
 *Fleet's latest* is the version Fleet last recorded for the title, not a vendor's
@@ -50,7 +54,9 @@ outbound call.
   its address says the area is off for one without.
 - **Whether the API answers.** `GET /api/fleet-catalog` answers `enabled: false` and no titles
   for an organization with the flag off, whatever the instance holds for another
-  organization. `POST /api/fleet-catalog/refresh` is refused in words.
+  organization. `POST /api/fleet-catalog/refresh` is refused in words, and so is Posture ›
+  Patch policy's **Fleet** source (`GET /api/patch-policy/walk?source=fleet`), with the same
+  sentence.
 
 ## The licence
 

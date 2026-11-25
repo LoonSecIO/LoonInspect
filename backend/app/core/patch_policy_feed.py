@@ -16,8 +16,15 @@ naming what failed, and the copy already held keeps answering. The last two copi
 
 **Held, never computed with, here.** Nothing in this module walks a timeline or compares a
 version; it receives, verifies and stores, and answers `GET /api/patch-policy/apps` with the feed's
-state and what the document says about each app. The day-walk over a timeline is a separate
-module, not built yet.
+state and what the document says about each app. The day-walk over a timeline is
+`app.core.patch_policy_walk`, served by `app.core.patch_policy_views`.
+
+**Stale is judged from LoonSec's last confirmation, when LoonSec gives one** (2026-11-24). The
+exchange's entry may carry `built_at`: when LoonSec's publisher last built the document and found
+it current, which it refreshes on every nightly run whether or not the document changed. A copy
+whose last confirmation is more than three days old reads `stale`. An entry without `built_at` (an
+older LoonSec, or the file on an instance with no network) leaves the confirmation unknown, and
+then the copy's own date decides, as it did before the key existed.
 
 **The tier gate is the organization.** The document is a global artifact, like the corpus, and
 it is consent-gated the way the corpus is (ruled R21, 2026-11-24): an organization whose
@@ -147,6 +154,8 @@ class PatchPolicyPointer:
     asof: datetime | None
     # The query string is the credential (`app.core.egress.corpus_url_for_log`): never in a repr.
     url: str = field(repr=False)
+    # When LoonSec's publisher last confirmed the document current (additive; None: not said).
+    built_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +201,10 @@ def read_offer(value: object) -> Offer:
         url = validate_corpus_url(url, name="the patch-policy link")
     except BlockedCorpusUrl as exc:
         return Offer("unusable", detail=f"the exchange named a link this container refuses ({exc})", host=host)
-    return Offer("pointer", pointer=PatchPolicyPointer(signature=signature, asof=_timestamp(entry.get("asof")), url=url))
+    pointer = PatchPolicyPointer(
+        signature=signature, asof=_timestamp(entry.get("asof")), url=url, built_at=_instant(entry.get("built_at"))
+    )
+    return Offer("pointer", pointer=pointer)
 
 
 def _host(url: str) -> str | None:
@@ -209,6 +221,18 @@ def _timestamp(value: object) -> datetime | None:
         return datetime.strptime(value, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
     except ValueError:
         return None
+
+
+def _instant(value: object) -> datetime | None:
+    """An ISO-8601 instant with its zone (`…Z` or an offset), in UTC; None for anything else, so an
+    additive key that is absent or malformed reads as not said rather than as a refusal."""
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment.astimezone(UTC) if moment.tzinfo else None
 
 
 # --- the check: what stands between the bytes and the table ----------------------------------
@@ -608,8 +632,10 @@ async def record_attempt(
     host: str | None = None,
     http_status: int | None = None,
     detail: str | None = None,
+    built_at: datetime | None = None,
 ) -> None:
-    """Write the feed's one state row, in the caller's transaction."""
+    """Write the feed's one state row, in the caller's transaction. `built_at` is LoonSec's last
+    confirmation of the document this attempt found current, when the exchange said it."""
     values = {
         "attempted_at": datetime.now(UTC),
         "source": source,
@@ -617,6 +643,7 @@ async def record_attempt(
         "host": host,
         "http_status": http_status,
         "detail": detail[:2000] if detail else None,
+        "built_at": built_at,
     }
     await db.execute(
         pg_insert(PatchPolicyFeedState).values(id=1, **values).on_conflict_do_update(index_elements=["id"], set_=values)
@@ -680,7 +707,7 @@ async def _follow(db: AsyncSession, pointer: PatchPolicyPointer, *, transport: h
     host = _host(pointer.url)
     held = await current_doc(db)
     if held is not None and held.doc_id == pointer.signature:
-        await record_attempt(db, source=SOURCE_EXCHANGE, outcome=UNCHANGED, host=host)
+        await record_attempt(db, source=SOURCE_EXCHANGE, outcome=UNCHANGED, host=host, built_at=pointer.built_at)
         logger.debug("patch-policy data unchanged (doc_id %s…)", pointer.signature[:12])
         return UNCHANGED
     try:
@@ -697,7 +724,7 @@ async def _follow(db: AsyncSession, pointer: PatchPolicyPointer, *, transport: h
         _log_refusal(INVALID, str(exc), host, held)
         return INVALID
     await store_document(db, doc)
-    await record_attempt(db, source=SOURCE_EXCHANGE, outcome=STORED, host=host)
+    await record_attempt(db, source=SOURCE_EXCHANGE, outcome=STORED, host=host, built_at=pointer.built_at)
     _log_stored(doc, SOURCE_EXCHANGE)
     return STORED
 
@@ -877,23 +904,19 @@ class FeedView:
     # True when PATCH_POLICY_FEED_FILE is set: the document is read from that file, and the
     # exchange's link is not followed.
     from_file: bool = False
+    # When LoonSec last confirmed the copy that answers current (the exchange's `built_at`), or
+    # None when that is not known; `stale` is judged from it when it is.
+    built_at: datetime | None = None
     document: Mapping[str, object] | None = field(default=None, repr=False)
 
 
-# The two instance timelines are a later slice (the walk's Jamf and Fleet positions, LI-4), so
-# until then each app's answer says so in place of a timeline. Replaced there, not here.
-JAMF_NOT_BUILT = "This build does not read a Jamf timeline for patch policy yet."
-FLEET_NOT_BUILT = "This build does not read a Fleet timeline for patch policy yet."
-
-
 def app_summaries(body: Mapping[str, object]) -> list[dict]:
-    """Each app the document references, its tracks with the counts the document states, and
-    which sources could date it: the public timeline when one of its tracks names a timeline with
-    dated versions. Read from a checked document, so every key is there; nothing is computed
-    beyond the first and last dated day."""
+    """Each app the document references and its tracks, with the counts the document states. Read
+    from a checked document, so every key is there; nothing is computed. Which sources can date
+    each track is `app.core.patch_policy_views.app_sources`, which reads this instance's catalogs."""
     summaries = []
     for app in body["apps"]:
-        tracks, days, public = [], [], set()
+        tracks = []
         for track in app["tracks"]:
             counts = track["counts"]
             tracks.append(
@@ -913,27 +936,12 @@ def app_summaries(body: Mapping[str, object]) -> list[dict]:
                     "clock": {"detectable_at": counts["clock"]["detectable_at"], "published": counts["clock"]["published"]},
                 }
             )
-            dated = [v["date"] for v in track["versions"] if v.get("date")]
-            if track.get("timeline") and dated:
-                public.add(track["timeline"])
-                days += dated
         summaries.append(
             {
                 "app": app["app"],
                 "name": app["name"],
                 "bundle_ids": [b for b in app.get("bundle_ids") or [] if isinstance(b, str)],
                 "tracks": tracks,
-                "sources": {
-                    "public": {
-                        "available": bool(public),
-                        "first": min(days) if days else None,
-                        "last": max(days) if days else None,
-                        "sentence": None if public else f"LoonSec holds no public release dates for {app['name']} yet.",
-                        "ids": sorted(public),
-                    },
-                    "jamf": {"available": False, "first": None, "last": None, "sentence": JAMF_NOT_BUILT, "ids": []},
-                    "fleet": {"available": False, "first": None, "last": None, "sentence": FLEET_NOT_BUILT, "ids": []},
-                },
             }
         )
     return summaries
@@ -973,6 +981,7 @@ def sentence_for(
     source: str | None = None,
     host: str | None = None,
     detail: str | None = None,
+    built_at: date | None = None,
 ) -> str:
     """The one sentence for a state, filled from what the state row and the held copy say."""
     if state == STATE_TIER_OFF:
@@ -983,6 +992,11 @@ def sentence_for(
         return f"Showing LoonSec's patch-policy data dated {as_of.isoformat() if as_of else '—'}."
     if state == STATE_STALE:
         until = (as_of - timedelta(days=1)).isoformat() if as_of else "—"
+        if built_at is not None:
+            return (
+                f"Showing patch-policy data dated {as_of.isoformat() if as_of else '—'}; LoonSec last confirmed it current "
+                f"on {built_at.isoformat()}, more than three days ago, and the walk ends {until}."
+            )
         return (
             f"Showing patch-policy data dated {as_of.isoformat() if as_of else '—'}, more than three days old; "
             f"the walk ends {until}."
@@ -1037,15 +1051,26 @@ async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedVie
     detectable = sources.get("detectable") if isinstance(sources, Mapping) else None
     coverage = detectable.get("coverage_since") if isinstance(detectable, Mapping) else None
     now = now or datetime.now(UTC)
+    # LoonSec's last confirmation, when the attempt that found the copy current carried one.
+    built_at = attempt.built_at if attempt is not None and attempt.outcome in (STORED, UNCHANGED) else None
     if failed:
         state = attempt.outcome
-    elif now - held.as_of > STALE_AFTER:
+    elif now - (built_at or held.as_of) > STALE_AFTER:
         state = STATE_STALE
     else:
         state = STATE_CURRENT
+    words = sentence_for(
+        state,
+        as_of=as_of,
+        source=seen["source"],
+        host=seen["host"],
+        detail=seen["detail"],
+        built_at=built_at.date() if built_at else None,
+    )
     return FeedView(
         state=state,
-        sentence=sentence_for(state, as_of=as_of, source=seen["source"], host=seen["host"], detail=seen["detail"]),
+        sentence=words,
+        built_at=built_at,
         doc_id=held.doc_id,
         as_of=held.as_of,
         fetched_at=held.fetched_at,

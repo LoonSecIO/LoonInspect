@@ -5,10 +5,10 @@ track in it, one timeline of release dates (the dates LoonSec published, this in
 Jamf's public patch catalog, or this instance's Fleet history) and the window asked for, and
 returns the walk as data: a per-day series of open CVEs, every CVE's outcome under each stop,
 the totals, the installs, the exclusions, how the timeline joined the document, and an
-`input_id` that names the inputs so a caller can memoise the answer. The API that serves it
-(`/api/patch-policy/walk`) and the page that draws it are later slices; nothing calls this yet.
-Each `REFUSED_*` sentence says what failed, why and what to check; the API makes them reachable
-as 409 details, so its pull request lands each one's troubleshooting step (§22) with it.
+`input_id` that names the inputs so a caller can memoise the answer. `GET /api/patch-policy/walk`
+(`app.api.patch_policy`) serves it, over the timelines `app.core.patch_policy_timelines` reads;
+the page that draws it is a later slice. Each `REFUSED_*` sentence says what failed, why and
+what to check; the API answers them as 409 details, and docs/troubleshooting.md §33 walks each.
 
 **Pure.** No database, no network, no inventory, no wall clock: the window's last day comes
 from the dates the inputs carry. The same inputs give the same bytes, so `run_id` (the digest
@@ -411,6 +411,20 @@ def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any],
     return row, chosen
 
 
+def track_of(document: Any, app: str, track: str | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """The app's row and one of its tracks, by id, or its default track when `track` is None;
+    refused in the walk's own words (`app_unknown`, `track_unknown`) when there is none."""
+    if track is None and isinstance(document, Mapping) and isinstance(document.get("apps"), list):
+        row = next((a for a in document["apps"] if isinstance(a, Mapping) and a.get("app") == app), None)
+        tracks = row.get("tracks") if isinstance(row, Mapping) else None
+        if isinstance(tracks, list):
+            listed = [t for t in tracks if isinstance(t, Mapping) and isinstance(t.get("track"), str)]
+            chosen = next((t for t in listed if t.get("default") is True), listed[0] if listed else None)
+            if chosen is not None:
+                track = chosen["track"]
+    return _find_track(document, app, track or "")
+
+
 def _versions(track: Mapping[str, Any], name: str, label: str) -> list[_Version]:
     raw = track.get("versions")
     if not isinstance(raw, list) or not raw:
@@ -538,8 +552,13 @@ def _rows(
     held = not_detectable.get("count", 0)
     if not isinstance(held, int) or isinstance(held, bool) or held < 0:
         raise _invalid("not_detectable.count", f"{held!r} is not a count", name, label)
-    listed = not_detectable.get("cves") or []
-    if not isinstance(listed, list) or not all(isinstance(cve_id, str) and cve_id for cve_id in listed):
+    raw_listed = not_detectable.get("cves") or []
+    # Each entry is a CVE id, or a row carrying one (`{cve_id, published}`), the two shapes the
+    # feed's check (`app.core.patch_policy_feed`) admits: a document stored there must walk here.
+    listed = None
+    if isinstance(raw_listed, list):
+        listed = [entry.get("cve_id") if isinstance(entry, Mapping) else entry for entry in raw_listed]
+    if listed is None or not all(isinstance(cve_id, str) and cve_id for cve_id in listed):
         raise _invalid("not_detectable.cves", "not a list of CVE ids", name, label)
     if len(set(listed)) != len(listed) or len(listed) > held:
         raise _invalid("not_detectable.cves", f"{len(listed)} listed against a count of {held}", name, label)

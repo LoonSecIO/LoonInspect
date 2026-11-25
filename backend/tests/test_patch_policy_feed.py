@@ -23,6 +23,7 @@ import httpx
 import pytest
 
 from app.core import patch_policy_feed as feed
+from app.core import patch_policy_timelines as timelines
 from app.core.vuln_library import CorpusRefused, download_signed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "patch_policy" / "reference.json"
@@ -274,14 +275,24 @@ def test_a_row_with_a_detectable_day_must_say_it_uses_that_clock() -> None:
     )
 
 
-def test_every_document_the_check_accepts_is_one_the_route_can_serve() -> None:
+# Catalogs as an instance holds them before either was ever read: no Jamf title synced, and the
+# Fleet catalog flag off.
+_NO_JAMF = timelines.JamfCatalog(size=0, refreshed_at=None, titles=())
+_FLEET_OFF = timelines.FleetHistory(
+    enabled=False, catalog_read=False, checked_ok_at=None, catalog_detail=None, history_failure=None, titles=()
+)
+
+
+async def test_every_document_the_check_accepts_is_one_the_route_can_serve() -> None:
     """What `read_document` stores, `GET /api/patch-policy/apps` answers with on every load until
     LoonSec publishes another: its response model is held to the fixture here."""
+    from app.core import patch_policy_views as views
     from app.schemas.patch_policy import PatchPolicyAppOut
 
     body = feed.read_document(GZ).body
+    sources = await views.sources_of(body, _NO_JAMF, _FLEET_OFF)
     for app in feed.app_summaries(body):
-        PatchPolicyAppOut.model_validate(app)
+        PatchPolicyAppOut.model_validate({**app, "sources": sources[app["app"]]})
 
 
 @pytest.mark.asyncio
@@ -367,6 +378,40 @@ def test_the_pointer_is_read_tolerantly_and_says_which_of_four_things_it_is() ->
     assert refused.detail.startswith("the exchange named a link this container refuses (the patch-policy link must be")
 
 
+def test_the_entry_may_say_when_loonsec_last_confirmed_the_document_and_absence_is_not_known() -> None:
+    """`built_at` is additive (2026-11-24): an entry that carries it says when LoonSec's publisher
+    last confirmed the document current; one without it, or with something that is not an instant
+    with a zone, leaves that unknown, and is still a link."""
+    from datetime import UTC, datetime
+
+    def entry(**extra) -> feed.Offer:
+        return feed.read_offer(
+            {"patch_walk/1": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}}
+        )
+
+    assert entry(built_at="2026-11-24T07:12:03Z").pointer.built_at == datetime(2026, 11, 24, 7, 12, 3, tzinfo=UTC)
+    assert entry(built_at="2026-11-24T08:12:03+01:00").pointer.built_at == datetime(2026, 11, 24, 7, 12, 3, tzinfo=UTC)
+    for unknown in ({}, {"built_at": None}, {"built_at": "yesterday"}, {"built_at": "2026-11-24T07:12:03"}, {"built_at": 3}):
+        offer = entry(**unknown)
+        assert offer.kind == "pointer" and offer.pointer.built_at is None, unknown
+
+
+def test_stale_says_which_date_decided_it() -> None:
+    from datetime import date
+
+    unknown = feed.sentence_for("stale", as_of=date(2026, 11, 23))
+    assert unknown == "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."
+    confirmed = feed.sentence_for("stale", as_of=date(2026, 11, 23), built_at=date(2026, 11, 24))
+    assert confirmed == (
+        "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-24, more than three days "
+        "ago, and the walk ends 2026-11-22."
+    )
+    for sentence in (unknown, confirmed):
+        assert sentence.split(" 2026-")[0] in _EN_TS
+    assert "LoonSec last confirmed it current on" in _EN_TS
+    assert "LoonSec last confirmed it current on" in _RUNBOOK
+
+
 # --- the download it shares with the corpus ---------------------------------------------------
 
 
@@ -405,31 +450,42 @@ async def test_the_patch_policy_download_says_patch_policy_and_keeps_the_status(
 # --- what an organization reads ---------------------------------------------------------------
 
 
-def test_each_app_says_which_sources_can_date_it() -> None:
-    apps = {app["app"]: app for app in feed.app_summaries(DOC)}
-    chrome, wireshark, vlc = apps["chrome"], apps["wireshark"], apps["vlc"]
+async def test_each_app_says_which_sources_can_date_it() -> None:
+    """Each source answers per track: whether a walk of it can be shown, the default two-year window
+    it would cover, and otherwise the state word and sentence that say why not (§33)."""
+    from app.core import fleet_catalog
+    from app.core import patch_policy_views as views
 
-    assert chrome["sources"]["public"] == {
-        "available": True,
-        "first": "2025-09-30",
-        "last": "2025-10-28",
-        "sentence": None,
-        "ids": ["chrome-mac-stable"],
-    }
-    assert wireshark["sources"]["public"]["ids"] == ["wireshark-tags"]
-    assert [t["track"] for t in wireshark["tracks"]] == ["wireshark/4.4", "wireshark/newest"]
-    assert wireshark["tracks"][1]["clock"] == {"detectable_at": 2, "published": 1}
+    views.reset_for_tests()
+    apps = {app["app"]: app for app in feed.app_summaries(DOC)}
+    assert [t["track"] for t in apps["wireshark"]["tracks"]] == ["wireshark/4.4", "wireshark/newest"]
+    assert apps["wireshark"]["tracks"][1]["clock"] == {"detectable_at": 2, "published": 1}
+    sources = await views.sources_of(DOC, _NO_JAMF, _FLEET_OFF)
+    chrome, wireshark, vlc = sources["chrome"], sources["wireshark"], sources["vlc"]
+
+    public = chrome["public"]
+    assert (public["available"], public["state"], public["first"], public["last"]) == (
+        True,
+        "available",
+        "2025-09-30",
+        "2025-10-28",
+    )
+    assert public["ids"] == ["chrome-mac-stable"] and public["matched"] == 4 and public["sentence"] is None
+    assert public["tracks"][0]["since"] == "2025-11-28" and public["tracks"][0]["until"] == "2026-11-22"
+    assert wireshark["public"]["ids"] == ["wireshark-tags"]
+    assert [t["since"] for t in wireshark["public"]["tracks"]] == ["2024-11-22", "2024-11-22"]
     # Undated versions: LoonSec holds no public dates, and says so rather than an empty range.
-    assert vlc["sources"]["public"] == {
-        "available": False,
-        "first": None,
-        "last": None,
-        "sentence": "LoonSec holds no public release dates for VLC media player yet.",
-        "ids": [],
-    }
-    for app in apps.values():
-        assert app["sources"]["jamf"]["available"] is False and app["sources"]["jamf"]["sentence"] == feed.JAMF_NOT_BUILT
-        assert app["sources"]["fleet"]["available"] is False and app["sources"]["fleet"]["sentence"] == feed.FLEET_NOT_BUILT
+    assert vlc["public"]["available"] is False and vlc["public"]["state"] == "no_public_dates"
+    assert vlc["public"]["sentence"] == (
+        "LoonSec holds no public release dates for VLC media player yet. Jamf or Fleet may: they are read from this instance."
+    )
+    for app in sources.values():
+        assert (app["jamf"]["available"], app["jamf"]["state"], app["jamf"]["sentence"]) == (
+            False,
+            "never_synced",
+            timelines.JAMF_NEVER_SYNCED_SENTENCE,
+        )
+        assert (app["fleet"]["state"], app["fleet"]["sentence"]) == ("flag_off", fleet_catalog.FLAG_OFF)
 
 
 @pytest.mark.parametrize("state", feed.FEED_STATES)

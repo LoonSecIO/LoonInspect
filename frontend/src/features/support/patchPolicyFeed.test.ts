@@ -22,6 +22,7 @@ function feed(state: PatchPolicyFeed["state"], extra: Partial<PatchPolicyFeed> =
     httpStatus: null,
     detail: null,
     fromFile: false,
+    builtAt: null,
     ...extra
   };
 }
@@ -44,6 +45,11 @@ const BACKEND: [string, PatchPolicyFeed, string][] = [
   ],
   ["current", feed("current", held), "Showing LoonSec's patch-policy data dated 2026-11-23."],
   ["stale", feed("stale", held), "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."],
+  [
+    "stale, by LoonSec's last confirmation",
+    feed("stale", { ...held, builtAt: "2026-11-24T07:12:03Z" }),
+    "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-24, more than three days ago, and the walk ends 2026-11-22."
+  ],
   [
     "not published, no copy",
     feed("not_published"),

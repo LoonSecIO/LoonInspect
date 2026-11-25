@@ -451,8 +451,15 @@ ignores it, which is the same clause every other field of this response lives un
 that reads the document to a link of the corpus's shape, all three keys or none:
 
 ```jsonc
-"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…" } }
+"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…",
+                                    "built_at": "2026-11-24T07:12:03Z" } }
 ```
+
+`built_at` is additive and optional: when LoonSec's publisher last built the document and found
+it current, which it refreshes nightly whether or not the document changed. The container keeps
+it with the attempt that found the copy current, and the copy reads *stale* once that is more
+than three days old; without it (an older LoonSec, or the file below) the copy's own `as_of`
+decides, as before.
 
 The document is LoonSec's patch-policy reference: one object for every app LoonSec
 references, built from NVD records, LoonSec's record of NVD changes, and public vendor release

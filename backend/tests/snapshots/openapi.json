@@ -7640,6 +7640,18 @@
             ],
             "title": "Attemptedat"
           },
+          "builtAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtat"
+          },
           "coverageSince": {
             "anyOf": [
               {
@@ -7786,9 +7798,56 @@
         "title": "PatchPolicyFeedOut",
         "type": "object"
       },
-      "PatchPolicySourceOut": {
-        "description": "One timeline source for an app: whether it can date the app's versions, its first and\nlast dated day, the sentence when it cannot, and its own ids (timeline ids for `public`).",
+      "PatchPolicyRefusalOut": {
+        "description": "A walk that is not shown: `detail` is the sentence (what failed, why, what to check;\ndocs/troubleshooting.md \u00a733), `reason` its word, `source` the timeline it concerns when it\nconcerns one, and `facts` what a page may list beside it (the unmatched versions, the totals\nthat disagreed, the window).",
         "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "facts": {
+            "additionalProperties": true,
+            "title": "Facts",
+            "type": "object"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "detail",
+          "reason"
+        ],
+        "title": "PatchPolicyRefusalOut",
+        "type": "object"
+      },
+      "PatchPolicySourceOut": {
+        "description": "One timeline source for an app, over all its tracks: whether any track can be walked on\nit, its first and last dated day, the sentence when it cannot (the default track's), how many\ndistinct versions it matched, the day it was read, a note shown with every view of it, its\nown ids (the public timeline's id, Jamf title ids, Fleet slugs), and each track's answer.",
+        "properties": {
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
           "available": {
             "title": "Available",
             "type": "boolean"
@@ -7824,6 +7883,22 @@
             ],
             "title": "Last"
           },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
           "sentence": {
             "anyOf": [
               {
@@ -7834,6 +7909,17 @@
               }
             ],
             "title": "Sentence"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PatchPolicySourceTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
           }
         },
         "required": [
@@ -7841,9 +7927,113 @@
           "first",
           "ids",
           "last",
-          "sentence"
+          "sentence",
+          "state"
         ],
         "title": "PatchPolicySourceOut",
+        "type": "object"
+      },
+      "PatchPolicySourceTrackOut": {
+        "description": "One source against one track: whether a walk of it can be shown at the default two-year\nwindow, and if not, why (`state` and `sentence`, docs/troubleshooting.md \u00a733).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "otherTrack": {
+            "title": "Othertrack",
+            "type": "integer"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          },
+          "unmatched": {
+            "title": "Unmatched",
+            "type": "integer"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "available",
+          "first",
+          "last",
+          "matched",
+          "otherTrack",
+          "sentence",
+          "since",
+          "state",
+          "track",
+          "unmatched",
+          "until"
+        ],
+        "title": "PatchPolicySourceTrackOut",
         "type": "object"
       },
       "PatchPolicySourcesOut": {
@@ -7957,6 +8147,175 @@
           "versionsDated"
         ],
         "title": "PatchPolicyTrackOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkCheckOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "matched",
+              "unchecked_window"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "state"
+        ],
+        "title": "PatchPolicyWalkCheckOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkOut": {
+        "description": "One app track walked day by day over one timeline (#614), as `app.core.patch_policy_walk`\nreturns it, trimmed for the wire: every total and every stop's per-day series whole, `cves`\npaged (`cves_page`), and each CVE's day intervals only under the stop asked for\n(`intervals_for`). `run_id` names the walk as computed, before trimming; `input_id` names its\ninputs. `definitions` and `clocks` state every counting rule in words.",
+        "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "check": {
+            "$ref": "#/components/schemas/PatchPolicyWalkCheckOut"
+          },
+          "clocks": {
+            "additionalProperties": true,
+            "title": "Clocks",
+            "type": "object"
+          },
+          "counts": {
+            "additionalProperties": true,
+            "title": "Counts",
+            "type": "object"
+          },
+          "cves": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Cves",
+            "type": "array"
+          },
+          "cves_page": {
+            "$ref": "#/components/schemas/PatchPolicyWalkPageOut"
+          },
+          "definitions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Definitions",
+            "type": "object"
+          },
+          "definitions_version": {
+            "title": "Definitions Version",
+            "type": "string"
+          },
+          "document_definitions": {
+            "additionalProperties": true,
+            "title": "Document Definitions",
+            "type": "object"
+          },
+          "exclusions": {
+            "additionalProperties": true,
+            "title": "Exclusions",
+            "type": "object"
+          },
+          "input_id": {
+            "title": "Input Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "intervals_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervals For"
+          },
+          "kind": {
+            "const": "patch_policy_walk",
+            "title": "Kind",
+            "type": "string"
+          },
+          "policies": {
+            "additionalProperties": true,
+            "title": "Policies",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "integer"
+          },
+          "window": {
+            "additionalProperties": true,
+            "title": "Window",
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm",
+          "check",
+          "clocks",
+          "counts",
+          "cves",
+          "cves_page",
+          "definitions",
+          "definitions_version",
+          "document_definitions",
+          "exclusions",
+          "input_id",
+          "inputs",
+          "intervals_for",
+          "kind",
+          "policies",
+          "run_id",
+          "schema",
+          "window"
+        ],
+        "title": "PatchPolicyWalkOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkPageOut": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "page_size",
+          "pages",
+          "total"
+        ],
+        "title": "PatchPolicyWalkPageOut",
         "type": "object"
       },
       "PatchRule": {
@@ -17282,7 +17641,7 @@
     },
     "/api/patch-policy/apps": {
       "get": {
-        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy more than three days old, and `current`. Every state's sentence says what\nit means and what to check (docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and which sources can date its versions: the\npublic timeline when the document holds one; the Jamf and Fleet positions answer\n`available: false` until they are built.",
+        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy LoonSec last confirmed more than three days ago (or, when LoonSec did not\nsay, dated more than three days ago), and `current`. Every state's sentence says what it\nmeans and what to check (docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,\nwhether a walk of it can be shown, each track's answer with the default two-year window it\nwould cover, and otherwise the state word and sentence that say why not\n(docs/troubleshooting.md \u00a733). Jamf and Fleet are read from this instance's own copies.",
         "operationId": "patch_policy_apps_api_patch_policy_apps_get",
         "responses": {
           "200": {
@@ -17297,6 +17656,170 @@
           }
         },
         "summary": "Patch Policy Apps",
+        "tags": [
+          "patch-policy"
+        ]
+      }
+    },
+    "/api/patch-policy/walk": {
+      "get": {
+        "description": "One app track walked day by day over one timeline, under every stop of the patch-policy\nslider, for a window of two or three years: what a Mac that installed each release that many\ndays after it was dated would have run, and which CVEs it ran affected, from the first day\neach was detectable. A reference analysis: it reads no device, and its result is neither stored\nnor sent anywhere.\n\n`source` picks the dates releases install on: `public` (LoonSec's published release dates),\n`jamf` (this instance's copy of Jamf's public patch catalog) or `fleet` (this instance's copy of\nFleet's history, while this organization's Fleet catalog flag is on). The walk is held to\nLoonSec's published totals for the app: a window whose own walk disagrees refuses every source\nof the app, and a window LoonSec published no totals for is shown as `check.state:\nunchecked_window` only when another window of the app matched.\n\nMemoised by the walk's `input_id`, so the slider and the toggle re-ask cheaply. The answer\nkeeps every total and every stop's per-day series whole, pages `cves` (`cves_page`), and keeps\neach CVE's day intervals only under `stop`. Anything that cannot be walked is a 409 whose\n`detail` is the sentence that says why (docs/troubleshooting.md \u00a733), with `reason`, `source`\nand `facts` beside it; the feed's own states (\u00a732) come back the same way.",
+        "operationId": "patch_policy_walk_api_patch_policy_walk_get",
+        "parameters": [
+          {
+            "description": "The app's id in LoonSec's data, as `/apps` lists it.",
+            "in": "query",
+            "name": "app",
+            "required": true,
+            "schema": {
+              "description": "The app's id in LoonSec's data, as `/apps` lists it.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "App",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of the app's tracks; its default when absent.",
+            "in": "query",
+            "name": "track",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One of the app's tracks; its default when absent.",
+              "title": "Track"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "public",
+              "enum": [
+                "public",
+                "jamf",
+                "fleet"
+              ],
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The window asked for, in years ending the day before the data's date.",
+            "in": "query",
+            "name": "years",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "description": "The window asked for, in years ending the day before the data's date.",
+              "maximum": 3,
+              "minimum": 2,
+              "title": "Years",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`common` cuts the window to the days every source that can date the track covers.",
+            "in": "query",
+            "name": "align",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "common",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`common` cuts the window to the days every source that can date the track covers.",
+              "title": "Align"
+            }
+          },
+          {
+            "description": "The stop whose day intervals each CVE row carries; none when absent.",
+            "in": "query",
+            "name": "stop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1d",
+                    "7d",
+                    "14d",
+                    "30d",
+                    "60d",
+                    "never"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The stop whose day intervals each CVE row carries; none when absent.",
+              "title": "Stop"
+            }
+          },
+          {
+            "description": "The page of `cves`, 200 rows each.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "The page of `cves`, 200 rows each.",
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyWalkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyRefusalOut"
+                }
+              }
+            },
+            "description": "The walk is not shown; `detail` says why."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Policy Walk",
         "tags": [
           "patch-policy"
         ]
