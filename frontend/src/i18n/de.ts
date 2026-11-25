@@ -1562,6 +1562,20 @@ export const de: Translations = {
     historyReplacedNone: "keine",
     historyReadNothing: (readAt: string) => `Gelesen ${readAt}.`,
     historyCommitLabel: (at: string, sha: string) => `${at}: Commit ${sha} in Fleets Repository (öffnet in neuem Tab)`,
+    historySearch: "Fleet-Version suchen",
+    historySearchNone: "Keine datierte Version passt zu dieser Suche.",
+    historyManifest: "Manifest zu diesem Commit",
+    historyManifestLabel: (version: string) => `Fleets Manifest für ${version} beim Commit, der diese Version datiert hat`,
+    historyCompare: (version: string) => `${version} vergleichen`,
+    historyTargetColumn: "Fleet-Ziel",
+    cadenceTitle: "Updatehäufigkeit",
+    cadenceRecent: (weeks: number) => `Datierte Versionen in den letzten ${weeks} Wochen`,
+    cadenceMedianGap: "Medianabstand zwischen datierten Versionen, ganze Geschichte",
+    cadenceDays: (days: string, one: boolean) => `${days} ${one ? "Tag" : "Tage"}`,
+    cadenceChartLabel: (count: string, weeks: number, through: string) =>
+      `Balkendiagramm datierter Fleet-Versionen je Woche: ${count} in den ${weeks} Wochen bis ${through} (UTC). Die Tabelle darunter listet jede Version.`,
+    cadenceGaps:
+      "Diese Geschichte hat Lücken; die Zahlen umfassen daher nur die Versionen, die sie datieren konnte. Die Statuszeile des Lesens unter diesem Diagramm nennt den Grund.",
     notDatedHint:
       "Die Versionsgeschichte dieses Titels ist gelesen, konnte die neueste Version aber nicht datieren: Das Lesen hat ihr Eintreffen nicht gesehen. Öffnen Sie den Titel für den Grund.",
     statusNever:

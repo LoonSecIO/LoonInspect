@@ -79,6 +79,7 @@ ALIASES = {
 SHARED = {
     "revision": 1,
     "app": "route-sweep",  # an app in LoonSec's patch-policy data (#614): global, like the document itself
+    "app_hash": "0" * 32,  # an installed app (#899): a hash of its name and bundle ID, alike in every tenant
     "bundle_id": "com.example.sweep",
     "client_id": "c",
     "full_path": "devices",
@@ -183,8 +184,10 @@ STOPS = {
         "POST /api/jamf-patch/sync",
     ],
     "the connection holds no Jamf credential": ["POST /api/devices/{device_id}/refresh"],
-    "the Fleet catalog flag is off: the check and a title's history are refused before anything asks GitHub": [
+    "the Fleet catalog flag is off: each is refused at the flag, before anything asks GitHub or an AI provider": [
         *("POST /api/fleet-catalog/refresh", "GET /api/fleet-catalog/{slug}/history", "POST /api/fleet-catalog/{slug}/history"),
+        *("GET /api/fleet-catalog/migration/apps/{app_hash}", "GET /api/fleet-catalog/migration/titles/{slug}"),
+        *("GET /api/fleet-catalog/briefing", "POST /api/fleet-catalog/briefing"),
     ],
 }
 STOPPED = {route: why for why, routes in STOPS.items() for route in routes}
