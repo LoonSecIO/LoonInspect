@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FleetTitleHistory } from "@/features/fleetCatalog/FleetTitleHistory";
 import { historyActivity } from "@/features/fleetCatalog/historyActivity";
 import type { FleetTitleHistory as History } from "@/features/fleetCatalog/types";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 const locale = vi.hoisted(() => ({ current: "en" as "en" | "de" }));
@@ -89,13 +90,14 @@ describe("the version history panel", () => {
     expect(manifest.getAttribute("href")).toBe(
       `https://github.com/fleetdm/fleet/blob/${"b".repeat(40)}/ee/maintained-apps/outputs/example%40esr/darwin.json`
     );
-    expect(screen.queryByRole("link", { name: /^Manifest at this commit/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /^Manifest at this commit for 1\.9, / })).toBe(manifest); // WCAG 2.5.3, in both languages:
+    for (const words of [en.fleetCatalog, de.fleetCatalog]) expect(words.historyManifestLabel("1.9").startsWith(words.historyManifest)).toBe(true);
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([en.fleetCatalog.historyCompare("1.9")]);
     fireEvent.click(screen.getByRole("button", { name: en.fleetCatalog.historyCompare("1.9") }));
     expect(onSelectVersion).toHaveBeenCalledExactlyOnceWith("1.9");
 
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "9.9" } });
-    expect(screen.getByText(en.fleetCatalog.historySearchNone)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe(en.fleetCatalog.historySearchNone);
     expect(screen.queryByRole("table")).toBeNull();
   });
 
@@ -108,11 +110,19 @@ describe("the version history panel", () => {
     expect(screen.queryByText(en.fleetCatalog.cadenceMedianGap)).toBeNull();
   });
 
-  it("reads the median gap in the reader's language", async () => {
+  it("reads the median gap and each version's date in the reader's language", async () => {
     locale.current = "de";
     await show(HISTORY, { detail: true });
 
-    expect(screen.getByText("44,6 Tage")).toBeTruthy();
+    expect([screen.getByText("44,6 Tage"), screen.getByText("20.11.2026")].every(Boolean)).toBe(true);
     expect(en.fleetCatalog.cadenceDays("1", true)).toBe("1 day");
+  });
+
+  it("finds a version with spaces around the search, and in any case (#912)", async () => {
+    await show({ ...HISTORY, versions: [...HISTORY.versions, { ...HISTORY.versions[2], version: "1.7 ESR" }] }, { detail: true });
+    for (const [query, version] of [[" 1.9 ", "1.9"], ["esr", "1.7 ESR"]]) {
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: query } });
+      expect(Array.from(screen.getByRole("table").querySelectorAll("tbody tr td:first-child")).map((cell) => cell.textContent)).toEqual([version]);
+    }
   });
 });

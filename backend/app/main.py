@@ -100,6 +100,7 @@ from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.update_check import startup_line as update_check_line
 from app.core.update_check import tick as update_check
 from app.core.vuln_library import refresh_from_db
+from app.core.vuln_selection import CorpusSelectionRefused
 from app.mcp.server import MCPRuntime
 from app.mdm.collections import tick_tenant
 from app.mdm.concurrency import IngestBusy
@@ -792,6 +793,27 @@ async def _stored_value_unreadable(request: Request, exc: StoredValueUnreadable)
     sentence = str(exc)
     if not _unreadable_reported:
         _unreadable_reported = True
+        logger.error(sentence, extra={"path": request.url.path})
+    return JSONResponse(status_code=503, content={"detail": sentence})
+
+
+# A refused corpus selection (#932). Under VULN_TENANT_SELECTION every read of stored
+# vulnerability answers first binds this organization's selected release, and a selection
+# this database cannot serve is refused with an operator's sentence: most often a restore
+# that brought the pointer back without the release it names. It used to escape every route
+# as a bare 500. Answered as its own sentence, 503 for the reason the handler above gives:
+# the service is up and every page that does not read vulnerability answers works; what is
+# unavailable is the selected intelligence, until the database is restored. Logged once
+# per process with no traceback, so the container log reads it at the top.
+_selection_refusal_reported = False
+
+
+@app.exception_handler(CorpusSelectionRefused)
+async def _corpus_selection_refused(request: Request, exc: CorpusSelectionRefused) -> JSONResponse:
+    global _selection_refusal_reported
+    sentence = str(exc)
+    if not _selection_refusal_reported:
+        _selection_refusal_reported = True
         logger.error(sentence, extra={"path": request.url.path})
     return JSONResponse(status_code=503, content={"detail": sentence})
 

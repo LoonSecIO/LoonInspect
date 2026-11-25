@@ -10,10 +10,6 @@ import { useLocale } from "@/i18n/LocaleContext";
 
 const COMMIT_URL = "https://github.com/fleetdm/fleet/commit/";
 
-function day(value: string | null): string {
-  return value === null ? "" : new Date(value).toLocaleDateString();
-}
-
 /**
  * One title's version history, opened from its row on the Fleet catalog tab (#838): each version
  * Fleet's catalog carried, the day it took it (linked to the commit), and the version it replaced.
@@ -41,7 +37,8 @@ export function FleetTitleHistory({
   /** A Compare button on each row, handing the caller that row's version. */
   onSelectVersion?: (version: string) => void;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const day = (value: string | null) => (value === null ? "" : new Date(value).toLocaleDateString(locale));
   const [query, setQuery] = useState("");
   const [history, setHistory] = useState<History | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +131,7 @@ export function FleetTitleHistory({
         </label>
       )}
       {history.versions.length > 0 && matches.length === 0 && (
-        <p className="text-muted-foreground">{t.fleetCatalog.historySearchNone}</p>
+        <p role="status" className="text-muted-foreground">{t.fleetCatalog.historySearchNone}</p>
       )}
       {matches.length > 0 && wrap(
         <table className={detail ? "w-full" : "w-full max-w-xl"}>
