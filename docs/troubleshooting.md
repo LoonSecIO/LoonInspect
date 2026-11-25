@@ -4162,7 +4162,9 @@ Public by default), the window (2 or 3 years) and *Compare sources on the days t
 (`align=common`). A source that cannot date the track is drawn disabled, and its sentence is printed
 under the toggle in the page's language, with the instance's own English sentence beneath it as
 *This instance's words: …*: that second sentence is the one to report. A walk the instance refuses is
-printed the same way where the walk would be. Under the slider the day graph draws the CVEs open
+printed the same way where the walk would be, and Evidence marks each sentence it prints from the
+instance (the timeline's note, each cut of the window, a source left out, the check's detail) the
+same way. Under the slider the day graph draws the CVEs open
 on each day at the selected stop, with the days CVEs opened and the days an install resolved them
 marked in a strip beneath; *The days the count moved, as a table* lists every one of those days.
 
@@ -4436,9 +4438,10 @@ refusal: the sentence is the whole report.
     `how: next_dated` or `fix` with no `dated_as`, or a `next_dated` entry whose `dated_as` the
     CVE's affected range covers, is reportable state **AE**.
 
-    On the page, the list of CVEs gives each row's `fix_dated_by` in its last column, *Fix, as this
-    source dates it*, one line per entry: a `fix` entry is the fix and the date the source gives it,
-    with nothing more; a `next_dated` entry reads *…: not dated by this source, so counted from …,
+    On the page, the list of CVEs gives each row's `fix_dated_by` on a line beneath the row, *Fixes
+    of CVE-…, as this source dates them:*, one list item per entry (two entries at one version are
+    two items: the fix, then NVD's bound that lands there, with `named`): a `fix` entry is the fix
+    and the date the source gives it, with nothing more; a `next_dated` entry reads *…: not dated by this source, so counted from …,
     the first version at or above the fix that it dates outside the CVE's affected range, on …*
     (a version the source dates inside the range is passed over, so this can be later than the
     next version the source dates); an `undated` one reads *…: this source dates no version at or

@@ -124,11 +124,13 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         <p className="pt-1 text-sm text-muted-foreground">{copy.neverSeenSaid}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Four abreast only from 1280 px: beside the app list at 1024 px a tile is narrower than a
+          six-digit German figure ("134.587"), which then ran under the next tile. */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {tiles.map(([label, value, hint]) => (
-          <div key={label} className="rounded-lg border bg-card p-3">
+          <div key={label} className="min-w-0 rounded-lg border bg-card p-3">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
+            <p className="break-words text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
             <p className="text-xs text-muted-foreground">{hint}</p>
           </div>
         ))}

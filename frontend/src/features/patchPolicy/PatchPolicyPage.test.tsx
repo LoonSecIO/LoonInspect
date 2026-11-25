@@ -232,6 +232,73 @@ describe("with LoonSec's data, the page walks it", () => {
     expect(text()).toContain(sentence);
   });
 
+  it("says a reason that cuts both ends of the window once, and the instance's sentence for it once, marked as the instance's", async () => {
+    const sentence = "The view is aligned to the days every compared timeline covers.";
+    walkApi.getPatchPolicyWalk.mockResolvedValue({
+      walk: walkFixture({
+        window: {
+          requested: { years: 2, since: "2023-01-10", until: "2025-01-10" },
+          since: "2025-01-01",
+          until: "2025-01-09",
+          days: 9,
+          // align=common cuts the start and the end for one reason, with one sentence each time.
+          shortened_by: [
+            { reason: "common_window", date: "2025-01-01", sentence },
+            { reason: "common_window", date: "2025-01-09", sentence }
+          ],
+          aligned: { sources: ["public"], since: "2025-01-01", until: "2025-01-09", left_out: [] }
+        }
+      })
+    });
+    await open("?align=common");
+    expect(text()).toContain("this view covers 2025-01-01 to 2025-01-09 because it is aligned to the days every compared source covers.");
+    expect(text().split(walkEnglish.windowReasons.common_window)).toHaveLength(2);
+    expect(text()).toContain(walkEnglish.serverSaid(sentence));
+    expect(text().split(sentence)).toHaveLength(2);
+    cleanup();
+    locale.current = "de";
+    await open("?align=common");
+    expect(text().split(walkGerman.windowReasons.common_window)).toHaveLength(2);
+    // The instance's English sentence is marked as the instance's, as a refusal's is.
+    expect(text()).toContain(walkGerman.serverSaid(sentence));
+    expect(text().split(sentence)).toHaveLength(2);
+  });
+
+  it("marks every sentence Evidence prints from the instance as the instance's, in English and German", async () => {
+    feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([openApp()]));
+    walkApi.getPatchPolicyWalk.mockResolvedValue({ walk: walkFixture({ source: "fleet" }) } satisfies WalkAnswer);
+    await open("?source=fleet");
+    expect(text()).toContain(walkEnglish.serverSaid("These are Fleet's dates, not the vendor's (fixture note)."));
+    expect(text()).toContain(walkEnglish.serverSaid(CHECK_DETAIL));
+    cleanup();
+    locale.current = "de";
+    await open("?source=fleet");
+    expect(text()).toContain(walkGerman.serverSaid("These are Fleet's dates, not the vendor's (fixture note)."));
+    expect(text()).toContain(walkGerman.serverSaid(CHECK_DETAIL));
+  });
+
+  it("keeps both of two choices made before the page draws again", async () => {
+    // E2E wave 4: an app, then a source, clicked quickly left the old app with the new source.
+    // useSearchParams hands an updater the address of the last render; the page builds on its own.
+    const other = { ...openApp(), app: "other", name: "Other App", bundleIds: ["com.example.other"] };
+    feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([openApp(), other]));
+    await open();
+    expect(address().get("app")).toBeNull();
+    act(() => {
+      button(/Other App\s*In LoonSec's data/).click();
+      button(/^Fleet/).click();
+    });
+    await settle();
+    expect(address().get("app")).toBe("other");
+    expect(address().get("source")).toBe("fleet");
+    expect(asked().at(-1)?.get("app")).toBe("other");
+    expect(asked().at(-1)?.get("source")).toBe("fleet");
+    // And the next choice builds on both.
+    fireEvent.click(button("3 years"));
+    await settle();
+    expect(Object.fromEntries(address())).toEqual({ app: "other", source: "fleet", years: "3" });
+  });
+
   it("says a window LoonSec has no check for is shown because another matched", async () => {
     walkApi.getPatchPolicyWalk.mockResolvedValue({ walk: walkFixture({ check: { state: "unchecked_window", detail: "LoonSec has no check for a 3-year window of Example; it is shown because the 2-year walk matched." } }) });
     await open("?years=3");
@@ -319,7 +386,15 @@ describe("with LoonSec's data, the page walks it", () => {
     walk.counts = { ...walk.counts, fix_dating: { fix: 3, next_dated: 2, undated: 2 } };
     walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
     await open("?source=fleet");
-    expect(text()).toContain(walkEnglish.colFixDated);
+    // Under each CVE, a full-width list with one item per entry, not a seventh column.
+    expect(text()).toContain(walkEnglish.fixDatedLead("CVE-2099-0001", 2));
+    expect(text()).toContain(walkEnglish.fixDatedLead("CVE-2099-0003", 4));
+    expect(screen.getAllByRole("columnheader").map((each) => each.textContent)).not.toContain("Fix, as this source dates it");
+    const listed = (cve: string) =>
+      Array.from(screen.getByText(walkEnglish.fixDatedLead(cve, cve === "CVE-2099-0003" ? 4 : 2)).parentElement!.querySelectorAll("li")).map((each) => each.textContent);
+    // Two entries at one version (the fix, then NVD's bound that lands there) are two items.
+    expect(listed("CVE-2099-0001")).toEqual(["4.4.3, dated 2025-01-09", "4.4.3, dated 2025-01-09 (NVD names 4.4.2.9)"]);
+    expect(listed("CVE-2099-0003")).toHaveLength(4);
     // A fix the source dates itself: the fix and its date, and nothing more; NVD's own version beside it where it differs.
     expect(text()).toContain("4.4.3, dated 2025-01-09 4.4.3, dated 2025-01-09 (NVD names 4.4.2.9)");
     expect(text()).toContain(`${walkEnglish.fixNextDated("4.4.2", "4.4.4", "2024-10-01")} Fleet's history begins here 4.4.1, dated 2024-10-01`);
@@ -332,12 +407,13 @@ describe("with LoonSec's data, the page walks it", () => {
     expect(text()).not.toContain(walkEnglish.fixUndated("4.4.9", "4.4"));
     expect(text()).toContain(`Fixes dated ${walkEnglish.fixDating(3, 2, 2)}`);
 
-    // An answer from an instance older than the ruling carries neither: a dash, and no Evidence row.
+    // An answer from an instance older than the ruling carries neither: no line under a CVE, and no Evidence row.
     cleanup();
     walkApi.getPatchPolicyWalk.mockResolvedValue({ walk: walkFixture({ source: "fleet" }) } satisfies WalkAnswer);
     await open("?source=fleet");
     expect(text()).not.toContain("Fixes dated");
     expect(text()).not.toContain("dated by the fix itself");
+    expect(text()).not.toContain("as this source dates");
   });
 
   it("says a set-aside channel it cannot count nowhere, rather than 'undefined versions'", async () => {
@@ -413,11 +489,11 @@ describe("with LoonSec's data, the page walks it", () => {
       return Promise.resolve({ walk: walkFixture({ source: request.get("source") as WalkSource, ...aligned }) });
     });
     await open();
-    expect(text()).toContain(`${walkEnglish.evidenceCheck} ${walkEnglish.checks.matched} ${CHECK_DETAIL}`);
+    expect(text()).toContain(`${walkEnglish.evidenceCheck} ${walkEnglish.checks.matched} ${walkEnglish.serverSaid(CHECK_DETAIL)}`);
     for (const source of [/^Jamf/, /^Fleet/]) {
       fireEvent.click(button(source));
       await settle();
-      expect(text()).toContain(`${walkEnglish.evidenceCheck} ${walkEnglish.checkedByPublic} ${CHECK_DETAIL}`);
+      expect(text()).toContain(`${walkEnglish.evidenceCheck} ${walkEnglish.checkedByPublic} ${walkEnglish.serverSaid(CHECK_DETAIL)}`);
       expect(text()).not.toContain(walkEnglish.checks.matched);
       // The detail beneath names the walk that was checked; the page's own words do not name it again.
       expect(text().split("over 2 years")).toHaveLength(2);
@@ -435,6 +511,10 @@ describe("with LoonSec's data, the page walks it", () => {
     await open();
     expect(text()).toContain("2025-01-06 first detectable");
     expect(text()).toContain("2025-01-02 NVD publication");
+    // The KEV cell may wrap beside its date, never inside it (a date breaks at its hyphens).
+    expect(text()).toContain("listed 2025-01-08");
+    expect(screen.getByText("2025-01-08").className).toContain("whitespace-nowrap");
+    expect(screen.getAllByText("2025-01-06").some((each) => each.tagName === "SPAN" && each.className.includes("whitespace-nowrap"))).toBe(true);
     expect(text()).toContain("2 counted from the first day they were detectable, 1 from NVD publication.");
     expect(text()).toContain("fixture-doc-0001");
     expect(text()).toContain("fixture-digest-timeline");
@@ -645,7 +725,7 @@ describe("in German", () => {
     walk.counts = { ...walk.counts, fix_dating: { fix: 0, next_dated: 1, undated: 0 } };
     walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
     await open("?source=jamf");
-    expect(text()).toContain(walkGerman.colFixDated);
+    expect(text()).toContain(walkGerman.fixDatedLead("CVE-2099-0001", 1));
     expect(text()).toContain(`${walkGerman.fixNextDated("4.4.2", "4.4.3", "2024-10-01")} (NVD nennt 4.4.1.5) Hier beginnt Jamfs Historie`);
     expect(text()).toContain(`Datierte Fixes ${walkGerman.fixDating(0, 1, 0)}`);
   });

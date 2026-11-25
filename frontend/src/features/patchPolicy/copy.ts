@@ -269,7 +269,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   of: "von",
   neverSeenSaid: "Nie gesehen: Ab dem Tag, an dem NVD die CVE veröffentlicht hat, lief auf diesem Mac keine Version, die sie betrifft.",
   outside: (outside: number, neverSeen: number, line: string | null) =>
-    `${outside} der ${neverSeen} nie gesehenen ${mehrzahl(outside, "war", "waren")} nie im betroffenen Bereich: ${mehrzahl(outside, "Sie betrifft", "Sie betreffen")} nur Versionen ${line ? `außerhalb der Linie ${line}` : "die dieser Mac nie ausführt"}, sodass ${mehrzahl(outside, "ihr", "ihnen")} hier keine Patch-Richtlinie begegnet.`,
+    `${outside} der ${neverSeen} nie gesehenen ${mehrzahl(outside, "war", "waren")} nie im betroffenen Bereich: ${mehrzahl(outside, "Sie betrifft", "Sie betreffen")} nur Versionen${line ? ` außerhalb der Linie ${line}` : ", die dieser Mac nie ausführt"}, sodass ${mehrzahl(outside, "ihr", "ihnen")} hier keine Patch-Richtlinie begegnet.`,
   neverStays: (version: string | null, neverSeen: number, outside: number) => {
     const fixed = neverSeen - outside;
     const kept = version ?? "der Version, mit der es das Zeitfenster beginnt";

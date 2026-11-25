@@ -235,8 +235,8 @@ export const walkEnglish = {
   colKev: "KEV",
   kevListed: (date: string) => `listed ${date}`,
   notOpen: "Not open in the window",
-  /** The ledger's fix column: each fix as `fix_dated_by` says this source dated it (troubleshooting.md §33 step 12). */
-  colFixDated: "Fix, as this source dates it",
+  /** Above the line under each CVE that gives each fix as `fix_dated_by` says this source dated it (troubleshooting.md §33 step 12). */
+  fixDatedLead: (cve: string, count: number) => `${plural(count, "Fix", "Fixes")} of ${cve}, as this source dates ${plural(count, "it", "them")}:`,
   /** A fix the source does not date, counted from the first version at or above the fix, on its line,
    *  that the source dates and the CVE's affected range does not cover (a dated version still in range
    *  is passed over, so it is not merely "the next version it dates"). */
@@ -512,9 +512,9 @@ export const walkGerman: WalkCopy = {
   colKev: "KEV",
   kevListed: (date: string) => `gelistet ${date}`,
   notOpen: "Im Zeitfenster nicht offen",
-  colFixDated: "Fix, wie diese Quelle ihn datiert",
+  fixDatedLead: (cve: string, count: number) => `${mehrzahl(count, "Fix", "Fixes")} von ${cve}, wie diese Quelle ${mehrzahl(count, "ihn", "sie")} datiert:`,
   fixNextDated: (fix: string, datedAs: string, on: string) =>
-    `${fix}: von dieser Quelle nicht datiert, daher gezählt ab ${datedAs}, der ersten Version an oder über dem Fix außerhalb des betroffenen Bereichs der CVE, die sie datiert, am ${on}`,
+    `${fix}: von dieser Quelle nicht datiert, daher gezählt ab ${datedAs}, der ersten Version an oder über dem Fix, die sie datiert und die außerhalb des betroffenen Bereichs der CVE liegt, am ${on}`,
   historyBegins: {
     public: "Hier beginnen die veröffentlichten Daten von LoonSec",
     jamf: "Hier beginnt Jamfs Historie",
@@ -561,7 +561,7 @@ export const walkGerman: WalkCopy = {
     `${mehrzahl(count, "Eine gezählte CVE hat", `${count} gezählte CVEs haben`)} einen ersten erkennbaren Tag, der um mehr als einen Tag unsicher ist.`,
   evidenceFixDating: "Datierte Fixes",
   fixDating: (fix: number, next: number, undated: number) =>
-    `Von den Fixes, die die aufgeführten CVEs auf den Linien nennen, die ein Gerät unter irgendeiner Stufe ausführt: ${fix} durch den Fix selbst datiert, ${next} durch die erste Version an oder über dem Fix außerhalb des betroffenen Bereichs der CVE, die diese Quelle datiert, ${undated} durch keine${undated > 0 ? mehrzahl(undated, "; diese CVE wird dort nach ihren betroffenen Bereichen nachgespielt", "; diese CVEs werden dort nach ihren betroffenen Bereichen nachgespielt") : ""} (troubleshooting.md §33 Schritt 12).`,
+    `Von den Fixes, die die aufgeführten CVEs auf den Linien nennen, die ein Gerät unter irgendeiner Stufe ausführt: ${fix} durch den Fix selbst datiert, ${next} durch die erste Version an oder über dem Fix, die diese Quelle datiert und die außerhalb des betroffenen Bereichs der CVE liegt, ${undated} durch keine${undated > 0 ? mehrzahl(undated, "; diese CVE wird dort nach ihren betroffenen Bereichen nachgespielt", "; diese CVEs werden dort nach ihren betroffenen Bereichen nachgespielt") : ""} (troubleshooting.md §33 Schritt 12).`,
   evidenceCheck: "Prüfung",
   checks: {
     matched: "Stimmt mit den Summen überein, die LoonSec für dieses Zeitfenster veröffentlicht hat.",

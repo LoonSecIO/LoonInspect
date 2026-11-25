@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { ApiError } from "@/config/api";
 import { listJamfPatchTitles } from "@/features/jamfPatch/api";
@@ -119,6 +119,14 @@ export function PatchPolicyPage() {
   const copy = t.patchPolicy;
   const words = t.patchPolicyWalk;
   const [params, setParams] = useSearchParams();
+  // The address as this page last asked for it. useSearchParams hands an updater the address of the
+  // last render, so two choices made before the page draws again (an app, then a source) would keep
+  // only the second; each change builds on the one before it instead. An address the page did not
+  // ask for (back, forward, a link) replaces it when it is drawn.
+  const latest = useRef(params);
+  useLayoutEffect(() => {
+    latest.current = params;
+  }, [params]);
   const asked = params.get("policy");
   const stop: SliderStop = isSliderStop(asked) ? asked : SLIDER_STOPS[0];
 
@@ -187,20 +195,17 @@ export function PatchPolicyPage() {
   const pickable = useMemo(() => pickerApps(titles ?? [], indexed), [titles, indexed]);
   // Replaced, not pushed: a drag across the slider is one visit, not six. A new app, track, source
   // or window starts the CVE list on its first page, and a new app on its own default track.
-  const set = (changes: Record<string, string | null>) =>
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        for (const [name, value] of Object.entries(changes)) {
-          if (value === null) next.delete(name);
-          else next.set(name, value);
-        }
-        if (Object.keys(changes).some((name) => ["app", "track", "source", "years", "align"].includes(name))) next.delete("page");
-        if ("app" in changes) next.delete("track");
-        return next;
-      },
-      { replace: true }
-    );
+  const set = (changes: Record<string, string | null>) => {
+    const next = new URLSearchParams(latest.current);
+    for (const [name, value] of Object.entries(changes)) {
+      if (value === null) next.delete(name);
+      else next.set(name, value);
+    }
+    if (Object.keys(changes).some((name) => ["app", "track", "source", "years", "align"].includes(name))) next.delete("page");
+    if ("app" in changes) next.delete("track");
+    latest.current = next;
+    setParams(next, { replace: true });
+  };
 
   const sourceName = words.sources[source];
   const trackLabel = app?.tracks.find((each) => each.track === track)?.label ?? track ?? "";

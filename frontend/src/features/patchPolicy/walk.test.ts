@@ -207,8 +207,9 @@ describe("the words for how a fix was dated", () => {
     );
     expect(walkEnglish.fixDating(3, 2, 1)).toContain(", 1 by none, so that CVE is walked by its affected ranges there (troubleshooting.md §33 step 12).");
     expect(walkEnglish.fixDating(3, 2, 4)).toContain(", 4 by none, so those CVEs are walked by their affected ranges there (troubleshooting.md §33 step 12).");
+    // The relative clause belongs to the version, not to the CVE (wave 4b review).
     expect(walkGerman.fixNextDated("1.1", "1.2", "2026-03-02")).toBe(
-      "1.1: von dieser Quelle nicht datiert, daher gezählt ab 1.2, der ersten Version an oder über dem Fix außerhalb des betroffenen Bereichs der CVE, die sie datiert, am 2026-03-02"
+      "1.1: von dieser Quelle nicht datiert, daher gezählt ab 1.2, der ersten Version an oder über dem Fix, die sie datiert und die außerhalb des betroffenen Bereichs der CVE liegt, am 2026-03-02"
     );
     expect(walkGerman.fixUndated("2.0", "")).toBe(
       "2.0: Diese Quelle datiert keine Version an oder über ihm auf seiner Linie außerhalb des betroffenen Bereichs der CVE; diese CVE wird dort nach ihren betroffenen Bereichen nachgespielt"
@@ -216,10 +217,15 @@ describe("the words for how a fix was dated", () => {
     expect(walkGerman.fixUndated("4.2.9", "4.2")).toContain("4.2.9: Diese Quelle datiert keine Version an oder über ihm auf der Linie 4.2 außerhalb des betroffenen Bereichs der CVE;");
     expect(walkGerman.historyBegins.jamf).toBe("Hier beginnt Jamfs Historie");
     expect(walkGerman.fixDating(1, 2, 0)).toBe(
-      "Von den Fixes, die die aufgeführten CVEs auf den Linien nennen, die ein Gerät unter irgendeiner Stufe ausführt: 1 durch den Fix selbst datiert, 2 durch die erste Version an oder über dem Fix außerhalb des betroffenen Bereichs der CVE, die diese Quelle datiert, 0 durch keine (troubleshooting.md §33 Schritt 12)."
+      "Von den Fixes, die die aufgeführten CVEs auf den Linien nennen, die ein Gerät unter irgendeiner Stufe ausführt: 1 durch den Fix selbst datiert, 2 durch die erste Version an oder über dem Fix, die diese Quelle datiert und die außerhalb des betroffenen Bereichs der CVE liegt, 0 durch keine (troubleshooting.md §33 Schritt 12)."
     );
     expect(walkGerman.fixDating(1, 2, 1)).toContain("1 durch keine; diese CVE wird dort nach ihren betroffenen Bereichen nachgespielt (troubleshooting.md §33 Schritt 12).");
     expect(walkGerman.fixDating(1, 2, 3)).toContain("3 durch keine; diese CVEs werden dort nach ihren betroffenen Bereichen nachgespielt (troubleshooting.md §33 Schritt 12).");
+    // The line under each CVE that lists its fixes: one fix is singular.
+    expect(walkEnglish.fixDatedLead("CVE-2099-0001", 1)).toBe("Fix of CVE-2099-0001, as this source dates it:");
+    expect(walkEnglish.fixDatedLead("CVE-2099-0001", 2)).toBe("Fixes of CVE-2099-0001, as this source dates them:");
+    expect(walkGerman.fixDatedLead("CVE-2099-0001", 1)).toBe("Fix von CVE-2099-0001, wie diese Quelle ihn datiert:");
+    expect(walkGerman.fixDatedLead("CVE-2099-0001", 3)).toBe("Fixes von CVE-2099-0001, wie diese Quelle sie datiert:");
   });
 
   it("no longer call a fix the source does not date a reason to exclude, and say a channel_empty source names nothing of the track's alone", () => {
@@ -258,6 +264,14 @@ describe("the never stop's words", () => {
     // German, one already fixed beside others outside every range: "war 1", not "waren 1" (w4b review, F10).
     expect(patchPolicyGerman.neverStays("4.2.5", 3, 2)).toContain(
       "Von den 3 nie gesehenen war 1 in 4.2.5 bereits behoben; auf dem Gerät lief also nie eine Version, die sie betrifft. Die übrigen 2 liegen außerhalb"
+    );
+    // The other stops' `outside`, in German: the relative clause takes its comma (wave 4b review), and
+    // a held line is named without one.
+    expect(patchPolicyGerman.outside(2, 5, null)).toBe(
+      "2 der 5 nie gesehenen waren nie im betroffenen Bereich: Sie betreffen nur Versionen, die dieser Mac nie ausführt, sodass ihnen hier keine Patch-Richtlinie begegnet."
+    );
+    expect(patchPolicyGerman.outside(1, 5, "4.4")).toBe(
+      "1 der 5 nie gesehenen war nie im betroffenen Bereich: Sie betrifft nur Versionen außerhalb der Linie 4.4, sodass ihr hier keine Patch-Richtlinie begegnet."
     );
   });
 });
