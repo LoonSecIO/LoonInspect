@@ -417,7 +417,15 @@ def test_a_row_with_a_detectable_day_must_say_it_uses_that_clock() -> None:
 # Fleet catalog flag off.
 _NO_JAMF = timelines.JamfCatalog(size=0, refreshed_at=None, titles=())
 _FLEET_OFF = timelines.FleetHistory(
-    enabled=False, catalog_read=False, checked_ok_at=None, catalog_detail=None, history_failure=None, titles=()
+    enabled=False,
+    catalog_read=False,
+    checked_ok_at=None,
+    catalog_detail=None,
+    history_failure=None,
+    titles=(),
+    snapshot="unread",
+    snapshot_detail=None,
+    answered_at=None,
 )
 
 

@@ -96,7 +96,8 @@ class PatchPolicySourceTrackOut(_Out):
     available: bool
     # `available`, a reason the source cannot date the track (`app.core.patch_policy_timelines`'s
     # states: no_public_dates, never_synced, no_title, flag_off, catalog_unread, not_held,
-    # history_unread, history_failed, no_versions, channel_empty, esr_missing, line_not_followed),
+    # catalog_partial, history_unread, history_failed, no_versions, channel_empty, esr_missing,
+    # line_not_followed),
     # the walk's own refusal (no_matched_versions, too_many_unmatched, window_empty, ...), or the
     # app's parity refusal (parity, unchecked, document_invalid, no_public_dates), which the walk
     # route answers first and which every source and track of the app then carries.

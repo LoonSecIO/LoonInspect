@@ -4281,7 +4281,21 @@ refusal: the sentence is the whole report.
      stored titles; when the sentence goes on to say the last check did not get an answer, that
      is §27 step 3. Otherwise **Check now** on the Fleet catalog tab reads it (§27 step 2).
    - `not_held`: ***Fleet's catalog, as this instance last read it, holds no Mac title for …***
+     The last check read Fleet's whole catalog, and no Mac title carries the app's bundle id:
      Fleet does not maintain the app. Choose another source.
+   - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
+     this instance has read that catalog only in part…*** The titles held are partial or unread
+     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial), §27 step 6): a check skipped
+     titles this build could not read, a check was cut short after it had changed some, or the
+     1.3.0 upgrade marked a catalog already read as partial. A title missing from a catalog read
+     only in part is not proof that Fleet has none, so the source does not say `not_held`; when
+     the last check left words, the sentence goes on with them (*The last check said: …*). The
+     Fleet catalog's status line says which case it is: a check cut short, or the upgrade, is
+     cleared by the next check (within the hour) or **Check now**; titles this build could not
+     read stay unread until Fleet next changes its catalog, and *unrecognized Mac manifest path*
+     or *unrecognized Mac index entry* among them means updating LoonInspect (§27 step 6). Once a
+     check reads the whole catalog the source dates the track or reads `not_held`. Until then,
+     choose another source.
    - `history_unread`: ***Fleet's version history for … has not been read on this instance
      yet.*** The background reads the titles installed on this organization's Macs, two minutes
      apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the
@@ -4318,6 +4332,20 @@ refusal: the sentence is the whole report.
      no source above caught it first: on Public it means LoonSec's data names a held line it does
      not date, reportable state **AD**.
    - `channel_empty`: as for Jamf above.
+   - Not a refusal: a Fleet view's `note` says *Fleet's catalog was read only in part…*, or
+     carries *Fleet's version history for …:* and a title's own history sentence. While the
+     catalog is partial, no daily check confirms a title's history past the day it was read, so
+     the view ends the day before that read (`window.shortened_by`: `timeline_as_of`), and with
+     `align=common` every aligned view ends there too; a check that reads the whole catalog
+     carries it to that check's day. The note says so only when a complete check would have
+     carried the view further. A title's history sentence (§27 step 10) names what its read left
+     undated: those versions are not in the view, and a fix one of them carried is dated by the
+     next version the history dates (step 10), so that CVE counts open longer than Fleet's
+     catalog alone would show. A state concluded from the titles that were read (`esr_missing`,
+     `channel_empty`, `no_versions`, `line_not_followed`) ends, while the catalog is partial, with
+     ***This instance has read Fleet's catalog only in part, so another Fleet title under this
+     bundle id may be among those not read…***: the title that would date the track may be one of
+     them. Read the status line as in `catalog_partial` above.
 6. **The window.** A window that was shortened is not a refusal: `window.shortened_by` names each
    reason, with its sentence (the first detectable day LoonSec records, the timeline's first
    release, a held line's first release, a channel's start, the data's date, the day the

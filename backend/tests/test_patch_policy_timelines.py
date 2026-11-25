@@ -307,7 +307,7 @@ def test_a_title_that_names_only_another_channel_leaves_the_track_with_no_jamf_t
 
 
 def fleet_title(slug: str, bundle: str, versions: list[tuple[str, dt.date]], **extra: Any) -> timelines.FleetTitle:
-    fields = {"name": slug, "history_read_at": at("2026-11-20T08:00:00"), "version_changed_at": None}
+    fields = {"name": slug, "history_read_at": at("2026-11-20T08:00:00"), "version_changed_at": None, "history_detail": None}
     fields.update(extra)
     return timelines.FleetTitle(
         slug=slug,
@@ -318,7 +318,17 @@ def fleet_title(slug: str, bundle: str, versions: list[tuple[str, dt.date]], **e
 
 
 def history(*titles: timelines.FleetTitle, enabled: bool = True, **extra: Any) -> timelines.FleetHistory:
-    fields = {"catalog_read": True, "checked_ok_at": None, "catalog_detail": None, "history_failure": None}
+    """A complete snapshot unless the test says otherwise: `FleetHistory` itself has no default for
+    it, so every other caller has to say."""
+    fields = {
+        "catalog_read": True,
+        "checked_ok_at": None,
+        "catalog_detail": None,
+        "history_failure": None,
+        "snapshot": "complete",
+        "snapshot_detail": None,
+        "answered_at": None,
+    }
     fields.update(extra)
     return timelines.FleetHistory(enabled=enabled, titles=tuple(titles), **fields)
 
@@ -460,6 +470,139 @@ def test_two_read_fleet_titles_are_known_only_up_to_the_earlier_read() -> None:
     earlier = _esr_title(read=True)  # read 2026-11-21
     assert timelines.fleet(history(later, earlier), doc, "firefox", "firefox/release").as_of == day("2026-11-21")
     assert timelines.fleet(history(later), doc, "firefox", "firefox/release").as_of == day("2026-11-22")
+
+
+# --- Fleet's catalog read only in part (`snapshot_status`, docs/fleet-catalog.md) -----------------
+
+# The last check's own words while the titles held are partial (invented, in the shape the check
+# writes them).
+SKIPPED = "1 Mac manifest could not be read and was left as held: example-app (unrecognized Mac manifest path)."
+
+
+def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title() -> None:
+    """`not_held` concludes Fleet does not maintain the app, which only a complete read can show:
+    a title missing from a partial or unread snapshot may be one this instance has not read."""
+    doc = mozilla_document()
+    with pytest.raises(timelines.Unavailable) as partial:
+        timelines.fleet(history(snapshot="partial", snapshot_detail=SKIPPED), doc, "firefox", "firefox/release")
+    assert partial.value.state == "catalog_partial"
+    assert partial.value.sentence == (
+        "Fleet's catalog, as this instance holds it, has no Mac title for Mozilla Firefox (bundle id org.mozilla.firefox), "
+        "but this instance has read that catalog only in part, so the title may be one it has not read yet. The last "
+        f"check said: {SKIPPED} The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a "
+        "check reads the whole catalog, this source dates the track or says Fleet holds no title for the app. Until "
+        "then, choose another source."
+    )
+    # Titles held (of other bundle ids) under a snapshot still marked unread: the same.
+    with pytest.raises(timelines.Unavailable) as unread:
+        timelines.fleet(history(snapshot="unread"), doc, "firefox", "firefox/release")
+    assert unread.value.state == "catalog_partial"
+    assert "The last check said" not in unread.value.sentence
+    assert unread.value.sentence.startswith(
+        "Fleet's catalog, as this instance holds it, has no Mac title for Mozilla Firefox (bundle id org.mozilla.firefox), "
+        "but this instance has read that catalog only in part"
+    )
+    # Nothing held at all is still `catalog_unread`, whatever the snapshot says; a complete read is `not_held`.
+    with pytest.raises(timelines.Unavailable) as nothing:
+        timelines.fleet(history(catalog_read=False, snapshot="unread"), doc, "firefox", "firefox/release")
+    assert nothing.value.state == "catalog_unread"
+    with pytest.raises(timelines.Unavailable) as complete:
+        timelines.fleet(history(snapshot_detail=SKIPPED), doc, "firefox", "firefox/release")
+    assert complete.value.state == "not_held" and SKIPPED not in complete.value.sentence
+
+
+PARTIAL_CUT = (
+    " Fleet's catalog was read only in part, so the last check (2026-11-23) confirms no title's history past the day it "
+    "was read (2026-11-20), and this view ends the day before; a check that reads the whole catalog carries it to that "
+    "check's day (docs/troubleshooting.md §27 step 6)."
+)
+
+
+def test_a_held_title_under_a_partial_catalog_ends_at_its_read_and_the_note_says_why() -> None:
+    """A partial check confirms nothing past a history's read, so the view ends the day before the
+    read; the note says that the partial catalog is why, only when a complete check would have
+    carried it further. The walk is unchanged: only the note grows."""
+    doc = mozilla_document()
+    answered = at("2026-11-23T09:20:00")
+    partial = timelines.fleet(history(FLEET_FIREFOX, snapshot="partial", answered_at=answered), doc, "firefox", "firefox/release")
+    assert partial.as_of == day("2026-11-20")
+    assert partial.note == timelines.FLEET_CLOCK + PARTIAL_CUT
+    result = walk.walk(doc, app="firefox", track="firefox/release", timeline=partial.walk_input())
+    assert result["window"]["until"] == "2026-11-19"
+    assert "timeline_as_of" in [row["reason"] for row in result["window"]["shortened_by"]]
+
+    # The same check, complete: confirmed to its day, and nothing to say.
+    complete = timelines.fleet(
+        history(FLEET_FIREFOX, checked_ok_at=answered, answered_at=answered), doc, "firefox", "firefox/release"
+    )
+    assert complete.as_of == day("2026-11-23") and complete.note == timelines.FLEET_CLOCK
+    # The sentence is about a partial catalog and is said of nothing else, whatever the other
+    # fields hold: a complete history built with no confirming check ends at the read, silently.
+    unconfirmed = timelines.fleet(history(FLEET_FIREFOX, answered_at=answered), doc, "firefox", "firefox/release")
+    assert unconfirmed.as_of == day("2026-11-20") and unconfirmed.note == timelines.FLEET_CLOCK
+
+    # Partial, and nothing a complete check would have changed: no answered check, one on the day of
+    # the read, or a title whose version moved after its read (that view ends at the read anyway).
+    moved = fleet_title("firefox", "org.mozilla.firefox", RELEASES[12:], version_changed_at=at("2026-11-21T09:20:00"))
+    for held in (
+        history(FLEET_FIREFOX, snapshot="partial"),
+        history(FLEET_FIREFOX, snapshot="partial", answered_at=at("2026-11-20T09:20:00")),
+        history(FLEET_FIREFOX, snapshot="partial", answered_at=at("2026-11-19T09:20:00")),
+        history(moved, snapshot="partial", answered_at=answered),
+    ):
+        quiet = timelines.fleet(held, doc, "firefox", "firefox/release")
+        assert quiet.as_of == day("2026-11-20") and quiet.note == timelines.FLEET_CLOCK
+
+
+def test_a_titles_history_sentence_travels_with_the_view() -> None:
+    """The history read's own words for a version it left undated: the version is not in the view,
+    and a fix it carried counts from the next version the history dates."""
+    doc = mozilla_document()
+    detail = (
+        "2 of the 40 changes did not carry a manifest this build could read, so a version that arrived at one of them has "
+        "no date."
+    )
+    gappy = fleet_title("firefox", "org.mozilla.firefox", RELEASES[12:], history_detail=detail)
+    timeline = timelines.fleet(history(gappy), doc, "firefox", "firefox/release")
+    assert timeline.note == (
+        timelines.FLEET_CLOCK + f" Fleet's version history for firefox: {detail} A version left undated there is not in "
+        "this view, and a fix it carried is dated by the next version this history dates (docs/troubleshooting.md §27 "
+        "step 10, §33 step 10)."
+    )
+    # The note is not walked: the walk's input is the same with or without it.
+    plain = timelines.fleet(history(FLEET_FIREFOX), doc, "firefox", "firefox/release")
+    assert timeline.walk_input() == plain.walk_input() and timeline.digest == plain.digest
+
+
+def test_a_refusal_concluded_from_the_titles_read_says_the_catalog_was_read_only_in_part() -> None:
+    """`firefox` read alone names no ESR build. Under a partial catalog Fleet's ESR title may be one
+    this instance has not read, so the sentence says so; under a complete one it does not."""
+    doc = mozilla_document()
+    with pytest.raises(timelines.Unavailable) as complete:
+        timelines.fleet(history(FLEET_FIREFOX), doc, "firefox", "firefox/esr")
+    with pytest.raises(timelines.Unavailable) as partial:
+        timelines.fleet(history(FLEET_FIREFOX, snapshot="partial"), doc, "firefox", "firefox/esr")
+    assert (complete.value.state, partial.value.state) == ("esr_missing", "esr_missing")
+    assert timelines.PARTIAL_TAIL not in complete.value.sentence
+    assert partial.value.sentence == complete.value.sentence + timelines.PARTIAL_TAIL
+    assert timelines.PARTIAL_TAIL == (
+        " This instance has read Fleet's catalog only in part, so another Fleet title under this bundle id may be among "
+        "those not read (docs/troubleshooting.md §27 step 6)."
+    )
+    # The same for `no_versions`; a history not read yet is about that title, and says only that.
+    empty = fleet_title("firefox", "org.mozilla.firefox", [])
+    with pytest.raises(timelines.Unavailable) as none:
+        timelines.fleet(history(empty, snapshot="partial"), doc, "firefox", "firefox/release")
+    assert none.value.state == "no_versions" and none.value.sentence.endswith(timelines.PARTIAL_TAIL)
+    with pytest.raises(timelines.Unavailable) as unread:
+        timelines.fleet(history(FLEET_FIREFOX, _esr_title(read=False), snapshot="partial"), doc, "firefox", "firefox/esr")
+    assert unread.value.state == "history_unread" and timelines.PARTIAL_TAIL not in unread.value.sentence
+
+
+def test_catalog_partial_is_a_state_with_its_step() -> None:
+    assert timelines.FLEET_CATALOG_PARTIAL == "catalog_partial"
+    states = list(timelines.STATES)
+    assert states.index("catalog_partial") == states.index("not_held") + 1
 
 
 def _held_lists_every_line(doc: dict[str, Any]) -> dict[str, Any]:
