@@ -3491,7 +3491,7 @@ nothing here is a permissions problem in Jamf.
    not.
    - *Macs with app* and *Macs behind* count every Mac the organization has collected. *Macs in
      scope* counts only the current Jamf Macs the device filter above selects, so it is never
-     more than *Macs with app*, and it can be lower with no filter applied: departed and
+     more than *Macs with app*, and it can be lower even with no filter applied: departed and
      non-Jamf Macs count only under *Macs with app*. A release and its ESR channel share a
      bundle ID, so they count the same Macs.
    - *Unknown* under *Macs in scope* → Fleet listed the title after the counts for the filter
