@@ -222,10 +222,10 @@ stores it.
 - **The counts.** `windowDays` is 90, the window everything covers. `versionChanges` counts the
   change log's application updates there in which `version`, `cfBundleShortVersionString` or
   `cfBundleVersion` moved, with both sides present; `macs` counts the distinct Macs among them,
-  and `lastAt` is the newest. Rows dated after the request are left out.
+  and `lastAt` is the newest, null with none. Rows dated after the request are left out.
 - **They need the change log.** Applications are recorded only with **Settings › Change
-  tracking** at *High + normal* (the default) or *Everything*, and a Mac's first sweep is its
-  baseline, so it counts from its second.
+  tracking** at *High + normal* (the default) or *Everything*, with applications not switched
+  off, and a Mac's first sweep is its baseline, so it counts from its second.
 - **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
   dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
   this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair

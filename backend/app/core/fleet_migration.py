@@ -231,7 +231,7 @@ async def _first_upgrades(db: AsyncSession, identities, window, slug: str, since
         if _upgrade(previous, version) and (key not in first or seen < first[key][0]):
             first[key] = (seen, published)
     first = {key: dates for key, dates in first.items() if dates[0] >= dates[1]}  # Before Fleet's date never counts.
-    if first:  # Only these Macs and versions, before the window: ix_device_changes_subject serves it. A rollback is no upgrade.
+    if first:  # Before the window, for these Macs and versions only (ix_device_changes_subject). A rollback is no upgrade.
         c = DeviceChange
         old, new, ordered = _ordered(c.old_value, c.new_value)
         connections, subjects, versions = (sorted({key[n] for key in first}) for n in range(3))
