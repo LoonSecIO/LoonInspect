@@ -89,6 +89,22 @@ describe("ReplayView on an app held on one release line", () => {
     expect(page).toContain("CVE-2099-0005");
   });
 
+  it("lets a long word fold inside its table before the table outgrows its box, as the walk's tables do", () => {
+    // The every-stop and per-CVE tables floor at 38rem and hyphenate, the excluded-CVE list hyphenates,
+    // and an exclusion's detail (a machine word with no break in it) may break anywhere. The
+    // two-column count of each reason already fits.
+    const markup = markupOf("7d", patchPolicyGerman);
+    const tables = [...markup.matchAll(/<table class="([^"]*)"/g)].map((match) => match[1].split(" "));
+    expect(tables).toHaveLength(4);
+    expect(tables[0]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
+    expect(tables[1]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
+    expect(tables[3]).toEqual(expect.arrayContaining(["hyphens-auto"]));
+    const exclusions = markup.split("<table").at(-1)!;
+    const lastCells = [...exclusions.matchAll(/<tr[^>]*>(?:<td[^>]*>.*?<\/td>)*?<td class="([^"]*)">[^<]*<\/td><\/tr>/g)].map((match) => match[1]);
+    expect(lastCells).toHaveLength(held.exclusions.cves.length);
+    for (const detail of lastCells) expect(detail.split(" ")).toContain("[overflow-wrap:anywhere]");
+  });
+
   it("names the release-date source from the file, and never 'released on'", () => {
     const page = drawn("7d");
     expect(page).toContain("Release dates: Example App's release tags.");

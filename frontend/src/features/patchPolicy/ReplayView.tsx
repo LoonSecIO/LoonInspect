@@ -152,7 +152,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
       <div className="space-y-1">
         <h2 className={heading}>{copy.compareHeading}</h2>
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[40rem] text-sm">
+          <table className="w-full min-w-[38rem] hyphens-auto text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
                 {[copy.colPolicy, copy.colNeverSeen, copy.colOutside, copy.exposed, copy.exposureDays, copy.updateEvents, copy.openAtEnd].map((label) => (
@@ -198,7 +198,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         </div>
         {/* A floor on the width: a phone scrolls the table inside its box and no cell folds to a letter a line. */}
         <div className="max-h-[32rem] overflow-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[44rem] text-sm">
+          <table className="w-full min-w-[38rem] hyphens-auto text-sm">
             <thead className="sticky top-0 border-b text-left text-muted-foreground">
               <tr>
                 {/* The outcome sits beside the CVE, so it is the column a phone shows before any sideways scroll. */}
@@ -262,7 +262,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <details className="text-sm">
             <summary className="cursor-pointer text-muted-foreground">{copy.excludedList(excluded)}</summary>
             <div className="mt-1 overflow-x-auto rounded-lg border bg-card">
-              <table className="w-full min-w-[36rem] text-sm">
+              <table className="w-full min-w-[36rem] hyphens-auto text-sm">
                 <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                   <tr>
                     {[copy.colCve, copy.colPublished, copy.colReason, copy.colStatus, copy.colDetail].map((label) => <th key={label} className={`${cell} font-medium`}>{label}</th>)}
@@ -275,7 +275,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                       <td className={`${cell} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
                       <td className={cell}>{row.reason ? (copy.reasons[row.reason] ?? row.reason) : "—"}</td>
                       <td className={`${cell} whitespace-nowrap`}>{statusOf.get(row.cve_id) ?? "—"}</td>
-                      <td className={`${cell} text-muted-foreground`}>{row.detail ?? "—"}</td>
+                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>{row.detail ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
