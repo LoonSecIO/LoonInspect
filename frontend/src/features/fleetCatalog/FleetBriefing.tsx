@@ -67,7 +67,8 @@ export function FleetBriefing({ scope }: { scope: string }) {
     <h2 className="font-semibold">{copy.title}</h2>
     <p className="text-sm text-muted-foreground">{copy.disclosure}</p>
     <div className="flex flex-wrap items-end gap-3">
-      <div className="grid min-w-0 max-w-full gap-1 text-xs text-muted-foreground"><label htmlFor={pickerId}>{copy.provider}</label>
+      {/* Block, not grid: a grid track grows to the select's widest option and runs off a phone's column (PromptBar's own shape). */}
+      <div className="min-w-0 max-w-full space-y-1 text-xs text-muted-foreground"><label htmlFor={pickerId} className="block">{copy.provider}</label>
         <select id={pickerId} className="max-w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={provider} disabled={pending}
           onChange={e => { setProvider(e.target.value as Provider); setResult(undefined); setFailure(undefined); }}>
           {modelOptions(status.providers, t.ai.providerLabels).map(option => <option key={option.value} value={option.value}>{option.text}</option>)}

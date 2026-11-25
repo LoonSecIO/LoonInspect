@@ -48,7 +48,7 @@ it("sends only on a press, pins the provider on screen, and words each lead and 
 });
 
 it("renders nothing and sends nothing while a switch is off, and main's sentence when its settings could not be read", async () => {
-  serve(() => answer(), () => ({ available: false, reason: "consent_off", providers: [] }));
+  serve(() => answer(), () => ({ ...saved, available: false, reason: "consent_off" })); // the cards are listed while consent is off
   const { container } = render(<FleetBriefing scope={scope} />);
   await act(async () => {});
   expect([container.innerHTML, request.mock.calls.length, posts().length]).toEqual(["", 1, 0]);
@@ -64,8 +64,10 @@ it("shows a refusal as sent, words every other failure itself, and never names a
   const failed = (reason: string) => `The migration briefing could not be prepared: ${reason}. Check docker compose logs app.`;
   const cases: [() => unknown, string][] = [[() => { throw new ApiError(409, refusal); }, refusal],
     [() => { throw new ApiError(500, null); }, failed("the server answered 500 without a reason")],
-    [() => answer({ highlights: [{ code: "apps_unknown", count: 1 }] }), failed("the server's answer could not be read")],
-    [() => answer({ outcome: "fallback", reason: "error", error: { kind: "http_status", message: unauthorized, status: 401 } }), words.error(unauthorized)]];
+    [() => answer({ outcome: "fallback", reason: "error", error: { kind: "http_status", message: unauthorized, status: 401 } }), words.error(unauthorized)],
+    // An unknown code, a count that is not whole, a fallback with no reason, an error with no sentence: answers the page cannot read.
+    ...[{ highlights: [{ code: "apps_unknown", count: 1 }] }, { highlights: [{ code: "apps_overdue", count: 1.5 }] }, { outcome: "fallback" },
+      { outcome: "fallback", reason: "error" }].map((bad): [() => unknown, string] => [() => answer(bad), failed("the server's answer could not be read")])];
   for (const [reply, text] of cases) {
     serve(reply);
     render(<FleetBriefing scope={scope} />);
