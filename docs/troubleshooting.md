@@ -3493,7 +3493,7 @@ nothing here is a permissions problem in Jamf.
    partial ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). While Fleet changes
    nothing, each later check's line reads
    *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.*
-   That is the same state, not a new failure. On the tab there is nothing to do. Beyond it:
+   That is the same state, not a new failure, and on its own it needs nothing. Three cases do:
    - *unrecognized Mac manifest path* or *unrecognized Mac index entry* among the names → Fleet
      listed a Mac title in a form this build cannot read. Update LoonInspect. On the latest
      release, report it (§8) with the sentence.
