@@ -15,13 +15,17 @@ import copy
 import datetime as dt
 import functools
 import itertools
+import json
 import random
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from app.core import patch_policy_walk as walk_module
 from app.core.patch_policy_walk import (
+    CHECK_KEYS,
     STOPS,
     WalkRefused,
     check_totals,
@@ -1742,3 +1746,155 @@ def test_the_module_reads_no_clock_database_or_network() -> None:
     assert imports <= {"__future__", "datetime", "hashlib", "json", "bisect", "collections", "dataclasses", "typing"}
     for forbidden in ("today(", "now(", "utcnow(", "time.time"):
         assert forbidden not in source
+
+
+# --- The frozen check: what this walk counted, held --------------------------------------------
+
+# A `patch_policy_reference` of two invented apps whose every track's `check` this walk wrote
+# once (`write_frozen`). An instance holds a published document's check to its own copy of this
+# module (plan 4.7), so this is the cross-version test the hand goldens above are not.
+FROZEN = Path(__file__).parent / "fixtures" / "patch_policy" / "frozen_check.json"
+FROZEN_WRITE = "cd backend && uv run --frozen python -m tests.test_patch_policy_walk --write"
+
+
+def frozen_checks(doc: dict[str, Any]) -> dict[tuple[str, str], dict[str, dict[str, Any]]]:
+    """Each track's `check` as this walk writes it, by (app, track): every window length the walk
+    offers, every stop's `check_totals`, over the track's public timeline. The shape LoonVD
+    publishes. Walked on a copy without the checks it holds, so a walk that disagrees is compared
+    here, in words, rather than refused as parity. A window the walk refuses is a broken fixture,
+    and raises."""
+    doc = copy.deepcopy(doc)
+    doc["doc_id"] = doc.get("doc_id") or "frozen-check"  # a walk names its inputs by it; totals never read it
+    for app in doc["apps"]:
+        for track in app["tracks"]:
+            track["check"] = {}
+    written = {}
+    for app in doc["apps"]:
+        for track in app["tracks"]:
+            timeline = public_timeline(doc, app=app["app"], track=track["track"])
+            check = {}
+            for years in walk_module.WINDOW_YEARS:
+                result = walk(doc, app=app["app"], track=track["track"], timeline=timeline, years=years)
+                check[f"{years}y"] = {stop: check_totals(result, stop) for stop in STOPS}
+            written[(app["app"], track["track"])] = check
+    return written
+
+
+def write_frozen() -> None:
+    """Rewrite every track's `check` in `FROZEN` from today's walk, and its `doc_id`. Run only
+    when a ruling moves the counts (see the test's failure words); the body is left as it is."""
+    from app.core import patch_policy_feed as feed
+
+    doc = json.loads(FROZEN.read_text())
+    written = frozen_checks(doc)
+    for app in doc["apps"]:
+        for track in app["tracks"]:
+            track["check"] = written[(app["app"], track["track"])]
+    doc["doc_id"] = feed.canonical_doc_id(doc)
+    FROZEN.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+
+
+def _counts_differently(where: str, key: str, walked: Any, frozen: Any) -> str:
+    return (
+        f"patch_policy_walk now counts differently from the check it wrote in tests/fixtures/patch_policy/"
+        f"{FROZEN.name} ({where}: {key} is {walked!r} here and {frozen!r} in the check). A counting change is a new "
+        f"algorithm, patch_walk/2, published beside {walk_module.ALGORITHM} (LoonVD's contract: \"A walk that counts "
+        "differently is a new algorithm\"): LoonSec publishes each track's check from its pinned copy of this walk, so "
+        "every instance still on the other walk would refuse the app as parity. Revert the counting change, or bump "
+        "ALGORITHM to patch_walk/2 with the N-1 plan (patch_walk/1 kept published for at least 90 days, ruled R11); "
+        f"only then rewrite the check: {FROZEN_WRITE}"
+    )
+
+
+def test_the_walk_still_counts_the_check_it_wrote() -> None:
+    """Every stop of every window of every track of `FROZEN` walks to exactly the check this walk
+    wrote for it. The document holds what a real one does in small: one line with a train per
+    major and a backport shipped two days after the next major (rule 5 keeps 116.0 affected until
+    115.0.2's day), three lines with a track held to one of them and fixes on several, a CVE NVD
+    names no fix for, a fix only an undated build carries, a fix NVD names by a build the track
+    does not list, and a CVE on the ESR edition set aside (`other_edition_only`) beside the ESR
+    channel the app names under `other_channels` and does not walk. Its CVE ids are fictional."""
+    from app.core import patch_policy_feed as feed
+
+    raw = FROZEN.read_bytes()
+    doc = json.loads(raw)
+    assert doc["algorithm"] == walk_module.ALGORITHM, (
+        f"{FROZEN.name} holds {doc['algorithm']}'s check and this walk is {walk_module.ALGORITHM}: a new algorithm "
+        f"keeps the old walk's check beside its own fixture, never in its place (LoonVD's contract: \"A walk that "
+        'counts differently is a new algorithm").'
+    )
+    # A document an instance would store: checked whole, its doc_id its contents.
+    feed.read_document(raw, expected_doc_id=doc["doc_id"])
+
+    written = frozen_checks(doc)
+    for app in doc["apps"]:
+        for track in app["tracks"]:
+            frozen = track["check"]
+            assert set(frozen) == {f"{years}y" for years in walk_module.WINDOW_YEARS}, (
+                f"{track['track']} has no frozen check for every window; {FROZEN_WRITE}"
+            )
+            for window, stops in frozen.items():
+                assert set(stops) == set(STOPS), f"{track['track']} {window} lacks a stop"
+                for stop in STOPS:
+                    walked, held = written[(app["app"], track["track"])][window][stop], stops[stop]
+                    if walked != held:
+                        key = next(k for k in CHECK_KEYS if walked[k] != held.get(k))
+                        where = f"{track['track']}, {window}, {stop}"
+                        pytest.fail(_counts_differently(where, key, walked[key], held.get(key)))
+                # As an instance runs it: the public walk at the default window matches.
+                years = int(window[:-1])
+                result = walk(
+                    doc,
+                    app=app["app"],
+                    track=track["track"],
+                    timeline=public_timeline(doc, app=app["app"], track=track["track"]),
+                    years=years,
+                )
+                assert result["check"]["state"] == "matched"
+
+
+def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
+    """The cases the frozen check exists for, read from the document itself, so an edit to the
+    fixture cannot drop one in silence."""
+    doc = json.loads(FROZEN.read_text())
+    tracks = [(app, track) for app in doc["apps"] for track in app["tracks"]]
+    lines = {track["track"]: {v["line"] for v in track["versions"]} for _, track in tracks}
+    assert any(len(found) >= 3 for found in lines.values()), "no track spans several lines"
+    assert any(track["path"].get("kind") == "hold" for _, track in tracks), "no track holds a line"
+    trains_on_a_line = {
+        (track["track"], v["line"], v["train"]) for _, track in tracks for v in track["versions"] if v["line"] == ""
+    }
+    assert len(trains_on_a_line) >= 10, "no line holds several trains"
+    rows = [row for _, track in tracks for row in track["cves"]]
+    assert any(fix["index"] is None for row in rows for fix in row["fixes"]), "no CVE without a fix"
+    assert any(len({fix["line"] for fix in row["fixes"]}) >= 2 for row in rows), "no CVE fixed on several lines"
+    assert any("named" in fix for row in rows for fix in row["fixes"]), "no fix NVD names by an unlisted build"
+    assert any(v["date"] is None for _, track in tracks for v in track["versions"]), "no undated version"
+    set_aside = [
+        (app, row) for app, track in tracks for row in track["exclusions"]["cves"] if row["reason"] == "other_edition_only"
+    ]
+    assert set_aside and all(app.get("other_channels") for app, _ in set_aside), "no ESR set-aside"
+
+    # Rule 5's case: a fix dated after a version of another train that ranks above it on its line.
+    def backported(track: dict[str, Any]) -> bool:
+        versions = track["versions"]
+        for row in track["cves"]:
+            for fix in row["fixes"]:
+                if fix["index"] is None or versions[fix["index"]]["date"] is None:
+                    continue
+                fixed = versions[fix["index"]]
+                if any(
+                    v["line"] == fixed["line"] and v["train"] != fixed["train"] and v["date"] and v["date"] < fixed["date"]
+                    for v in versions[fix["index"] + 1 :]
+                ):
+                    return True
+        return False
+
+    assert any(backported(track) for _, track in tracks), "no backport for rule 5"
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["--write"]:
+        raise SystemExit(f"usage: {FROZEN_WRITE}\nRewrites the check in {FROZEN} from today's walk.")
+    write_frozen()
+    print(f"wrote {FROZEN}")
