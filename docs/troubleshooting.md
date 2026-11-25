@@ -4001,7 +4001,11 @@ stored, and nothing is deleted to make room for one.
      named* → the content changed after LoonSec built it, or the link served another
      document.
    - *it lacks …* or *its own counts disagree (…)* → the document does not add up in its own
-     key names. That is LoonSec's to fix.
+     key names. That is LoonSec's to fix. An app's `other_channels` (§33 step 4) is held to its
+     spelling as well as its shape (*…other_channels[N].versions spelled as an instance reads
+     them…*, *…names …, a channel a track of … walks*, *…source as the https URL its versions were
+     read from*), because a version spelled otherwise would match nothing a Jamf or Fleet timeline
+     names and be counted as unmatched without a word.
    - *its structure could not be checked (…)*, or *an unexpected failure (…) that the container
      log reports* → the check met a shape it has no words for, or failed for a reason that is not
      a refusal. That it reaches you without a sentence is a gap on our side: reportable state
@@ -4121,19 +4125,20 @@ refusal: the sentence is the whole report.
      nothing of this one: only Jamf's "Mozilla Firefox ESR" title is held for the release track,
      say, which names ESR builds and the numbers both channels share (140.0, 153.0), or only
      versions both tracks list. Choose that track, or another source.
-   - Not a refusal: a view whose `note` says ***N versions of … set aside: LoonSec's data does not
-     walk that channel yet, so they are neither walked nor counted as unmatched.*** Beside an
+   - Not a refusal: versions set aside as a channel LoonSec's data does not walk yet. Beside an
      app's tracks, LoonSec's data names channels it does not walk yet (`other_channels`: Firefox
      ESR beside Firefox's release track, Thunderbird ESR beside Thunderbird's). Jamf's "Mozilla
      Firefox ESR" title shares Firefox's bundle id, and Thunderbird's one title lists both
      channels, so the release track's Jamf view names ESR builds; a version on a channel's list
-     and on no track's is set aside before the walk. The walk's `inputs.timeline.other_channel`
-     counts them, `other_channels` lists them per channel (its label, the public record LoonSec
-     read the versions from, and the versions), `GET /api/patch-policy/apps` gives each track's
-     `otherChannel`, and a `409`'s `facts.other_channels` says the same beside the refusal. A
-     version a track lists is that track's even when a channel lists it too: ESR 153.0 shares its
-     number with release 153.0 and is walked as the release. Nothing to do: the view walks the
-     track's own channel.
+     and on no track's is set aside before the walk, neither walked nor counted as unmatched. The
+     walk's `inputs.timeline.other_channel` counts them, `other_channels` lists them per channel
+     (its label, the public record LoonSec read the versions from, and the versions),
+     `definitions.other_channel` states the rule beside the walk's own `join`,
+     `GET /api/patch-policy/apps` gives each track's `otherChannel`, and a `409`'s
+     `facts.other_channels` says the same beside the refusal. They are counted there and not
+     worded in the view's `note`, which stays the source's own. A version a track lists is that
+     track's even when a channel lists it too: ESR 153.0 shares its number with release 153.0 and
+     is walked as the release. Nothing to do: the view walks the track's own channel.
    - `too_many_unmatched` (the walk's own refusal): ***N of the M versions the timeline from …
      dates from … to …, the days a device in this view could install them, match no version
      LoonSec's patch-policy data lists…*** A version LoonSec's data does not list is never
@@ -4177,9 +4182,9 @@ refusal: the sentence is the whole report.
      naming it, and once **Read history** has read it (§27) its builds date the ESR track. If the
      sentence still reads this with `firefox@esr` among the titles it names, none of the versions
      Fleet's history gives that title is on the ESR track's list; choose another source.
-   - The `note` on the release track's view, ***N versions of … set aside…***: as for Jamf above.
-     Once `firefox@esr`'s history is read, Firefox's release-track view names its ESR builds, and
-     they are set aside because LoonSec's data names the ESR channel under `other_channels`.
+   - Versions the release track's view sets aside (`other_channel`): as for Jamf above. Once
+     `firefox@esr`'s history is read, Firefox's release-track view names its ESR builds, and they
+     are set aside because LoonSec's data names the ESR channel under `other_channels`.
    - `line_not_followed`: ***This instance's Fleet history (…) dates no … release, so the …
      device has no line to hold…*** Fleet's catalog carries only an app's newest line (Wireshark's,
      for one), so a track held on an older line has nothing to install, whichever lines LoonSec's

@@ -400,7 +400,7 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
         bundle_ids = app.get("bundle_ids")
         if bundle_ids is not None and not (isinstance(bundle_ids, list) and all(isinstance(b, str) for b in bundle_ids)):
             return f"it lacks {name}.bundle_ids as a list of bundle ids"
-        problem = _channels_problem(name, app.get("other_channels"))
+        problem = _channels_problem(name, app.get("other_channels"), app.get("tracks"))
         if problem is not None:
             return problem
         tracks = app.get("tracks")
@@ -417,17 +417,29 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
     return None
 
 
-def _channels_problem(app: str, channels: object) -> str | None:
+def _channels_problem(app: str, channels: object, tracks: object) -> str | None:
     """An app's `other_channels`, when it has any: the channels LoonSec names beside its tracks and
     does not walk, each `{channel, label, source, versions[]}`. A day-walk sets those versions
     aside when it splits a Jamf or Fleet timeline (`app.core.patch_policy_timelines.split`). Absent,
-    null or empty is none; anything else must be that shape, with no channel or version named twice
-    in it, or the document is refused naming where."""
+    null or empty is none; anything else must be that shape, or the document is refused naming
+    where.
+
+    Held to the contract's spelling too (LoonVD's sharedAssets/contract/patch-policy-reference.md),
+    because a version spelled otherwise would match nothing an instance reads and be counted as
+    unmatched without a word: each version as an instance reads it (lowercase, no space around it,
+    Mozilla's `esr` suffix stripped), none twice; each channel once, ignoring case, and never one
+    the app's tracks walk; `source` the https URL the versions were read from. Order is not held:
+    the contract lists versions in its own version order, and a reader matches by membership."""
     if channels is None:
         return None
     shape = "a list of channels, each with channel, label and source as text and versions as a list of versions"
     if not isinstance(channels, list):
         return f"it lacks {app}.other_channels as {shape}"
+    walked = {
+        track["channel"].strip().lower()
+        for track in (tracks if isinstance(tracks, list) else [])
+        if isinstance(track, Mapping) and isinstance(track.get("channel"), str)
+    }
     seen: set[str] = set()
     for index, entry in enumerate(channels):
         where = f"{app}.other_channels[{index}]"
@@ -439,9 +451,21 @@ def _channels_problem(app: str, channels: object) -> str | None:
         versions = entry.get("versions")
         if not isinstance(versions, list) or not all(isinstance(v, str) and v.strip() for v in versions):
             return f"it lacks {where}.versions as a list of versions"
-        if entry["channel"] in seen:
+        channel = entry["channel"].strip().lower()
+        if channel in seen:
             return f"its own counts disagree ({app}.other_channels lists {entry['channel']} twice)"
-        seen.add(entry["channel"])
+        seen.add(channel)
+        if channel in walked:
+            return f"its own counts disagree ({where} names {entry['channel']}, a channel a track of {app} walks)"
+        source = entry["source"].strip()
+        if not source.lower().startswith("https://") or _host(source) is None:
+            return f"it lacks {where}.source as the https URL its versions were read from"
+        for version in versions:
+            if version != version.strip().lower() or version.endswith("esr"):
+                return (
+                    f"it lacks {where}.versions spelled as an instance reads them (lowercase, no space around, "
+                    f"Mozilla's esr suffix stripped): {_shown(version)} is not"
+                )
         if len(versions) != len(set(versions)):
             return f"its own counts disagree ({where}: a version is listed twice)"
     return None

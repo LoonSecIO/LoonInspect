@@ -523,10 +523,6 @@ def test_no_versions_says_what_to_check_for_each_source() -> None:
 # --- other channels: named by LoonSec's document, set aside, never walked -------------------------
 
 ESR_ONLY = sorted({v for v, _ in ESR} - {v for v, _ in RELEASES})
-ESR_NOTE = (
-    f"{len(ESR_ONLY)} versions of Mozilla Firefox ESR set aside: LoonSec's data does not walk that channel yet, so they "
-    "are neither walked nor counted as unmatched (docs/troubleshooting.md §33 step 4)."
-)
 
 
 def test_the_documents_other_channels_are_read_lowercased_in_order_and_anything_malformed_is_skipped() -> None:
@@ -562,14 +558,23 @@ def test_jamfs_firefox_and_firefox_esr_titles_walk_the_release_track_with_the_es
     assert {key for key, _ in timeline.observations} == {v for v, _ in RELEASES}
     assert timeline.other_track == ()
     assert [(c.channel, c.label, c.versions) for c in timeline.other_channel] == [("esr", "Mozilla Firefox ESR", tuple(ESR_ONLY))]
-    assert timeline.note == ESR_NOTE
+    # Counted, never worded in the note: the page says it once, in the reader's language.
+    assert timeline.note is None
 
     result = walk.walk(doc, app="firefox", track="firefox/release", timeline=timeline.walk_input())
     joined = result["inputs"]["timeline"]
     assert (joined["matched"], joined["unmatched"], joined["other_track"]) == (len(RELEASES), [], 0)
     assert joined["in_reach"]["unmatched"] == []
 
-    served = views.served(result, timeline, check={"state": "matched", "detail": "."}, stop=None, page=1)["inputs"]["timeline"]
+    whole = views.served(result, timeline, check={"state": "matched", "detail": "."}, stop=None, page=1)
+    # The walk's `join` says a version no track lists is unmatched; the definition served after it
+    # says what was set aside first, and the walk's own words are left as they are.
+    keys = list(whole["definitions"])
+    assert keys[keys.index("join") + 1] == "other_channel"
+    assert whole["definitions"]["join"] == walk.DEFINITIONS["join"]
+    assert whole["definitions"]["other_channel"] == views.OTHER_CHANNEL_DEFINITION
+    assert "other_channel" not in walk.DEFINITIONS and "other_channel" not in result["definitions"]
+    served = whole["inputs"]["timeline"]
     assert (served["other_track"], served["other_track_versions"]) == (0, [])
     assert served["other_channel"] == len(ESR_ONLY)
     assert served["other_channels"] == [
@@ -581,7 +586,7 @@ def test_jamfs_firefox_and_firefox_esr_titles_walk_the_release_track_with_the_es
             "versions": ESR_ONLY,
         }
     ]
-    assert served["note"] == ESR_NOTE
+    assert served["note"] is None
 
 
 def test_thunderbirds_interleaved_title_walks_the_release_track_with_the_esr_builds_set_aside() -> None:
@@ -590,7 +595,7 @@ def test_thunderbirds_interleaved_title_walks_the_release_track_with_the_esr_bui
     timeline = timelines.jamf(catalog(interleaved), doc, "thunderbird", "thunderbird/release")
     assert {key for key, _ in timeline.observations} == {v for v, _ in RELEASES}
     assert [c.versions for c in timeline.other_channel] == [tuple(ESR_ONLY)]
-    assert timeline.note.startswith(f"{len(ESR_ONLY)} versions of Mozilla Thunderbird ESR set aside")
+    assert timeline.note is None
     result = walk.walk(doc, app="thunderbird", track="thunderbird/release", timeline=timeline.walk_input())
     assert result["inputs"]["timeline"]["unmatched"] == []
 
@@ -605,11 +610,8 @@ def test_fleets_firefox_esr_title_read_beside_firefox_is_set_aside_and_the_relea
     assert timeline.ids == ("firefox", "firefox@esr")
     assert {key for key, _ in timeline.observations} == {v for v, _ in RELEASES[12:]}
     assert [c.versions for c in timeline.other_channel] == [tuple(sorted(v for v, _ in ESR[14:]))]
-    count = len(ESR[14:])
-    assert timeline.note == (
-        f"{timelines.FLEET_CLOCK} {count} versions of Mozilla Firefox ESR set aside: LoonSec's data does not walk that "
-        "channel yet, so they are neither walked nor counted as unmatched (docs/troubleshooting.md §33 step 5)."
-    )
+    # The note is Fleet's own, and says nothing of the set-aside builds: the page says that once.
+    assert timeline.note == timelines.FLEET_CLOCK
     result = walk.walk(doc, app="firefox", track="firefox/release", timeline=timeline.walk_input())
     assert result["inputs"]["timeline"]["unmatched"] == []
 
@@ -654,20 +656,11 @@ def test_a_title_that_names_only_a_channel_that_is_not_walked_says_so_instead_of
     )
 
 
-def test_one_version_set_aside_is_said_in_the_singular() -> None:
-    channel = timelines.SetAside(channel="esr", label="Firefox ESR", source="https://example.test", versions=("128.5.1",))
-    assert timelines.set_aside_note([channel], "jamf") == (
-        "1 version of Firefox ESR set aside: LoonSec's data does not walk that channel yet, so it is neither walked nor "
-        "counted as unmatched (docs/troubleshooting.md §33 step 4)."
-    )
-    assert timelines.set_aside_note([], "jamf") is None
-
-
-async def test_the_apps_route_counts_each_tracks_set_aside_versions_and_says_so_in_the_note() -> None:
+async def test_the_apps_route_counts_each_tracks_set_aside_versions_and_leaves_the_note_to_the_source() -> None:
     doc = _with_checks(mozilla_document(esr_track=False, esr_channel=True))
     sources = await views.sources_of(doc, catalog(FIREFOX_0B3, FIREFOX_ESR_0B4), history(enabled=False))
     jamf_source = sources["firefox"]["jamf"]
-    assert jamf_source["available"] is True and jamf_source["note"] == ESR_NOTE
+    assert jamf_source["available"] is True and jamf_source["note"] is None
     (release,) = jamf_source["tracks"]
     assert (release["matched"], release["other_track"], release["other_channel"], release["unmatched"]) == (
         len(RELEASES),

@@ -123,7 +123,9 @@ _READ_AGAIN = {
 class SetAside:
     """The versions an instance timeline named that one of the app's `other_channels` lists and
     no track does: that channel's id, label and public source, and the versions, sorted. They are
-    neither walked nor counted as unmatched; the view says how many, per channel."""
+    neither walked nor counted as unmatched; the view counts them per channel (`fact`), and the page
+    says it in the reader's language. The timeline's `note` stays the source's own: a sentence
+    there would print twice beside the page's own."""
 
     channel: str
     label: str
@@ -162,23 +164,6 @@ def other_channels(app_row: Mapping[str, Any]) -> tuple[SetAside, ...]:
             )
         )
     return tuple(found)
-
-
-def set_aside_note(set_aside: Sequence[SetAside], source: str) -> str | None:
-    """One sentence per channel the timeline named versions of, for the view's `note`."""
-    if not set_aside:
-        return None
-    step = "step 5" if source == FLEET else "step 4"
-
-    def one(channel: SetAside) -> str:
-        count = len(channel.versions)
-        which, them = ("version", "it is") if count == 1 else ("versions", "they are")
-        return (
-            f"{count} {which} of {channel.label} set aside: LoonSec's data does not walk that channel yet, so {them} "
-            f"neither walked nor counted as unmatched (docs/troubleshooting.md §33 {step})."
-        )
-
-    return " ".join(one(channel) for channel in set_aside)
 
 
 class Unavailable(Exception):
@@ -445,7 +430,6 @@ def _from_split(
         if unread is not None:
             raise unread
         raise _no_channel(source, owner, name, track_row, shown, joined)
-    aside = set_aside_note(joined.other_channel, source)
     return Timeline(
         source=source,
         name=timeline_name,
@@ -455,7 +439,7 @@ def _from_split(
         digest=_digest(joined.kept),
         ids=tuple(ids),
         other_track=joined.other,
-        note=" ".join(part for part in (note, aside) if part) or None,
+        note=note,
         other_channel=joined.other_channel,
     )
 

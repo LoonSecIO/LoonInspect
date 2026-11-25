@@ -294,6 +294,33 @@ _CHANNEL = {"channel": "extended", "label": "Google Chrome (extended stable)", "
             [{**_CHANNEL, "versions": ["140.0.7339.207", "140.0.7339.207"]}],
             "its own counts disagree (chrome.other_channels[0]: a version is listed twice)",
         ),
+        # The contract's spelling: a version spelled otherwise would match nothing an instance reads.
+        *(
+            (
+                [{**_CHANNEL, "versions": ["140.0.7339.207", version]}],
+                "it lacks chrome.other_channels[0].versions spelled as an instance reads them (lowercase, no space "
+                f"around, Mozilla's esr suffix stripped): {json.dumps(version)} is not",
+            )
+            for version in ("128.5.1esr", "128.1.0ESR", "140.0.7339.213B", " 140.0.7339.213", "140.0.7339.213\t")
+        ),
+        (
+            [_CHANNEL, {**_CHANNEL, "channel": "EXTENDED"}],
+            "its own counts disagree (chrome.other_channels lists EXTENDED twice)",
+        ),
+        *(
+            (
+                [{**_CHANNEL, "channel": walked}],
+                f"its own counts disagree (chrome.other_channels[0] names {walked}, a channel a track of chrome walks)",
+            )
+            for walked in ("stable", "Stable")
+        ),
+        *(
+            (
+                [{**_CHANNEL, "source": source}],
+                "it lacks chrome.other_channels[0].source as the https URL its versions were read from",
+            )
+            for source in ("javascript:alert(1)", "http://example.test/x", "not a url", "https://")
+        ),
     ],
 )
 def test_a_malformed_other_channels_is_refused_in_words(value, said) -> None:
@@ -303,6 +330,18 @@ def test_a_malformed_other_channels_is_refused_in_words(value, said) -> None:
     broken = copy.deepcopy(DOC)
     broken["apps"][0]["other_channels"] = value
     assert _refusal(_resigned(broken)).startswith(said)
+
+
+def test_other_channels_versions_in_any_order_and_a_number_two_channels_share_are_read() -> None:
+    """Order is not held: LoonSec lists a channel's versions in its own version order (Firefox ESR's
+    91.5.0 before 102.0), and an instance matches by membership. Two channels may share a number;
+    a timeline's version is the first listed channel's, as `split` documents."""
+    other = copy.deepcopy(DOC)
+    other["apps"][0]["other_channels"] = [
+        {**_CHANNEL, "versions": ["140.0.7339.213", "140.0.7339.207", "91.5.0"]},
+        {**_CHANNEL, "channel": "beta", "label": "Google Chrome (beta)", "versions": ["140.0.7339.213"]},
+    ]
+    assert len(feed.read_document(_resigned(other)).body["apps"][0]["other_channels"]) == 2
 
 
 def test_json_nested_past_the_parsers_depth_is_refused_in_words() -> None:

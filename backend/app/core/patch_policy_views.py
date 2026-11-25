@@ -46,6 +46,16 @@ from app.core import patch_policy_timelines as timelines
 from app.core import patch_policy_walk as walk
 
 PAGE_SIZE = 200
+# The walk's own `join` definition (pinned in `patch_policy_walk`) predates `other_channels`: it says
+# a version no track lists is unmatched. What this module hands the walk has already set aside the
+# versions a channel the document names lists, so the served definitions say that, right after it.
+OTHER_CHANNEL_DEFINITION = (
+    "Set aside before the walk: a version a Jamf or Fleet timeline names that no track of the app lists "
+    "but one of the app's `other_channels` does (a channel LoonSec's data names and does not walk yet, "
+    "such as Firefox ESR) is neither walked nor unmatched, so the 5% limit is measured without it "
+    "(`inputs.timeline.other_channel`, and per channel `other_channels`). A version a track lists is "
+    "that track's, whatever channel also lists it. Public dates are the track's own and set nothing aside."
+)
 ALIGN_COMMON = "common"
 
 # `check.state` on a served walk.
@@ -451,7 +461,8 @@ def served(
     intervals only for `stop`, the app's parity as `check`, and what the timeline set aside:
     another track's versions (`other_track`, `other_track_versions`) and the versions of each
     channel the document names and does not walk (`other_channel`, the count, and
-    `other_channels`, per channel), none of which the walk saw."""
+    `other_channels`, per channel), none of which the walk saw, with `definitions.other_channel`
+    beside the walk's `join` to say so."""
     rows = result["cves"]
     pages = max(1, math.ceil(len(rows) / PAGE_SIZE))
     chosen = rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
@@ -471,12 +482,24 @@ def served(
             "note": timeline.note,
         },
     }
+    out["definitions"] = _definitions(result["definitions"])
     if aligned is not None:
         out["window"] = {**result["window"], "aligned": dict(aligned)}
     out["check"] = dict(check)
     out["cves"] = [_trimmed(row, stop) for row in chosen]
     out["cves_page"] = {"page": page, "page_size": PAGE_SIZE, "pages": pages, "total": len(rows)}
     out["intervals_for"] = stop
+    return out
+
+
+def _definitions(walked: Mapping[str, Any]) -> dict[str, Any]:
+    """The walk's definitions with `other_channel` right after `join`, never changing the walk's own."""
+    out: dict[str, Any] = {}
+    for key, text in walked.items():
+        out[key] = text
+        if key == "join":
+            out["other_channel"] = OTHER_CHANNEL_DEFINITION
+    out.setdefault("other_channel", OTHER_CHANNEL_DEFINITION)
     return out
 
 

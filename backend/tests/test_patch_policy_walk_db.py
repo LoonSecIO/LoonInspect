@@ -299,7 +299,7 @@ async def test_jamf_dates_walk_the_track_and_the_other_lines_versions_are_set_as
 async def test_a_channel_the_data_names_and_does_not_walk_is_set_aside_and_counted_per_channel(db, held, viewer) -> None:  # noqa: F811
     """The fixture names Chrome's extended stable channel under `other_channels`. A Jamf title that
     dates stable and extended builds walks the stable track with the extended ones set aside, per
-    channel, and says how many; 141.0.7390.108 is on both lists and is the stable track's. A
+    channel, and counts them; 141.0.7390.108 is on both lists and is the stable track's. A
     version neither list names still counts against the 5% limit, with the set-aside beside it."""
     stable = [("141.0.7390.54", "2025-09-30"), ("141.0.7390.66", "2025-10-07"), ("141.0.7390.108", "2025-10-21")]
     stable.append(("142.0.7444.59", "2025-10-28"))
@@ -320,13 +320,11 @@ async def test_a_channel_the_data_names_and_does_not_walk_is_set_aside_and_count
                 "versions": ["140.0.7339.207", "140.0.7339.213"],
             }
         ]
-        assert joined["note"] == (
-            "2 versions of Google Chrome (extended stable) set aside: LoonSec's data does not walk that channel yet, so "
-            "they are neither walked nor counted as unmatched (docs/troubleshooting.md §33 step 4)."
-        )
+        # Counted, never worded in the note: the page says it once, in the reader's language.
+        assert joined["note"] is None
         apps = {app["app"]: app for app in (await viewer.get("/api/patch-policy/apps")).json()["apps"]}
         chrome = apps["chrome"]["sources"]["jamf"]
-        assert chrome["available"] is True and chrome["note"] == joined["note"]
+        assert chrome["available"] is True and chrome["note"] is None
         (stable_track,) = chrome["tracks"]
         assert (stable_track["matched"], stable_track["otherChannel"], stable_track["unmatched"]) == (4, 2, 0)
 
