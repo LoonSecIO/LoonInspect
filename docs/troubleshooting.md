@@ -817,7 +817,29 @@ and step 2 ends with how to tell that apart from a broken exchange.
      all** is not proof the pass did not run — it writes nothing when nothing moved, which
      is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
      now, and judge by what the page says afterwards;
-   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
+   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now:
+     every app version it holds, whatever the device filter above the list says, and
+     without asking Jamf or LoonSec for anything. The button is shown only to a role that
+     may sync a catalog (`patch:catalog-sync`: Analyst and Administrator). **No button
+     there** means this account is a Viewer or an Auditor: ask an Analyst or an
+     Administrator to press it, or wait for the hourly pass. What it says when it finishes:
+     - *Re-judged N app versions of this organization.* — the pass ran and the list was
+       read again, so what the list says now is the answer;
+     - *Nothing to re-judge: this organization has no app versions in its catalog yet.* —
+       no device has been processed for this organization, so there is nothing for a
+       corpus to answer about. § 2 is the path for a sweep that reports nothing;
+     - *The catalog could not be re-judged, and this instance gave no reason …* — the press
+       did not finish, and the list still shows the last pass's answers. If the page itself
+       still loads, `docker compose logs app --since 10m | grep "/api/catalog/refresh"`
+       finds the press: a `request failed` line there carries the exception that stopped
+       the pass. The same line on a second press is reportable state **H**; include it;
+     - *Insufficient permissions* — this account's role changed after it signed in, so the
+       page still offered the button. Reload the page; the button goes with the permission.
+
+     Jamf Patch's **Sync now** is a different control: it reads Jamf's patch catalog first
+     and then re-judges only the rows that catalog or the corpus moved since they were
+     judged, so it does not stand in for this button in step 4.
+
    If an hour has passed, the log shows the pass running, and the same builds still read
    amber, that is reportable state **H**.
 4. **One app, and only that one, says *outside the corpus* after every refresh.** Look for

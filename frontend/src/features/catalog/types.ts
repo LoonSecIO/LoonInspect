@@ -89,6 +89,12 @@ export interface CatalogListResponse {
   vulnJudged: boolean;
 }
 
+/** `POST /api/catalog/refresh` (#931): how many of this organization's catalog rows the forced
+ *  pass judged — every row it holds, so `0` means the catalog is empty, not that nothing moved. */
+export interface CatalogRefreshResult {
+  evaluated: number;
+}
+
 export type CatalogJamfFilter = "all" | "matched" | "unmatched";
 
 /** The stored answer as a filter (#529). `unknown_app` is the ruled spelling (§4b) and is
