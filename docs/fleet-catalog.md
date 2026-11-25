@@ -287,6 +287,8 @@ A check that fails before it changes a title leaves the value as it was. The tab
 the value itself, and of the API only the migration report carries it, as `fleetCatalogReadiness`
 ([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
+After the 1.3.0 upgrade (below) it has no sentence for the partial record until the next check, so
+**Migration review**'s sentence names that case itself (#942, [troubleshooting §27 step 6](troubleshooting.md#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)).
 
 **Besides the check and its schedule, one thing reads it: a saved application patch plan**
 ([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet

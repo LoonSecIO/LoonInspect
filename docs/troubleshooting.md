@@ -3571,6 +3571,19 @@ nothing here is a permissions problem in Jamf.
      read as partial, once. The next scheduled check, within the hour, or **Check now**
      clears it, reading only the manifests the instance lacks. If the line reads
      *Fleet's catalog has not been read yet*, that is step 2; *did not get an answer* is step 3.
+
+   **Migration review** and an app's page say *Fleet’s catalog was read only in part, …* (step 12)
+   for any of three reasons, and the report they read does not say which (#942). The status line
+   on **Fleet titles** does, for two of them:
+   - *The last check, …, did not get an answer.* → a check was cut short after it had read or
+     changed some titles (its sentence ends *… were read and kept; the next check reads the
+     rest.*), or a check failed while the titles held were already partial. Its sentence is
+     step 3's. Once a check gets an answer, read the line again: it then names one of the two
+     cases below or the read is whole.
+   - *… could not be read … and were left as held: …*, or *The held snapshot still has unread Mac
+     titles.* → this step, from the top. The second form does not name the titles; only the
+     check that first skipped them did, up to five by name.
+   - Neither, under *Checked …* → the upgrade to 1.3.0, the last case above.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
@@ -3650,9 +3663,11 @@ nothing here is a permissions problem in Jamf.
     - *The installed apps for this device filter could not be read. Check connectivity and retry; this does not mean no app needs review.*
       → no answer came: reload the page, and if it stays, §4. *Insufficient permissions* beside
       **Retry** instead → the account lacks `app:read` or `device:read`, which every built-in role holds.
-    - *Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why.*
-      or *Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.*
-      → the status line on **Fleet titles**: steps 2, 3 and 6.
+    - *Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why when the last check did not get an answer or left titles this build could not read. When it says neither, the upgrade to 1.3.0 marked the catalog for one more read, which the next scheduled check, within the hour, or Check now finishes (troubleshooting.md §27 step 6).*
+      → the status line on **Fleet titles**, read as the end of step 6 says. An app's page shows the
+      same sentence above **Installed builds**.
+    - *Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.*
+      → the status line on **Fleet titles**: steps 2 and 3.
     - *Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
 
     *Unknown* beside **Outside both catalogs** is not zero: an app is outside both only once Fleet's
