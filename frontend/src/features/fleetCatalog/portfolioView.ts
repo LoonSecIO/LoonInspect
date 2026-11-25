@@ -95,3 +95,16 @@ export function policySummary(a?: FleetAssessment): PolicySummary {
   if (a.policyExemptBuilds) return "exempt";
   return "unassessed";
 }
+
+export type PortfolioEmpty = "noSweep" | "noMacs" | "noApps" | "noMatch";
+
+/** Which kind of empty the list is (docs/diagnosability.md rule 1), checked in the order an operator should: no
+ *  current Jamf Mac on record, none the device filter keeps, no installed app on those it keeps, or the search and
+ *  the Show choice hide every app. Null while any row shows. Ask it only of an enabled report: with the flag off the
+ *  report counts nothing, and the page says the flag is off instead. */
+export function portfolioEmpty(report: MigrationPortfolio, rows: MigrationItem[]): PortfolioEmpty | null {
+  if (rows.length) return null;
+  if (!report.scope.eligibleMacs) return "noSweep";
+  if (!report.scope.selectedMacs) return "noMacs";
+  return report.items.length ? "noMatch" : "noApps";
+}

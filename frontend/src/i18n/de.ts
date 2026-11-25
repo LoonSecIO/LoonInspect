@@ -2,6 +2,7 @@ import { historyGerman } from "@/features/devices/historyCopy";
 import { patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { mcpGerman } from "@/features/mcp/copy";
 import { aiActivityGerman } from "@/features/ai/activityCopy";
+import { fleetPlanningGerman } from "@/features/fleetCatalog/planningCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
@@ -9,6 +10,7 @@ export const de: Translations = {
   patchPolicy: patchPolicyGerman,
   mcp: mcpGerman,
   aiActivity: aiActivityGerman,
+  fleetPlanning: fleetPlanningGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
