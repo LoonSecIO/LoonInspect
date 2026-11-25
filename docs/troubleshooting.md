@@ -3548,6 +3548,31 @@ nothing here is a permissions problem in Jamf.
     back shows the move this instance saw, not its first arrival. Nothing to do; **Read again**
     cannot see further than the commits do. The dates are when Fleet's catalog
     took each version, hours to a day after Homebrew and the vendor, never before.
+11. **An app's or a title's migration detail is refused, or its `impact` is null.**
+    `GET /api/fleet-catalog/migration/apps/<appHash>` and `…/titles/<slug>` answer for the Macs
+    the device filter (`deviceScope`) selects ([`fleet-catalog.md`](fleet-catalog.md), *Migration
+    detail*). By the refusal:
+    - *Fleet's catalog is not read while the Fleet catalog flag is off for this organization.*
+      (409) → step 1.
+    - *No Mac the device filter selects has this app in its inventory* (404) → the filter's
+      connection, a contact or inventory window, or another condition leaves out every Mac with
+      the app. Widen or clear `deviceScope`; **Devices › Applications › Installed** under the same
+      filter lists the app once a selected Mac has it. An app removed from every Mac answers this
+      under any filter.
+    - *Fleet's catalog, as this instance last read it, holds no Mac title …* (404) → the copy this
+      instance holds has no such slug; a title Fleet stopped listing is removed with its history.
+      **Check now** reads the catalog again (steps 2 and 3).
+    - *Fleet's version history, as this instance holds it, does not list …* (422) → `targetVersion`
+      is neither Fleet's latest nor in the title's history. Leave it out for the latest or choose a
+      listed version; **Read history** reads it again (step 8; step 10 for a version it leaves out).
+
+    With `impact: null`, `impactUnavailable` names why: `catalog_incomplete`, the snapshot is
+    partial or unread (steps 2, 3 and 6); `no_fleet_title`, no Fleet Mac title has the app's bundle
+    ID (compare them as step 4 does); `identity_review`, the app has no bundle ID, two Fleet titles
+    share it, several Jamf Patch titles match it or a match rests on an extension attribute
+    (`jamfTitles` lists them; settle the title under **Devices › Applications › Jamf Patch**); or
+    `unordered_target`, the target holds no number (choose a numeric version from the history; a
+    qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.

@@ -68,3 +68,38 @@ class ReportContext(ReportModel):
 class MigrationReport(ReportContext):
     fleet_device_counts: dict[str, int] = Field(default_factory=dict)
     items: list[LocalApp] = Field(default_factory=list)
+
+
+class JamfTitle(ReportModel):
+    id: str
+    name: str
+
+
+class InstalledBuild(ReportModel):
+    app_hash: str
+    version_hash: str
+    version: str
+    short_version: str | None
+    macs: int
+
+
+class VersionImpact(ReportModel):
+    target_version: str
+    installed_macs: int
+    older_macs: int
+    at_or_above_macs: int
+    unknown_macs: int
+
+
+class MigrationDetail(ReportContext):
+    item: LocalApp | None = None
+    title: FleetCandidate | None = None
+    items: list[LocalApp]
+    builds: list[InstalledBuild]
+    jamf_titles: list[JamfTitle]
+    installed_macs: int
+    impact: VersionImpact | None = None
+    # Set only when `impact` is null, to say why no Mac is counted against the target.
+    impact_unavailable: Literal["catalog_incomplete", "no_fleet_title", "identity_review", "unordered_target"] | None = None
+    # The title route's one assessment, keyed by slug: only with a complete catalog and every identity `exact`.
+    assessments: dict[str, FleetAssessmentOut] = Field(default_factory=dict)
