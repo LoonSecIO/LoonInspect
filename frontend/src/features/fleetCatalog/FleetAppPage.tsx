@@ -10,9 +10,10 @@ import { fleetCatalogPath, installedAppsPath, patchPlanHref } from "@/features/c
 import { fleetScopeQuery, getFleetDetail } from "@/features/fleetCatalog/api";
 import { detailPath, manifestUrl } from "@/features/fleetCatalog/catalogView";
 import { FleetObservedChanges } from "@/features/fleetCatalog/FleetObservedChanges";
+import { FleetPilotGuide } from "@/features/fleetCatalog/FleetPilotGuide";
 import { BuildEvidence, FleetTargetComparison } from "@/features/fleetCatalog/FleetTargetComparison";
 import { FleetTitleHistory } from "@/features/fleetCatalog/FleetTitleHistory";
-import type { MigrationDetail } from "@/features/fleetCatalog/migrationTypes";
+import type { MigrationDetail, MigrationImpact } from "@/features/fleetCatalog/migrationTypes";
 import { policySummary } from "@/features/fleetCatalog/portfolioView";
 import { useLocale } from "@/i18n/LocaleContext";
 
@@ -80,7 +81,8 @@ function InstalledFindings({ data, lag }: { data: MigrationDetail; lag: boolean 
 }
 
 /** The answer: the list's verdict for the same app, its findings and observed upgrades, the hand-off to Patch Plans, #908's target
- *  comparison, and once a Fleet title is known #901's history in its detail layout, whose Compare picks that comparison's target. */
+ *  comparison, once a Fleet title is known #901's history in its detail layout, whose Compare picks that comparison's target, and
+ *  #909's pilot line and guide. */
 function DetailBody({ data, opened, onHistoryRead }: { data: MigrationDetail; opened: Opened; onHistoryRead: () => void }) {
   const { t, locale } = useLocale();
   const words = t.fleetDetail, local = data.item, count = (n: number) => n.toLocaleString(locale);
@@ -102,6 +104,10 @@ function DetailBody({ data, opened, onHistoryRead }: { data: MigrationDetail; op
   // some version can have, which `identity_review` rules out; the evidence section says #899's reason otherwise.
   const comparable = candidate && data.installedMacs > 0 && data.impactUnavailable !== "identity_review" ? candidate : undefined;
   const choose = (version: string) => { setTarget(version); comparison.current?.scrollIntoView?.({ block: "start" }); comparison.current?.focus({ preventScroll: true }); };
+  // The pilot line words the page's own impact, so Fleet's latest whatever target the panel shows; with none, the panel or the
+  // evidence section says why.
+  const pilot = ({ olderMacs: older, unknownMacs: unknown, targetVersion: version }: MigrationImpact) => older > 0 ? words.pilotBelow(count(older), older === 1, version)
+    : unknown > 0 ? words.checkUnknown(count(unknown), unknown === 1, version) : words.monitorCurrent(version);
   return <div className="space-y-4">
     <header className={card}>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2"><div className="min-w-0">
@@ -110,6 +116,7 @@ function DetailBody({ data, opened, onHistoryRead }: { data: MigrationDetail; op
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">{candidate && <ExternalLink href={manifestUrl(candidate.slug)}>{words.source}</ExternalLink>}
           {canPlan && hashes.length > 0 && <Link className={link} to={patchPlanHref(new URLSearchParams(fleetScopeQuery(opened.list)), hashes)}>{words.planLink}</Link>}</div></div>
       <p className="text-sm">{words.footprint(count(data.installedMacs), data.installedMacs === 1, count(data.scope.selectedMacs), data.scope.selectedMacs === 1)} {coverage}</p>
+      {data.impact && data.installedMacs > 0 && <p className="text-sm">{pilot(data.impact)}</p>}
       {assessment && data.installedMacs > 0 && <p className="text-sm font-medium">{t.fleetPlanning.reasons[assessment.priorityReason]}</p>}
       {!local && data.items.some(item => item.match === "ambiguous") && <p className="text-sm">{words.ambiguous}</p>}
       <dl className="grid grid-cols-2 gap-x-5 gap-y-3 border-t pt-3 sm:grid-cols-4">
@@ -144,6 +151,7 @@ function DetailBody({ data, opened, onHistoryRead }: { data: MigrationDetail; op
       : data.installedMacs > 0 && <BuildEvidence assessment={assessment} reason={data.impactUnavailable && words.impactUnavailable(data.impactUnavailable, candidate?.latestVersion ?? "")} />}
     {candidate && <section className={card}><h3 className={heading}>{words.versions}</h3>
       <FleetTitleHistory key={candidate.slug} slug={candidate.slug} canRead={canRead} onRead={onHistoryRead} detail onSelectVersion={comparable ? choose : undefined} /></section>}
+    {(candidate || local?.match === "none") && <FleetPilotGuide key={candidate?.slug ?? "none"} candidate={candidate} />}
   </div>;
 }
 

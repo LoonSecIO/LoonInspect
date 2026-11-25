@@ -397,6 +397,17 @@ introduced and remaining findings where both builds have a whole corpus answer, 
 its known exploited findings, and the Jamf Patch title page's verdict with its rule and due date. With `vuln:read` each finding ID opens its own page. Where
 there is no impact, the panel or the evidence says why ([`troubleshooting.md`](troubleshooting.md) §27 step 15).
 
+**Plan a Fleet pilot** (#909). A line under the header counts the selected Macs with the app below Fleet's latest version, where a pilot
+starts; with none below, it says whether some run versions that cannot be ordered against it, or whether every one is current. After the
+release history, for an app with one Fleet title or on a title's own page, **Plan a Fleet pilot** describes Fleet's three maintained-app
+workflows, each with Fleet's guide: patching existing installations, offering the app in Self-service, and installing it where it is
+missing. Three Fleet API reads confirm a pilot (the maintained app's numeric ID, its version for the pilot fleet, an install's result), and
+for patching a GitOps draft adds the app and a `type: patch` policy. Where Fleet's catalog, read whole, has no title for the app, it offers
+five paths instead: a custom package, a request or contribution to Fleet's catalog, an Installomator label, a Munki package or the App
+Store. While the channel is unconfirmed or coverage is unknown there is no guide; the header says why. Nothing here deploys, and a title in
+Fleet's catalog is no evidence that any policy is deployed. It names no vendor: #857's per-vendor notes were dropped (#893)
+([`troubleshooting.md`](troubleshooting.md) §27 step 16).
+
 ### The API
 
 `GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected

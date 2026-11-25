@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-/** An installed app's or a Fleet title's own page (#906, #907, #908). `./api`'s reads are stubbed, its `fleetScopeQuery` is the real one. */
+/** An installed app's or a Fleet title's own page (#906–#909). `./api`'s reads are stubbed, its `fleetScopeQuery` is the real one. */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/config/api";
 import { FleetAppPage } from "@/features/fleetCatalog/FleetAppPage";
-import type { FleetAssessment, FleetBuildAssessment, FleetCandidate, ImpactUnavailable, MigrationDetail, MigrationItem,
+import type { FleetAssessment, FleetBuildAssessment, FleetCandidate, ImpactUnavailable, MigrationDetail, MigrationImpact, MigrationItem,
   PolicyUnassessed } from "@/features/fleetCatalog/migrationTypes";
 import type { FleetTitleHistory } from "@/features/fleetCatalog/types";
 import { policySentence } from "@/features/jamfPatch/policyRules";
@@ -162,8 +162,8 @@ it("reads a title's verdict from its own assessment, plans each identity a selec
     management: "observe", recentVersions: null, behindBuilds: 0, exactBuilds: 0, kevBuilds: null, withinPolicyBuilds: 0, policyUnassessedBuilds: 0 } },
     impact: { targetVersion: "2.0", installedMacs: 0, olderMacs: 0, atOrAboveMacs: 0, unknownMacs: 0 } }); // #899's answer with no installs: zeros, no reason
   expect(await said(words.catalogFirst, "0 of 6 in-scope Macs report this app.")).toBeTruthy();
-  expect([...shown(en.fleetPlanning.reasons.none_behind, words.installedFindings, words.observedTitle, words.planLink, words.installedScope, words.findings, "Not judged"),
-    screen.getByText(words.cadenceUnread).textContent]).toEqual([false, false, false, false, false, false, true, words.cadenceUnread]); // no management word either
+  expect([...shown(en.fleetPlanning.reasons.none_behind, words.installedFindings, words.observedTitle, words.planLink, words.installedScope, words.findings,
+    words.monitorCurrent("2.0"), "Not judged"), screen.getByText(words.cadenceUnread).textContent]).toEqual([false, false, false, false, false, false, false, true, words.cadenceUnread]); // no management word or pilot line either
 });
 
 it("counts each identity's builds in the reader's numbers, never a null as 0, on the day the corpus is dated", async () => {
@@ -279,7 +279,7 @@ describe("Compare a target version", () => {
     expect(screen.getByText(words.unordered("1", true, "2.0"))).toBeTruthy();
   });
 
-  it("puts a refused comparison's own sentence under its lead, asks again on Retry, and says when no reason came back", async () => {
+  it("puts a refused comparison's own sentence under its lead, asks again on Retry, says when no reason came back, and words the flag's 409 as the page does", async () => {
     const refusal = "Fleet's version history, as this instance holds it, does not list 1.9 for Example App.";
     open(`/apps/${local.appHash}`, compared([]));
     api.getFleetDetail.mockRejectedValue(new ApiError(422, refusal));
@@ -289,6 +289,27 @@ describe("Compare a target version", () => {
     fireEvent.click(screen.getByRole("button", { name: words.retry }));
     expect([(await screen.findByText(words.impactNoReason)).parentElement?.textContent, api.getFleetDetail.mock.calls.length])
       .toEqual([words.impactError + words.impactNoReason + words.retry, 3]);
+    api.getFleetDetail.mockRejectedValue(new ApiError(409, "Fleet's catalog is not read while the Fleet catalog flag is off for this organization."));
+    fireEvent.click(screen.getByRole("button", { name: words.retry }));
+    expect((await screen.findByText(en.fleetCatalog.emptyFlagOff)).parentElement?.textContent).toBe(words.impactError + en.fleetCatalog.emptyFlagOff + words.retry);
+  });
+
+  it("keys the panel by target, so a pending target never shows the last one's rows, and aborts the request the reader left", async () => {
+    api.getTitleHistory.mockResolvedValue({ ...history, versions: [history.versions[0], ...["1.9", "1.8"].map(version => ({ ...history.versions[0], version, previousVersion: null }))] });
+    open(`/apps/${local.appHash}`, compared([]));
+    const signals: Record<string, AbortSignal> = {};
+    api.getFleetDetail.mockImplementation((_kind: string, _id: string, _scope: string, version: string, signal: AbortSignal) => {
+      signals[version] = signal;
+      return version === "1.8" ? new Promise(() => {}) : Promise.resolve({ ...detail, ...compared([row("1.0", { comparison: "net_only", net: -1 })], { targetVersion: "1.9" }), impact: { ...impact, targetVersion: "1.9" } });
+    });
+    const compare = async (version: string) => fireEvent.click(await screen.findByRole("button", { name: en.fleetCatalog.historyCompare(version) }));
+    await compare("1.9");
+    expect(await screen.findByText("1 more finding in total")).toBeTruthy();
+    await compare("1.8");
+    expect([...shown("Fleet target 1.8", words.fetchImpact, "1 more finding in total"), signals["1.8"].aborted]).toEqual([true, true, false, false]);
+    await compare("1.9");
+    expect([await screen.findByText("1 more finding in total"), signals["1.8"].aborted, screen.getByText(words.pilotBelow("2", false, "2.0"))])
+      .toEqual([expect.anything(), true, expect.anything()]); // the header's line keeps Fleet's latest
   });
 
   it("keeps the policy counts when no build is older, and shows no finding ID without vuln:read", async () => {
@@ -297,5 +318,68 @@ describe("Compare a target version", () => {
     open(`/apps/${local.appHash}`, compared([row("1.0")])); // the server sends no IDs without it
     expect([await screen.findByText("2 addressed · 1 introduced · 1 remaining"), screen.queryByText(words.proof), screen.queryByRole("link", { name: /^CVE-/ })])
       .toEqual([expect.anything(), null, null]);
+  });
+});
+
+describe("Plan a Fleet pilot", () => {
+  // Every address the guide links, as each answered on 2026-11-25.
+  const guides = { patch: "https://fleetdm.com/guides/how-to-use-policies-for-patch-management-in-fleet", self: "https://fleetdm.com/guides/software-self-service",
+    missing: "https://fleetdm.com/guides/automatic-software-install-in-fleet", custom: "https://fleetdm.com/guides/deploy-software-packages",
+    contribute: "https://github.com/fleetdm/fleet/blob/main/ee/maintained-apps/README.md", installomator: "https://github.com/Installomator/Installomator",
+    munki: "https://www.munki.org/munki/", appStore: "https://fleetdm.com/guides/install-app-store-apps" } as const;
+  const request = "https://fleetdm.com/articles/inside-fleet-maintained-apps#where-the-catalog-comes-from";
+  const to = (text: string) => screen.queryByText(text)?.closest("a")?.getAttribute("href") ?? null;
+  const impact = (change: Partial<MigrationImpact>) => ({ impact: { targetVersion: "2.0", installedMacs: 3, olderMacs: 0, atOrAboveMacs: 0, unknownMacs: 0, ...change } });
+  const intents = async () => [...(await screen.findByLabelText<HTMLSelectElement>(words.workflow)).options].map(option => option.value);
+  const pick = (id: string) => fireEvent.change(screen.getByLabelText(words.workflow), { target: { value: id } });
+
+  it("starts the pilot with the Macs below Fleet's latest, in the reader's numbers and one Mac in the singular, and says nothing with no impact", async () => {
+    for (const [change, sentence] of [[{ olderMacs: 1234, unknownMacs: 5 }, "Start the pilot with the 1,234 in-scope Macs below 2.0. Later inventory shows whether they updated."],
+      [{ olderMacs: 1 }, "Start the pilot with the in-scope Mac below 2.0. Later inventory shows whether it updated."],
+      [{ unknownMacs: 3 }, "No in-scope Mac is known to be below 2.0, but 3 run versions that cannot be ordered against it. Check them under Installed builds before choosing a rollout target."],
+      [{ unknownMacs: 1 }, "No in-scope Mac is known to be below 2.0, but 1 runs a version that cannot be ordered against it. Check it under Installed builds before choosing a rollout target."],
+      [{ atOrAboveMacs: 3 }, "Every in-scope Mac with this app is at or above 2.0. Look again when Fleet publishes a newer version."]] as const) {
+      open(`/apps/${local.appHash}`, impact(change));
+      expect(await screen.findByText(sentence)).toBeTruthy();
+    }
+    open(`/apps/${local.appHash}`, { impactUnavailable: "catalog_incomplete" });
+    expect([await said(words.exact), screen.queryByText(/^(Start the pilot|No in-scope Mac|Every in-scope Mac)/)]).toEqual([expect.anything(), null]);
+    locale.current = "de";
+    for (const [older, sentence] of [[1234, "Beginnen Sie den Pilotbetrieb mit den 1.234 Macs im Gerätefilter unter Version 2.0. Spätere Inventare zeigen, ob sie aktualisiert wurden."],
+      [1, "Beginnen Sie den Pilotbetrieb mit dem Mac im Gerätefilter unter Version 2.0. Spätere Inventare zeigen, ob er aktualisiert wurde."]] as const) {
+      open(`/apps/${local.appHash}`, impact({ olderMacs: older }));
+      expect(await screen.findByText(sentence)).toBeTruthy();
+    }
+    expect([screen.queryByRole("heading", { name: "Fleet-Pilot planen" }), screen.queryByRole("option", { name: "Bestehende Installationen patchen" }),
+      screen.queryByText(words.guidance)]).toEqual([expect.anything(), expect.anything(), null]); // the guide in German, not in English
+  });
+
+  it("offers a title's three Fleet workflows by id, with the three API reads, and the GitOps draft for patching alone", async () => {
+    open("/titles/example", { item: null, title: candidate });
+    expect(await intents()).toEqual(["patch", "self", "missing"]);
+    for (const id of ["patch", "self", "missing"] as const) {
+      pick(id);
+      expect([...shown(words.intents[id].text, words.gitOps), to(words.intents[id].guide), to(words.requestGuide)]).toEqual([true, id === "patch", guides[id], null]);
+    }
+    expect(screen.getAllByText(/^GET /).map(code => code.textContent)).toEqual(["GET /api/v1/fleet/software/fleet_maintained_apps?fleet_id={fleet_id}&platform=darwin&query=Example%20App",
+      "GET /api/v1/fleet/software/fleet_maintained_apps/{id}?fleet_id={fleet_id}", "GET /api/v1/fleet/software/install/{install_uuid}/results"]);
+    pick("patch");
+    expect([...shown("example/darwin"), screen.getByText(/^software:/).textContent?.split("\n").slice(-2), to(words.apiReference), to(words.gitOpsReference)]).toEqual([true,
+      ["    type: patch", "    fleet_maintained_app_slug: example/darwin"], "https://fleetdm.com/docs/api/rest-api#list-fleet-maintained-apps", "https://fleetdm.com/docs/configuration/yaml-files#patch-policy"]);
+  });
+
+  it("offers the five other paths only where a catalog read whole has no title, the request link with contribute, and no guide while unconfirmed", async () => {
+    const unmatched: MigrationItem = { ...local, match: "none", fleetCandidates: [] };
+    open(`/apps/${local.appHash}`, { item: unmatched, items: [unmatched] });
+    expect(await intents()).toEqual(["custom", "contribute", "installomator", "munki", "appStore"]);
+    for (const id of ["custom", "contribute", "installomator", "munki", "appStore"] as const) {
+      pick(id);
+      expect([...shown(words.intents[id].text), to(words.intents[id].guide), to(words.requestGuide)]).toEqual([true, guides[id], id === "contribute" ? request : null]);
+    }
+    expect(shown(words.apiCheck, words.gitOps, words.pilotFoot)).toEqual([false, false, true]);
+    for (const item of [{ ...unmatched, match: "unknown" }, { ...local, match: "ambiguous", fleetCandidates: [candidate, { ...candidate, slug: "example@esr" }] }] as MigrationItem[]) {
+      open(`/apps/${local.appHash}`, { item, items: [item] });
+      expect([await said(item.match === "unknown" ? words.catalogUnknown(false) : words.ambiguous), ...shown(words.guidance)]).toEqual([expect.anything(), false]);
+    }
   });
 });

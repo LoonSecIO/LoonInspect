@@ -77,20 +77,20 @@ export function BuildEvidence({ assessment, reason }: { assessment?: FleetAssess
 /** **Compare a target version**: the selected Macs against one Fleet version, then that version's evidence. Keyed by target, so one
  *  target's rows never label the next. Fleet's latest is the page's own answer (`initial`, `latestAssessment`), with no request; an
  *  earlier version asks #899's route on the page's device filter, aborted when the target changes or the page goes. A refusal shows
- *  its sentence as sent. */
+ *  its sentence as sent, and the flag's 409 main's, as the page's own read does. */
 export function FleetTargetComparison({ kind, id, slug, scope, version, latest, initial, latestAssessment, onReset }: { kind: "apps" | "titles"; id: string;
   slug: string; scope: string; version: string; latest: string; initial: TargetAnswer; latestAssessment?: FleetAssessment; onReset: () => void }) {
   const { t, locale } = useLocale();
   const words = t.fleetDetail, n = (value: number) => value.toLocaleString(locale);
   const [fetched, setFetched] = useState<TargetAnswer | null>(null);
-  const [failed, setFailed] = useState<{ detail: string | null } | null>(null);
+  const [failed, setFailed] = useState<{ status: number; detail: string | null } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (version === latest) return;
     const controller = new AbortController();
     getFleetDetail(kind, id, scope, version, controller.signal)
       .then(reply => { if (!controller.signal.aborted) setFetched({ ...reply, assessment: kind === "apps" ? reply.appAssessments[id] : reply.assessments[slug] }); })
-      .catch((caught: unknown) => { if (!controller.signal.aborted) setFailed({ detail: caught instanceof ApiError ? caught.detail : null }); });
+      .catch((caught: unknown) => { if (!controller.signal.aborted) setFailed(caught instanceof ApiError ? caught : { status: 0, detail: null }); });
     return () => controller.abort();
   }, [kind, id, slug, scope, version, latest, attempt]);
   const answer = version === latest ? { ...initial, assessment: latestAssessment } : fetched, impact = answer?.impact;
@@ -99,7 +99,7 @@ export function FleetTargetComparison({ kind, id, slug, scope, version, latest, 
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-lg font-semibold">{words.impact}</h3>
         <span className="break-all rounded-md border bg-muted px-2 py-1 font-mono">{words.target} {version}</span></div>
       {version !== latest && <Button size="sm" variant="outline" onClick={onReset}>{words.resetTarget}</Button>}
-      {failed ? <div role="alert" className="space-y-2"><p className="font-medium">{words.impactError}</p><p>{failed.detail ?? words.impactNoReason}</p>
+      {failed ? <div role="alert" className="space-y-2"><p className="font-medium">{words.impactError}</p><p>{failed.status === 409 ? t.fleetCatalog.emptyFlagOff : failed.detail ?? words.impactNoReason}</p>
         <Button size="sm" variant="outline" onClick={() => { setFailed(null); setAttempt(k => k + 1); }}>{words.retry}</Button></div>
         : !answer ? <p role="status" className="text-muted-foreground">{words.fetchImpact}</p>
         : impact ? <dl className="grid grid-cols-2 gap-3 border-t pt-3 sm:grid-cols-4">{([[words.installedScope, impact.installedMacs], [words.older, impact.olderMacs],
