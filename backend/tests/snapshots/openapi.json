@@ -5718,6 +5718,82 @@
         "title": "InstalledAppOut",
         "type": "object"
       },
+      "InstalledEvidence": {
+        "description": "One app's builds on the selected Macs, each read through the answer it already stores (#896).\n\nA build is one version, however many Macs carry it. Installed Apps counts device/build pairs, so a build\non 500 Macs reads 500 there and 1 here. The three finding counts count builds, never findings summed\nacross builds, and are null, never 0, under `off` and `unknown_app`, where nobody looked.",
+        "properties": {
+          "affectedBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affectedbuilds"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "assessedBuilds": {
+            "default": 0,
+            "title": "Assessedbuilds",
+            "type": "integer"
+          },
+          "assessment": {
+            "enum": [
+              "off",
+              "unknown_app",
+              "partial",
+              "covered"
+            ],
+            "title": "Assessment",
+            "type": "string"
+          },
+          "highOrCriticalBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highorcriticalbuilds"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "assessment"
+        ],
+        "title": "InstalledEvidence",
+        "type": "object"
+      },
       "JamfPatchCoverageOut": {
         "description": "The two inputs the Overview's coverage tile derives its ratio from (#109), at the\npair grain the posture recorder writes `patch.pairs_total` / `patch.pairs_on_latest`\nat, from the same function \u2014 one definition, live and recorded.",
         "properties": {
@@ -7293,6 +7369,13 @@
               "type": "integer"
             },
             "title": "Fleetdevicecounts",
+            "type": "object"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
             "type": "object"
           },
           "items": {

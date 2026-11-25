@@ -95,8 +95,9 @@ it saw the move, when it first read the title, the manifest's blob sha, and how 
 history reached (when it was last read, its oldest and newest change, and a sentence for what
 it left undated). That is the whole row (`fleet_maintained_apps`). The history is one row per
 title and version (`fleet_app_versions`): the version, the date of the first commit that
-carried it, that commit's sha, and the version it replaced. One more row holds the last check
-and the last history read (`fleet_catalog_state`).
+carried it, that commit's sha, and the version it replaced. One more row holds the last check,
+the last history read and the completeness record, `snapshot_status`: `unread`, `partial` or
+`complete` ([below](#complete-or-partial)) (`fleet_catalog_state`).
 
 **Never kept**, and never parsed beyond being skipped over: a manifest's installer address,
 its checksums, its install and uninstall scripts (`refs`), its osquery queries and its
@@ -249,7 +250,8 @@ listing (#859). The record describes the titles held, not the last check, and ha
 - **`complete`**: a check finished the listing and skipped nothing.
 
 A check that fails before it changes a title leaves the value as it was. The tab never shows
-the value, and the API has no field for it. The tab shows the check's sentence instead: an
+the value, and of the API only the migration report carries it, as `fleetCatalogReadiness`
+([below](#the-migration-report-api-only-so-far)). The tab shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
 
 **Besides the check and its schedule, one thing reads it: a saved application patch plan**
@@ -330,15 +332,30 @@ Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag o
   snapshot; `ambiguous`, several titles, an EA-assumed build or more than one Jamf Patch title;
   `unknown`, anything else. In `fleetDeviceCounts`, Fleet titles that share a bundle identifier
   share a count.
+- **`installedEvidence`.** One entry per app in `items`, keyed by `appHash`, from the same
+  snapshot: the vulnerability answer each of its builds on the selected Macs already stores, read
+  by Installed Apps' rule, so an answer from an earlier corpus release, or one that does not
+  parse, is unknown. A build is assessed only when every selected Mac's copy of it is.
+  `assessment` is `off` (nothing answers for this organization), `unknown_app` (no build of the
+  app is assessed), `partial` or `covered`, and `asOf` is the corpus date, null under `off`.
+  `assessedBuilds` and `unknownBuilds` count distinct builds, one per version however many Macs
+  carry it, where Installed Apps counts device/build pairs: a build on 500 Macs is 500 there and
+  1 here. `affectedBuilds`, `highOrCriticalBuilds` and `kevBuilds` count the assessed builds with
+  any finding, with a high or critical one, and with one on CISA's Known Exploited
+  Vulnerabilities list, never findings added across builds. Under `off` and `unknown_app` they
+  are null, not zero: nobody looked.
 - **One known difference from a patch plan.** When an app's one Jamf Patch title is in the synced
   Jamf Patch catalog but missing from some of its builds or Macs, this reads `exact`, while a
   patch plan withholds Fleet's version as its target and asks for identity review.
 
 ## What it leaves out
 
-- **No vulnerability or patch judgement.** Fleet's titles are not joined to the vulnerability
-  corpus, are not a Jamf Patch title match, and do not count as a public source where the
-  product asks whether one knows an app.
+- **No vulnerability or patch judgement of Fleet's titles.** Fleet's titles are not joined to
+  the vulnerability corpus, are not a Jamf Patch title match, and do not count as a public source
+  where the product asks whether one knows an app.
+- **Dataset scope.** The migration report repeats the answer each installed build already
+  carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
+  catalogs, the Jamf matches and the organization's patch rules unchanged.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**

@@ -10,8 +10,11 @@ from app.core import fleet_catalog
 from app.core.auth import require
 from app.core.device_scope import parse_scope
 from app.core.device_scope_queries import get_scope_snapshot_db, prepare_scope
+from app.core.fleet_assessment import installed_evidence
 from app.core.fleet_migration import catalog_device_counts, cohort, local_apps, title_index
 from app.core.permissions import Permission
+from app.core.vuln_library import earned_corpus, loaded_epoch_signature
+from app.core.vuln_read import corpus_as_of
 from app.models.schema import FleetCatalogState, JamfPatchTitle
 from app.schemas.fleet_migration import MigrationReport, MigrationScope
 from app.schemas.patch_plans import DeviceScope
@@ -55,7 +58,15 @@ async def read_migration(scope: DeviceScope, db: AsyncSession) -> MigrationRepor
     now = datetime.now(UTC)
     if not await fleet_catalog.enabled(db):
         return MigrationReport(enabled=False, as_of=now, scope=MigrationScope())
+    corpus = await earned_corpus(db)
+    stamp = corpus_as_of(corpus)
+    epoch = loaded_epoch_signature() if stamp is not None else None
     context, devices, jamf = await _report_context(db, scope, now)
     titles = await title_index(db)
     items = await local_apps(db, devices, titles, jamf, context["fleet_catalog_ready"])
-    return MigrationReport(**context, items=items, fleet_device_counts=await catalog_device_counts(db, devices, items, titles))
+    return MigrationReport(
+        **context,
+        items=items,
+        installed_evidence=await installed_evidence(db, devices, as_of=stamp, epoch=epoch),
+        fleet_device_counts=await catalog_device_counts(db, devices, items, titles),
+    )
