@@ -399,6 +399,47 @@ async def test_an_index_only_title_makes_the_snapshot_partial_and_keeps_its_prev
     assert (await _titles(db))["alpha"].latest_version == "2.0"
 
 
+async def test_a_slug_the_index_lists_twice_with_different_names_is_left_as_held(db, github) -> None:
+    """The status line says *left as held*, and the row is (#927): no copy renames a title held
+    or adds a new one, and the next change to Fleet's catalog reads them both."""
+    from app.core import fleet_catalog as fc
+
+    await fc.check(db, transport=github.transport)
+    held = (await _titles(db))["beta"]
+    before = (held.name, held.bundle_id, held.latest_version, held.previous_version, held.manifest_sha, held.updated_at)
+    delta = f"com.example{SUFFIX}.delta"
+    github.put("alpha", "Alpha", ALPHA, "2.1")  # an ordinary move, which lands
+    github.put("beta", "Beta", BETA, "1.1")  # beta's manifest moves too, and is still not read
+    github.put("delta", "Delta", delta, "0.9")
+    index = github._index()
+    index["apps"] += [
+        {"name": "Beta Pro", "slug": "beta/darwin", "platform": "darwin", "unique_identifier": BETA},
+        {"name": "Delta Two", "slug": "delta/darwin", "platform": "darwin", "unique_identifier": delta},
+    ]
+    github.broken["index"] = lambda: httpx.Response(200, json=index)
+    github.requests.clear()
+
+    state = await fc.check(db, transport=github.transport)
+
+    assert (state.outcome, state.snapshot_status, state.app_count) == (fc.OUTCOME_OK, "partial", 3)
+    assert state.detail is not None and "were left as held: beta, delta." in state.detail
+    titles = await _titles(db)
+    assert sorted(titles) == ["alpha", "beta", "gamma"]  # the new title stays unlisted
+    beta = titles["beta"]
+    assert (beta.name, beta.bundle_id, beta.latest_version, beta.previous_version, beta.manifest_sha, beta.updated_at) == before
+    assert titles["alpha"].latest_version == "2.1"
+    assert github.manifests_read() == ["alpha"]
+
+    del github.broken["index"]  # Fleet settles its index
+    github.put("gamma", "Gamma", GAMMA, "7.2")  # and its catalog moves again
+    settled = await fc.check(db, transport=github.transport)
+
+    assert (settled.outcome, settled.detail, settled.snapshot_status, settled.app_count) == (fc.OUTCOME_OK, None, "complete", 4)
+    titles = await _titles(db)
+    assert (titles["beta"].name, titles["beta"].latest_version) == ("Beta", "1.1")
+    assert (titles["delta"].name, titles["delta"].latest_version) == ("Delta", "0.9")
+
+
 async def test_tree_invalidation_reconciles_legacy_cache_without_reloading_manifests(db, github):
     """The 1.3.0 upgrade marks a read catalog partial, checks it early, and reads only the manifest it lacks."""
     from importlib import import_module
