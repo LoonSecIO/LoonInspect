@@ -218,9 +218,17 @@ async def test_scoped_comparisons_keep_local_identity_and_both_ends_in_one_relea
     assert (by_slug.behind_builds, by_slug.exact_builds, by_slug.unknown_builds, by_slug.builds) == (2, 1, 1, [])
     db.add(install(macs[0], "One", bundle, "2"))  # A selected Mac carries the target: its stored answer, never the library's.
     carried = await app_assessments(db, {one: title}, include_builds=True, **read)
+    db.add(catalog_row("One", bundle, "2", [], held))  # The carried target's own stored answer (#899).
+    await db.flush()
+    with statements() as asked:
+        served = await app_assessments(db, {one: title}, include_builds=True, **read)
+    assert served[one].builds[0].comparison == "exact" and not [sql for sql, _ in asked if "vuln_corpus_release_rows" in sql]
     entry.vuln_signature = other  # Judged by a release that is no longer answering.
     stale = await app_assessments(db, {one: title}, include_builds=True, **read)
     assert [found[one].builds[0].comparison for found in (carried, stale)] == ["unknown_target", "unknown_source"]
+    entry.vuln_signature = None  # `covered` and signed by no release: with no epoch, `stored_corpus` is never asked.
+    (unsigned,) = (await app_assessments(db, {one: title}, include_builds=True, **(read | {"epoch": None}))).values()
+    assert unsigned.builds[0].comparison == "unknown_source"
 
 
 async def test_a_builds_verdict_reads_the_severity_the_jamf_patch_title_page_reads(db):

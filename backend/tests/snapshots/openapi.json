@@ -6114,6 +6114,46 @@
         "title": "InstalledAppOut",
         "type": "object"
       },
+      "InstalledBuild": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "shortVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortversion"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "versionHash": {
+            "title": "Versionhash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appHash",
+          "macs",
+          "shortVersion",
+          "version",
+          "versionHash"
+        ],
+        "title": "InstalledBuild",
+        "type": "object"
+      },
       "InstalledEvidence": {
         "description": "One app's builds on the selected Macs, each read through the answer it already stores (#896).\n\nA build is one version, however many Macs carry it. Installed Apps counts device/build pairs, so a build\non 500 Macs reads 500 there and 1 here. The three finding counts count builds, never findings summed\nacross builds, and are null, never 0, under `off` and `unknown_app`, where nobody looked.",
         "properties": {
@@ -6578,6 +6618,24 @@
           "syncedAt"
         ],
         "title": "JamfPatchTitleOut",
+        "type": "object"
+      },
+      "JamfTitle": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "JamfTitle",
         "type": "object"
       },
       "KnownDepartment": {
@@ -7731,6 +7789,146 @@
           "recoveryCodesRemaining"
         ],
         "title": "MfaStatusOut",
+        "type": "object"
+      },
+      "MigrationDetail": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "assessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Assessments",
+            "type": "object"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionImpact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "impactUnavailable": {
+            "anyOf": [
+              {
+                "enum": [
+                  "catalog_incomplete",
+                  "no_fleet_title",
+                  "identity_review",
+                  "unordered_target"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactunavailable"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalApp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "jamfTitles": {
+            "items": {
+              "$ref": "#/components/schemas/JamfTitle"
+            },
+            "title": "Jamftitles",
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "builds",
+          "installedMacs",
+          "items",
+          "jamfTitles",
+          "scope"
+        ],
+        "title": "MigrationDetail",
         "type": "object"
       },
       "MigrationReport": {
@@ -11910,6 +12108,39 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionImpact": {
+        "properties": {
+          "atOrAboveMacs": {
+            "title": "Atorabovemacs",
+            "type": "integer"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "olderMacs": {
+            "title": "Oldermacs",
+            "type": "integer"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownMacs": {
+            "title": "Unknownmacs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atOrAboveMacs",
+          "installedMacs",
+          "olderMacs",
+          "targetVersion",
+          "unknownMacs"
+        ],
+        "title": "VersionImpact",
         "type": "object"
       },
       "VersionOperator": {
@@ -16135,6 +16366,164 @@
           }
         },
         "summary": "Migration Report",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/apps/{app_hash}": {
+      "get": {
+        "description": "One installed app on the Macs `deviceScope` selects: its builds, Jamf Patch titles and a Fleet target's impact.",
+        "operationId": "read_app_api_fleet_catalog_migration_apps__app_hash__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_hash",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read App",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/titles/{slug}": {
+      "get": {
+        "description": "One Fleet title and every app with its bundle ID, as `/apps` answers one. Finding IDs need `vuln:read` on both.",
+        "operationId": "read_title_api_fleet_catalog_migration_titles__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title",
         "tags": [
           "fleet-catalog"
         ]

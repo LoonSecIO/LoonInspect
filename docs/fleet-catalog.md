@@ -358,6 +358,16 @@ Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag o
   Jamf Patch catalog but missing from some of its builds or Macs, this reads `exact`, while a
   patch plan withholds Fleet's version as its target and asks for identity review.
 
+### Migration detail
+
+`GET /api/fleet-catalog/migration/apps/<appHash>` (one installed app) and `…/titles/<slug>` (one
+Fleet title and every installed identity with its bundle ID) take the report's `deviceScope` and
+`targetVersion`, which defaults to Fleet's latest and may name any version the title's history
+holds. Each lists the builds with distinct Macs, `installedMacs` and the matched Jamf Patch titles.
+`impact` counts each Mac once as older, at or above, or unknown; when it is null,
+`impactUnavailable` says why. Finding IDs need `vuln:read`; every caller gets the counts.
+Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
+
 ## What it leaves out
 
 - **No vulnerability or patch judgement of Fleet's titles.** The corpus is asked about a Fleet

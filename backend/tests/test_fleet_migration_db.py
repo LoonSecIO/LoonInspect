@@ -8,18 +8,25 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 
 from app.api import fleet_migration
-from app.api.fleet_migration import read_migration
+from app.api.fleet_catalog import _not_held
+from app.api.fleet_migration import _detail, read_migration
+from app.core import fleet_assessment, fleet_catalog
+from app.core.content_keys import app_full_key
 from app.core.database import session_for_tenant, unscoped_session
 from app.core.feature_flags import FLEET_MAINTAINED_APPS_FLAG
 from app.core.hashing import compute_app_hash
 from app.main import app
-from app.models.schema import Device, FeatureFlag, FleetCatalogState, InstalledApp, Tenant
+from app.models.schema import AppCatalogEntry, Device, FeatureFlag, FleetCatalogState, InstalledApp, JamfPatchTitle, Tenant
 from app.schemas.patch_plans import DeviceScope
 from tests.patch_plan_fixtures import accounts, admin, flag_off, flag_on, github, inventory, viewer  # noqa: F401
-from tests.test_fleet_assessment_db import ALPHA_BETA, AS_OF, EPOCH, answer, counts, statements
+from tests.test_fleet_assessment import A, B, assessed
+from tests.test_fleet_assessment_db import ALPHA_BETA, AS_OF, EPOCH, answer, behind, catalog_row, counts, statements
+from tests.test_fleet_catalog_db import ALPHA, BETA
+from tests.test_patching_policy_db import unstated  # noqa: F401
 
 pytestmark = [
     pytest.mark.skipif(not os.environ.get("RUN_DB_TESTS"), reason="requires a disposable PostgreSQL database"),
@@ -29,6 +36,10 @@ pytestmark = [
 REPORT = "/api/fleet-catalog/migration"
 UNMATCHED, NO_ID = compute_app_hash("Unmatched", "org.internal"), compute_app_hash("No ID", "No ID")
 INVALID = "The device filter is invalid. Check each condition or clear the filter and try again."
+NOT_LISTED = (
+    "Fleet's version history, as this instance holds it, does not list never-listed for Alpha. Choose Fleet's latest "
+    "version (2.0) or a version the title's history lists; Read history reads that history again."
+)
 
 
 def _filter(source, *within_30):
@@ -36,8 +47,8 @@ def _filter(source, *within_30):
     return {"deviceScope": json.dumps({"connectionId": source, "rules": rules})}
 
 
-async def _read(client, params=None):
-    response = await client.get(REPORT, params=params)
+async def _read(client, params=None, path=""):
+    response = await client.get(REPORT + path, params=params)
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -46,6 +57,9 @@ async def test_read_is_flag_gated(admin, flag_off):  # noqa: F811
     report = await _read(admin)
     assert not report["enabled"] and not report["items"] and not report["fleetDeviceCounts"] and not any(report["scope"].values())
     assert report["installedEvidence"] == report["appAssessments"] == {}
+    for path in (f"/apps/{'0' * 32}", "/titles/alpha"):  # The detail refuses at the flag, before any inventory is read.
+        refused = await admin.get(REPORT + path)
+        assert (refused.status_code, refused.json()["detail"]) == (409, fleet_catalog.FLAG_OFF)
 
 
 def _answering(monkeypatch, as_of):
@@ -92,6 +106,23 @@ async def test_population_and_identity_share_a_cohort(db, inventory, viewer, fla
     assessed = report["appAssessments"]
     assert set(assessed) == {alpha, ALPHA_BETA}  # The two `exact` items, and no per-build rows on the list.
     assert [assessed[alpha][key] for key in ("targetVersion", "behindBuilds", "builds")] == ["2.0", 1, []]
+    # The detail (#899) counts the same Macs, each once: older when any copy is older, unknown when one cannot be ordered.
+    detail = await _read(viewer, _filter(source, "contact") | {"targetVersion": "1.5"}, f"/apps/{alpha}")
+    assert detail["scope"] == report["scope"] and detail["installedMacs"] == 1 and detail["impactUnavailable"] is None
+    assert [b["version"] for b in detail["builds"]] == ["1.0", "2.0"] and detail["item"]["appHash"] == alpha
+    assert detail["impact"] == {"targetVersion": "1.5", "installedMacs": 1, "olderMacs": 1, "atOrAboveMacs": 0, "unknownMacs": 0}
+    later = await _read(viewer, _filter(source, "inventory") | {"targetVersion": "1.5"}, f"/apps/{alpha}")
+    assert (later["impact"]["installedMacs"], later["impact"]["olderMacs"]) == (1, 0)
+    whole = await _read(viewer, _filter(source), f"/apps/{alpha}")  # No target named: Fleet's latest, 2.0.
+    assert whole["impact"] == {"targetVersion": "2.0", "installedMacs": 3, "olderMacs": 1, "atOrAboveMacs": 1, "unknownMacs": 1}
+    assert (await _read(viewer, _filter(source), f"/apps/{UNMATCHED}"))["impactUnavailable"] == "no_fleet_title"
+    unlisted = await viewer.get(f"{REPORT}/apps/{alpha}", params=_filter(source) | {"targetVersion": "never-listed"})
+    assert (unlisted.status_code, unlisted.json()["detail"]) == (422, NOT_LISTED)
+    for path, params in ((f"/apps/{'f' * 32}", _filter(source)), (f"/apps/{gamma}", _filter(source, "inventory"))):
+        missing = await viewer.get(REPORT + path, params=params)  # No such app; Gamma's one Mac is left out.
+        assert (missing.status_code, missing.json()["detail"]) == (404, fleet_migration._NOT_IN_SCOPE)
+    unheld = await viewer.get(f"{REPORT}/titles/never-held")
+    assert (unheld.status_code, unheld.json()["detail"]) == (404, _not_held("never-held").detail)
     # No conditions: the departed Mac, the other connection's Mac and the iPad still count nowhere.
     every = await _read(viewer, _filter(source))
     rows = {item["appHash"]: item for item in every["items"]}
@@ -106,6 +137,10 @@ async def test_population_and_identity_share_a_cohort(db, inventory, viewer, fla
     await db.commit()
     claimed = {item["appHash"]: item for item in (await _read(viewer, _filter(source)))["items"]}[alpha]
     assert (claimed["match"], claimed["hasJamfMatch"]) == ("ambiguous", False)  # Two claimed titles, though neither is cached.
+    await db.execute(update(InstalledApp).where(InstalledApp.app_hash == ALPHA_BETA).values(ea_assumed=True))
+    await db.commit()
+    assumed = {item["appHash"]: item for item in (await _read(viewer, _filter(source)))["items"]}[ALPHA_BETA]
+    assert (assumed["match"], len(assumed["fleetCandidates"])) == ("ambiguous", 1)  # One Fleet title, but an EA-assumed build.
 
 
 async def test_counts_need_device_read_and_a_valid_filter(admin, flag_on):  # noqa: F811
@@ -135,6 +170,8 @@ async def test_migration_does_not_expose_another_tenants_inventory(db, inventory
             other_db.add(FeatureFlag(key=FLEET_MAINTAINED_APPS_FLAG, enabled=True))
             await other_db.commit()
             report = await read_migration(source, other_db)
+            with pytest.raises(HTTPException) as refused:  # This organization's app, asked for by the other.
+                await _detail(other_db, source, inventory[1], None, None, include_ids=True)
             await other_db.execute(delete(FeatureFlag))
             await other_db.commit()
     finally:
@@ -143,6 +180,7 @@ async def test_migration_does_not_expose_another_tenants_inventory(db, inventory
             await global_db.commit()
     assert report.enabled and report.scope.eligible_macs == 0 and not report.items
     assert report.fleet_device_counts["alpha"] == 0 and report.installed_evidence == report.app_assessments == {}
+    assert (refused.value.status_code, refused.value.detail) == (404, fleet_migration._NOT_IN_SCOPE)
 
 
 async def test_an_incomplete_snapshot_keeps_candidates_without_judging_coverage(db, inventory, viewer, flag_on):  # noqa: F811
@@ -156,3 +194,55 @@ async def test_an_incomplete_snapshot_keeps_candidates_without_judging_coverage(
     assert rows[alpha]["match"] == "unknown" and [title["slug"] for title in rows[alpha]["fleetCandidates"]] == ["alpha"]
     assert rows[UNMATCHED]["match"] == "unknown" and rows[gamma]["match"] == "ambiguous"
     assert report["appAssessments"] == {}
+    for path in (f"/apps/{alpha}", "/titles/alpha", "/titles/beta"):
+        detail = await _read(viewer, _filter(source), path)
+        assert (detail["fleetCatalogReadiness"], detail["impact"]) == ("partial", None)
+        assert detail["impactUnavailable"] == "catalog_incomplete" and detail["assessments"] == detail["appAssessments"] == {}
+
+
+async def test_title_with_no_installs_or_ambiguous_local_identity(inventory, viewer, flag_on):  # noqa: F811
+    source, _, gamma = inventory
+    empty = await _read(viewer, _filter(source), "/titles/beta")
+    assert empty["title"]["bundleId"] == BETA and empty["installedMacs"] == 0 and empty["items"] == []
+    ambiguous = await _read(viewer, _filter(source) | {"targetVersion": "6"}, "/titles/gamma%406%2B")
+    assert ambiguous["installedMacs"] == 1 and ambiguous["impact"] is None
+    assert ambiguous["assessments"] == ambiguous["appAssessments"] == {}
+    local = await _read(viewer, _filter(source), f"/apps/{gamma}")
+    assert local["item"]["match"] == "ambiguous" and local["appAssessments"] == {}
+    assert ambiguous["impactUnavailable"] == local["impactUnavailable"] == "identity_review"
+
+
+async def test_finding_ids_require_vulnerability_read_on_both_detail_routes(db, inventory, admin, flag_on, unstated, monkeypatch):  # noqa: F811
+    source, alpha, _ = inventory
+    _answering(monkeypatch, AS_OF)  # `_evidence`'s one corpus read, with EPOCH answering.
+    target = app_full_key("Alpha", ALPHA, "1.5", None)  # In the title's history and on no Mac, so only it asks the library.
+
+    async def library(session, keys, signature):
+        return {target: assessed([B])} if signature == EPOCH and target in keys else {}
+
+    monkeypatch.setattr(fleet_assessment, "_answers", library)
+    entry, title_id = catalog_row("Alpha", ALPHA, "1.0", [A], EPOCH), uuid.uuid4().hex  # Alpha 1.0's served stored answer.
+    db.add(entry)
+    await behind(db, entry, title_id, days=30)  # Its one Jamf Patch title, a newer release out 30 days.
+    await db.execute(update(InstalledApp).where(InstalledApp.app_hash == alpha).values(jamf_title_ids=[title_id]))
+    await db.commit()
+    try:
+        override = await admin.put(f"/api/settings/patching-policy/overrides/{title_id}", json={"maxDaysBehind": 14})
+        assert override.status_code == 200, override.text  # A confirmed rule, where Rules() reads `no_rule` (#898's verifier).
+        assert (await _read(admin, _filter(source)))["appAssessments"][alpha]["outOfPolicyBuilds"] == 1
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://policy.example.com") as client:
+            for vuln, ids in (([], (None, None, None)), (["vuln:read"], ([A], [B], []))):
+                scopes = ["app:read", "device:read", *vuln]
+                minted = await admin.post("/api/auth/tokens", json={"name": "fleet detail", "scopes": scopes, "expiresInDays": 1})
+                client.headers["Authorization"] = f"Bearer {minted.json()['token']}"
+                for path, field, key in ((f"/apps/{alpha}", "appAssessments", alpha), ("/titles/alpha", "assessments", "alpha")):
+                    detail = await _read(client, _filter(source) | {"targetVersion": "1.5"}, path)
+                    row = next(r for r in detail[field][key]["builds"] if (r["name"], r["version"]) == ("Alpha", "1.0"))
+                    assert (row["addresses"], row["introduces"], row["remains"], row["policyState"]) == (1, 1, 0, "out")
+                    assert (row["addressedIds"], row["introducedIds"], row["remainingIds"]) == ids
+                    assert detail["jamfTitles"] == [{"id": title_id, "name": title_id}]
+    finally:
+        await db.rollback()
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == title_id))  # Its match goes with it.
+        await db.execute(delete(AppCatalogEntry).where(AppCatalogEntry.app_hash == alpha))
+        await db.commit()

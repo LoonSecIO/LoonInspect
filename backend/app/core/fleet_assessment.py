@@ -1,9 +1,10 @@
 """Compare one Mac app's installed builds with a Fleet target version, build by build, and judge
 each against the organization's confirmed patch rule.
 
-`_ambiguous`, `_policy` and `_summary` are pure. `installed_evidence`, `_inventory`, `_answers`, `_read` and
-`app_assessments` read the database, but never the corpus gate, the epoch or the rules: their caller reads each once
-for the whole response, so one response never carries two releases. `installed_evidence` asks the corpus nothing.
+`_ambiguous`, `_policy` and `_summary` are pure. `installed_evidence`, `_inventory`, `_answers`, `_read`, `app_assessments`
+and `fleet_assessments` read the database, but never call `earned_corpus`, `loaded_epoch_signature()` or `patching_rules`,
+and never pick an epoch (`_answers` only checks the caller's in its SELECT): the caller reads each once for the whole
+response and hands it in, so one response never carries two releases. `installed_evidence` asks the corpus nothing.
 
 A build's verdict is its Jamf Patch title page's: `policy.judge` for its one Jamf title, under the
 rule `Rules.for_title` picks, never a third, stricter reading (review finding BC-3). Verdicts and
@@ -29,7 +30,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import String, any_, bindparam, case, distinct, exists, func, select
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -398,3 +399,8 @@ async def app_assessments(
     """One assessment per local app hash, against its one Fleet title, over that app's scoped builds only."""
     read = {"corpus": corpus, "epoch": epoch, "rules": rules, "include_builds": include_builds, "include_ids": include_ids}
     return await _read(db, app_titles, grain="app", eligible_devices=eligible_devices, target_version=target_version, **read)
+
+
+async def fleet_assessments(db: AsyncSession, titles: Sequence[FleetMaintainedApp], **read: Any) -> dict[str, FleetAssessmentOut]:
+    """One assessment per Fleet slug across the scoped builds sharing its bundle ID; `read` is `app_assessments`' keywords."""
+    return await _read(db, {title.slug: title for title in titles}, grain="slug", **read)
