@@ -1720,6 +1720,21 @@ export const en = {
     historyReplacedNone: "none",
     historyReadNothing: (readAt: string) => `Read ${readAt}.`,
     historyCommitLabel: (at: string, sha: string) => `${at}: commit ${sha} in Fleet's repository (opens in a new tab)`,
+    // The version history's detail layout and its cadence chart (#901), for an app's own page.
+    historySearch: "Find a Fleet version",
+    historySearchNone: "No dated version matches this search.",
+    historyManifest: "Manifest at this commit",
+    historyManifestLabel: (version: string) => `Fleet's manifest for ${version} at the commit that dated it`,
+    historyCompare: (version: string) => `Compare ${version}`,
+    historyTargetColumn: "Fleet target",
+    cadenceTitle: "Update cadence",
+    cadenceRecent: (weeks: number) => `Dated versions in the last ${weeks} weeks`,
+    cadenceMedianGap: "Median gap between dated versions, whole history",
+    cadenceDays: (days: string, one: boolean) => `${days} ${one ? "day" : "days"}`,
+    cadenceChartLabel: (count: string, weeks: number, through: string) =>
+      `Bar chart of dated Fleet versions by week: ${count} in the ${weeks} weeks to ${through} (UTC). The table below lists each version.`,
+    cadenceGaps:
+      "This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.",
     notDatedHint:
       "This title's version history is read, and it could not date the latest version: the read could not see it arrive. Open the title for the reason.",
     // The status line: never asked, answered (changed or not), and no answer. The failure's

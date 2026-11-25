@@ -3,7 +3,8 @@
 Status: **built, behind a flag that ships off**, 2026-11-15
 ([#794](https://github.com/LoonSecIO/LoonInspect/issues/794)); each title's version history
 from Fleet's commits, 2026-11-21 ([#838](https://github.com/LoonSecIO/LoonInspect/issues/838),
-[below](#version-history)) · the flag is
+[below](#version-history)); whether the titles held are complete, 2026-11-23
+([#859](https://github.com/LoonSecIO/LoonInspect/issues/859), [below](#complete-or-partial)) · the flag is
 `fleet_maintained_apps` ([the register](feature-flags.md)) · when the tab is missing, empty or
 says its last check got no answer, [`troubleshooting.md`](troubleshooting.md) §27 · read
 against GitHub once, on 2026-11-15, with the numbers under [Validation](#validation).
@@ -100,8 +101,9 @@ it saw the move, when it first read the title, the manifest's blob sha, and how 
 history reached (when it was last read, its oldest and newest change, and a sentence for what
 it left undated). That is the whole row (`fleet_maintained_apps`). The history is one row per
 title and version (`fleet_app_versions`): the version, the date of the first commit that
-carried it, that commit's sha, and the version it replaced. One more row holds the last check
-and the last history read (`fleet_catalog_state`).
+carried it, that commit's sha, and the version it replaced. One more row holds the last check,
+the last history read and the completeness record, `snapshot_status`: `unread`, `partial` or
+`complete` ([below](#complete-or-partial)) (`fleet_catalog_state`).
 
 **Never kept**, and never parsed beyond being skipped over: a manifest's installer address,
 its checksums, its install and uninstall scripts (`refs`), its osquery queries and its
@@ -127,8 +129,11 @@ with what it found. The daily check is the scheduler's and is in the container l
 What one check asks:
 
 1. **The folder's listing**, one request to the GitHub API. It names the `outputs` tree by
-   its git sha. The same sha as the last complete read is the same content, so the check
-   stops here. This is every check on a day Fleet changed nothing: one request.
+   its git sha. When it matches the last listing a check finished, whether that check read
+   every title or skipped some, the content is the same, so the check stops after this
+   request and the titles held keep the coverage they had,
+   [complete or partial](#complete-or-partial). This is every check on a day Fleet changed
+   nothing: one request.
 2. **The tree, listed whole**, one more API request. The listing GitHub's Contents API gives
    for a folder stops at 1,000 entries and this folder holds more, so the Git Trees API is
    asked instead. It gives every Mac manifest's blob sha.
@@ -142,9 +147,9 @@ does not count.
 
 Then the titles are written: a new title is added, a title whose version changed keeps the
 old version as *previous* and the time as *when it moved*, a title the index renamed takes
-the new name, and **a title Fleet no longer lists is removed**. The first reading of a title
-is not a move, so its *previous* and *moved* stay empty until the version changes while this
-instance is watching.
+the new name, and **a title that neither the tree nor the index lists any more is removed**.
+The first reading of a title is not a move, so its *previous* and *moved* stay empty until
+the version changes while this instance is watching.
 
 The hosts are fixed in the code and no setting points the check elsewhere. A redirect is not
 followed; it is reported. Before dialling, each name is resolved and refused if it resolves to
@@ -212,6 +217,35 @@ The API is `GET /api/fleet-catalog/{slug}/history` (`app:read`, asks GitHub noth
 to the same address (`patch:catalog-sync`, reads it now). Both are refused in words with the
 flag off. A refused read is a `409` with the sentence as its `detail`.
 
+### Observed upgrades
+
+Each [migration detail](#migration-detail) carries `observedChanges` (#900): how this fleet has
+been taking the app's updates, read from the [change log](change-log.md) and timed against
+Fleet's dates. It counts only the Macs the request's `deviceScope` selects, and only the
+detail's app identities. An app with no bundle ID is matched under its name, as inventory
+stores it.
+
+- **The counts.** `windowDays` is 90, the window everything covers. `versionChanges` counts the
+  change log's application updates there in which `version`, `cfBundleShortVersionString` or
+  `cfBundleVersion` moved, with both sides present; `macs` counts the distinct Macs among them,
+  and `lastAt` is the newest, null with none. Rows dated after the request are left out.
+- **They need the change log.** Applications are recorded only with **Settings › Change
+  tracking** at *High + normal* (the default) or *Everything*, with applications not switched
+  off, and a Mac's first sweep is its baseline, so it counts from its second.
+- **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
+  dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
+  this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair
+  counts when its first recorded upgrade is inside the window and on or after Fleet's date. A
+  Mac that took the version before the window, rolled back and took it again is not counted; a
+  rollback alone drops nothing. `medianDaysAfterFleetPublication` is the median of the days from
+  Fleet's date to each pair's first upgrade, to two decimals.
+- **Null is not 0.** Timing is measured only when the detail has one Fleet title to compare:
+  a [complete](#complete-or-partial) catalog and every identity `exact`. Otherwise both
+  adoption fields are null, because nobody looked. Measured with nothing paired,
+  `adoptionSamples` is 0 and the median null.
+- **The interval ends at the sweep that recorded the upgrade**, not at the install, so each is
+  long by up to the time between two sweeps of that Mac.
+
 ## What a check can find
 
 The last check's outcome is one word, with a sentence when there is something to say. Both are
@@ -219,21 +253,69 @@ on the tab's status line and, for a failed check, in the container log.
 
 | Outcome | Means | The titles held |
 | --- | --- | --- |
-| `ok` | The catalog had changed and was read. A sentence follows only if some manifests could not be read as a title with a version; they are named, left as they were, and read again when Fleet next changes its catalog. | Now what Fleet publishes. |
-| `unchanged` | GitHub answered and nothing had moved. | As they were. |
+| `ok` | The catalog had changed and was read. A sentence follows only if some titles were skipped: a manifest or an index entry this build could not read, or a title the index and the file listing disagree about. They are named (a name this build cannot read as *unrecognized Mac manifest path* or *unrecognized Mac index entry*), left as they were, and read again when Fleet next changes its catalog. | What Fleet publishes, except the titles the sentence names: each keeps the copy held before, or stays unlisted if it is new. |
+| `unchanged` | GitHub answered and nothing had moved. While the titles held are [partial](#complete-or-partial), it says so: *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.* | As they were. |
 | `refused` | GitHub's rate limit answered (a 403 or 429 carrying its limit headers). | As they were. |
 | `unreachable` | No answer, an answer GitHub does not give (a proxy's 403, a 502), or a name that resolved to an address this instance will not dial. | As they were. |
 | `unexpected` | An answer that was not Fleet's catalog: a page that is not JSON, a redirect, a folder that is gone, a listing GitHub cut short, an index with no Mac app. | As they were. |
 
 **A failed check never removes or blanks what is held.** Three rules make that true. A check
 that fails before reading manifests writes nothing but its own outcome. A check cut short
-part-way through the manifests keeps the ones it read, says how many, and does not record the
-new tree sha, so the next check lists the tree again and reads only the rest. And titles are
-removed only by a complete read that no longer lists them, never by a listing that failed or
-was cut short.
+part-way through the manifests keeps the ones it read and says how many. Once it has changed
+the titles held, it also clears the tree sha and marks them partial, so the next check lists
+the whole tree again and reads only the rest, even if Fleet has since gone back to the tree
+that sha named: a half-applied read cannot pass for a complete one. A check cut short before
+it changed any title leaves the sha and the coverage as they were. And a title is
+removed only by a check that finished the whole listing and found it in neither the tree nor
+the index, never by a listing that failed or was cut short.
 
 Before the first check there is no outcome at all, and the tab says the catalog has not been
 read yet. That is its own state, not an empty catalog.
+
+### Complete or partial
+
+Since 1.3.0 the instance also records whether the titles it holds are a whole copy of Fleet's
+listing (#859). The record describes the titles held, not the last check, and has three values:
+
+- **`unread`**: no check has finished a listing or changed a title yet. A new instance starts
+  here, and one that had never read the catalog stays here through the 1.3.0 upgrade.
+- **`partial`**: a check finished the listing and skipped a title (the `ok` row above), a check
+  cut short had already changed the titles held, or the 1.3.0 upgrade found a catalog already
+  read (below).
+- **`complete`**: a check finished the listing and skipped nothing.
+
+A check that fails before it changes a title leaves the value as it was. The tab never shows
+the value, and of the API only the migration report carries it, as `fleetCatalogReadiness`
+([below](#the-migration-report-api-only-so-far)). The tab shows the check's sentence instead: an
+`ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
+
+**Besides the check and its schedule, one thing reads it: a saved application patch plan**
+([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
+titles that carry each selected app's bundle identifier, and the value decides what it may
+conclude from them:
+
+- **Complete.** A plan marks a Fleet title as the app's match, and can propose Fleet's latest
+  version as the target, only from a complete catalog with exactly one title for the bundle
+  ID. It reads no Fleet title as no Fleet coverage only from a complete catalog, recording
+  *No matching Fleet title in the completed cached catalog.*
+- **Unread or partial.** A plan lists every Fleet title it finds for identity review,
+  proposes no Fleet version as the target, and records
+  *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.*
+  under **Open review items at plan creation**, in the plan and in its PDF: the title that
+  would match may be one this instance has not read. A saved plan keeps the item; a plan
+  built once the catalog is complete does not carry it.
+
+**Upgrading to 1.3.0.** During the 1.3.0 upgrade, an existing cache is marked partial until
+the next eligible scheduled check reconciles it. 1.3.0 reads titles whose directory names
+contain `@` or `+`, of the form `python@3.13+`, which earlier builds left out without saying
+so: a catalog an earlier build read whole can lack those titles. The migration (`b13008440001`)
+runs once: where a catalog had been read, it marks the titles partial and clears the tree
+sha, so the next check cannot stop at its first request. It removes no title and no history.
+`due()` then makes the scheduler's next hourly look check at once, rather than a day after the
+last check; after a failed last check, the usual retry within the hour applies. **Check now**
+does the same with a person waiting. Either check lists the tree, reads the index, and reads
+only the manifests the instance lacks and those Fleet has changed since, never the whole
+catalog again.
 
 ## The tab
 
@@ -254,9 +336,10 @@ the version before it.
   Unticked, the whole catalog is listed. A title on no Mac shows a dash under *Macs behind*,
   not a zero.
 - **The status line** says when GitHub was last asked and what it answered. After a failed
-  check it shows the sentence and says the titles below are as read on the earlier date. Under
-  it, how many of the titles installed here have their version history read, and the
-  sentence when the last history read held back or failed.
+  check it shows the sentence and says the titles below are as read on the earlier date.
+  While the titles held are [partial](#complete-or-partial), an unchanged check's line says
+  unread Mac titles remain. Under it, how many of the titles installed here have their
+  version history read, and the sentence when the last history read held back or failed.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move
   this instance saw, or that there is neither yet.
@@ -268,11 +351,68 @@ The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
 
+### The migration report (API only, so far)
+
+`GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected
+Macs, with the Fleet titles that carry its bundle identifier. It needs `app:read` and `device:read`
+and takes `deviceScope`, the filter Installed Apps and Patch Plans use, so all three count the same
+Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag off it answers
+`enabled: false` and counts nothing.
+
+- **`scope`.** *Eligible* is every current Jamf Mac the filter's connection and style allow;
+  departed Macs and other platforms never count. *Selected* is the eligible Macs the conditions
+  keep; the rest of the report counts only these. *Unknown contact* and *unknown inventory* are
+  eligible Macs whose date is missing or in the future, which only *is unknown* selects.
+- **`match`.** `exact` is one Fleet title in a complete snapshot; `none`, no title in a complete
+  snapshot; `ambiguous`, several titles, an EA-assumed build or more than one Jamf Patch title;
+  `unknown`, anything else. In `fleetDeviceCounts`, Fleet titles that share a bundle identifier
+  share a count.
+- **`installedEvidence`.** One entry per app in `items`, keyed by `appHash`, from the same
+  snapshot: the vulnerability answer each of its builds on the selected Macs already stores, read
+  by Installed Apps' rule, so an answer from an earlier corpus release, or one that does not
+  parse, is unknown. A build is assessed only when every selected Mac's copy of it is.
+  `assessment` is `off` (nothing answers for this organization), `unknown_app` (no build of the
+  app is assessed), `partial` or `covered`, and `asOf` is the corpus date, null under `off`.
+  `assessedBuilds` and `unknownBuilds` count distinct builds, one per version however many Macs
+  carry it, where Installed Apps counts device/build pairs: a build on 500 Macs is 500 there and
+  1 here. `affectedBuilds`, `highOrCriticalBuilds` and `kevBuilds` count the assessed builds with
+  any finding, with a high or critical one, and with one on CISA's Known Exploited
+  Vulnerabilities list, never findings added across builds. Under `off` and `unknown_app` they
+  are null, not zero: nobody looked.
+- **`appAssessments`.** One entry per `exact` app, keyed by `appHash`: its builds on the selected
+  Macs against the version its one Fleet title lists now. It counts the builds behind that version,
+  the findings updating them would close, open or leave, and the builds out of, within or exempt
+  from the confirmed patch rule. `priority`, `priorityReason`, `management`, `comparison` and each
+  verdict are codes. The list carries no per-build rows and no finding IDs. A build's verdict is
+  `policy.judge`'s for its one Jamf Patch title, the same as on the title page
+  ([troubleshooting §23](troubleshooting.md#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)).
+  An installed build's findings are its stored answer as served, so one judged by another corpus
+  release is unknown, never clean. Only a target version no selected Mac carries is asked of the
+  corpus, from the same release.
+- **One known difference from a patch plan.** When an app's one Jamf Patch title is in the synced
+  Jamf Patch catalog but missing from some of its builds or Macs, this reads `exact`, while a
+  patch plan withholds Fleet's version as its target and asks for identity review.
+
+### Migration detail
+
+`GET /api/fleet-catalog/migration/apps/<appHash>` (one installed app) and `…/titles/<slug>` (one
+Fleet title and every installed identity with its bundle ID) take the report's `deviceScope` and
+`targetVersion`, which defaults to Fleet's latest and may name any version the title's history
+holds. Each lists the builds with distinct Macs, `installedMacs` and the matched Jamf Patch titles.
+`impact` counts each Mac once as older, at or above, or unknown; when it is null,
+`impactUnavailable` says why. Finding IDs need `vuln:read`; every caller gets the counts.
+`observedChanges` is described under [Observed upgrades](#observed-upgrades).
+Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
+
 ## What it leaves out
 
-- **No vulnerability or patch judgement.** Fleet's titles are not joined to the vulnerability
-  corpus, are not a Jamf Patch title match, and do not count as a public source where the
-  product asks whether one knows an app.
+- **No vulnerability or patch judgement of Fleet's titles.** The corpus is asked about a Fleet
+  version only as the version an installed app's builds would move to (`appAssessments`), under
+  that app's own name and bundle identifier. Fleet's titles are not a Jamf Patch title match, and
+  do not count as a public source where the product asks whether one knows an app.
+- **Dataset scope.** The migration report repeats the answer each installed build already
+  carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
+  catalogs, the Jamf matches and the organization's patch rules unchanged.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**
@@ -282,7 +422,8 @@ state.
   else; the two hosts are fixed.
 - **A skipped manifest waits for Fleet's next change.** While the tree sha does not move, the
   check stops at its first request, so a manifest it could not read is not retried until
-  Fleet changes the folder again.
+  Fleet changes the folder again. Until then the titles stay partial, and each unchanged
+  check says so.
 
 ## Validation
 
