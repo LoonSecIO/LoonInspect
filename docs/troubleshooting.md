@@ -3613,7 +3613,7 @@ nothing here is a permissions problem in Jamf.
     **Fleet titles** opens its page with the list's query, which reads step 11's detail for the same device filter. By the sentence:
     - *This Fleet catalog record could not be read. Retry, or reload the Fleet catalog list; if the list fails too, the instance is not answering.*
       → reload the list; if it fails too, step 1, then §4. *The Fleet catalog is off for this organization.* is step 1, and any other
-      sentence beside **Retry** is the server's own refusal: step 11.
+      sentence beside **Retry** is the server's own refusal: step 12 for the device filter's, step 11 for the rest.
     - *No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
     - *Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch.*
       → the next device sweep, or **Sync now**.
@@ -3628,6 +3628,34 @@ nothing here is a permissions problem in Jamf.
     - *No matching installations were observed in the selected scope.* on a title page → widen the scope on the list and open the title again.
     - *This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.* → step 10.
     - *No dated version matches this search.* → clear the search; step 10 explains an undated version.
+14. **An app's or a title's page gives a verdict, findings or observed upgrades that read wrong.** The header's verdict line and
+    **Patching policy** are Migration review's words for the same app, judged against Fleet's latest version; a build's patch-rule
+    verdict is the Jamf Patch title page's (§23). How often Fleet updates the title is under **Detection and policy evidence**, what
+    the vulnerability corpus holds for each installed build under **Findings on installed builds**, and the upgrades the change log
+    recorded at the foot of **Installed builds**. By the sentence:
+    - *How often Fleet updates this title is unknown until its release history is read.* → step 8; **Read history** on the same page
+      reads it now, for `patch:catalog-sync`.
+    - *Vulnerabilities: not assessed* under **Findings on installed builds** → §5 steps 1 and 2; *Outside the corpus* → §5. The counts
+      are distinct builds on the Macs in the device filter, so a build on 500 Macs counts once where Installed Apps counts 500.
+    - *Each Mac keeps its own copy of a build’s answer, which the hourly refresh brings up to date, so for up to an hour after a corpus release or a sweep these counts can differ from the verdict above.*
+      → right after a corpus release or a device sweep, the findings can read *Outside the corpus* or *Vulnerabilities: not assessed*
+      while the verdict line or **Patching policy** already counts a finding, or the reverse. The two read different copies of a
+      build's answer, the findings each Mac's and the verdict the build's own; they agree after the hourly refresh, and **Sync now**
+      under Devices › Applications › Jamf Patch runs it at once (`patch:catalog-sync`). Still apart after that: §5 step 3.
+    - *0 recorded version changes on 0 Macs in the last 90 days.*, under it
+      *A 0 here can mean the change log is not recording applications (Settings › Change tracking), and a change log kept under 90 days counts only the days it keeps.*
+      → Settings › Change tracking: *High only* records no application changes; *High + normal*, the default, does. A Mac's changes
+      count from its second sweep, and only Macs the device filter selects count, so widen or clear the filter.
+      `CHANGE_LOG_RETENTION_DAYS` under 90 leaves fewer days to count, whatever the sentence's 90 says (§24 step 1 prints the value).
+    - *No recorded upgrade on these Macs in this window could be paired with a version Fleet’s history has dated.* → the history on the
+      same page says *Not read yet* (step 8), or the versions the Macs moved to are ones it could not date (step 10). Versions that are
+      not plain dotted numbers, a short version that disagrees with the version, and a first upgrade recorded before Fleet dated the
+      version are left out on purpose ([`fleet-catalog.md`](fleet-catalog.md#observed-upgrades)).
+    - *Upgrade timing is measured only for an app matched to one Fleet title.* → the header says why, and step 13 routes it: several
+      Fleet channels or Jamf Patch titles fit (open the intended one under **Fleet channels**), Fleet's catalog was not read whole
+      (steps 3 and 6), or no Fleet title carries the bundle ID (step 4).
+    - No **Build a patch plan for these Macs** → it needs `patch:plan-write` (Admin, Analyst) and a Mac in the device filter with the
+      app. The plan opens with the page's device filter (§30).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.

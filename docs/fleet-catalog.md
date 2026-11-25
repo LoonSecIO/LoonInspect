@@ -227,7 +227,10 @@ stores it.
   and `lastAt` is the newest, null with none. Rows dated after the request are left out.
 - **They need the change log.** Applications are recorded only with **Settings › Change
   tracking** at *High + normal* (the default) or *Everything*, with applications not switched
-  off, and a Mac's first sweep is its baseline, so it counts from its second.
+  off, and a Mac's first sweep is its baseline, so it counts from its second. They count only what
+  the log still keeps: with `CHANGE_LOG_RETENTION_DAYS` ([change log](change-log.md) §6) under 90 they
+  cover fewer days while `windowDays` still says 90, and with applications not recorded
+  `versionChanges` and `adoptionSamples` read 0, which measured nothing.
 - **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
   dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
   this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair
@@ -378,8 +381,11 @@ patch-policy verdict and its installed builds' vulnerability evidence ([`trouble
   line that reads the build's one catalog answer and already rests on it.
 
 **An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
-and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet and Jamf Patch titles that match the bundle
-identifier, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13). Opening it asks GitHub
+and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet titles that carry the bundle identifier, the
+Jamf Patch titles the builds were matched to, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13).
+It also shows the list's verdict and **Patching policy** word for the app, how often Fleet dated the title's versions, the findings the corpus holds for
+each installed build (distinct builds; *not assessed*, never 0, where nothing answers), the [observed upgrades](#observed-upgrades) on the selected Macs,
+and, for an Admin or Analyst, **Build a patch plan for these Macs**, which opens Patch Plans with the same device filter and the page's apps (§27 step 14). Opening it asks GitHub
 nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
 on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
 
