@@ -130,7 +130,7 @@ async def held(db, monkeypatch):
         reset_tenant_id(token)
 
 
-def _jamf_row(title_id: str, name: str, versions: list[tuple[str, str]]) -> JamfPatchTitle:
+def _jamf_row(title_id: str, name: str, versions: list[tuple[str, str]], bundle: str = WIRESHARK) -> JamfPatchTitle:
     """A title as the hourly sync writes it: patches newest first, Jamf dating each release a day
     after the vendor's tag."""
     patches = [
@@ -140,7 +140,7 @@ def _jamf_row(title_id: str, name: str, versions: list[tuple[str, str]]) -> Jamf
     return JamfPatchTitle(
         id=title_id,
         name=name,
-        bundle_id=WIRESHARK,
+        bundle_id=bundle,
         current_version=patches[0]["version"],
         last_modified="2026-11-23T10:00:00Z",
         patches=patches,
@@ -294,6 +294,55 @@ async def test_jamf_dates_walk_the_track_and_the_other_lines_versions_are_set_as
 
     newest = await _walk(viewer, app="wireshark", track="wireshark/newest", source="jamf")
     assert newest["inputs"]["timeline"]["other_track"] == 0 and newest["inputs"]["timeline"]["matched"] == 6
+
+
+async def test_a_channel_the_data_names_and_does_not_walk_is_set_aside_and_counted_per_channel(db, held, viewer) -> None:  # noqa: F811
+    """The fixture names Chrome's extended stable channel under `other_channels`. A Jamf title that
+    dates stable and extended builds walks the stable track with the extended ones set aside, per
+    channel, and says how many; 141.0.7390.108 is on both lists and is the stable track's. A
+    version neither list names still counts against the 5% limit, with the set-aside beside it."""
+    stable = [("141.0.7390.54", "2025-09-30"), ("141.0.7390.66", "2025-10-07"), ("141.0.7390.108", "2025-10-21")]
+    stable.append(("142.0.7444.59", "2025-10-28"))
+    extended = [("140.0.7339.207", "2025-09-23"), ("140.0.7339.213", "2025-10-14")]
+    title = "PPW-CHROME"
+    db.add(_jamf_row(title, "Google Chrome", stable + extended, bundle=CHROME))
+    await db.commit()
+    try:
+        body = await _walk(viewer, app="chrome", source="jamf")
+        joined = body["inputs"]["timeline"]
+        assert (joined["matched"], joined["unmatched"], joined["other_track"], joined["other_channel"]) == (4, [], 0, 2)
+        assert joined["other_channels"] == [
+            {
+                "channel": "extended",
+                "label": "Google Chrome (extended stable)",
+                "source": held["apps"][0]["other_channels"][0]["source"],
+                "count": 2,
+                "versions": ["140.0.7339.207", "140.0.7339.213"],
+            }
+        ]
+        assert joined["note"] == (
+            "2 versions of Google Chrome (extended stable) set aside: LoonSec's data does not walk that channel yet, so "
+            "they are neither walked nor counted as unmatched (docs/troubleshooting.md §33 step 4)."
+        )
+        apps = {app["app"]: app for app in (await viewer.get("/api/patch-policy/apps")).json()["apps"]}
+        chrome = apps["chrome"]["sources"]["jamf"]
+        assert chrome["available"] is True and chrome["note"] == joined["note"]
+        (stable_track,) = chrome["tracks"]
+        assert (stable_track["matched"], stable_track["otherChannel"], stable_track["unmatched"]) == (4, 2, 0)
+
+        # A build no list names is still unmatched, and the refusal carries what was set aside.
+        await db.rollback()
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == title))
+        db.add(_jamf_row(title, "Google Chrome", [*stable, *extended, ("143.0.7499.40", "2025-11-04")], bundle=CHROME))
+        await db.commit()
+        refused = await _walk(viewer, 409, app="chrome", source="jamf")
+        assert refused["reason"] == "too_many_unmatched"
+        assert refused["facts"]["in_reach"]["unmatched"] == ["143.0.7499.40"]
+        assert [(c["channel"], c["count"]) for c in refused["facts"]["other_channels"]] == [("extended", 2)]
+    finally:
+        await db.rollback()
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == title))
+        await db.commit()
 
 
 async def test_a_jamf_catalog_with_no_title_for_the_app_says_so(held, jamf, viewer) -> None:  # noqa: F811

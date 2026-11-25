@@ -1,7 +1,7 @@
 {
   "kind": "patch_policy_reference",
   "schema": 1,
-  "doc_id": "e011ca631fddc05a27b675cf79dc770c7810feb5494375e9e754aae23aacd135",
+  "doc_id": "9735c0674cf152f22194e6ce9302592bd2a49f313939d2b4958c275280da6698",
   "as_of": "2026-11-23T20:00:00Z",
   "algorithm": "patch_walk/1",
   "definitions_version": "2",
@@ -82,6 +82,18 @@
         "basis": "hand",
         "evidence": "https://www.google.com/chrome/"
       },
+      "other_channels": [
+        {
+          "channel": "extended",
+          "label": "Google Chrome (extended stable)",
+          "source": "https://versionhistory.googleapis.com/v1/chrome/platforms/mac/channels/extended/versions/all/releases",
+          "versions": [
+            "140.0.7339.207",
+            "140.0.7339.213",
+            "141.0.7390.108"
+          ]
+        }
+      ],
       "tracks": [
         {
           "track": "chrome/stable",

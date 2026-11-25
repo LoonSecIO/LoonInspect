@@ -388,6 +388,7 @@ async def walk_view(
         refused.source = source
         raise
     catalogs = await _read(db, _bundles(app_row), [source] if align != ALIGN_COMMON else list(timelines.SOURCES))
+    timeline: timelines.Timeline | None = None
     try:
         timeline = _timeline(document, app, track_id, source, catalogs)
         common, aligned = None, None
@@ -397,7 +398,12 @@ async def walk_view(
     except timelines.Unavailable as unavailable:
         raise Refused(unavailable.state, unavailable.sentence, source=source) from None
     except walk.WalkRefused as refused:
-        raise Refused(refused.reason, refused.sentence, source=source, facts=refused.detail) from None
+        facts = dict(refused.detail or {})
+        if timeline is not None and timeline.other_channel:
+            # What was set aside before the walk refused, so the unmatched list beside the
+            # sentence is read against it: those versions were never counted as unmatched.
+            facts["other_channels"] = timeline.other_channel_facts()
+        raise Refused(refused.reason, refused.sentence, source=source, facts=facts) from None
     return served(result, timeline, check=check, stop=stop, page=page, aligned=aligned)
 
 
@@ -442,7 +448,10 @@ def served(
     aligned: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The walk as the route answers it: every total and series whole, `cves[]` paged, day
-    intervals only for `stop`, the app's parity as `check`, and what the timeline set aside."""
+    intervals only for `stop`, the app's parity as `check`, and what the timeline set aside:
+    another track's versions (`other_track`, `other_track_versions`) and the versions of each
+    channel the document names and does not walk (`other_channel`, the count, and
+    `other_channels`, per channel), none of which the walk saw."""
     rows = result["cves"]
     pages = max(1, math.ceil(len(rows) / PAGE_SIZE))
     chosen = rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
@@ -456,6 +465,9 @@ def served(
             # Set aside before the walk as another track's, so the walk's own count is added to.
             "other_track": joined["other_track"] + len(timeline.other_track),
             "other_track_versions": list(timeline.other_track),
+            # Set aside before the walk as another channel's; the walk has no count of its own.
+            "other_channel": sum(len(channel.versions) for channel in timeline.other_channel),
+            "other_channels": timeline.other_channel_facts(),
             "note": timeline.note,
         },
     }
@@ -521,6 +533,7 @@ async def _source(
             "last": None,
             "matched": 0,
             "other_track": 0,
+            "other_channel": 0,
             "unmatched": 0,
             "since": None,
             "until": None,
@@ -549,6 +562,7 @@ async def _source(
             last=own_days[-1].isoformat() if own_days else None,
             matched=len(joined.matched),
             other_track=len(timeline.other_track),
+            other_channel=sum(len(channel.versions) for channel in timeline.other_channel),
             unmatched=len(joined.unmatched),
         )
         if refused is not None:

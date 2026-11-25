@@ -21,12 +21,16 @@ queued or exchanged.
 
 **Joined by membership, never by comparison** (plan 4.4). A version is a track's when its
 lowercased spelling is one of the track's `versions[].keys`; it is another track's when it is one
-of another track of the same app (Jamf's "Firefox ESR" title shares Firefox's bundle id, and
-Thunderbird's title lists both channels interleaved); and it is unmatched when no track lists it.
-An instance timeline keeps the track's versions and the unmatched ones, and sets the other
-tracks' aside (`other_track`), so a release channel is never walked over ESR builds and an ESR
-build is never counted against the release channel's 5% unmatched limit. Nothing here compares
-two versions.
+of another track of the same app; it is another channel's when the app's `other_channels` list it
+(a channel LoonSec names and does not walk yet, such as Firefox ESR); and it is unmatched when
+none of those list it. In that order: a version a track lists is that track's, whatever channel
+also lists it (ESR 153.0 shares its number with release 153.0). Jamf's "Firefox ESR" title shares
+Firefox's bundle id, Thunderbird's one title lists both channels interleaved, and Fleet holds
+`firefox@esr` beside `firefox`, so a timeline read for a release track carries ESR builds. An
+instance timeline keeps the track's versions and the unmatched ones, and sets the other tracks'
+aside (`other_track`) and the other channels' (`other_channel`, per channel), so a release channel
+is never walked over ESR builds and an ESR build is never counted against the release channel's
+5% unmatched limit. The walk is handed only what is kept. Nothing here compares two versions.
 
 **A held line is judged by the document's own lines.** A track that holds a device on one line
 (`path.kind: hold`, Wireshark 4.4) needs a dated release on that line; whether a version is on it
@@ -115,6 +119,68 @@ _READ_AGAIN = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class SetAside:
+    """The versions an instance timeline named that one of the app's `other_channels` lists and
+    no track does: that channel's id, label and public source, and the versions, sorted. They are
+    neither walked nor counted as unmatched; the view says how many, per channel."""
+
+    channel: str
+    label: str
+    source: str
+    versions: tuple[str, ...]
+
+    def fact(self) -> dict[str, Any]:
+        return {
+            "channel": self.channel,
+            "label": self.label,
+            "source": self.source,
+            "count": len(self.versions),
+            "versions": list(self.versions),
+        }
+
+
+def other_channels(app_row: Mapping[str, Any]) -> tuple[SetAside, ...]:
+    """The app's `other_channels`, in the document's order, each with its versions lowercased as
+    the timelines join them: what membership sets aside after the tracks. Absent or empty is none.
+    The copy's own check (`patch_policy_feed`) refused a malformed list before it was stored, so
+    anything malformed met here (a hand-made document) is skipped, never guessed at."""
+    entries = app_row.get("other_channels")
+    if not isinstance(entries, list):
+        return ()
+    found = []
+    for entry in entries:
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("channel"), str) or not entry["channel"]:
+            continue
+        versions = entry.get("versions") if isinstance(entry.get("versions"), list) else []
+        found.append(
+            SetAside(
+                channel=entry["channel"],
+                label=str(entry.get("label") or entry["channel"]),
+                source=str(entry.get("source") or ""),
+                versions=tuple(sorted({v.strip().lower() for v in versions if isinstance(v, str) and v.strip()})),
+            )
+        )
+    return tuple(found)
+
+
+def set_aside_note(set_aside: Sequence[SetAside], source: str) -> str | None:
+    """One sentence per channel the timeline named versions of, for the view's `note`."""
+    if not set_aside:
+        return None
+    step = "step 5" if source == FLEET else "step 4"
+
+    def one(channel: SetAside) -> str:
+        count = len(channel.versions)
+        which, them = ("version", "it is") if count == 1 else ("versions", "they are")
+        return (
+            f"{count} {which} of {channel.label} set aside: LoonSec's data does not walk that channel yet, so {them} "
+            f"neither walked nor counted as unmatched (docs/troubleshooting.md §33 {step})."
+        )
+
+    return " ".join(one(channel) for channel in set_aside)
+
+
 class Unavailable(Exception):
     """A source that cannot date this app or track, and why: `state` is one of `STATES` and
     `sentence` says it in the operator's words (the walk route's 409 detail)."""
@@ -133,8 +199,9 @@ class Timeline:
     `observations` are `(version key, day or None)`, the key lowercased as the walk joins it,
     ordered by day and then key (undated last). `digest` is the walk's own digest of them, so it
     is the same figure the walk's `inputs.timeline.digest` reports. `other_track` lists the
-    versions set aside as another track's; `ids` names what was read (a public timeline's id,
-    Jamf title ids, Fleet slugs)."""
+    versions set aside as another track's, and `other_channel` those set aside as a channel the
+    document names and does not walk, per channel; `ids` names what was read (a public timeline's
+    id, Jamf title ids, Fleet slugs)."""
 
     source: str
     name: str
@@ -145,6 +212,11 @@ class Timeline:
     ids: tuple[str, ...]
     other_track: tuple[str, ...] = ()
     note: str | None = None
+    other_channel: tuple[SetAside, ...] = ()
+
+    def other_channel_facts(self) -> list[dict[str, Any]]:
+        """`other_channel` as a view's facts: per channel, its id, label, source, count and versions."""
+        return [channel.fact() for channel in self.other_channel]
 
     def walk_input(self) -> dict[str, Any]:
         """The mapping `patch_policy_walk.walk` reads."""
@@ -183,14 +255,17 @@ def track_keys(app_row: Mapping[str, Any]) -> dict[str, set[str]]:
 
 @dataclass(frozen=True, slots=True)
 class Split:
-    """An instance timeline against one track: what is the track's, another track's, or nobody's.
+    """An instance timeline against one track: what is the track's, another track's, another
+    channel's, or nobody's.
 
     `kept` is what the walk is given: the track's own observations and the unmatched ones, which
     the walk never installs but measures against its 5% limit and lists. `matched` are the
-    track's own keys among them, and `exclusive` those no other track lists; `other` the keys set
-    aside as another track's. `lists_exclusive` says whether the track lists any version no other
-    track does: a held line inside a newest-line track (Wireshark 4.4 inside Wireshark's newest)
-    lists none, a channel beside another channel (Firefox ESR beside Firefox) does."""
+    track's own keys among them, and `exclusive` those no other track and no other channel lists;
+    `other` the keys set aside as another track's, and `other_channel` those set aside as one of
+    the app's `other_channels`, per channel. `lists_exclusive` says whether the track lists any
+    version no other track or channel does: a held line inside a newest-line track (Wireshark 4.4
+    inside Wireshark's newest) lists none, a channel beside another channel (Firefox release
+    beside Firefox ESR) does."""
 
     kept: tuple[tuple[str, dt.date | None], ...]
     matched: tuple[str, ...]
@@ -198,29 +273,39 @@ class Split:
     other: tuple[str, ...]
     unmatched: tuple[str, ...]
     lists_exclusive: bool
+    other_channel: tuple[SetAside, ...] = ()
 
     @property
     def channel_missing(self) -> bool:
-        """The timeline names another track's versions and none that would show it carries this
-        one: nothing of the track's at all, or, for a track that lists versions of its own, only
-        versions both tracks list (Fleet's Firefox title read for the ESR track names 140.0, which
-        is on both lists, and no ESR build)."""
-        if not self.other:
+        """The timeline names another track's or another channel's versions and none that would
+        show it carries this track: nothing of the track's at all, or, for a track that lists
+        versions of its own, only versions another list holds too (Fleet's Firefox title read for
+        an ESR track names 140.0, which is on both lists, and no ESR build; Jamf's ESR title read
+        for the release track names release 153.0 and ESR builds)."""
+        if not self.other and not self.other_channel:
             return False
         return not self.matched or (self.lists_exclusive and not self.exclusive)
 
 
 def split(observations: Iterable[tuple[str, dt.date | None]], app_row: Mapping[str, Any], track: str) -> Split:
-    """Membership, never comparison: the track's own keys first, then any other track's, else unmatched."""
+    """Membership, never comparison: the track's own keys first, then any other track's, then any
+    other channel's (`other_channels`, in the document's order), else unmatched. A version a track
+    lists is that track's whatever channel also lists it."""
     keys = track_keys(app_row)
     own_keys = keys.get(track, set())
     other_keys: set[str] = set()
     for name, found in keys.items():
         if name != track:
             other_keys |= found
+    channels = other_channels(app_row)
+    channel_of: dict[str, int] = {}
+    for at, channel in enumerate(channels):
+        for key in channel.versions:
+            channel_of.setdefault(key, at)
     kept: list[tuple[str, dt.date | None]] = []
     matched: set[str] = set()
     other: set[str] = set()
+    aside: dict[int, set[str]] = {}
     unmatched: set[str] = set()
     for key, day in observations:
         if key in own_keys:
@@ -228,16 +313,28 @@ def split(observations: Iterable[tuple[str, dt.date | None]], app_row: Mapping[s
             kept.append((key, day))
         elif key in other_keys:
             other.add(key)
+        elif key in channel_of:
+            aside.setdefault(channel_of[key], set()).add(key)
         else:
             unmatched.add(key)
             kept.append((key, day))
+    elsewhere = other_keys | channel_of.keys()
     return Split(
         kept=_ordered(kept),
         matched=tuple(sorted(matched)),
-        exclusive=tuple(sorted(matched - other_keys)),
+        exclusive=tuple(sorted(matched - elsewhere)),
         other=tuple(sorted(other)),
         unmatched=tuple(sorted(unmatched)),
-        lists_exclusive=bool(own_keys - other_keys),
+        lists_exclusive=bool(own_keys - elsewhere),
+        other_channel=tuple(
+            SetAside(
+                channel=channels[at].channel,
+                label=channels[at].label,
+                source=channels[at].source,
+                versions=tuple(sorted(aside[at])),
+            )
+            for at in sorted(aside)
+        ),
     )
 
 
@@ -276,25 +373,39 @@ def _dates_line(joined: Split, track_row: Mapping[str, Any], ceiling: str) -> bo
     return any(day is not None and line_of.get(key) == ceiling for key, day in joined.kept)
 
 
-def _no_channel(source: str, owner: str, name: str, track_row: Mapping[str, Any], ids: str) -> Unavailable:
-    """The source names another track's versions and nothing that shows it carries this track
-    (`Split.channel_missing`): the track's channel is not in what was read. Jamf's catalog may
-    hold only one channel's title of the two that share a bundle id; a Fleet title read for the
-    ESR track may carry the release channel only."""
+def _elsewhere(joined: Split) -> str:
+    """Where the versions a source names belong instead of this track: another track's list,
+    a channel LoonSec's data names and does not walk, or both."""
+    labels = [channel.label for channel in joined.other_channel]
+    channels = f"a build of {' or '.join(labels)}, " + ("a channel" if len(labels) == 1 else "channels")
+    channels += " LoonSec's data does not walk yet"
+    if joined.other and joined.other_channel:
+        return f"on another track's list or {channels}"
+    if joined.other_channel:
+        return channels
+    return "on another track's list"
+
+
+def _no_channel(source: str, owner: str, name: str, track_row: Mapping[str, Any], ids: str, joined: Split) -> Unavailable:
+    """The source names another track's or another channel's versions and nothing that shows it
+    carries this track (`Split.channel_missing`): the track's channel is not in what was read.
+    Jamf's catalog may hold only one channel's title of the two that share a bundle id (only
+    "Mozilla Firefox ESR", read for the release track); a Fleet title read for an ESR track
+    may carry the release channel only (`firefox`, while `firefox@esr` is not held or not read)."""
     label, channel, _ = _track_words(track_row)
     who = source.capitalize()
     if source == FLEET and channel == "esr":
         return Unavailable(
             source,
             ESR_MISSING,
-            f"{owner} ({ids}) names no {name} ESR release: every version it names is on another track's list, so "
-            f"{label} has no Fleet timeline. Choose another source.",
+            f"{owner} ({ids}) names no {name} ESR release: every version it names is {_elsewhere(joined)}, so {label} "
+            "has no Fleet timeline. Choose another source.",
         )
     return Unavailable(
         source,
         CHANNEL_EMPTY,
-        f"{owner} lists no {name} release on the {channel} channel ({ids}): every version it names is on another "
-        f"track's list, so {label} has no {who} timeline. Choose another track or source.",
+        f"{owner} lists no {name} release on the {channel} channel ({ids}): every version it names is "
+        f"{_elsewhere(joined)}, so {label} has no {who} timeline. Choose another track or source.",
     )
 
 
@@ -333,7 +444,8 @@ def _from_split(
     if joined.channel_missing:
         if unread is not None:
             raise unread
-        raise _no_channel(source, owner, name, track_row, shown)
+        raise _no_channel(source, owner, name, track_row, shown, joined)
+    aside = set_aside_note(joined.other_channel, source)
     return Timeline(
         source=source,
         name=timeline_name,
@@ -343,7 +455,8 @@ def _from_split(
         digest=_digest(joined.kept),
         ids=tuple(ids),
         other_track=joined.other,
-        note=note,
+        note=" ".join(part for part in (note, aside) if part) or None,
+        other_channel=joined.other_channel,
     )
 
 

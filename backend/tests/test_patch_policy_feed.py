@@ -2,8 +2,9 @@
 
 `tests/fixtures/patch_policy/reference.json` is a hand-made `patch_policy_reference` (schema 1)
 that follows the plan's data contract: three apps (two with public timelines, one whose versions
-are undated), every exclusion reason, both CVE clocks, and fictional CVE ids (`CVE-2099-*`) so no
-number in it reads as a fact about a real app. LoonVD's builder produces the real one; until then
+are undated), a channel named beside Chrome's track and not walked (`other_channels`), every
+exclusion reason, both CVE clocks, and fictional CVE ids (`CVE-2099-*`) so no number in it reads
+as a fact about a real app. LoonVD's builder produces the real one; until then
 this file is what the check is held to. Editing it means recomputing its `doc_id`, which the first
 test here prints when it moves.
 
@@ -246,6 +247,62 @@ def test_an_app_whose_bundle_ids_are_not_a_list_of_ids_is_refused() -> None:
     broken = copy.deepcopy(DOC)
     broken["apps"][0]["bundle_ids"] = 7
     assert _refusal(_resigned(broken)) == "it lacks chrome.bundle_ids as a list of bundle ids"
+
+
+def test_the_fixture_names_a_channel_beside_its_tracks_and_a_document_without_one_is_read_too() -> None:
+    """`other_channels` is additive: the fixture's Chrome names its extended stable channel, whose
+    141.0.7390.108 is also on the stable track's list, and absent, null or empty is no channel."""
+    (extended,) = DOC["apps"][0]["other_channels"]
+    assert (extended["channel"], extended["versions"]) == ("extended", ["140.0.7339.207", "140.0.7339.213", "141.0.7390.108"])
+    stable_keys = {key for version in DOC["apps"][0]["tracks"][0]["versions"] for key in version["keys"]}
+    assert "141.0.7390.108" in stable_keys
+    for value in ("absent", None, []):
+        other = copy.deepcopy(DOC)
+        if value == "absent":
+            del other["apps"][0]["other_channels"]
+        else:
+            other["apps"][0]["other_channels"] = value
+        assert feed.read_document(_resigned(other)).body["apps"][0].get("other_channels", "absent") == value
+
+
+_CHANNEL = {"channel": "extended", "label": "Google Chrome (extended stable)", "source": "https://example.test/x", "versions": []}
+
+
+@pytest.mark.parametrize(
+    ("value", "said"),
+    [
+        (
+            "extended",
+            "it lacks chrome.other_channels as a list of channels, each with channel, label and source as text and "
+            "versions as a list of versions",
+        ),
+        (
+            [["extended"]],
+            "it lacks chrome.other_channels as a list of channels, each with channel, label and source as text and "
+            "versions as a list of versions",
+        ),
+        ([{**_CHANNEL, "channel": None}], "it lacks chrome.other_channels[0].channel as text"),
+        ([{**_CHANNEL, "channel": " "}], "it lacks chrome.other_channels[0].channel as text"),
+        ([{**_CHANNEL, "label": {"en": "Extended"}}], "it lacks chrome.other_channels[0].label as text"),
+        ([_CHANNEL, {**_CHANNEL, "source": 7}], "it lacks chrome.other_channels[1].source as text"),
+        ([{key: v for key, v in _CHANNEL.items() if key != "versions"}], "it lacks chrome.other_channels[0].versions"),
+        ([{**_CHANNEL, "versions": "140.0.7339.207"}], "it lacks chrome.other_channels[0].versions as a list of versions"),
+        ([{**_CHANNEL, "versions": ["140.0.7339.207", 141]}], "it lacks chrome.other_channels[0].versions as a list"),
+        ([{**_CHANNEL, "versions": [""]}], "it lacks chrome.other_channels[0].versions as a list of versions"),
+        ([_CHANNEL, _CHANNEL], "its own counts disagree (chrome.other_channels lists extended twice)"),
+        (
+            [{**_CHANNEL, "versions": ["140.0.7339.207", "140.0.7339.207"]}],
+            "its own counts disagree (chrome.other_channels[0]: a version is listed twice)",
+        ),
+    ],
+)
+def test_a_malformed_other_channels_is_refused_in_words(value, said) -> None:
+    """The channels a day-walk sets aside are held to their shape like everything else the route
+    reads: a document whose `other_channels` is not that shape is refused naming where, and the
+    copy already held keeps answering."""
+    broken = copy.deepcopy(DOC)
+    broken["apps"][0]["other_channels"] = value
+    assert _refusal(_resigned(broken)).startswith(said)
 
 
 def test_json_nested_past_the_parsers_depth_is_refused_in_words() -> None:

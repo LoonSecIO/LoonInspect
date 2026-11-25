@@ -7968,6 +7968,11 @@
             "title": "Matched",
             "type": "integer"
           },
+          "otherChannel": {
+            "default": 0,
+            "title": "Otherchannel",
+            "type": "integer"
+          },
           "otherTrack": {
             "title": "Othertrack",
             "type": "integer"

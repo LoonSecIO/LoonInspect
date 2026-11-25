@@ -12,8 +12,10 @@ is the document's own `doc_id`, has moved. An air-gapped instance reads it from
 
 **Checked whole before anything is written.** `read_document` recomputes `doc_id` (the sha256 of
 the canonical body without it), and holds the kind, the schema, the algorithm and the counts each
-track states to the rows it lists. A document that fails any of them is refused in a sentence
-naming what failed, and the copy already held keeps answering. The last two copies are kept.
+track states to the rows it lists, and each app's `other_channels` (the channels it names beside
+its tracks and does not walk) to their shape. A document that fails any of them is refused in a
+sentence naming what failed, and the copy already held keeps answering. The last two copies are
+kept.
 
 **Held, never computed with, here.** Nothing in this module walks a timeline or compares a
 version; it receives, verifies and stores, and answers `GET /api/patch-policy/apps` with the feed's
@@ -398,6 +400,9 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
         bundle_ids = app.get("bundle_ids")
         if bundle_ids is not None and not (isinstance(bundle_ids, list) and all(isinstance(b, str) for b in bundle_ids)):
             return f"it lacks {name}.bundle_ids as a list of bundle ids"
+        problem = _channels_problem(name, app.get("other_channels"))
+        if problem is not None:
+            return problem
         tracks = app.get("tracks")
         if not isinstance(tracks, list) or not tracks:
             return f"it lacks {name}.tracks"
@@ -409,6 +414,36 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
             problem = _track_problem(name, track, reasons, timelines, seen_tracks)
             if problem is not None:
                 return problem
+    return None
+
+
+def _channels_problem(app: str, channels: object) -> str | None:
+    """An app's `other_channels`, when it has any: the channels LoonSec names beside its tracks and
+    does not walk, each `{channel, label, source, versions[]}`. A day-walk sets those versions
+    aside when it splits a Jamf or Fleet timeline (`app.core.patch_policy_timelines.split`). Absent,
+    null or empty is none; anything else must be that shape, with no channel or version named twice
+    in it, or the document is refused naming where."""
+    if channels is None:
+        return None
+    shape = "a list of channels, each with channel, label and source as text and versions as a list of versions"
+    if not isinstance(channels, list):
+        return f"it lacks {app}.other_channels as {shape}"
+    seen: set[str] = set()
+    for index, entry in enumerate(channels):
+        where = f"{app}.other_channels[{index}]"
+        if not isinstance(entry, Mapping):
+            return f"it lacks {app}.other_channels as {shape}"
+        for key in ("channel", "label", "source"):
+            if not isinstance(entry.get(key), str) or not entry[key].strip():
+                return f"it lacks {where}.{key} as text"
+        versions = entry.get("versions")
+        if not isinstance(versions, list) or not all(isinstance(v, str) and v.strip() for v in versions):
+            return f"it lacks {where}.versions as a list of versions"
+        if entry["channel"] in seen:
+            return f"its own counts disagree ({app}.other_channels lists {entry['channel']} twice)"
+        seen.add(entry["channel"])
+        if len(versions) != len(set(versions)):
+            return f"its own counts disagree ({where}: a version is listed twice)"
     return None
 
 

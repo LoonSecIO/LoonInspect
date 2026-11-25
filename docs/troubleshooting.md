@@ -114,7 +114,7 @@ spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never star
 | **AA** | §32 | LoonSec names no patch-policy document, or only an old one, two days running |
 | **AB** | §32 | A patch-policy document is refused by its check two exchanges running, or fails unexpectedly |
 | **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
-| **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, or it leaves a held line undated |
+| **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, it leaves a held line undated, or a channel it names misses builds |
 | **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, or a timeline or request it built is refused |
 
 ## 0. The four things you can read
@@ -4084,7 +4084,8 @@ Where to read it: `GET /api/patch-policy/apps` (**app:read**) lists, for each ap
 each track, `available`, a `state` word and, when it is not available, the sentence that says why;
 `GET /api/patch-policy/walk?app=…&track=…&source=public|jamf|fleet&years=2|3` answers the walk,
 or a `409` whose `detail` is the sentence, `reason` the word, `source` the timeline it concerns
-and `facts` what belongs beside it (the unmatched versions, the totals that disagreed). The words
+and `facts` what belongs beside it (the unmatched versions, the versions set aside as a channel
+LoonSec's data does not walk, the totals that disagreed). The words
 below are those reasons. Nothing a walk reads is written, so no container log line accompanies a
 refusal: the sentence is the whole report.
 
@@ -4115,16 +4116,33 @@ refusal: the sentence is the whole report.
      The titles found list no versions at all. Sync now (§6); if it reads the same, choose another
      source.
    - `channel_empty`: ***… lists no … release on the … channel …: every version it names is on
-     another track's list…*** The titles carry another track of the app and nothing of this one:
-     only Jamf's ESR title is held for a release track, say, or only versions both tracks list.
-     Choose that track, or another source.
+     another track's list…***, or ***…: every version it names is a build of …, a channel
+     LoonSec's data does not walk yet…*** The titles carry another track or channel of the app and
+     nothing of this one: only Jamf's "Mozilla Firefox ESR" title is held for the release track,
+     say, which names ESR builds and the numbers both channels share (140.0, 153.0), or only
+     versions both tracks list. Choose that track, or another source.
+   - Not a refusal: a view whose `note` says ***N versions of … set aside: LoonSec's data does not
+     walk that channel yet, so they are neither walked nor counted as unmatched.*** Beside an
+     app's tracks, LoonSec's data names channels it does not walk yet (`other_channels`: Firefox
+     ESR beside Firefox's release track, Thunderbird ESR beside Thunderbird's). Jamf's "Mozilla
+     Firefox ESR" title shares Firefox's bundle id, and Thunderbird's one title lists both
+     channels, so the release track's Jamf view names ESR builds; a version on a channel's list
+     and on no track's is set aside before the walk. The walk's `inputs.timeline.other_channel`
+     counts them, `other_channels` lists them per channel (its label, the public record LoonSec
+     read the versions from, and the versions), `GET /api/patch-policy/apps` gives each track's
+     `otherChannel`, and a `409`'s `facts.other_channels` says the same beside the refusal. A
+     version a track lists is that track's even when a channel lists it too: ESR 153.0 shares its
+     number with release 153.0 and is walked as the release. Nothing to do: the view walks the
+     track's own channel.
    - `too_many_unmatched` (the walk's own refusal): ***N of the M versions the timeline from …
      dates from … to …, the days a device in this view could install them, match no version
      LoonSec's patch-policy data lists…*** A version LoonSec's data does not list is never
      installed, so above 5% of those in reach the walk would mislead and is refused; the versions
-     are in `facts.in_reach.unmatched`. They are often builds of a channel LoonSec's data does not
-     list yet (an ESR build under a title shared with the release channel). Choose Public. If they
-     are plainly releases of the track, that is reportable state **AE**.
+     are in `facts.in_reach.unmatched`. The channels LoonSec's data names are set aside before this
+     count (the bullet above; `facts.other_channels` lists them), so what is left is a build of a
+     channel it names nowhere, or a spelling it does not list. Choose Public. If they are plainly
+     releases of the track, that is reportable state **AE**; if they are plainly builds of a
+     channel LoonSec's data names under `other_channels` (Firefox ESR, say), that is **AD**.
    - `no_matched_versions` (the walk's): ***None of the N versions in the timeline from … is a
      version LoonSec's patch-policy data lists for …*** The titles read are not this track's.
      Choose another source; if the titles named are plainly the app's own, reportable state **AE**.
@@ -4151,10 +4169,17 @@ refusal: the sentence is the whole report.
    - `no_versions`: ***This instance's Fleet history names no … version …*** The history read
      dated no version of the title. The title's history on the Fleet catalog tab says why a version
      is left out (§27 step 10); if **Read again** reads the same, choose another source.
-   - `esr_missing`: ***This instance's Fleet history (…) names no … ESR release…*** Every Fleet
-     title read for the app carries another channel. If Fleet's catalog holds the app's ESR title
-     (`firefox@esr`) unread, the sentence is `history_unread` instead, naming it. Otherwise choose
-     another source.
+   - `esr_missing`: ***This instance's Fleet history (…) names no … ESR release…*** Only a track on
+     the ESR channel reads this, and only when every Fleet title read for the app names another
+     track's or channel's builds and no ESR build of the track's own: `firefox` read alone, say.
+     Fleet's catalog does hold Firefox's ESR title, `firefox@esr` ("Mozilla Firefox ESR", under
+     Firefox's bundle id): while its history is unread the sentence is `history_unread` instead,
+     naming it, and once **Read history** has read it (§27) its builds date the ESR track. If the
+     sentence still reads this with `firefox@esr` among the titles it names, none of the versions
+     Fleet's history gives that title is on the ESR track's list; choose another source.
+   - The `note` on the release track's view, ***N versions of … set aside…***: as for Jamf above.
+     Once `firefox@esr`'s history is read, Firefox's release-track view names its ESR builds, and
+     they are set aside because LoonSec's data names the ESR channel under `other_channels`.
    - `line_not_followed`: ***This instance's Fleet history (…) dates no … release, so the …
      device has no line to hold…*** Fleet's catalog carries only an app's newest line (Wireshark's,
      for one), so a track held on an older line has nothing to install, whichever lines LoonSec's
@@ -4211,8 +4236,10 @@ refusal: the sentence is the whole report.
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
 has totals this build matched (`unchecked`), the data fails the walk's check
-(`document_invalid`), or it names a held line it does not date (`ceiling_line_undated` on
-Public) — and reads the same after the next day's exchange. Report the sentence as
+(`document_invalid`), it names a held line it does not date (`ceiling_line_undated` on
+Public), or a Jamf or Fleet timeline is refused over builds of a channel the data names under
+`other_channels` and does not list in full (`too_many_unmatched`, with Firefox ESR builds among
+`facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the sentence as
 worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf` from
 `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
 

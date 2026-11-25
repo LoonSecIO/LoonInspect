@@ -105,9 +105,12 @@ class PatchPolicySourceTrackOut(_Out):
     first: date | None
     last: date | None
     # Distinct versions the source names that are the track's own, another track's (set aside),
-    # and in no track's list (never installed; above 5% in reach the walk is refused).
+    # a channel's LoonSec's data names in `other_channels` and does not walk (set aside, never
+    # counted as unmatched), and in no list at all (never installed; above 5% in reach the walk
+    # is refused).
     matched: int
     other_track: int
+    other_channel: int = 0
     unmatched: int
     # The default two-year window a walk of this source would cover, when it can be walked.
     since: date | None
@@ -197,7 +200,9 @@ class PatchPolicyWalkOut(BaseModel):
     run_id: str
     # The document, app, track and path walked, and the timeline as it joined the track's
     # versions: source, name, digest, as_of, first, last, matched, unmatched, other_track, undated,
-    # conflicts, in_reach, and what was read (`ids`) and set aside (`other_track_versions`).
+    # conflicts, in_reach, and what was read (`ids`) and set aside (`other_track_versions`; and
+    # `other_channel`, the count of versions of channels the document names and does not walk,
+    # with `other_channels` giving each channel's id, label, source, count and versions).
     inputs: dict[str, Any]
     # since, until, days, the window asked for, and every term that shortened it (`shortened_by`),
     # with `aligned` when `align=common` cut it to the days every available source covers.
