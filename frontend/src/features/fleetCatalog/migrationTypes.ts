@@ -120,9 +120,21 @@ export interface MigrationImpact {
   olderMacs: number; atOrAboveMacs: number; unknownMacs: number;
 }
 
+/** `ObservedChanges` (#900): the identities' version changes the change log recorded on the selected Macs over
+ *  `windowDays`. Both timing fields are null when not measured; measured with nothing paired is 0 and null. */
+export interface ObservedChanges {
+  windowDays: number;
+  versionChanges: number;
+  macs: number;
+  lastAt: string | null;
+  adoptionSamples: number | null;
+  medianDaysAfterFleetPublication: number | null;
+}
+
 /** `MigrationDetail`: one app (`item`) or Fleet title (`title`). `impactUnavailable` is set when `impact` is
- *  null; `assessments` holds the title route's one, by slug. #907 types #900's observed upgrades. */
+ *  null; `assessments` holds the title route's one, by slug. */
 export interface MigrationDetail extends MigrationEvidence {
+  observedChanges: ObservedChanges;
   item: MigrationItem | null;
   title: FleetCandidate | null;
   items: MigrationItem[];

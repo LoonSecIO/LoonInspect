@@ -823,7 +823,29 @@ and step 2 ends with how to tell that apart from a broken exchange.
      all** is not proof the pass did not run — it writes nothing when nothing moved, which
      is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
      now, and judge by what the page says afterwards;
-   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
+   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now:
+     every app version it holds, whatever the device filter above the list says, and
+     without asking Jamf or LoonSec for anything. The button is shown only to a role that
+     may sync a catalog (`patch:catalog-sync`: Analyst and Administrator). **No button
+     there** means this account is a Viewer or an Auditor: ask an Analyst or an
+     Administrator to press it, or wait for the hourly pass. What it says when it finishes:
+     - *Re-judged N app versions of this organization.* — the pass ran and the list was
+       read again, so what the list says now is the answer;
+     - *Nothing to re-judge: this organization has no app versions in its catalog yet.* —
+       no device has been processed for this organization, so there is nothing for a
+       corpus to answer about. § 2 is the path for a sweep that reports nothing;
+     - *The catalog could not be re-judged, and this instance gave no reason …* — the press
+       did not finish, and the list still shows the last pass's answers. If the page itself
+       still loads, `docker compose logs app --since 10m | grep "/api/catalog/refresh"`
+       finds the press: a `request failed` line there carries the exception that stopped
+       the pass. The same line on a second press is reportable state **H**; include it;
+     - *Insufficient permissions* — this account's role changed after it signed in, so the
+       page still offered the button. Reload the page; the button goes with the permission.
+
+     Jamf Patch's **Sync now** is a different control: it reads Jamf's patch catalog first
+     and then re-judges only the rows that catalog or the corpus moved since they were
+     judged, so it does not stand in for this button in step 4.
+
    If an hour has passed, the log shows the pass running, and the same builds still read
    amber, that is reportable state **H**.
 4. **One app, and only that one, says *outside the corpus* after every refresh.** Look for
@@ -1003,10 +1025,38 @@ release validation is complete. All workers must use the same setting.
 - **A date stays old after sharing is turned off:** expected in this preview. The held
   release still assesses local inventory and displays its original date; no new delivery
   is implied. An older feed, missing coverage or incomplete IDs do not prove remediation.
-- **Missing selected intelligence or repeated organization-context refusal:** stop the
-  affected operation, preserve the logs, and contact support. Restore a known complete
-  database backup if reference data was removed; do not delete pointers or substitute
-  another organization's grant. No automatic pruning is enabled in this preview.
+- **“The selected intelligence is missing. Restore the database backup and contact
+  support.”** This organization's selected intelligence names a release the database
+  no longer holds. Every request that reads vulnerability answers is refused with this
+  sentence (HTTP 503): Devices, a device's page, Devices › Applications, the Catalog and
+  its Refresh, Posture › Vulnerabilities, saving a patch plan, and the Fleet migration
+  list. Devices › Applications and a device's **Update this device** show the sentence.
+  The Devices list, the Catalog and the other pages show their usual could-not-load
+  message. `docker compose logs app` carries the sentence on a line of its own once per
+  container start, and a Jamf sweep that meets it ends `failed` with the sentence as
+  the run's error. Pages that do not read vulnerability answers keep working. Neither
+  the application nor the manual cleanup below can remove a selected release, and no
+  automatic pruning is enabled in this preview. So the database was changed outside the
+  application, almost always by a restore that brought the selection back without the
+  release.
+  1. Check how the database was last restored. The restore in
+     [`operations.md` §3](operations.md#3-restore) loads a complete `pg_dump` with
+     `ON_ERROR_STOP=1`, and it cannot produce this state. These can: a data-only
+     restore, a restore with triggers disabled, a restore that carried on past an
+     error, or a dump that left out the vulnerability-corpus tables.
+  2. Restore a complete backup taken before the problem, as `operations.md` §3
+     describes, with the same `ENCRYPTION_KEY`. Do not delete the selection, point it
+     at another release by hand, or substitute another organization's grant: this
+     organization's assessments and their history name that release.
+  3. The database was never restored, or the sentence is still there after a complete
+     restore: contact support with the build (Settings › Support), when it started, and
+     the log line.
+- **“The corpus operation has no matching organization context. Retry from the intended
+  organization; if it repeats, contact support.”** It is answered the same way (HTTP 503,
+  logged once). It means a request's organization and its database session disagreed,
+  and nothing an operator configures causes that. Retry once from the intended
+  organization. If it repeats, stop the affected operation, keep the logs, and contact
+  support with the build and the page or action that showed it.
 
 Assessment-only entries in **Devices › Device history** keep the last inventory observation
 time and show a separate assessment time. They do not mean the device checked in again
@@ -3429,8 +3479,10 @@ has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Noth
 
 ## 27. "The Fleet catalog tab is missing, empty, or says its last check did not get an answer"
 
-**Devices › Applications › Fleet catalog** lists the Mac apps Fleet maintains beside what this
-organization has installed ([`fleet-catalog.md`](fleet-catalog.md), #794). The list is one copy
+**Devices › Applications › Fleet catalog** opens on **Migration review**, the installed apps on the
+Macs in the device filter against Fleet's and Jamf's catalogs (step 12). Its other view, **Fleet
+titles**, lists the Mac apps Fleet maintains beside what this organization has installed
+([`fleet-catalog.md`](fleet-catalog.md), #794); steps 2 to 10 are about it. Fleet's list is one copy
 for the whole instance, read from Fleet's public repository on GitHub once a day, and only
 while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
 nothing here is a permissions problem in Jamf.
@@ -3478,9 +3530,11 @@ nothing here is a permissions problem in Jamf.
      short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
      release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
 4. **The check answered and the table is empty.** Read which sentence the table shows.
-   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
-     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
-     title matches an installed app by its exact bundle ID, on Macs only, so an organization
+   - *Fleet lists … Mac apps, and none is on a Mac the device filter above selects* → the
+     catalog is there and nothing matched. Widen the device filter above the table, or press
+     **Clear filter**, which selects every current Jamf Mac; then untick **Only titles installed
+     here** to see the whole catalog.
+     A title matches an installed app by its exact bundle ID, on Macs only, so an organization
      with no device sweep yet matches nothing (§1). For one title you know is installed,
      compare its bundle ID under Devices › Applications with the tab's, letter for letter:
      `com.Example.App` is not `com.example.app`.
@@ -3488,12 +3542,19 @@ nothing here is a permissions problem in Jamf.
      untick the box to search the whole catalog.
    - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
      failed; step 3.
-5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
+5. **A count under *Macs behind* or *Macs in scope* looks wrong.** A Mac is behind when any copy of the app on it
    is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
    a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
    latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
    finding follows from a version is not this tab's question: it judges nothing but older or
    not.
+   - *Macs with app* and *Macs behind* count every Mac the organization has collected. *Macs in
+     scope* counts only the current Jamf Macs the device filter above selects, so it is never
+     more than *Macs with app*, and it can be lower even with no filter applied: departed and
+     non-Jamf Macs count only under *Macs with app*. A release and its ESR channel share a
+     bundle ID, so they count the same Macs.
+   - *Unknown* under *Macs in scope* → Fleet listed the title after the counts for the filter
+     were read. **Check now** reads them again; otherwise, reload the page.
 6. **The status line ends with manifests that *could not be read … and were left as held*, or
    says *The held snapshot still has unread Mac titles*.** The check succeeded. The named
    titles are ones this build could not read: a manifest or an index entry it cannot read, or
@@ -3519,6 +3580,19 @@ nothing here is a permissions problem in Jamf.
      read as partial, once. The next scheduled check, within the hour, or **Check now**
      clears it, reading only the manifests the instance lacks. If the line reads
      *Fleet's catalog has not been read yet*, that is step 2; *did not get an answer* is step 3.
+
+   **Migration review** and an app's page say *Fleet’s catalog was read only in part, …* (step 12)
+   for any of three reasons, and the report they read does not say which (#942). The status line
+   on **Fleet titles** does, for two of them:
+   - *The last check, …, did not get an answer.* → a check was cut short after it had read or
+     changed some titles (its sentence ends *… were read and kept; the next check reads the
+     rest.*), or a check failed while the titles held were already partial. Its sentence is
+     step 3's. Once a check gets an answer, read the line again: it then names one of the two
+     cases below or the read is whole.
+   - *… could not be read … and were left as held: …*, or *The held snapshot still has unread Mac
+     titles.* → this step, from the top. The second form does not name the titles; only the
+     check that first skipped them did, up to five by name.
+   - Neither, under *Checked …* → the upgrade to 1.3.0, the last case above.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
@@ -3530,7 +3604,8 @@ nothing here is a permissions problem in Jamf.
    minutes apart, the most-installed first, so *Version history: 12 of the 140 titles installed
    here read* climbs by twenty to thirty an hour at best. It reads only while the flag is on for
    some organization, only titles on a Mac in such an organization, and only after the daily
-   check has read the catalog (step 2).
+   check has read the catalog (step 2). The line counts the whole organization, whatever device
+   filter is applied above the table.
    - *Paused until …* → GitHub said 20 or fewer of this address's 60 requests an hour were
      left, and the history leaves those to the daily check, **Check now** and every other tool
      behind the address. It carries on by itself at the time given. Paused every hour means
@@ -3584,6 +3659,138 @@ nothing here is a permissions problem in Jamf.
     **Devices › Applications › Jamf Patch**); or
     `unordered_target`, the target holds no number (choose a numeric version from the history; a
     qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
+12. **Migration review is empty, or a sentence stands above or in place of its list.** It counts the
+    Macs the device filter above it selects, every current Jamf Mac when none is applied
+    ([`fleet-catalog.md`](fleet-catalog.md#migration-review)); **Fleet titles** reads the same report, so the sentences beside **Retry** show on both views. By the sentence:
+    - *No current Jamf Mac is on record for the filter’s Jamf connection, so there is nothing to review. Apps appear here once a device sweep collects a Mac.* → §1.
+    - *No Mac matches the device filter. Widen or clear the filter.*, or beside **Retry**
+      *The device filter is invalid. Check each condition or clear the filter and try again.*
+      → **Clear filter** in the device filter above, then §30.
+    - *The Macs in the device filter have no installed apps on record. Installed Apps, with the same filter, shows what their last sweep collected.*
+      → **Installed Apps** under the same filter. Apps there and none here is §8.
+    - *No installed app matches this search and Show choice. Clear the search or choose All installed apps.* → as it says.
+    - *The installed apps for this device filter could not be read. Check connectivity and retry; this does not mean no app needs review.*
+      → no answer came: reload the page, and if it stays, §4. *Insufficient permissions* beside
+      **Retry** instead → the account lacks `app:read` or `device:read`, which every built-in role holds.
+    - *Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why when the last check did not get an answer or left titles this build could not read. When it says neither, the upgrade to 1.3.0 marked the catalog for one more read, which the next scheduled check, within the hour, or Check now finishes (troubleshooting.md §27 step 6).*
+      → the status line on **Fleet titles**, read as the end of step 6 says. An app's page shows the
+      same sentence above **Installed builds**.
+    - *Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.*
+      → the status line on **Fleet titles**: steps 2 and 3.
+    - *Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+
+    *Unknown* beside **Outside both catalogs** is not zero: an app is outside both only once Fleet's
+    catalog is read whole and Jamf Patch titles are synced, and the sentence above says which is not.
+    In a row, *Coverage unknown* → open the app, whose page says why (step 13); *No exact comparison* → no build behind
+    Fleet's latest could be compared finding by finding (the corpus is off, a version is outside it, or a list is capped): §5.
+13. **An app's or a title's page shows a sentence where you expected its evidence.** A name on Migration review or
+    **Fleet titles** opens its page with the list's query, which reads step 11's detail for the same device filter. By the sentence:
+    - *This Fleet catalog record could not be read. Retry, or reload the Fleet catalog list; if the list fails too, the instance is not answering.*
+      → reload the list; if it fails too, step 1, then §4. *The Fleet catalog is off for this organization.* is step 1, and any other
+      sentence beside **Retry** is the server's own refusal: step 12 for the device filter's, step 11 for the rest.
+    - *No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+    - *Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch.*
+      → the next device sweep, or **Sync now**.
+    - *No Jamf Patch title this instance has synced matches these installations.* → search **Devices › Applications › Jamf Patch** for the app
+      with *Only titles with devices* unticked. No title there means Jamf publishes none for it; a title there that matches none of these Macs is §6 step 6.
+    - *Several channels or identities can fit the inventory evidence. Confirm the intended channel before planning an update.*
+      → open each title under **Fleet channels** and compare its manifest and history with the installed build.
+    - *Fleet coverage is unknown: the inventory reports no bundle identifier for this app, and Fleet titles are matched by bundle identifier.*
+      (the header reads *Bundle identifier unavailable*) → the **Application record**, for what the Mac reported.
+      *Fleet coverage is unknown: Fleet’s catalog has not been read whole, so a title for this app may be missing.* → steps 2, 3 and 6.
+    - *The Fleet catalog has no matching macOS title for this inventory identity.* → compare bundle IDs letter for letter, as in step 4.
+    - *No matching installations were observed in the selected scope.* on a title page → widen the scope on the list and open the title again.
+    - *This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.* → step 10.
+    - *No dated version matches this search.* → clear the search; step 10 explains an undated version.
+14. **An app's or a title's page gives a verdict, findings or observed upgrades that read wrong.** The header's verdict line and
+    **Patching policy** are Migration review's words for the same app, judged against Fleet's latest version; a build's patch-rule
+    verdict is the Jamf Patch title page's (§23). How often Fleet updates the title is under **Detection and policy evidence**, what
+    the vulnerability corpus holds for each installed build under **Findings on installed builds**, and the upgrades the change log
+    recorded at the foot of **Installed builds**. By the sentence:
+    - *How often Fleet updates this title is unknown until its release history is read.* → step 8; **Read history** on the same page
+      reads it now, for `patch:catalog-sync`.
+    - *Vulnerabilities: not assessed* under **Findings on installed builds** → §5 steps 1 and 2; *Outside the corpus* → §5. The counts
+      are distinct builds on the Macs in the device filter, so a build on 500 Macs counts once where Installed Apps counts 500.
+    - *Each Mac keeps its own copy of a build’s answer, which the hourly refresh brings up to date, so for up to an hour after a corpus release or a sweep these counts can differ from the verdict above.*
+      → right after a corpus release or a device sweep, the findings can read *Outside the corpus* or count a build under *Unassessed builds*
+      while the verdict line or **Patching policy** already counts a finding, or the reverse. The two read different copies of a
+      build's answer, the findings each Mac's and the verdict the build's own; they agree after the hourly refresh, and **Sync now**
+      under Devices › Applications › Jamf Patch runs it at once (`patch:catalog-sync`). Still apart after that: §5 step 3.
+    - *0 recorded version changes on 0 Macs in the last 90 days.*, under it
+      *A 0 here can mean the change log is not recording applications (Settings › Change tracking), and a change log kept under 90 days counts only the days it keeps.*
+      → Settings › Change tracking: *High only* records no application changes; *High + normal*, the default, does. A Mac's changes
+      count from its second sweep, and only Macs the device filter selects count, so widen or clear the filter.
+      `CHANGE_LOG_RETENTION_DAYS` set between 1 and 89 leaves fewer days to count, whatever the sentence's 90 says (§24 step 1 prints the value).
+    - *No recorded upgrade on these Macs in this window could be paired with a version Fleet’s history has dated.* → the history on the
+      same page says *Not read yet* (step 8), or the versions the Macs moved to are ones it could not date (step 10). Versions that are
+      not plain dotted numbers, a short version that disagrees with the version, and a first upgrade recorded before Fleet dated the
+      version are left out on purpose ([`fleet-catalog.md`](fleet-catalog.md#observed-upgrades)).
+    - *Upgrade timing is measured only for an app matched to one Fleet title.* → the header says why, and step 13 routes it: several
+      Fleet channels or Jamf Patch titles fit (open the intended one under **Fleet channels**), Fleet's catalog was not read whole
+      (steps 3 and 6), or no Fleet title carries the bundle ID (step 4).
+    - No **Build a patch plan for these Macs** → it needs `patch:plan-write` (Admin, Analyst) and a Mac in the device filter with the
+      app. The plan opens with the page's device filter (§30).
+15. **An app's page cannot compare a target version, or a build's row reads wrong.** **Compare a target version** counts the Macs in the
+    device filter with the app (**Matched Macs**) as **Below target**, **At or above target** or **Version unknown** against Fleet's latest
+    version, or the one a **Compare** under **Fleet release history** chose (step 11's detail, asked for that version). **Vulnerability and
+    policy evidence** gives each older installed build what that version changes and its patch-rule verdict. By the sentence:
+    - *Could not compare this target.* over *No reason came back. Retry; if it fails again, the app container’s log shows the request and its error.*
+      → `docker compose logs app --since 10m | grep fleet-catalog/migration` lists each request with its `status_code`. A `500`, or a
+      `"message": "request failed"` line, carries the error: report it (§8) with those lines. No line at all: the request never reached
+      this instance, so look at a proxy, or the network between the browser and the instance.
+    - *Could not compare this target.* over *The Fleet catalog is off for this organization.* → step 1. Over any other sentence → that
+      sentence is the server's own refusal: step 11.
+    - *Device impact is unavailable: Fleet’s catalog is not completely read. It returns after the next complete check.* → steps 2, 3 and 6.
+    - *Device impact is unavailable until this app’s identity is reviewed: …*, or in a row *Identity requires review* or *Not judged until
+      this build’s identity is reviewed: …* → check each of the four causes step 11 lists. The header's sentence (step 13) singles out
+      only a missing bundle identifier, and a row can read *Identity requires review* under a header that names one Fleet title. Fleet
+      channels that share a bundle identifier are compared on no page, a channel's own included: inventory cannot tell them apart.
+    - *Device impact is unavailable: Fleet’s version … cannot be ordered against installed versions. …* → **Compare** a dotted release under
+      **Fleet release history**.
+    - *No Fleet title matches this app’s bundle identifier, so there is no target to compare against.* → compare bundle IDs as step 4 does.
+    - *No comparable older build in this scope.*, *… cannot be ordered against … left out of this table.* or *Finding IDs are capped. Only
+      the change in total can be compared.* → nothing to fix: no build is older than the target, the unordered ones' Macs count under
+      **Version unknown**, or a build has more findings than its ID list keeps.
+    - A verdict in the Jamf Patch title page's words → §23; the rule line under it (*Title-specific rule* or *Organization default rule*)
+      opens that title. A row out of policy by its releases limit shows no due date: the one sent is the days limit's, which can be ahead.
+    - *Not judged: no Jamf Patch title matches this build.* → **Devices › Applications › Jamf Patch**, and §6 if that table is empty.
+    - *Installed build outside corpus*, *Target build outside corpus*, *Corpus unavailable* or *Vulnerabilities: not assessed* → §5.
+16. **An app's page says where to start a pilot, or shows no *Plan a Fleet pilot*.** The line under the header counts the Macs in the
+    device filter with the app against Fleet's latest version, whatever target **Compare a target version** shows, as that panel's
+    **Below target** and **Version unknown** do for Fleet's latest (step 15). With no such Mac, or no device impact (the panel or the
+    evidence says why, step 15), there is no line. By the sentence:
+    - *Start the pilot with the … in-scope Macs below …* → the same Macs as **Below target** for Fleet's latest; a count that looks
+      wrong is step 15. A Mac counts as updated once Jamf's inventory reports the new build and a device sweep here has read it, so a
+      pilot install shows only after that.
+    - *No in-scope Mac is known to be below …, but … cannot be ordered against it. …* → open **Installed builds**: the versions meant
+      are those with no numeric order. They count under **Version unknown** (step 15), and nothing in this instance can order them.
+    - *Every in-scope Mac with this app is at or above …* → nothing to do until Fleet's catalog takes a newer version; step 2 says
+      when it reads.
+    - No *Plan a Fleet pilot* on an app's page → it shows only under the header's *One Fleet title matches this app’s bundle
+      identifier.* or *The Fleet catalog has no matching macOS title for this inventory identity.* Under any other sentence, step 13
+      routes it, and step 11 lists the identity causes. A title's own page always shows it.
+    - A link under *Plan a Fleet pilot* no longer opens → Fleet or the tool's maintainers moved the page. Report it (§8) with the link.
+17. **Migration review shows no *Migration briefing*, or the briefing reads wrong.** The panel sits under the list's table and sends
+    nothing until **Generate briefing** is pressed ([`ai-layer.md`](ai-layer.md#fleet-migration-briefing-v140)). *… chose these counts
+    to lead with.* means the provider picked; every line under it is the report's own count for the Macs in the device filter. By what
+    the panel shows:
+    - No panel → it needs AI features, AI-inference consent and a saved provider, the Prompt bar's switches. Settings › AI's line
+      *Changes Prompt bar: hidden — …* names the one that is off (§11 step 1), and consent is granted on Settings › AI, not on
+      Settings › Data Sharing. `curl -s -b jar "$BASE/api/fleet-catalog/briefing"` answers `available`, and a `reason` when it is false.
+    - *The migration briefing could not check its settings: …* or *The migration briefing could not be prepared: …* → the reason
+      follows the colon, and `docker compose logs app --since 10m` has the error. A reason, or a sentence in their place, that names
+      the Fleet catalog flag, AI features, consent or a provider is the server's refusal, and the fix is that switch (step 1, §11 step 1).
+    - *The AI provider did not answer, so the report’s first counts are shown (…). Settings › AI has its test box.* → the text in
+      brackets is the provider's own reason, which §11 step 2 routes; **Send** in that test box tries the same card.
+    - *… answered, but not with counts this page can use, so the report’s first counts are shown.* → **Generate briefing** again, or
+      pick another provider.
+    - *Nothing to rank: apart from their count, the Macs in the device filter show none of the six things a briefing weighs, so nothing was sent.*
+      → nothing left this instance.
+
+    Each briefing sent writes a share-log row on Settings › Data Sharing: feature `fleet_catalog_briefing`, the codes that left as its
+    fields, and the model. The audit log records `ai.fleet-catalog-briefing.sent`, and AI Activity counts the call under *Fleet
+    migration briefings*; work there falling behind or stalled is §28's
+    [*AI Activity: missing usage or work falling behind*](#ai-activity-missing-usage-or-work-falling-behind).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.

@@ -134,6 +134,20 @@ async def test_a_provider_failure_falls_back_with_the_adapters_sentence(db, inve
     assert "HTTP 401: The endpoint rejected authentication" in error["message"] and "upstream" not in response.text
 
 
+async def test_a_reply_that_is_not_an_answer_closes_unusable(db, inventory, admin, flag_on, endpoint, audit_records) -> None:  # noqa: F811
+    """Empty, or its budget spent thinking: the report's counts, the work closed `unusable`, the adapter's outcome audited."""
+    thinking = {"model": "system", "choices": [{"message": {"content": "", "reasoning": "Weighing."}, "finish_reason": "length"}]}
+    for body in (_reply(""), thinking):
+        endpoint.body = body
+        reply = (await admin.post(BRIEFING, params=_filter(inventory[0]), json={})).json()
+        assert (reply["outcome"], reply["reason"], len(reply["highlights"])) == ("fallback", "unusable", 3)
+    assert json.loads(endpoint.requests[0].content)["max_tokens"] == 200  # The Changes Prompt's budget, room to think in.
+    work = (await db.scalars(select(s.AIUsageWork).filter_by(feature=FEATURE).order_by(s.AIUsageWork.arrived_at))).all()
+    assert [(w.outcome, w.reason) for w in work] == [("unusable", "empty"), ("unusable", "budget_exhausted_thinking")]
+    audited = [r for r in audit_records if r["action"] == "ai.fleet-catalog-briefing.sent"]
+    assert [(r["outcome"], r["metadata"]["error_kind"]) for r in audited] == [("unparseable", w.reason) for w in work]
+
+
 async def test_main_refuses_with_the_gates_sentence_and_sends_nothing(db, inventory, admin, flag_on, endpoint) -> None:  # noqa: F811
     await _switches(db, flag=True, consent=False)
     withdrawn, status = await admin.post(BRIEFING, params=_filter(inventory[0]), json={}), (await admin.get(BRIEFING)).json()

@@ -125,6 +125,40 @@ def test_the_index_names_the_mac_titles_by_their_directory() -> None:
     }
 
 
+def test_a_slug_listed_twice_with_copies_that_disagree_is_skipped_and_left_out() -> None:
+    """No copy is taken as Fleet's (#927), so a title held keeps its row and a new one stays
+    unlisted, as the status line's *left as held* says. Copies that agree are one title."""
+
+    def mac(slug: str, name: str, identifier: str) -> dict:
+        return {"name": name, "slug": f"{slug}/darwin", "platform": "darwin", "unique_identifier": identifier}
+
+    index = {
+        "version": 2,
+        "apps": [
+            mac("alpha", "Alpha", "com.example.alpha"),
+            mac("alpha", "Alpha", "com.example.alpha"),  # the same copy twice
+            mac("beta", "Beta", "com.example.beta"),
+            mac("beta", "Beta Pro", "com.example.beta"),  # renamed in the second copy
+            mac("gamma", "Gamma", "com.example.gamma"),
+            mac("gamma", "Gamma", "com.example.gamma2"),  # another bundle identifier
+            mac("delta", "Delta", "com.example.delta"),
+            mac("delta", "Delta 2", "com.example.delta"),
+            mac("delta", "Delta", "com.example.delta"),  # the first copy again does not settle it
+            mac("epsilon", "Epsilon", "com.example.epsilon"),
+            mac("epsilon", "x" * 300, "com.example.epsilon"),  # a copy past the column
+            mac("zeta", "Zeta", "com.example.zeta"),
+            {"name": "Zeta for Windows", "slug": "zeta/windows", "platform": "windows", "unique_identifier": "Zeta"},
+        ],
+    }
+    skipped: set[str] = set()
+
+    titles = fc.parse_index(_body(index), skipped=skipped)
+
+    assert titles == {"alpha": ("Alpha", "com.example.alpha"), "zeta": ("Zeta", "com.example.zeta")}
+    assert skipped == {"beta", "gamma", "delta", "epsilon"}
+    assert fc.parse_index(_body(index)) == titles  # the same titles whether or not the caller collects the skipped
+
+
 def test_an_index_with_no_mac_app_is_not_the_catalogue() -> None:
     with pytest.raises(fc.CheckFailed) as caught:
         fc.parse_index(_body({"version": 2, "apps": [{"name": "X", "slug": "x/windows", "platform": "windows"}]}))

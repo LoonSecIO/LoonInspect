@@ -3,6 +3,7 @@ import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
 import { mcpEnglish } from "@/features/mcp/copy";
 import { aiActivityEnglish } from "@/features/ai/activityCopy";
 import { fleetPlanningEnglish } from "@/features/fleetCatalog/planningCopy";
+import { fleetDetailEnglish } from "@/features/fleetCatalog/detailCopy";
 import type { UpdateReason } from "@/features/system/api";
 import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
@@ -11,6 +12,7 @@ export const en = {
   mcp: mcpEnglish,
   aiActivity: aiActivityEnglish,
   fleetPlanning: fleetPlanningEnglish,
+  fleetDetail: fleetDetailEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
@@ -1401,7 +1403,18 @@ export const en = {
     noMatches: "No rows match this filter.",
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`,
-    tableVuln: "Vulnerabilities"
+    tableVuln: "Vulnerabilities",
+    // #931: the control troubleshooting §5 and `vulnerabilities.notYetJudged` name, so the
+    // label is held to those sentences by `CatalogPage.test.tsx`. Shown to patch:catalog-sync.
+    refresh: "Refresh",
+    refreshing: "Refreshing…",
+    refreshHint:
+      "Re-judge every app version this organization has against the current Jamf catalog and vulnerability corpus now, instead of at the hourly refresh. The device filter does not narrow it.",
+    refreshed: (n: number) => `Re-judged ${n} app version${n === 1 ? "" : "s"} of this organization.`,
+    refreshedNone:
+      "Nothing to re-judge: this organization has no app versions in its catalog yet. The catalog fills as devices are processed.",
+    refreshFailed:
+      "The catalog could not be re-judged, and this instance gave no reason, so the list still shows the last pass's answers. Check that LoonInspect is reachable, then read docker compose logs app for the request to /api/catalog/refresh before pressing Refresh again."
   },
   // #536 — the evidence report on screen. NO FRAMEWORK IS NAMED IN THIS BLOCK, not as an example and not
   // in a hint: `compliance.test.ts` greps it for the four words `test_evidence_report_db.py` refuses on
@@ -1668,6 +1681,7 @@ export const en = {
     tabLabel: "Fleet catalog",
     eyebrow: "Devices › Applications",
     title: "Fleet catalog",
+    titlesHeading: "All Fleet titles",
     description:
       "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day, with the version history of the titles installed here read slowly in the background.",
     checkNow: "Check now",
@@ -1678,11 +1692,17 @@ export const en = {
     searchPlaceholder: "Search name, bundle ID, version...",
     installedOnly: "Only titles installed here",
     installedOnlyHint:
-      "Hides Fleet's titles that no Mac in this organization has. A title is matched to an installed app by its exact bundle ID.",
+      "Hides Fleet's titles that are on none of the Macs the device filter above selects. A title is matched to an installed app by its exact bundle ID.",
     tableName: "Name",
     tableBundleId: "Bundle ID",
     tableLatestVersion: "Fleet's latest",
     tableDeviceCount: "Macs with app",
+    tableScopedCount: "Macs in scope",
+    tableScopedCountHint:
+      'How many of the Macs the device filter above selects carry this title\'s bundle ID. "Macs with app" counts the whole organization. Titles that share a bundle ID, such as a release and its ESR channel, count the same Macs.',
+    scopedUnknown: "Unknown",
+    scopedUnknownHint: "Fleet listed this title after the counts for this device filter were read. Reload the page to count it.",
+    buildPlan: "Build a patch plan",
     tableDevicesBehind: "Macs behind",
     tableVersionChanged: "Version last moved",
     notMoved: "Not since first read",
@@ -1695,6 +1715,7 @@ export const en = {
       "When Fleet's catalog took this version: the date of the first commit in Fleet's repository that carried it. Fleet takes versions from Homebrew, so this is usually hours to a day after the vendor's release, never before it.",
     notDated: "Not dated",
     historyToggleHint: "Show or hide this title's version history",
+    historyToggleLabel: (name: string) => `Version history of ${name}`,
     sourceLink: "Fleet source ↗",
     sourceLabel: (name: string) => `Open ${name}'s Fleet source on GitHub (opens in browser)`,
     historyProgress: (read: number, installed: number) =>
@@ -1724,7 +1745,7 @@ export const en = {
     historySearch: "Find a Fleet version",
     historySearchNone: "No dated version matches this search.",
     historyManifest: "Manifest at this commit",
-    historyManifestLabel: (version: string) => `Fleet's manifest for ${version} at the commit that dated it`,
+    historyManifestLabel: (version: string) => `Manifest at this commit for ${version}, Fleet's manifest at the commit that dated it`,
     historyCompare: (version: string) => `Compare ${version}`,
     historyTargetColumn: "Fleet target",
     cadenceTitle: "Update cadence",
@@ -1756,7 +1777,7 @@ export const en = {
     emptyNeverCheckedCanCheck: "Nothing to list yet: Fleet's catalog has not been read. Check now reads it.",
     emptyNeverRead: "Nothing to list yet: no check has been able to read Fleet's catalog. The reason is above.",
     emptyNoneInstalled: (count: number) =>
-      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac this organization has collected. Untick "Only titles installed here" to see the whole catalog.`,
+      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac the device filter above selects. Widen the filter, or untick "Only titles installed here" to see the whole catalog.`,
     emptyNoMatchInstalled:
       'No installed title matches this search. Untick "Only titles installed here" to search the whole catalog.',
     emptyNoMatch: "No title matches this search.",
