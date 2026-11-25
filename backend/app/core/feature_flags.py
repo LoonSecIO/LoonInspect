@@ -32,7 +32,7 @@ FEATURE_FLAG_REGISTRY: dict[str, dict[str, str]] = {
         "label": "Posture › Vulnerabilities",
         "description": ("Show Posture › Vulnerabilities even before a vulnerability corpus is answering for this organization."),
     },
-    # `patch_policy` (#614) was here until 2026-11-24, when it was promoted and removed: Posture ›
+    # `patch_policy` (#614) was here until 2026-11-24, when it was promoted and removed: Posture >
     # Patch policy is listed for every app:read holder (docs/feature-flags.md). A row an
     # organization stored for it is ignored, as every key outside this registry is.
     APP_PROMOTION_FLAG: {
