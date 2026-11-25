@@ -4237,6 +4237,40 @@ refusal: the sentence is the whole report.
    sources that can date the track share (`window.aligned` names them, and any left out with its
    sentence), and read each view's own counts. `input_id` names a walk's inputs and `run_id` its
    result; the same pair is the same numbers.
+10. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
+    not date the exact build LoonSec's data names as a CVE's fix: Fleet's history holds only the
+    builds Fleet's catalog carried, from the day it began, and a vendor can ship a fix build on one
+    platform only (Chrome's Linux-only 131.0.6778.85, where the Mac got .86). Such a CVE is not left
+    out. As ruled on 2026-11-25, the walk counts the next dated version at or above the fix on the
+    fix's line, and that version's day is the fix's day for every rule, the one that keeps an
+    older-dated build of another release train affected included (a build of the fix's own train,
+    or of the train of the version that dated it, is spared). Each CVE row says which version dated
+    each fix, for each line the path visits (the line of any version a device under any stop runs
+    during the window), in `fix_dated_by`:
+    - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where LoonSec's
+      list does not hold that exact build (null otherwise);
+    - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
+      not clearing it: a device clears the CVE when it installs a version outside the CVE's
+      affected range that rule 5 does not keep affected. On a track whose one line holds every
+      release, LoonSec's data can name a fix inside another of the CVE's runs, and `dated_as` can
+      be inside it too: installing that version then clears nothing;
+    - `how` is `fix` when the timeline dates the fix itself, `next_dated` when it dates a later
+      version instead, and `undated` when it dates nothing at or above the fix on that line, or
+      LoonSec's data names no fix version there. An `undated` line has no fix a device could
+      install, so the CVE stays open on it until the device moves past its affected range.
+
+    `counts.fix_dating` totals the entries over the rows the walk lists. A Jamf or Fleet view reads
+    `next_dated` far more often than Public. Open the same CVE on the Public view and compare `on`
+    with the fix's day there:
+    - `on` weeks or months later is the timeline's gap, not a defect: Public shows the vendor's own
+      dates, and a fix older than the first version a timeline dates is dated by that version.
+    - `on` earlier means the next dated version is a build of a later release train that the vendor
+      shipped before the fix, which a line holding several trains allows. It stands in for the fix,
+      so rule 5 spares it, where Public, dating the fix itself, keeps that build affected. The two
+      views differ there; neither is a defect.
+
+    On Public, `next_dated` appears only where LoonSec lists a version without a date.
+    `how: next_dated` or `fix` with no `dated_as` is reportable state **AE**.
 
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
@@ -4251,5 +4285,7 @@ worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf
 **AE.** A patch-policy walk is refused as a defect in LoonInspect: its own totals disagree
 (`invariant`), the timeline or the request it built is refused (`timeline_invalid`,
 `request_invalid`), or a Jamf or Fleet timeline is refused over versions that are plainly the
-track's own (`too_many_unmatched`, `no_matched_versions`). Report the sentence as worded, the
-refusal's `facts`, the app, track, source and window asked for, and the build (§8).
+track's own (`too_many_unmatched`, `no_matched_versions`); or a walk that was shown says it dated
+a fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated` and no
+`dated_as`, step 10). Report the sentence as worded (or the CVE row), the refusal's `facts`, the
+app, track, source and window asked for, and the build (§8).
