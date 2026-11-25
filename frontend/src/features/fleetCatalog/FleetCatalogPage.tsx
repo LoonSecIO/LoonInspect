@@ -8,6 +8,7 @@ import { getFleetCatalog, refreshFleetCatalog } from "@/features/fleetCatalog/ap
 import {
   emptyState,
   historyStatusOf,
+  manifestUrl,
   sortTitles,
   statusOf,
   titleMatches,
@@ -22,7 +23,6 @@ const inputClasses =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 const LICENCE_URL = "https://github.com/fleetdm/fleet/blob/main/ee/LICENSE";
-const SOURCE_URL = "https://github.com/fleetdm/fleet/blob/main/ee/maintained-apps/outputs/";
 const COLUMNS = 6;
 
 function when(value: string | null): string {
@@ -336,7 +336,7 @@ export function FleetCatalogPage() {
                       </button>
                       <a
                         className="mt-1 block w-fit text-xs font-normal text-muted-foreground underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                        href={`${SOURCE_URL}${encodeURIComponent(title.slug)}/darwin.json`}
+                        href={manifestUrl(title.slug)}
                         target="_blank"
                         rel="noreferrer noopener"
                         aria-label={t.fleetCatalog.sourceLabel(title.name)}
