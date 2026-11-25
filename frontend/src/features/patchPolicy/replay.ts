@@ -53,6 +53,16 @@ export interface ReplayTimeline {
   sha256?: string;
   /** What one of its dates means: the day a build was first served, a tag's date, and so on. */
   clock: string;
+  /** The edition the table keeps, where the product has more than one (Mozilla's `release`, beside
+   *  its ESR): the page then says which one is replayed. */
+  edition?: string;
+}
+
+/** One cut the file made to its window, in its own words: the day it now ends, why, and a sentence. */
+export interface WindowCut {
+  date?: string;
+  reason?: string;
+  sentence?: string;
 }
 
 export interface LedgerOutcome {
@@ -86,7 +96,9 @@ export interface PatchPolicyReplay {
   kind: typeof REPLAY_KIND;
   schema: typeof REPLAY_SCHEMA;
   run_id: string;
-  window: { since: string; until: string };
+  /** `until` is the window's last day. Where the file cut it short, `requested_until` is the day it
+   *  was asked to reach and `shortened_by` says why; the page prints both and computes neither. */
+  window: { since: string; until: string; requested_until?: string; shortened_by?: WindowCut[] };
   definitions: Record<string, string>;
   /** `published` is the CVE clock, which the page states: each CVE counts from NVD's publication date. */
   clocks: Record<string, string> & { published: string };
@@ -227,6 +239,18 @@ export function replayedRows(replay: PatchPolicyReplay): LedgerRow[] {
 export function heldFix(row: LedgerRow, line: string | null): LedgerFix | null {
   const held = line ?? "";
   return row.fixes?.find((fix) => (fix.branch ?? "") === held) ?? null;
+}
+
+/** Where the file cut its window short: the last day it was asked to reach, when that is not the day
+ *  it ends, and each reason it gives, in its own words. `null` when the window runs as asked. Read
+ *  defensively, because the check does not ask for either key: a window that was never cut has none. */
+export function windowCut(replay: PatchPolicyReplay): { requested: string | null; reasons: string[] } | null {
+  const { until, requested_until: requested, shortened_by: cuts } = replay.window;
+  const reasons = (Array.isArray(cuts) ? cuts : [])
+    .map((cut: unknown) => (!isRecord(cut) ? null : isText(cut.sentence) ? cut.sentence : isText(cut.reason) ? cut.reason : null))
+    .filter((reason): reason is string => reason !== null);
+  const asked = isText(requested) && requested !== until ? requested : null;
+  return asked !== null || reasons.length > 0 ? { requested: asked, reasons } : null;
 }
 
 export const isSliderStop = (value: string | null): value is SliderStop => SLIDER_STOPS.includes(value as SliderStop);

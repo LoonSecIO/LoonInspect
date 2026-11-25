@@ -25,13 +25,48 @@ export interface ReplayEntry {
 
 /**
  * One entry per app with a schema-2 replay, in the order the picker lists them. Each file names its
- * own release-date source (`timeline`), and the page prints that name and no other. The planned set
- * is Google Chrome (`com.google.Chrome`, replayed as one release line), Wireshark
- * (`org.wireshark.Wireshark`, held on 4.4), and later Firefox (`org.mozilla.firefox`) and Thunderbird
- * (`org.mozilla.thunderbird`); an app is listed here only once its file is in `replays/` and in the
- * README's table. An empty index draws a page that says no replay ships, never a page of zeros.
+ * own release-date source (`timeline`), and the page prints that name and no other. Wireshark is
+ * first, so it stays the app the page opens on, as it was when it was the only replay, and it is the
+ * smallest file to load; the rest follow by name. An app is listed here only once its file is in
+ * `replays/` and in the README's table, and an empty index draws a page that says no replay ships,
+ * never a page of zeros.
+ *
+ * `bundleIds` is the one bundle ID each file replays (its `product.device_bundle_id`), not every ID
+ * its `product.bundle_ids` names: Chrome's Beta and Canary and Firefox's Developer Edition are other
+ * channels, so a catalog row for one of them keeps its own *no reference replay yet* and is not
+ * folded under a replay of the release channel. Firefox ESR and Thunderbird ESR share their release
+ * channel's bundle ID, so they do fold in, and the page says those replays are the release channel.
  */
-export const REPLAY_INDEX: readonly ReplayEntry[] = [];
+export const REPLAY_INDEX: readonly ReplayEntry[] = [
+  {
+    id: "wireshark",
+    name: "Wireshark",
+    bundleIds: ["org.wireshark.Wireshark"],
+    file: "wireshark-2026-11-23.json",
+    load: () => import("./replays/wireshark-2026-11-23.json").then((file) => file.default)
+  },
+  {
+    id: "firefox",
+    name: "Firefox",
+    bundleIds: ["org.mozilla.firefox"],
+    file: "firefox-2026-11-23.json",
+    load: () => import("./replays/firefox-2026-11-23.json").then((file) => file.default)
+  },
+  {
+    id: "chrome",
+    name: "Google Chrome",
+    bundleIds: ["com.google.Chrome"],
+    file: "chrome-2026-11-17.json",
+    load: () => import("./replays/chrome-2026-11-17.json").then((file) => file.default)
+  },
+  {
+    id: "thunderbird",
+    name: "Thunderbird",
+    bundleIds: ["org.mozilla.thunderbird"],
+    file: "thunderbird-2026-11-23.json",
+    load: () => import("./replays/thunderbird-2026-11-23.json").then((file) => file.default)
+  }
+];
 
 /** The file, read and checked. A file that will not load at all is refused like one that will not
  *  parse: the page has one sentence for *this file cannot be drawn*, with the reason in it. */

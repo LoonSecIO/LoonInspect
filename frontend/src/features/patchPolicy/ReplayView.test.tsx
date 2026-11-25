@@ -1,14 +1,15 @@
 /** The patch-policy reference page as it is drawn (#614, first slice), on hand-made schema-2 replays
  *  whose numbers are invented (`testing/replayFixtures.ts`): the numbers at each stop, the release-date
  *  source and the CVE clock the page names, an app replayed as one release line, and the things the
- *  page must keep saying. Node lane (#285): the views are stateless enough to render to markup, and
- *  the slider's own movement is the browser's. */
+ *  page must keep saying. Then every shipped file, drawn as a reader sees it. Node lane (#285): the
+ *  views are stateless enough to render to markup, and the slider's own movement is the browser's. */
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppPicker } from "@/features/patchPolicy/AppPicker";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { SLIDER_STOPS, readReplay, type PatchPolicyReplay, type SliderStop } from "@/features/patchPolicy/replay";
+import { REPLAY_INDEX, loadReplay } from "@/features/patchPolicy/replayIndex";
 import { ReplayView } from "@/features/patchPolicy/ReplayView";
 import { heldLineReplay, singleLineReplay } from "@/features/patchPolicy/testing/replayFixtures";
 
@@ -16,7 +17,8 @@ const held = readReplay(heldLineReplay()).replay as PatchPolicyReplay;
 const single = readReplay(singleLineReplay()).replay as PatchPolicyReplay;
 const copy = patchPolicyEnglish;
 /** The markup with tags dropped, so a sentence can be matched across the spans that style it. */
-const text = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/\s+/g, " ");
+const text = (markup: string) =>
+  markup.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const markupOf = (stop: SliderStop, words = copy, replay = held, appName = "Example App") =>
   renderToStaticMarkup(<ReplayView replay={replay} appName={appName} stop={stop} onStop={() => {}} copy={words} />);
 const drawn = (stop: SliderStop, words = copy, replay = held, appName = "Example App") => text(markupOf(stop, words, replay, appName));
@@ -191,6 +193,74 @@ describe("ReplayView on an app replayed as one release line", () => {
   it("counts what it replayed: 1 of 2 never seen at a day, none from a week on", () => {
     expect(SLIDER_STOPS.map((stop) => /(\d+) of 2 vulnerabilities never seen/.exec(page(stop))?.[1])).toEqual(["1", "0", "0", "0", "0", "0"]);
     expect(page("1d")).toContain("0 of the 1 never seen were never in range: they affect only versions this Mac never runs");
+  });
+});
+
+describe("ReplayView on every shipped replay", () => {
+  for (const entry of REPLAY_INDEX) {
+    it(`${entry.name}: names its release-date source and its CVE clock from the file, in both languages, and neither Jamf nor Fleet`, async () => {
+      const { replay } = await loadReplay(entry);
+      expect(replay, entry.file).toBeDefined();
+      const { timeline } = replay!;
+      const cut = replay!.window.shortened_by ?? [];
+      for (const words of [copy, patchPolicyGerman]) {
+        for (const stop of ["1d", "never"] as const) {
+          const markup = markupOf(stop, words, replay!, entry.name);
+          const page = text(markup);
+          const policy = replay!.policies[stop];
+          expect(page).toContain(`${words.num(policy.never_seen)} ${words.of} ${words.num(replay!.counts.cves_replayed)} ${words.neverSeenLabel}`);
+          // The source, by the file's own name for it, in the box at the top and under Evidence, linked.
+          expect(page).toContain(words.sources(timeline.name));
+          expect(markup).toContain(`href="${timeline.url!.replace(/&/g, "&amp;")}"`);
+          expect(page).toContain(timeline.clock);
+          expect(page).toContain(`${words.evidenceClock} ${words.cveClock} ${replay!.clocks.published}`);
+          // Mozilla's tables are the release channel; the picker can fold ESR titles under the row.
+          expect(page.includes(words.releaseChannelOnly(entry.name))).toBe(timeline.edition === "release");
+          // A window the file cut short says so, and gives the file's reason under Evidence.
+          expect(page.includes(words.shortened(replay!.window.until, replay!.window.requested_until ?? null))).toBe(cut.length > 0);
+          for (const each of cut) expect(page).toContain(each.sentence);
+          expect(page).not.toMatch(/jamf/i);
+          expect(page).not.toMatch(/\bFleet\b/);
+        }
+      }
+    });
+  }
+
+  it("Google Chrome: ends on 2026-11-17, waits for each major's promotion, and says the promotion table is behind", async () => {
+    const chrome = REPLAY_INDEX.find((entry) => entry.id === "chrome")!;
+    const { replay } = await loadReplay(chrome);
+    const page = drawn("7d", copy, replay!, chrome.name);
+    expect(page).toContain("One hypothetical Mac that runs Google Chrome, replayed from 2024-11-23 to 2026-11-17");
+    expect(page).toContain("This replay ends on 2026-11-17, before the 2026-11-23 it was asked to reach");
+    expect(page).toContain("2024-11-23 → 2026-11-17 · asked to reach 2026-11-23");
+    expect(page).toContain("Release dates come from Google's Chrome VersionHistory API, platform mac, channel stable.");
+    expect(page).toContain("is installed no earlier than the promotion day");
+    expect(page).toContain("The promotion table has no row yet for the newest major version in Google's Chrome VersionHistory API");
+    expect(page).toContain("149 of 3,415 vulnerabilities never seen");
+    expect(page).not.toContain("held on");
+  });
+
+  it("Wireshark: held on 4.4, with the vendor's tag dates and the other line's choice counted", async () => {
+    const wireshark = REPLAY_INDEX.find((entry) => entry.id === "wireshark")!;
+    const { replay } = await loadReplay(wireshark);
+    const page = drawn("14d", copy, replay!, wireshark.name);
+    expect(page).toContain("One hypothetical Mac that runs Wireshark, held on its 4.4 release line, replayed from 2024-11-23 to 2026-11-23");
+    expect(page).toContain("16 of 115 vulnerabilities never seen");
+    expect(page).toContain("16 of the 16 never seen were never in range: they affect only versions off the 4.4 line");
+    expect(page).toContain("Release dates come from The wireshark/wireshark repository's tags on GitLab (gitlab.com/wireshark/wireshark).");
+    expect(page).toContain("Fix on 4.4, with its release date");
+    expect(page).toContain("Following the newest release line instead");
+    expect(page).not.toContain("promoted to stable");
+  });
+
+  it("Firefox: the release channel, with ESR named as not replayed yet, in German too", async () => {
+    const firefox = REPLAY_INDEX.find((entry) => entry.id === "firefox")!;
+    const { replay } = await loadReplay(firefox);
+    expect(drawn("1d", copy, replay!, firefox.name)).toContain(
+      "This replays Firefox's release channel. Firefox ESR is not replayed yet, though the app list may show it under this row, because the two share a bundle ID."
+    );
+    expect(drawn("1d", patchPolicyGerman, replay!, firefox.name)).toContain("Firefox ESR wird noch nicht nachgespielt");
+    expect(drawn("1d", copy, replay!, firefox.name)).toContain("NVD lists only another edition (ESR) as affected, not this release channel 50");
   });
 });
 

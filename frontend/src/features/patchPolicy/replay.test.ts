@@ -1,14 +1,25 @@
 /** The replay file's check (#614, first slice): what the page reads, and what it refuses whole. Every
  *  shipped replay is read here through the same function the page uses, so a file the page would
- *  refuse fails this lane and not a reader; the rules themselves are pinned on hand-made schema-2
- *  files (`testing/replayFixtures.ts`), whose numbers are invented and describe no app. */
+ *  refuse fails this lane and not a reader, and its headline numbers are pinned, so a replaced file
+ *  changes them in a reviewed diff. The rules themselves are pinned on hand-made schema-2 files
+ *  (`testing/replayFixtures.ts`), whose numbers are invented and describe no app. */
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { pickerApps } from "@/features/patchPolicy/apps";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
-import { REPLAY_SCHEMA, SLIDER_STOPS, TABLED_POLICY, heldFix, isSliderStop, readReplay, replayedRows, type PatchPolicyReplay } from "@/features/patchPolicy/replay";
+import {
+  REPLAY_SCHEMA,
+  SLIDER_STOPS,
+  TABLED_POLICY,
+  heldFix,
+  isSliderStop,
+  readReplay,
+  replayedRows,
+  windowCut,
+  type PatchPolicyReplay
+} from "@/features/patchPolicy/replay";
 import { REPLAY_INDEX, loadReplay } from "@/features/patchPolicy/replayIndex";
 import { heldLineReplay, singleLineReplay } from "@/features/patchPolicy/testing/replayFixtures";
 
@@ -100,11 +111,38 @@ describe("the hand-made schema-2 replays", () => {
 });
 
 describe("every indexed replay", () => {
-  it("loads, reads clean, and is indexed under bundle IDs its own file names", async () => {
+  it("loads, reads clean, and is indexed under the one bundle ID its own file replays", async () => {
     for (const entry of REPLAY_INDEX) {
       const { replay, refusal } = await loadReplay(entry);
       expect(refusal, entry.id).toBeUndefined();
       for (const bundleId of entry.bundleIds) expect(replay?.product?.bundle_ids, entry.id).toContain(bundleId);
+      // Not a beta, canary or developer edition the file also names: those are other channels.
+      const product = replay?.product as { device_bundle_id?: string } | undefined;
+      expect(entry.bundleIds, entry.id).toEqual([product?.device_bundle_id]);
+    }
+  });
+
+  it("is every file in replays/, and each is indexed once", () => {
+    const files = readdirSync(new URL("./replays/", import.meta.url)).filter((name) => name.endsWith(".json")).sort();
+    expect(REPLAY_INDEX.map((entry) => entry.file).sort()).toEqual(files);
+    expect(new Set(REPLAY_INDEX.map((entry) => entry.id)).size).toBe(REPLAY_INDEX.length);
+  });
+
+  it("counts each CVE from NVD's publication date, which is the clock the page states", async () => {
+    for (const entry of REPLAY_INDEX) {
+      const file = (await entry.load()) as { cve_clock?: string; clocks?: { cve?: string } };
+      expect(file.cve_clock, entry.file).toBe("published");
+      expect(file.clocks?.cve, entry.file).toMatch(/^The CVE clock is NVD's publication date/);
+    }
+  });
+
+  it("has words for every exclusion reason it counts, in both languages", async () => {
+    for (const entry of REPLAY_INDEX) {
+      const { replay } = await loadReplay(entry);
+      for (const reason of Object.keys(replay!.exclusions.by_reason)) {
+        expect(patchPolicyEnglish.reasons[reason], `${entry.file}: ${reason}`).toBeDefined();
+        expect(patchPolicyGerman.reasons[reason], `${entry.file}: ${reason}`).toBeDefined();
+      }
     }
   });
 
@@ -131,6 +169,103 @@ describe("every indexed replay", () => {
 
   it("a file that loads is read through the page's check", async () => {
     expect((await loadReplay({ load: () => Promise.resolve(singleLineReplay()) })).refusal).toBeUndefined();
+  });
+});
+
+/** What each shipped file says, as it says it. A replaced file fails here until these are updated in
+ *  the same change, so a reviewer sees every headline number that moved. */
+const SHIPPED: Record<string, {
+  source: string;
+  window: [string, string];
+  counts: [inWindow: number, replayed: number, excluded: number];
+  neverSeen: number[];
+  held: string | null;
+  device: string;
+  cut: string[];
+}> = {
+  wireshark: {
+    source: "wireshark",
+    window: ["2024-11-23", "2026-11-23"],
+    counts: [155, 115, 40],
+    neverSeen: [114, 59, 16, 16, 16, 16],
+    held: "4.4",
+    device: "take",
+    cut: []
+  },
+  firefox: {
+    source: "firefox-release",
+    window: ["2024-11-23", "2026-11-23"],
+    counts: [1121, 679, 442],
+    neverSeen: [678, 6, 5, 2, 1, 17],
+    held: null,
+    device: "take",
+    cut: []
+  },
+  chrome: {
+    // Cut short: the timeline dates a major the promotion table had no row for the day after.
+    source: "chrome-stable",
+    window: ["2024-11-23", "2026-11-17"],
+    counts: [4382, 3415, 967],
+    neverSeen: [3400, 149, 50, 29, 15, 6],
+    held: null,
+    device: "skip",
+    cut: ["promotion_table"]
+  },
+  thunderbird: {
+    source: "thunderbird-release",
+    window: ["2024-11-23", "2026-11-23"],
+    counts: [1011, 561, 450],
+    neverSeen: [453, 6, 3, 1, 1, 19],
+    held: null,
+    device: "take",
+    cut: []
+  }
+};
+
+describe("the shipped replays", () => {
+  it("are the four this build lists, and no other", () => {
+    expect(REPLAY_INDEX.map((entry) => entry.id)).toEqual(["wireshark", "firefox", "chrome", "thunderbird"]);
+    expect(Object.keys(SHIPPED).sort()).toEqual(REPLAY_INDEX.map((entry) => entry.id).sort());
+  });
+
+  for (const entry of REPLAY_INDEX) {
+    it(`${entry.name}: the window, counts, headline at every stop, held line and waiting device the file states`, async () => {
+      const expected = SHIPPED[entry.id];
+      const { replay } = await loadReplay(entry);
+      expect(replay!.timeline.source).toBe(expected.source);
+      expect([replay!.window.since, replay!.window.until]).toEqual(expected.window);
+      const { cves_in_window: inWindow, cves_replayed: replayed, cves_excluded: excluded } = replay!.counts;
+      expect([inWindow, replayed, excluded]).toEqual(expected.counts);
+      expect(SLIDER_STOPS.map((stop) => replay!.policies[stop].never_seen)).toEqual(expected.neverSeen);
+      expect(replay!.branch_choice.held_at_branch).toBe(expected.held);
+      expect(replay!.early_stable_choice?.device).toBe(expected.device);
+      expect((replay!.window.shortened_by ?? []).map((cut) => cut.reason)).toEqual(expected.cut);
+    });
+  }
+
+  it("Chrome's window ends where its file cut it, and says why in its own words", async () => {
+    const chrome = REPLAY_INDEX.find((entry) => entry.id === "chrome")!;
+    const { replay } = await loadReplay(chrome);
+    const cut = windowCut(replay!);
+    expect(cut?.requested).toBe("2026-11-23");
+    expect(cut?.reasons).toHaveLength(1);
+    expect(cut?.reasons[0]).toMatch(/^The timeline dates 159\.0\.8154\.13 on 2026-11-18, and the promotion table's newest row is major 158/);
+    for (const entry of REPLAY_INDEX.filter((each) => each.id !== "chrome")) {
+      expect(windowCut((await loadReplay(entry)).replay!), entry.id).toBeNull();
+    }
+  });
+});
+
+describe("windowCut", () => {
+  it("is null for a window that runs as asked, and reads a cut without trusting its shape", () => {
+    expect(windowCut(read(heldLineReplay()))).toBeNull();
+    const asked = read(edited((file) => { file.window.requested_until = "2026-11-30"; }) as Record<string, unknown>);
+    expect(windowCut(asked)).toEqual({ requested: "2026-11-30", reasons: [] });
+    const cut = read(edited((file) => {
+      file.window.requested_until = file.window.until;
+      file.window.shortened_by = [{ reason: "timeline_as_of", sentence: "The table was fetched the next day." }, { reason: "line_start" }, "loose", null];
+    }) as Record<string, unknown>);
+    expect(windowCut(cut)).toEqual({ requested: null, reasons: ["The table was fetched the next day.", "line_start"] });
   });
 });
 

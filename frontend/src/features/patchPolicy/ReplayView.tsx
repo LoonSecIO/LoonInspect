@@ -5,6 +5,7 @@ import {
   TABLED_POLICY,
   heldFix,
   replayedRows,
+  windowCut,
   type LedgerOutcome,
   type PatchPolicyReplay,
   type SliderStop
@@ -55,6 +56,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
   const line = replay.branch_choice.held_at_branch;
   const changed = line === null ? undefined : replay.branch_choice.cves_where_the_choice_changes_the_answer?.by_policy?.[stop];
   const { timeline } = replay;
+  const cut = windowCut(replay);
   const waits = replay.early_stable_choice?.device === "skip";
   const behind = replay.early_stable_choice?.promotion_table_behind_timeline === true;
   const rows = replayedRows(replay).filter((row) => shown === "all" || row.outcomes?.[stop]?.outcome === shown);
@@ -77,6 +79,8 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         <b className="block">{copy.referenceTitle}</b>
         {copy.reference(appName, line, replay.window.since, replay.window.until)}
         <span className="block pt-1">{copy.sources(timeline.name)}</span>
+        {timeline.edition === "release" && <span className="block pt-1">{copy.releaseChannelOnly(appName)}</span>}
+        {cut && <span className="block pt-1">{copy.shortened(replay.window.until, cut.requested)}</span>}
       </div>
 
       <div className={card}>
@@ -309,7 +313,14 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         <h2 className={heading}>{copy.evidenceHeading}</h2>
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]">
           <dt className="text-muted-foreground">{copy.evidenceWindow}</dt>
-          <dd className="tabular-nums">{replay.window.since} → {replay.window.until}</dd>
+          <dd className="space-y-0.5">
+            <span className="block tabular-nums">
+              {replay.window.since} → {replay.window.until}
+              {cut?.requested && ` · ${copy.asked(cut.requested)}`}
+            </span>
+            {/* The file's own reasons, as it words them: the page names the cut and computes none of it. */}
+            {cut?.reasons.map((reason) => <span key={reason} className="block text-muted-foreground">{reason}</span>)}
+          </dd>
           <dt className="text-muted-foreground">{copy.evidenceTimeline}</dt>
           <dd className="space-y-0.5">
             <span className="block">

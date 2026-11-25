@@ -2963,8 +2963,11 @@ the public release record its dates come from. The page is at `/posture/patch-po
 2. **Only a few apps can be picked; every other app reads *No reference replay yet*.** Not a fault.
    An app is selectable once a replay file for it ships with the build. *No reference replay yet*
    means nobody has replayed that app. It never means the app has no vulnerabilities, and the page
-   prints no count for it. If no app can be picked and the page says *No reference replay ships
-   with this build*, the build carries no replay file at all: that is reportable state **Z**, below.
+   prints no count for it. Firefox and Thunderbird are replayed on their release channel only: an
+   ESR title shares its app's bundle ID, so the list shows it under that app's row, and the page
+   says *… ESR is not replayed yet*. If no app can be picked and the page says *No reference
+   replay ships with this build*, the build carries no replay file at all: that is reportable state
+   **Z**, below.
 3. **The list has only the apps with a replay, under a sentence about Jamf's patch catalog.** The
    other rows come from the Jamf Patch titles this instance has synced, and the sentence says which
    of two things happened. *…holds no titles on this instance yet…* → no catalog refresh has
@@ -3008,6 +3011,17 @@ the public release record its dates come from. The page is at `/posture/patch-po
    *Evidence › CVE clock*. Each CVE counts from the UTC day NVD published it, even when NVD named
    the affected versions days later, so a Mac can be counted exposed on a day NVD's record could
    not yet have matched the CVE to it. That is the clock the page states, not a fault.
+8. **One replay ends earlier than the others** (*This replay ends on …, before the … it was asked
+   to reach*). The file cut its own window short rather than count days it could not date, and
+   *Evidence › Window* prints its reason in the file's words. Google Chrome's is the usual case:
+   its Mac installs a new major version no earlier than the day Google promotes it to stable, so
+   its window stops the day before a major whose promotion day had not been read when the file
+   was made. A later build carries a later file. Not a fault of the instance.
+9. **The newest weeks replay few CVEs, and many are excluded as *NVD has not yet listed which
+   versions are affected*.** NVD often publishes a CVE before it lists the versions the CVE
+   affects, and during a backlog at NVD that gap can last weeks. A CVE in that state cannot be
+   placed, so it is excluded and counted in the *Excluded* table, never guessed; excluded is not
+   safe. A later file replays it once NVD lists its versions. Not a fault of the instance.
 
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
 or the page says no reference replay ships with the build. Report the page's sentence as it is

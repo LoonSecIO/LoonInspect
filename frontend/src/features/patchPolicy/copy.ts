@@ -61,6 +61,10 @@ export const patchPolicyEnglish = {
     `One hypothetical Mac that runs ${app}${line ? `, held on its ${line} release line` : ""}, replayed from ${since} to ${until} against public CVE records. No inventory from this instance is read to draw it, nothing is sent anywhere, and no number here is stored as a measure of this fleet.`,
   sources: (timeline: string) =>
     `Release dates come from ${timeline}. The CVE clock is NVD's publication date: each CVE counts from the day NVD published it.`,
+  releaseChannelOnly: (app: string) =>
+    `This replays ${app}'s release channel. ${app} ESR is not replayed yet, though the app list may show it under this row, because the two share a bundle ID.`,
+  shortened: (until: string, requested: string | null) =>
+    `This replay ends on ${until}, ${requested ? `before the ${requested} it was asked to reach` : "earlier than it was asked to"}: the file cut its window short, and Evidence › Window gives its reason in the file's own words.`,
 
   policyHeading: "Patch policy",
   stops: { "1d": "1 day", "7d": "7 days", "14d": "14 days", "30d": "30 days", "60d": "60 days", never: "Never" } satisfies Record<SliderStop, string>,
@@ -136,7 +140,8 @@ export const patchPolicyEnglish = {
     no_fixed_version_determinable: "No fixed version can be read from the record",
     fixed_version_not_in_catalog: "The fixed version is not a release on this replay's release timeline",
     fixed_version_not_in_timeline: "The fixed version is not a release on this replay's release timeline",
-    branch_ambiguity: "The affected range covers a release line whose fix it does not name"
+    branch_ambiguity: "The affected range covers a release line whose fix it does not name",
+    other_edition_only: "NVD lists only another edition (ESR) as affected, not this release channel"
   } as Record<string, string>,
   excludedList: (excluded: number) => `The ${excluded} excluded ${plural(excluded, "CVE", "CVEs")}`,
 
@@ -149,6 +154,7 @@ export const patchPolicyEnglish = {
 
   evidenceHeading: "Evidence",
   evidenceWindow: "Window",
+  asked: (requested: string) => `asked to reach ${requested}`,
   evidenceTimeline: "Release dates",
   fetched: (when: string) => `fetched ${when}`,
   evidenceClock: "CVE clock",
@@ -210,6 +216,10 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     `Ein hypothetischer Mac, auf dem ${app} läuft${line ? `, gehalten auf der Release-Linie ${line}` : ""}, nachgespielt von ${since} bis ${until} gegen öffentliche CVE-Einträge. Dafür wird kein Inventar dieser Instanz gelesen, nichts wird irgendwohin gesendet, und keine Zahl hier wird als Messwert dieser Flotte gespeichert.`,
   sources: (timeline: string) =>
     `Die Release-Daten stammen aus ${timeline}. Die CVE-Uhr ist das Veröffentlichungsdatum bei NVD: Jede CVE zählt ab dem Tag, an dem NVD sie veröffentlicht hat.`,
+  releaseChannelOnly: (app: string) =>
+    `Nachgespielt wird der Release-Kanal von ${app}. ${app} ESR wird noch nicht nachgespielt, auch wenn die App-Liste es unter dieser Zeile führen kann, weil beide dieselbe Bundle-ID haben.`,
+  shortened: (until: string, requested: string | null) =>
+    `Dieses Replay endet am ${until}, ${requested ? `vor dem angefragten ${requested}` : "früher als angefragt"}: Die Datei hat ihr Zeitfenster gekürzt, und Belege › Zeitfenster nennt den Grund im Wortlaut der Datei.`,
 
   policyHeading: "Patch-Richtlinie",
   stops: { "1d": "1 Tag", "7d": "7 Tage", "14d": "14 Tage", "30d": "30 Tage", "60d": "60 Tage", never: "Nie" },
@@ -285,7 +295,8 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     no_fixed_version_determinable: "Aus dem Eintrag lässt sich keine korrigierte Version lesen",
     fixed_version_not_in_catalog: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
     fixed_version_not_in_timeline: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
-    branch_ambiguity: "Der betroffene Bereich umfasst eine Release-Linie, deren Fix er nicht nennt"
+    branch_ambiguity: "Der betroffene Bereich umfasst eine Release-Linie, deren Fix er nicht nennt",
+    other_edition_only: "NVD führt nur eine andere Edition (ESR) als betroffen, nicht diesen Release-Kanal"
   },
   excludedList: (excluded: number) => `${mehrzahl(excluded, "Die eine ausgeschlossene CVE", `Die ${excluded} ausgeschlossenen CVEs`)}`,
 
@@ -298,6 +309,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
 
   evidenceHeading: "Belege",
   evidenceWindow: "Zeitfenster",
+  asked: (requested: string) => `angefragt bis ${requested}`,
   evidenceTimeline: "Release-Daten",
   fetched: (when: string) => `abgerufen ${when}`,
   evidenceClock: "CVE-Uhr",
