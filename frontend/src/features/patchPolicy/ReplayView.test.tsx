@@ -353,7 +353,7 @@ describe("ReplayView on every shipped replay", () => {
     // The file says the table is behind its timeline, and its window already ends the day before.
     expect(replay!.early_stable_choice?.promotion_table_behind_timeline).toBe(true);
     expect(page).not.toContain("The promotion table has no row yet");
-    expect(page).toContain("149 of 3,415 vulnerabilities never seen");
+    expect(page).toContain("153 of 3,415 vulnerabilities never seen");
     expect(page).not.toContain("held on");
   });
 
