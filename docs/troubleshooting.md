@@ -4119,12 +4119,14 @@ refusal: the sentence is the whole report.
    - `no_versions`: ***This instance's copy of Jamf's public patch catalog names no … version …***
      The titles found list no versions at all. Sync now (§6); if it reads the same, choose another
      source.
-   - `channel_empty`: ***… lists no … release on the … channel …: every version it names is on
-     another track's list…***, or ***…: every version it names is a build of …, a channel
-     LoonSec's data does not walk yet…*** The titles carry another track or channel of the app and
-     nothing of this one: only Jamf's "Mozilla Firefox ESR" title is held for the release track,
-     say, which names ESR builds and the numbers both channels share (140.0, 153.0), or only
-     versions both tracks list. Choose that track, or another source.
+   - `channel_empty`: ***… lists no … release on the … channel …: none of the versions it names is
+     this track's alone. It names …*** The titles carry another track or channel of the app and
+     nothing only this track lists. The sentence names each kind it found: versions on another
+     track's list, numbers this track shares with another list (named), versions LoonSec's data
+     does not list, and builds of a channel LoonSec's data does not walk yet. Only Jamf's "Mozilla
+     Firefox ESR" title is held for the release track, say, which names the numbers both channels
+     share (140.0, 153.0), ESR builds, and ESR builds older than the channel's list. Choose that
+     track, or another source.
    - Not a refusal: versions set aside as a channel LoonSec's data does not walk yet. Beside an
      app's tracks, LoonSec's data names channels it does not walk yet (`other_channels`: Firefox
      ESR beside Firefox's release track, Thunderbird ESR beside Thunderbird's). Jamf's "Mozilla
@@ -4138,7 +4140,10 @@ refusal: the sentence is the whole report.
      `facts.other_channels` says the same beside the refusal. They are counted there and not
      worded in the view's `note`, which stays the source's own. A version a track lists is that
      track's even when a channel lists it too: ESR 153.0 shares its number with release 153.0 and
-     is walked as the release. Nothing to do: the view walks the track's own channel.
+     is walked as the release. LoonSec's data lists a channel's versions without Mozilla's `esr`
+     suffix; a source that spells one with it (`128.5.1esr`) is matched by its spelling as given,
+     then without the suffix, and a track that lists either spelling still takes it first
+     (`153.0esr` is the release's 153.0). Nothing to do: the view walks the track's own channel.
    - `too_many_unmatched` (the walk's own refusal): ***N of the M versions the timeline from …
      dates from … to …, the days a device in this view could install them, match no version
      LoonSec's patch-policy data lists…*** A version LoonSec's data does not list is never
@@ -4242,22 +4247,28 @@ refusal: the sentence is the whole report.
     builds Fleet's catalog carried, from the day it began, and a vendor can ship a fix build on one
     platform only (Chrome's Linux-only 131.0.6778.85, where the Mac got .86). Such a CVE is not left
     out. As ruled on 2026-11-25, the walk counts the next dated version at or above the fix on the
-    fix's line, and that version's day is the fix's day for every rule, the one that keeps an
-    older-dated build of another release train affected included (a build of the fix's own train,
-    or of the train of the version that dated it, is spared). Each CVE row says which version dated
-    each fix, for each line the path visits (the line of any version a device under any stop runs
-    during the window), in `fix_dated_by`:
-    - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where LoonSec's
-      list does not hold that exact build (null otherwise);
+    fix's line that the CVE's affected range does not cover (a version the CVE still affects never
+    stands in for its fix; one held affected only by rule 5 can), and that version's day is the
+    fix's day for every rule, the one that keeps an older-dated build of another release train
+    affected included (a build of the fix's own train, or of the train of the version that dated
+    it, is spared). Each CVE row says which version dated each fix in `fix_dated_by`: one entry for
+    each fix LoonSec's data lists for the CVE on a line the path visits (the line of any version a
+    device under any stop runs during the window), in the data's order. LoonSec's data can list
+    several fixes at one version (the fix itself, then each of NVD's bounds that lands there), and
+    each is its own entry, counted on its own:
+    - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where the version
+      LoonSec points at is not that exact one (null otherwise): the next listed version above it,
+      or, where that one is still in the CVE's range, the first listed version above the range;
     - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
       not clearing it: a device clears the CVE when it installs a version outside the CVE's
-      affected range that rule 5 does not keep affected. On a track whose one line holds every
-      release, LoonSec's data can name a fix inside another of the CVE's runs, and `dated_as` can
-      be inside it too: installing that version then clears nothing;
+      affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
+      `dated_as` even inside another of the CVE's runs (installing it then clears nothing); a
+      later version standing in for an undated fix is always outside the range;
     - `how` is `fix` when the timeline dates the fix itself, `next_dated` when it dates a later
-      version instead, and `undated` when it dates nothing at or above the fix on that line, or
-      LoonSec's data names no fix version there. An `undated` line has no fix a device could
-      install, so the CVE stays open on it until the device moves past its affected range.
+      version outside the range instead, and `undated` when it dates nothing at or above the fix on
+      that line outside the range, or LoonSec's data names no fix version there. An `undated` line
+      has no fix a device could install, so the CVE stays open on it until the device moves past
+      its affected range.
 
     `counts.fix_dating` totals the entries over the rows the walk lists. A Jamf or Fleet view reads
     `next_dated` far more often than Public. Open the same CVE on the Public view and compare `on`
@@ -4270,7 +4281,8 @@ refusal: the sentence is the whole report.
       views differ there; neither is a defect.
 
     On Public, `next_dated` appears only where LoonSec lists a version without a date.
-    `how: next_dated` or `fix` with no `dated_as` is reportable state **AE**.
+    `how: next_dated` or `fix` with no `dated_as`, or a `next_dated` entry whose `dated_as` the
+    CVE's affected range covers, is reportable state **AE**.
 
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
@@ -4287,5 +4299,6 @@ worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf
 `request_invalid`), or a Jamf or Fleet timeline is refused over versions that are plainly the
 track's own (`too_many_unmatched`, `no_matched_versions`); or a walk that was shown says it dated
 a fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated` and no
-`dated_as`, step 10). Report the sentence as worded (or the CVE row), the refusal's `facts`, the
+`dated_as`, step 10), or dated an undated fix by a version the CVE's `affected_text` still covers
+(`how: next_dated`, step 10). Report the sentence as worded (or the CVE row), the refusal's `facts`, the
 app, track, source and window asked for, and the build (§8).

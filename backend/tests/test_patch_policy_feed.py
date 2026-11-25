@@ -182,6 +182,26 @@ def test_a_fix_naming_nvds_own_version_as_text_is_read() -> None:
     assert _track(doc.body)["cves"][0]["fixes"][0]["named"] == "4.4.2.1"
 
 
+def test_a_document_with_or_without_the_retired_reason_word_is_read() -> None:
+    """`fixed_version_not_in_timeline` is no longer the walk's (ruled 2026-11-25), and LoonSec's data
+    drops it. The fixture still lists it, in `exclusion_reasons` and in every track's `by_reason`; a
+    document that drops it from both is read the same way. Dropping it from one and not the other is
+    still a count that does not close."""
+    word = "fixed_version_not_in_timeline"
+    assert word in DOC["exclusion_reasons"]
+    assert feed.read_document(GZ).doc_id == DOC["doc_id"]
+    without = copy.deepcopy(DOC)
+    without["exclusion_reasons"].remove(word)
+    for app in without["apps"]:
+        for track in app["tracks"]:
+            assert track["exclusions"]["by_reason"].pop(word) == 0
+    assert word not in feed.read_document(_resigned(without)).body["exclusion_reasons"]
+
+    half = copy.deepcopy(without)
+    _track(half)["exclusions"]["by_reason"][word] = 0
+    assert "does not name exactly the document's exclusion_reasons" in _refusal(_resigned(half))
+
+
 def test_a_track_naming_a_timeline_the_document_does_not_describe_is_refused() -> None:
     broken = copy.deepcopy(DOC)
     _track(broken)["timeline"] = "somewhere-else"

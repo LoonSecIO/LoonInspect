@@ -287,9 +287,12 @@ def test_a_title_that_names_only_another_channel_leaves_the_track_with_no_jamf_t
     with pytest.raises(timelines.Unavailable) as empty:
         timelines.jamf(catalog(FIREFOX_ESR_0B4), doc, "firefox", "firefox/release")
     assert empty.value.state == "channel_empty"
+    # 128.0 and 140.0 are on both lists, so the sentence names them rather than claim every version
+    # is another track's.
     assert empty.value.sentence == (
         "This instance's copy of Jamf's public patch catalog lists no Mozilla Firefox release on the release channel (0B4): "
-        "every version it names is on another track's list, so Mozilla Firefox (release) has no Jamf timeline. Choose "
+        "none of the versions it names is this track's alone. It names versions on another track's list and numbers "
+        "this track shares with another list (128.0, 140.0), so Mozilla Firefox (release) has no Jamf timeline. Choose "
         "another track or source."
     )
 
@@ -396,8 +399,9 @@ def test_a_fleet_title_read_for_the_esr_track_that_names_no_esr_build_says_what_
         timelines.fleet(history(FLEET_FIREFOX), doc, "firefox", "firefox/esr")
     assert esr.value.state == "esr_missing"
     assert esr.value.sentence == (
-        "This instance's Fleet history (firefox) names no Mozilla Firefox ESR release: every version it names is on "
-        "another track's list, so Mozilla Firefox ESR has no Fleet timeline. Choose another source."
+        "This instance's Fleet history (firefox) names no Mozilla Firefox ESR release: none of the versions it names is "
+        "this track's alone. It names versions on another track's list and a number this track shares with another list "
+        "(140.0), so Mozilla Firefox ESR has no Fleet timeline. Choose another source."
     )
 
 
@@ -641,6 +645,92 @@ def test_a_version_a_track_lists_is_the_tracks_whatever_channel_also_lists_it() 
     assert joined.other == ("140.1.0",) and joined.other_channel == ()
 
 
+def _channels_app(*channels: tuple[str, list[str]], release: list[str]) -> dict[str, Any]:
+    """A bare app row: one release track listing `release`, and each channel named with its versions."""
+    return {
+        "app": "demo",
+        "name": "Demo",
+        "tracks": [{"track": "demo/release", "versions": [{"v": v, "keys": [v]} for v in release]}],
+        "other_channels": [
+            {"channel": channel, "label": f"Demo {channel}", "source": "https://example.test/demo.json", "versions": versions}
+            for channel, versions in channels
+        ],
+    }
+
+
+def test_a_track_whose_every_version_a_channel_also_lists_still_walks_what_it_matches() -> None:
+    """`lists_exclusive` counts the channels as well as the other tracks (w3 review, mutant M5). Every
+    version of this release track is on the ESR channel's list too, so the track lists nothing of its
+    own alone, and a timeline naming one of them is the track's: the view walks rather than being
+    refused for naming no version only this track lists."""
+    app_row = _channels_app(("esr", ["1.0", "1.5.0", "2.0"]), release=["1.0", "2.0"])
+    joined = timelines.split([("1.0", day("2026-01-01")), ("1.5.0", day("2026-02-01"))], app_row, "demo/release")
+    assert (joined.matched, joined.exclusive, joined.lists_exclusive) == (("1.0",), (), False)
+    assert [(c.channel, c.versions) for c in joined.other_channel] == [("esr", ("1.5.0",))]
+    assert joined.channel_missing is False
+
+
+def test_a_version_two_channels_list_is_set_aside_as_the_first_listed_channels() -> None:
+    """The first channel the document lists wins a version two channels share (w3 review, mutant M7),
+    as `split` documents and the copy's check accepts."""
+    app_row = _channels_app(("esr", ["1.5.0"]), ("beta", ["1.5.0", "1.6b1"]), release=["1.0"])
+    joined = timelines.split(
+        [("1.0", day("2026-01-01")), ("1.5.0", day("2026-02-01")), ("1.6b1", day("2026-02-02"))], app_row, "demo/release"
+    )
+    assert [(c.channel, c.versions) for c in joined.other_channel] == [("esr", ("1.5.0",)), ("beta", ("1.6b1",))]
+
+
+def test_a_timeline_that_spells_mozillas_esr_suffix_is_matched_without_it_and_a_track_still_wins() -> None:
+    """LoonSec lists a channel's versions without Mozilla's `esr` suffix; Jamf and Fleet spell them
+    without it today, and a timeline that spells it is matched by its spelling without it, after its
+    spelling as given. Track membership still wins: `140.0esr` is the release track's 140.0 (the
+    number both lists share), kept under the spelling the track lists. `128.5.0esr` is set aside as
+    the ESR channel's 128.5.0. A spelling nobody lists either way stays unmatched as given."""
+    doc = mozilla_document(esr_track=False, esr_channel=True)
+    observations = [
+        ("140.0esr", day("2025-06-25")),
+        ("129.0", day("2024-08-06")),
+        ("128.5.0esr", day("2024-11-26")),
+        ("9.9esr", day("2024-01-01")),
+        ("esr", day("2024-01-02")),
+    ]
+    joined = timelines.split(observations, doc["apps"][0], "firefox/release")
+    assert joined.matched == ("129.0", "140.0")
+    assert ("140.0", day("2025-06-25")) in joined.kept and ("140.0esr", day("2025-06-25")) not in joined.kept
+    assert [(c.channel, c.versions) for c in joined.other_channel] == [("esr", ("128.5.0",))]
+    assert joined.unmatched == ("9.9esr", "esr") and joined.other == ()
+
+    # A track that lists the suffixed spelling itself takes it as given: here the ESR track's keys
+    # carry `128.5.0esr`, so the release view sets it aside as that track's, before any channel.
+    both = mozilla_document(esr_track=True, esr_channel=True)
+    joined = timelines.split(observations, both["apps"][0], "firefox/release")
+    assert joined.other == ("128.5.0esr",) and joined.other_channel == ()
+    esr = timelines.split(observations, both["apps"][0], "firefox/esr")
+    assert "128.5.0esr" in esr.matched
+    # The spelling as given is tried against every track before the one without the suffix: another
+    # track listing `2.0esr` takes it, though this track lists `2.0`.
+    two = {
+        "app": "demo",
+        "tracks": [
+            {"track": "demo/release", "versions": [{"v": "2.0", "keys": ["2.0"]}]},
+            {"track": "demo/esr", "versions": [{"v": "2.0", "keys": ["2.0esr"]}]},
+        ],
+    }
+    joined = timelines.split([("2.0esr", day("2026-01-01"))], two, "demo/release")
+    assert (joined.matched, joined.other) == ((), ("2.0esr",))
+
+    # End to end: Jamf's ESR title spelled with the suffix, beside the release title, still walks the
+    # release track with the ESR builds set aside.
+    suffixed = jamf_title(
+        "0B4", "Mozilla Firefox ESR", "org.mozilla.firefox", [(v if v.count(".") < 2 else f"{v}esr", when) for v, when in ESR]
+    )
+    timeline = timelines.jamf(catalog(FIREFOX_0B3, suffixed), doc, "firefox", "firefox/release")
+    assert {key for key, _ in timeline.observations} == {v for v, _ in RELEASES}
+    assert [c.versions for c in timeline.other_channel] == [tuple(ESR_ONLY)]
+    result = walk.walk(doc, app="firefox", track="firefox/release", timeline=timeline.walk_input())
+    assert result["inputs"]["timeline"]["unmatched"] == []
+
+
 def test_a_title_that_names_only_a_channel_that_is_not_walked_says_so_instead_of_walking_a_shared_number() -> None:
     """Jamf's ESR title alone, read for the release track, names release 140.0 and 128.0 (shared)
     and ESR builds. Walking it would keep a device on 140.0 for a year; the release track lists
@@ -651,9 +741,22 @@ def test_a_title_that_names_only_a_channel_that_is_not_walked_says_so_instead_of
     assert empty.value.state == "channel_empty"
     assert empty.value.sentence == (
         "This instance's copy of Jamf's public patch catalog lists no Mozilla Firefox release on the release channel (0B4): "
-        "every version it names is a build of Mozilla Firefox ESR, a channel LoonSec's data does not walk yet, so Mozilla "
-        "Firefox (release) has no Jamf timeline. Choose another track or source."
+        "none of the versions it names is this track's alone. It names numbers this track shares with another list "
+        "(128.0, 140.0) and builds of Mozilla Firefox ESR, a channel LoonSec's data does not walk yet, so Mozilla Firefox "
+        "(release) has no Jamf timeline. Choose another track or source."
     )
+
+    # What Jamf's ESR title really names (w3 review): the shared numbers, the listed ESR builds, and
+    # older ESR builds the channel's list does not hold. Each kind is said, and none is overstated.
+    older = jamf_title("0B4", "Mozilla Firefox ESR", "org.mozilla.firefox", [*ESR, ("115.18.0", day("2024-11-26"))])
+    with pytest.raises(timelines.Unavailable) as mixed:
+        timelines.jamf(catalog(older), doc, "firefox", "firefox/release")
+    assert mixed.value.state == "channel_empty"
+    assert (
+        "none of the versions it names is this track's alone. It names numbers this track shares with another list "
+        "(128.0, 140.0), versions LoonSec's data does not list and builds of Mozilla Firefox ESR, a channel LoonSec's "
+        "data does not walk yet, so Mozilla Firefox (release) has no Jamf timeline."
+    ) in mixed.value.sentence
 
 
 async def test_the_apps_route_counts_each_tracks_set_aside_versions_and_leaves_the_note_to_the_source() -> None:
@@ -827,6 +930,44 @@ async def test_parity_matched_unchecked_and_refused_per_app() -> None:
     # The totals that disagreed travel with the refusal, for the page to list beside it.
     published = broken["apps"][0]["tracks"][0]["check"]["2y"]["60d"]["exposed"]
     assert disagrees.value.facts == {"stop": "60d", "key": "exposed", "walked": published - 1, "published": published}
+
+
+async def test_a_track_or_app_with_no_check_refuses_only_itself_and_the_rest_of_the_document_is_served() -> None:
+    """What LoonSec's publisher may now leave in a nightly document (a track with no check for a window,
+    for want of a public timeline or of a dated day) costs only that track or app, here, never the
+    document: the copy's check does not read `check`, and parity is judged per app.
+      - Firefox's release track matched at 2 years; its ESR track has no public dates and no check.
+        Its Public view is refused in its own words (`no_public_dates`, step 3); a Jamf or Fleet view of
+        it is shown as an unchecked window, because the release walk matched.
+      - Thunderbird has no check for any window: every view of it is refused (`unchecked`, step 7),
+        and Firefox's sources are unaffected."""
+    doc = _with_checks(mozilla_document(), years=(2,))
+    esr = doc["apps"][0]["tracks"][1]
+    esr["timeline"], esr["check"] = None, {}
+    other = mozilla_document("thunderbird", "Mozilla Thunderbird")
+    doc["apps"].append(other["apps"][0])
+    doc["sources"]["timelines"].update(other["sources"]["timelines"])
+    firefox, thunderbird = doc["apps"]
+
+    states = await views.app_parity(doc, firefox)
+    assert states[("firefox/esr", 2)].reason == "no_public_dates"
+    with pytest.raises(timelines.Unavailable) as public_esr:
+        timelines.public(doc, "firefox", "firefox/esr")
+    assert public_esr.value.state == "no_public_dates"
+    assert views.check_for(states, firefox, "firefox/esr", 2, source="jamf")["state"] == "unchecked_window"
+    assert views.check_for(states, firefox, "firefox/release", 3)["state"] == "unchecked_window"
+
+    with pytest.raises(views.Refused) as refused:
+        views.check_for(await views.app_parity(doc, thunderbird), thunderbird, "thunderbird/release", 2)
+    assert refused.value.reason == "unchecked"
+
+    sources = await views.sources_of(doc, catalog(), history(enabled=False))
+    assert sources["firefox"]["public"]["available"] is True
+    assert {track["track"]: track["state"] for track in sources["firefox"]["public"]["tracks"]} == {
+        "firefox/release": "available",
+        "firefox/esr": "no_public_dates",
+    }
+    assert sources["thunderbird"]["public"]["state"] == "unchecked"
 
 
 async def test_a_served_walk_keeps_every_total_and_series_and_trims_intervals_to_the_stop_asked_for(monkeypatch) -> None:

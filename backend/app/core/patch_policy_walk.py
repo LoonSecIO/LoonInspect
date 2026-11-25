@@ -22,10 +22,11 @@ by exact lowercased key and works in ranks from then on. The one judgement made 
 fix's line, dated by this timeline before the fix's day and not of the fix's own train (nor of
 the train of the version that dated the fix), does not clear the CVE. The fix's day is the day
 this timeline dates the fix, or, where it does not date it, the day of the lowest-ranked
-version at or above the fix on its line that it does date (ruled 2026-11-25, "count the next
-dated version at or above the fix"); a line where it dates none has no fix to install, and the
-CVE is walked by its affected runs there. Every CVE row says which version dated each fix
-(`fix_dated_by`). It reads the `line` and `train` strings the document gives for equality only.
+version at or above the fix on its line that it does date and that the CVE's affected runs do
+not cover (ruled 2026-11-25, "count the next dated version at or above the fix"); a line where
+it dates none has no fix to install, and the CVE is walked by its affected runs there. Every
+CVE row says which version dated each fix (`fix_dated_by`). It reads the `line` and `train`
+strings the document gives for equality only.
 
 **Every counting rule is in `DEFINITIONS`**, which rides in every output, so a number can be
 read against the rule that made it. `compat_v1` reproduces the v1 replay's rules (CVE clock =
@@ -110,8 +111,9 @@ EXCLUSION_REASONS = (
 
 # How a fix's day was found (`fix_dated_by[].how`, `counts.fix_dating`), ruled 2026-11-25: the
 # timeline dates the fix itself; it dates the lowest-ranked version at or above the fix on the
-# fix's line instead; or it dates nothing at or above it there (or the document names no fix
-# version on the line), so the line has no fix to install and the CVE is walked by its runs.
+# fix's line, outside the CVE's affected runs, instead; or it dates nothing at or above it there
+# (or the document names no fix version on the line), so the line has no fix to install and the
+# CVE is walked by its runs.
 FIX_DATED, NEXT_DATED, FIX_UNDATED = "fix", "next_dated", "undated"
 FIX_DATING = (FIX_DATED, NEXT_DATED, FIX_UNDATED)
 
@@ -185,22 +187,26 @@ DEFINITIONS = {
     "does not apply.",
     "fix_dating": "Ruled 2026-11-25: count the next dated version at or above the fix. A fix "
     "this timeline does not date excludes nothing. Its effective fix is the lowest-ranked "
-    "version at or above it, on the fix's own line, that this timeline dates, and that "
-    "version's day is the fix's day for every rule that reads it, rule 5 included. Dating a fix "
-    "is not clearing it: a device clears the CVE when it installs a version outside the CVE's "
-    "affected runs that rule 5 does not hold affected, and the version that dated a fix, the fix "
-    "itself included, can be inside another of the CVE's runs. On a line that holds several "
-    "release trains, that version can also be a build of a later train shipped before the fix; "
-    "rule 5 spares it as the fix's stand-in. Where the timeline dates no version at or above the "
-    "fix on its line, or "
-    "LoonSec's data names no fix version on the line, the line has no fix a device could "
-    "install, and the CVE is walked there by its affected runs alone. Each CVE row says, for "
-    "each line the path visits, which version "
-    "dated its fix (`fix_dated_by`: `fix` is LoonSec's fix version, `named` the version NVD "
-    "names where LoonSec's list does not hold that exact one, `dated_as` and `on` the version "
-    "and day used, and `how`: `fix` when the timeline dates the fix itself, `next_dated` when "
-    "it dates a later version instead, `undated` when it dates none), the way `clock` says "
-    "which clock placed it. `counts.fix_dating` counts those entries over the rows `cves` lists.",
+    "version at or above it, on the fix's own line, that this timeline dates and that none of "
+    "the CVE's affected runs covers (a version the CVE still affects cannot stand in for its "
+    "fix), and that version's day is the fix's day for every rule that reads it, rule 5 "
+    "included. A fix the timeline dates itself is its own effective fix, even where one of the "
+    "CVE's runs covers it, because LoonSec's data names it. Dating a fix is not clearing it: a "
+    "device clears the CVE when it installs a version outside the CVE's affected runs that rule "
+    "5 does not hold affected, so installing a fix inside another of the CVE's runs, or a "
+    "stand-in rule 5 holds affected under another fix, clears nothing. On a line that holds "
+    "several release trains, the stand-in can be a build of a later train shipped before the "
+    "fix; rule 5 spares it as the fix's stand-in. Where the timeline dates no version at or "
+    "above the fix on its line outside the CVE's runs, or LoonSec's data names no fix version on "
+    "the line, the line has no fix a device could install, and the CVE is walked there by its "
+    "affected runs alone. Each CVE row says which version dated each fix (`fix_dated_by`), one "
+    "entry for each of the document's `fixes[]` on a line the path visits, in the document's "
+    "order, so two fixes LoonSec's data points at one version, with different `named`, are two "
+    "entries: `fix` is LoonSec's fix version, `named` the version NVD names where LoonSec's fix "
+    "version is not that exact one, `dated_as` and `on` the version and day used, and `how`: "
+    "`fix` when the timeline dates the fix itself, `next_dated` when it dates a later version "
+    "instead, `undated` when it dates none, the way `clock` says which clock placed the row. "
+    "`counts.fix_dating` counts those entries over the rows `cves` lists.",
     "cve_clock": "A CVE is placed by the first day it was detectable (`detectable_at`, from "
     "LoonSec's record of NVD changes) where the document holds one, and by NVD's publication "
     "date where it does not. Every CVE row says which clock placed it (`clock`), and "
@@ -716,9 +722,10 @@ class _Prepared:
     above_table: list[int]
     compat_v1: bool
     # The ranks this timeline dates, per line, ascending: where a fix it does not date finds the
-    # next dated version at or above it (`_effective_fix`), memoised per (line, fix).
+    # next dated version at or above it outside the CVE's runs (`_effective_fix`), memoised per
+    # (CVE, line, fix).
     dated_on_line: dict[str, list[int]]
-    effective_fixes: dict[tuple[str, int], tuple[int | None, str]]
+    effective_fixes: dict[tuple[str, str, int], tuple[int | None, str]]
 
 
 def _source_words(timeline: _Timeline) -> str:
@@ -841,21 +848,33 @@ def _dated_on_line(versions: list[_Version], join: _Join) -> dict[str, list[int]
     return dated
 
 
-def _effective_fix(prepared: _Prepared, line: str, fix: int | None) -> tuple[int | None, str]:
+def _effective_fix(prepared: _Prepared, row: _Row, line: str, fix: int | None) -> tuple[int | None, str]:
     """The version whose day is this fix's day under this timeline, and how it was found (ruled
     2026-11-25, "count the next dated version at or above the fix"): the fix itself when the
-    timeline dates it (`fix`); else the lowest-ranked version at or above it, on the fix's line,
-    that the timeline dates (`next_dated`); else none (`undated`), and the line has no fix a
-    device could install. A fix the document names no version for (a null index) is `undated`."""
+    timeline dates it (`fix`), even where one of the row's runs covers it, since the document
+    names it; else the lowest-ranked version at or above it, on the fix's line, that the
+    timeline dates and that none of the row's affected runs covers (`next_dated`), because a
+    version the CVE still affects cannot stand in for its fix; else none (`undated`), and the
+    line has no fix a device could install. A fix the document names no version for (a null
+    index) is `undated`. Only run-covered versions are passed over: one rule 5 holds affected
+    can still stand in, as the fix itself can."""
     if fix is None:
         return None, FIX_UNDATED
     if fix in prepared.join.dates:
         return fix, FIX_DATED
-    key = (line, fix)
+    key = (row.cve_id, line, fix)
     if key not in prepared.effective_fixes:
         dated = prepared.dated_on_line.get(line, [])
         at = bisect_left(dated, fix)
-        prepared.effective_fixes[key] = (dated[at], NEXT_DATED) if at < len(dated) else (None, FIX_UNDATED)
+        found: int | None = None
+        while at < len(dated):
+            run = bisect_right(row.starts, dated[at]) - 1
+            if run < 0 or row.runs[run][1] < dated[at]:
+                found = dated[at]
+                break
+            # Inside a run: the next candidate is the first dated version above that run's end.
+            at = bisect_right(dated, row.runs[run][1], at)
+        prepared.effective_fixes[key] = (found, NEXT_DATED) if found is not None else (None, FIX_UNDATED)
     return prepared.effective_fixes[key]
 
 
@@ -1161,7 +1180,7 @@ class _Judge:
         for line, fix in row.fixes:
             if fix is None or line != version.line or index < fix:
                 continue
-            dated_as, _ = _effective_fix(self.prepared, line, fix)
+            dated_as, _ = _effective_fix(self.prepared, row, line, fix)
             if dated_as is None or version.train in (self.versions[fix].train, self.versions[dated_as].train):
                 continue
             if own < self.dates[dated_as]:
@@ -1202,13 +1221,15 @@ def _exclusion(prepared: _Prepared, row: _Row, visited: set[str]) -> tuple[str |
 
 def _fix_dated_by(prepared: _Prepared, row: _Row, visited: set[str]) -> list[dict[str, Any]]:
     """Which version dated each of the row's fixes on a line the path visits, and how (ruled
-    2026-11-25), the way `clock` says which clock placed the row."""
+    2026-11-25), the way `clock` says which clock placed the row. One entry per entry of the
+    document's `fixes[]`, in its order: two fixes the document points at one version, with
+    different `named` (NVD's own versions), are two entries, and `counts.fix_dating` counts both."""
     versions, dates = prepared.versions, prepared.join.dates
     entries = []
     for (line, fix), named in zip(row.fixes, row.named, strict=True):
         if line not in visited:
             continue
-        dated_as, how = _effective_fix(prepared, line, fix)
+        dated_as, how = _effective_fix(prepared, row, line, fix)
         entries.append(
             {
                 "line": line,

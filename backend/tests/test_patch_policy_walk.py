@@ -1234,23 +1234,188 @@ def test_fix_dated_by_lists_every_visited_line_in_the_documents_order() -> None:
     assert invariant_failures(result) == []
 
 
-def test_installing_the_version_that_dated_a_fix_inside_the_range_clears_nothing() -> None:
-    """Dating a fix is not clearing it. One line: 1.0 (d-100), 2.0 (undated: a fix), 3.0 (d60), 4.0 (d90:
-    the other fix). CVE-412: det d40, one run 1.0..3.0 (as where an ESR fix sits inside a release run on a
-    single-line track), fixes 2.0 and 4.0. 2.0 is dated by 3.0 on d60, which is inside the run.
-      1d: 1.0, 3.0 on d60 (still in range), 4.0 on d90 -> [d40,d89] = 50 days, cleared by 4.0, not 3.0."""
-    result = fix_dating_walk(
-        [version("1.0", d(-100)), version("2.0", None), version("3.0", d(60)), version("4.0", d(90))],
-        [cve("CVE-2026-0412", published=d(40), detectable=d(40), affected=[[0, 2]], fixes=[fix(1), fix(3)])],
-    )
-    [row] = result["cves"]
+def test_a_version_the_cve_still_affects_never_dates_its_fix_and_installing_a_fix_in_range_clears_nothing() -> None:
+    """A fix never stands in for itself inside its own CVE's range. One line: 1.0 (d-100), 2.0 (a fix: as
+    where an unmarked ESR bound sits inside a release run on a single-line track), 3.0 (d60), 4.0 (d90: the
+    other fix). CVE-412: det d40, one run 1.0..3.0, fixes 2.0 and 4.0.
+
+    A timeline that does not date 2.0: 3.0 is dated and at or above it, but inside the run, so it cannot
+    stand in for the fix; 2.0 is dated by 4.0 on d90, the first dated version above the run.
+      1d: 1.0, 3.0 on d60 (still in range), 4.0 on d90 -> [d40,d89] = 50 days, cleared by 4.0.
+
+    A timeline that dates 2.0 itself (d55): it is its own fix (`how: fix`) though the run covers it,
+    because LoonSec's data names it; dating it is not clearing it. The 1-day device installs 2.0 on d55
+    and 3.0 on d60, both in range, and clears on 4.0 the same way."""
+    rows = [cve("CVE-2026-0412", published=d(40), detectable=d(40), affected=[[0, 2]], fixes=[fix(1), fix(3)])]
+    undated = fix_dating_walk([version("1.0", d(-100)), version("2.0", None), version("3.0", d(60)), version("4.0", d(90))], rows)
+    [row] = undated["cves"]
     assert row["fix_dated_by"] == [
-        {"line": "", "fix": "2.0", "named": None, "dated_as": "3.0", "on": d(60), "how": "next_dated"},
+        {"line": "", "fix": "2.0", "named": None, "dated_as": "4.0", "on": d(90), "how": "next_dated"},
         {"line": "", "fix": "4.0", "named": None, "dated_as": "4.0", "on": d(90), "how": "fix"},
     ]
     one = row["outcomes"]["1d"]
     assert (one["intervals"], one["exposure_days"], one["cleared_by"]) == ([[d(40), d(89)]], 50, "4.0")
-    assert "Dating a fix is not clearing it" in result["definitions"]["fix_dating"]
+    assert "Dating a fix is not clearing it" in undated["definitions"]["fix_dating"]
+
+    dated = fix_dating_walk([version("1.0", d(-100)), version("2.0", d(55)), version("3.0", d(60)), version("4.0", d(90))], rows)
+    [row] = dated["cves"]
+    assert row["fix_dated_by"][0] == {"line": "", "fix": "2.0", "named": None, "dated_as": "2.0", "on": d(55), "how": "fix"}
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["cleared_by"]) == ([[d(40), d(89)]], "4.0")
+
+
+def test_passing_over_a_version_in_range_moves_the_day_rule_5_reads() -> None:
+    """A fix's only stand-in must be outside the CVE's range, and its day is the one rule 5 reads. One
+    line, each version its own train: 1.0 (d-100), 2.0 (undated: the fix, which NVD names 1.5), 2.1 (d50),
+    3.0 (d90), 4.0 (d70). CVE-416: det d40, run 1.0..2.1, one fix, 2.0. 2.1 is dated and above the fix but
+    inside the run, so the fix is dated by 3.0 on d90. 4.0, ranked above the fix, of neither 2.0's train
+    nor 3.0's and dated d70, before d90: rule 5, affected.
+      1d: 1.0, 2.1 on d50 (in range), 4.0 on d70 (rule 5), 3.0 on d90 (ranked below 4.0: no event)
+          -> [d40,d180] = 141 days, open. Were 2.1 to stand in (d50), 4.0 would be clean, cleared d70.
+
+    With nothing dated above the run, the line has no fix to install: 1.0 (d-100), 2.0 (undated), 2.1
+    (d50), run 1.0..2.1. 2.1 cannot stand in, so the fix is `undated` and the CVE is walked by its run."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100)), version("2.0", None), version("2.1", d(50)), version("3.0", d(90)), version("4.0", d(70))],
+        [
+            cve(
+                "CVE-2026-0416",
+                published=d(40),
+                detectable=d(40),
+                affected=[[0, 2]],
+                fixes=[{"line": "", "index": 1, "named": "1.5"}],
+            )
+        ],
+    )
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "2.0", "named": "1.5", "dated_as": "3.0", "on": d(90), "how": "next_dated"}
+    ]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["exposure_days"], one["open_at_window_end"]) == ([[d(40), d(180)]], 141, True)
+    assert invariant_failures(result) == []
+
+    nothing = fix_dating_walk(
+        [version("1.0", d(-100)), version("2.0", None), version("2.1", d(50))],
+        [cve("CVE-2026-0417", published=d(40), detectable=d(40), affected=[[0, 2]], fixes=[fix(1)])],
+    )
+    [row] = nothing["cves"]
+    assert row["fix_dated_by"] == [{"line": "", "fix": "2.0", "named": None, "dated_as": None, "on": None, "how": "undated"}]
+    assert nothing["counts"]["fix_dating"] == {"fix": 0, "next_dated": 0, "undated": 1}
+    assert row["outcomes"]["1d"]["open_at_window_end"] is True
+
+    # Every run is passed over, not only the first: 1.0 (d-100), 2.0 (undated: the fix), 2.1 (d50),
+    # 2.2 (undated), 2.3 (d60), 3.0 (d90), runs 1.0, 2.1 and 2.3. The first dated version above 2.1's
+    # run is 2.3, inside the next run, so 3.0 dates the fix.
+    gaps = fix_dating_walk(
+        [
+            version("1.0", d(-100)),
+            version("2.0", None),
+            version("2.1", d(50)),
+            version("2.2", None),
+            version("2.3", d(60)),
+            version("3.0", d(90)),
+        ],
+        [cve("CVE-2026-0422", published=d(40), detectable=d(40), affected=[[0, 0], [2, 2], [4, 4]], fixes=[fix(1)])],
+    )
+    [row] = gaps["cves"]
+    assert row["fix_dated_by"] == [{"line": "", "fix": "2.0", "named": None, "dated_as": "3.0", "on": d(90), "how": "next_dated"}]
+
+
+def test_two_cves_with_one_fix_and_different_ranges_find_their_own_stand_ins() -> None:
+    """The stand-in is the CVE's own, not the fix's: 1.0 (d-100), 2.0 (undated: the fix of both), 2.1
+    (d50), 3.0 (d90). CVE-420's run is 1.0..2.1, so 2.1 cannot stand in and 3.0 dates its fix; CVE-421's
+    is 1.0 alone, so 2.1 dates its fix. Each clears on its own stand-in."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100)), version("2.0", None), version("2.1", d(50)), version("3.0", d(90))],
+        [
+            cve("CVE-2026-0420", published=d(40), detectable=d(40), affected=[[0, 2]], fixes=[fix(1)]),
+            cve("CVE-2026-0421", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)]),
+        ],
+    )
+    wide, narrow = result["cves"]
+    assert (wide["fix_dated_by"][0]["dated_as"], narrow["fix_dated_by"][0]["dated_as"]) == ("3.0", "2.1")
+    assert (wide["outcomes"]["1d"]["cleared_by"], narrow["outcomes"]["1d"]["cleared_by"]) == ("3.0", "2.1")
+
+
+def test_a_stand_in_rule_5_holds_affected_under_another_fix_still_stands_in() -> None:
+    """Only versions the CVE's runs cover are passed over, not those rule 5 holds affected. 1.0 (d-100,
+    train 1), 1.2 (d100, train 1.2: a fix the timeline dates), 1.5 (undated, train 1.5: a fix), 2.0 (d50,
+    train 2), 3.0 (d120, train 3). CVE-418: det d40, run 1.0, fixes 1.2 and 1.5. 2.0 is the first dated
+    version at or above 1.5 outside the run, so it dates 1.5, though rule 5 holds it affected under 1.2
+    (above it, dated d50 before d100, of another train).
+      1d: 1.0, 2.0 on d50 (rule 5 under 1.2), 1.2 on d100 (ranked below 2.0: no event), 3.0 on d120
+          -> [d40,d119] = 80 days, cleared by 3.0."""
+    result = fix_dating_walk(
+        [
+            version("1.0", d(-100), train="1"),
+            version("1.2", d(100), train="1.2"),
+            version("1.5", None, train="1.5"),
+            version("2.0", d(50), train="2"),
+            version("3.0", d(120), train="3"),
+        ],
+        [cve("CVE-2026-0418", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1), fix(2)])],
+    )
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "1.2", "named": None, "dated_as": "1.2", "on": d(100), "how": "fix"},
+        {"line": "", "fix": "1.5", "named": None, "dated_as": "2.0", "on": d(50), "how": "next_dated"},
+    ]
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["exposure_days"], one["cleared_by"]) == ([[d(40), d(119)]], 80, "3.0")
+
+
+def test_fixes_the_document_points_at_one_version_are_one_entry_each_in_its_order() -> None:
+    """The document's own shape (Chrome's CVE-2011-3022, Firefox's CVE-2024-9399): several `fixes[]`
+    entries point at one version, first the fix LoonSec lists itself with no `named`, then each NVD
+    bound listed at that version with its `named`. `fix_dated_by` keeps one entry per document entry, in
+    its order, and `counts.fix_dating` counts each. 1.0 (d-100), 2.0 (d60), 3.0 (d90). CVE-419: det d40,
+    run 1.0, three fixes at 2.0 (none, named 1.7.5, named 1.9).
+      Public dates 2.0: three `fix` entries on d60; the 1-day device clears on 2.0, [d40,d59].
+      A timeline without 2.0: three `next_dated` entries, each dated by 3.0 on d90; it clears on 3.0,
+          [d40,d89]. Three entries, not one: the walk does not merge fixes the document lists apart."""
+    versions = [version("1.0", d(-100)), version("2.0", d(60)), version("3.0", d(90))]
+    fixes = [{"line": "", "index": 1}, {"line": "", "index": 1, "named": "1.7.5"}, {"line": "", "index": 1, "named": "1.9"}]
+    rows = [cve("CVE-2026-0419", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=fixes)]
+
+    public = fix_dating_walk(versions, rows)
+    [row] = public["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "2.0", "named": named, "dated_as": "2.0", "on": d(60), "how": "fix"}
+        for named in (None, "1.7.5", "1.9")
+    ]
+    assert public["counts"]["fix_dating"] == {"fix": 3, "next_dated": 0, "undated": 0}
+    assert row["outcomes"]["1d"]["intervals"] == [[d(40), d(59)]]
+
+    gap = timeline([{"version": "1.0", "date": d(-100)}, {"version": "3.0", "date": d(90)}], source="fleet")
+    fleet = fix_dating_walk(versions, rows, observed=gap)
+    [row] = fleet["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "2.0", "named": named, "dated_as": "3.0", "on": d(90), "how": "next_dated"}
+        for named in (None, "1.7.5", "1.9")
+    ]
+    assert fleet["counts"]["fix_dating"] == {"fix": 0, "next_dated": 3, "undated": 0}
+    assert (row["outcomes"]["1d"]["intervals"], row["outcomes"]["1d"]["cleared_by"]) == ([[d(40), d(89)]], "3.0")
+    assert invariant_failures(public) == [] and invariant_failures(fleet) == []
+
+
+def test_a_document_with_or_without_the_retired_reason_word_walks_the_same() -> None:
+    """Since 2026-11-25 `fixed_version_not_in_timeline` is no reason of the walk's, and LoonSec's data
+    drops it from `exclusion_reasons`. A document that still lists it, and one that does not, walk to the
+    same numbers; the one that lists it keeps it in `by_reason` as its own word, counted 0."""
+    doc, observed = golden_a()
+    without = {**doc, "exclusion_reasons": list(walk_module.EXCLUSION_REASONS)}
+    with_word = {**doc, "exclusion_reasons": [*walk_module.EXCLUSION_REASONS, "fixed_version_not_in_timeline"]}
+    assert "fixed_version_not_in_timeline" not in walk_module.EXCLUSION_REASONS
+    a = walk(without, app="demo", track="demo/stable", timeline=observed)
+    b = walk(with_word, app="demo", track="demo/stable", timeline=observed)
+    assert "fixed_version_not_in_timeline" not in a["exclusions"]["by_reason"]
+    assert b["exclusions"]["by_reason"]["fixed_version_not_in_timeline"] == 0
+    for result in (a, b):
+        assert invariant_failures(result) == []
+        result["exclusions"]["by_reason"].pop("fixed_version_not_in_timeline", None)
+        result.pop("run_id")
+    assert a == b
 
 
 def test_the_fix_is_dated_by_the_timelines_day_not_by_when_a_device_may_install_it() -> None:

@@ -24,7 +24,9 @@ lowercased spelling is one of the track's `versions[].keys`; it is another track
 of another track of the same app; it is another channel's when the app's `other_channels` list it
 (a channel LoonSec names and does not walk yet, such as Firefox ESR); and it is unmatched when
 none of those list it. In that order: a version a track lists is that track's, whatever channel
-also lists it (ESR 153.0 shares its number with release 153.0). Jamf's "Firefox ESR" title shares
+also lists it (ESR 153.0 shares its number with release 153.0). A version spelled with Mozilla's
+`esr` suffix (`128.5.1esr`) is matched by its spelling as given and then without the suffix, the
+way the document lists a channel's versions; a track still wins. Jamf's "Firefox ESR" title shares
 Firefox's bundle id, Thunderbird's one title lists both channels interleaved, and Fleet holds
 `firefox@esr` beside `firefox`, so a timeline read for a release track carries ESR builds. An
 instance timeline keeps the track's versions and the unmatched ones, and sets the other tracks'
@@ -272,10 +274,27 @@ class Split:
         return not self.matched or (self.lists_exclusive and not self.exclusive)
 
 
+# Mozilla spells an ESR build with this suffix (`128.5.1esr`); LoonSec's `other_channels` lists it
+# without (`128.5.1`), as Jamf and Fleet spell it today.
+ESR_SUFFIX = "esr"
+
+
+def _unsuffixed(key: str) -> str | None:
+    """A timeline version spelled with Mozilla's `esr` suffix, without it; None for any other spelling."""
+    return key[: -len(ESR_SUFFIX)] if key.endswith(ESR_SUFFIX) and len(key) > len(ESR_SUFFIX) else None
+
+
 def split(observations: Iterable[tuple[str, dt.date | None]], app_row: Mapping[str, Any], track: str) -> Split:
     """Membership, never comparison: the track's own keys first, then any other track's, then any
     other channel's (`other_channels`, in the document's order), else unmatched. A version a track
-    lists is that track's whatever channel also lists it."""
+    lists is that track's whatever channel also lists it.
+
+    A version a timeline spells with Mozilla's `esr` suffix (`128.5.1esr`, already lowercased and
+    stripped) is matched by its spelling as given first, then by its spelling without the suffix,
+    which is how LoonSec's `other_channels` lists it. Track membership still wins: a track that
+    lists either spelling takes it (ESR `153.0esr` is the release track's `153.0`, as the unsuffixed
+    `153.0` is), and only then does a channel. A version matched without its suffix is kept, and
+    set aside, under that spelling, the one the document lists."""
     keys = track_keys(app_row)
     own_keys = keys.get(track, set())
     other_keys: set[str] = set()
@@ -293,13 +312,16 @@ def split(observations: Iterable[tuple[str, dt.date | None]], app_row: Mapping[s
     aside: dict[int, set[str]] = {}
     unmatched: set[str] = set()
     for key, day in observations:
-        if key in own_keys:
-            matched.add(key)
-            kept.append((key, day))
-        elif key in other_keys:
-            other.add(key)
-        elif key in channel_of:
-            aside.setdefault(channel_of[key], set()).add(key)
+        bare = _unsuffixed(key)
+        if key in own_keys or (key not in other_keys and bare in own_keys):
+            spelled = key if key in own_keys else str(bare)
+            matched.add(spelled)
+            kept.append((spelled, day))
+        elif key in other_keys or bare in other_keys:
+            other.add(key if key in other_keys else str(bare))
+        elif key in channel_of or bare in channel_of:
+            spelled = key if key in channel_of else str(bare)
+            aside.setdefault(channel_of[spelled], set()).add(spelled)
         else:
             unmatched.add(key)
             kept.append((key, day))
@@ -358,17 +380,29 @@ def _dates_line(joined: Split, track_row: Mapping[str, Any], ceiling: str) -> bo
     return any(day is not None and line_of.get(key) == ceiling for key, day in joined.kept)
 
 
-def _elsewhere(joined: Split) -> str:
-    """Where the versions a source names belong instead of this track: another track's list,
-    a channel LoonSec's data names and does not walk, or both."""
-    labels = [channel.label for channel in joined.other_channel]
-    channels = f"a build of {' or '.join(labels)}, " + ("a channel" if len(labels) == 1 else "channels")
-    channels += " LoonSec's data does not walk yet"
-    if joined.other and joined.other_channel:
-        return f"on another track's list or {channels}"
+def _named_instead(joined: Split) -> str:
+    """What a source that cannot date a track names instead (`Split.channel_missing`), each kind
+    said only when it is there: another track's versions, numbers the track shares with another
+    list (ESR 140.0 is release 140.0), versions LoonSec's data lists nowhere, and builds of a
+    channel it names and does not walk. None of them is the track's alone, which is the finding;
+    a sentence saying every version is one kind would overstate it whenever the others are there."""
+    parts = []
+    if joined.other:
+        parts.append("versions on another track's list")
+    if joined.matched:
+        shown = ", ".join(joined.matched[:3]) + (f" and {len(joined.matched) - 3} more" if len(joined.matched) > 3 else "")
+        parts.append(f"{'numbers' if len(joined.matched) > 1 else 'a number'} this track shares with another list ({shown})")
+    if joined.unmatched:
+        parts.append("versions LoonSec's data does not list")
     if joined.other_channel:
-        return channels
-    return "on another track's list"
+        labels = [channel.label for channel in joined.other_channel]
+        parts.append(
+            f"builds of {' or '.join(labels)}, "
+            + ("a channel" if len(labels) == 1 else "channels")
+            + " LoonSec's data does not walk yet"
+        )
+    listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return f"none of the versions it names is this track's alone. It names {listed}"
 
 
 def _no_channel(source: str, owner: str, name: str, track_row: Mapping[str, Any], ids: str, joined: Split) -> Unavailable:
@@ -383,14 +417,14 @@ def _no_channel(source: str, owner: str, name: str, track_row: Mapping[str, Any]
         return Unavailable(
             source,
             ESR_MISSING,
-            f"{owner} ({ids}) names no {name} ESR release: every version it names is {_elsewhere(joined)}, so {label} "
-            "has no Fleet timeline. Choose another source.",
+            f"{owner} ({ids}) names no {name} ESR release: {_named_instead(joined)}, so {label} has no Fleet timeline. "
+            "Choose another source.",
         )
     return Unavailable(
         source,
         CHANNEL_EMPTY,
-        f"{owner} lists no {name} release on the {channel} channel ({ids}): every version it names is "
-        f"{_elsewhere(joined)}, so {label} has no {who} timeline. Choose another track or source.",
+        f"{owner} lists no {name} release on the {channel} channel ({ids}): {_named_instead(joined)}, so {label} has "
+        f"no {who} timeline. Choose another track or source.",
     )
 
 
