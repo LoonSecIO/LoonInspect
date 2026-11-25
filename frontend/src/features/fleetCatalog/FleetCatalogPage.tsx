@@ -340,9 +340,9 @@ export function FleetCatalogPage({ scope }: { scope: CatalogScope }) {
                 <Fragment key={title.slug}>
                   <tr className={open.has(title.slug) ? "" : "border-b last:border-0"}>
                     <td className="px-4 py-2 font-medium">
-                      <button
+                      <span className="flex items-start gap-1"><button
                         type="button"
-                        className="-ml-1 rounded p-1 align-middle hover:bg-muted"
+                        className="-ml-1 shrink-0 rounded p-1 hover:bg-muted"
                         aria-expanded={open.has(title.slug)}
                         aria-controls={`fleet-history-row-${title.slug}`}
                         aria-label={t.fleetCatalog.historyToggleLabel(title.name)}
@@ -357,7 +357,7 @@ export function FleetCatalogPage({ scope }: { scope: CatalogScope }) {
                           )}
                         </span>
                       </button>
-                      <Link className="ml-1 align-middle text-primary hover:underline" to={scope.titleHref(title.slug)}>{title.name}</Link>
+                      <Link className="text-primary hover:underline" to={scope.titleHref(title.slug)}>{title.name}</Link></span>
                       <a
                         className="mt-1 block w-fit text-xs font-normal text-muted-foreground underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                         href={manifestUrl(title.slug)}

@@ -22,7 +22,7 @@ export const fleetDetailEnglish = {
   countNote: "A Mac with multiple installed builds can appear in more than one row.", sources: "Detection and policy evidence",
   jamfScope: "Jamf title matches describe public patch definitions. The organization’s deployment settings require separate review.",
   // Of the titles synced here only: a record can name a Jamf title this instance holds no row for (#899).
-  jamfMissing: "No Jamf Patch title this instance has synced matched this inventory record.",
+  jamfMissing: "No Jamf Patch title this instance has synced matches these installations.",
   jamfUnavailable: "No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.",
   jamfPending: "Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch."
 };
@@ -48,7 +48,7 @@ export const fleetDetailGerman: FleetDetailCopy = {
   filterVersion: "Nach exakter installierter Version filtern", allVersions: "Alle installierten Versionen", version: "Installierte Version", unknown: "Version unbekannt",
   countNote: "Ein Mac mit mehreren installierten Builds kann in mehreren Zeilen erscheinen.", sources: "Erkennungs- und Richtliniennachweise",
   jamfScope: "Jamf-Treffer beschreiben öffentliche Patchdefinitionen. Die Bereitstellungseinstellungen der Organisation sind gesondert zu prüfen.",
-  jamfMissing: "Kein Jamf-Patch-Titel, den diese Instanz synchronisiert hat, passt zu diesem Inventareintrag.",
+  jamfMissing: "Kein Jamf-Patch-Titel, den diese Instanz synchronisiert hat, passt zu diesen Installationen.",
   jamfUnavailable: "Kein Jamf-Patch-Titel konnte passen: Der Jamf-Patch-Katalog ist noch nicht synchronisiert. Öffnen Sie Geräte › Anwendungen › Jamf Patch und klicken Sie auf Jetzt synchronisieren.",
   jamfPending: "Der Jamf-Patch-Abgleich ist hier noch nicht für jeden Eintrag abgeschlossen. Der nächste Geräte-Sweep schließt ihn ab, ebenso Jetzt synchronisieren unter Geräte › Anwendungen › Jamf Patch."
 };

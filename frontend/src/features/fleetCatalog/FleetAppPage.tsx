@@ -25,18 +25,19 @@ function InstalledBuilds({ data }: { data: MigrationDetail }) {
   const { t, locale } = useLocale();
   const words = t.fleetDetail;
   const [picked, setPicked] = useState<string | null>(null);
-  const versions = [...new Set(data.builds.map(build => build.version))];
+  // `at` is -1 for every version, and again once a re-read no longer lists the one picked.
+  const versions = [...new Set(data.builds.map(build => build.version))], at = picked === null ? -1 : versions.indexOf(picked);
   const high = Math.max(1, ...data.builds.map(build => build.macs)), names = new Map(data.items.map(item => [item.appHash, item.name]));
   return <section className={card}><h3 className={heading}>{words.installed}</h3>
     {!data.builds.length ? <p className="text-sm text-muted-foreground">{words.noBuilds}</p> : <>
       {versions.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">{words.filterVersion}
-        <select className="max-w-full rounded-md border bg-background px-2 py-1" value={picked === null ? "" : String(versions.indexOf(picked))}
+        <select className="max-w-full rounded-md border bg-background px-2 py-1" value={at < 0 ? "" : String(at)}
           onChange={event => setPicked(event.target.value === "" ? null : versions[Number(event.target.value)])}>
           <option value="">{words.allVersions}</option>{versions.map((version, index) => <option key={version} value={String(index)}>{version || words.unknown}</option>)}
         </select></label>}
       <div className="max-h-80 overflow-auto"><table className="w-full text-left text-sm">
         <thead className={`border-b ${label}`}><tr><th className="py-2 pr-3" scope="col">{words.version}</th><th className="py-2" scope="col">{words.count}</th></tr></thead>
-        <tbody>{data.builds.filter(build => picked === null || build.version === picked).map(build =>
+        <tbody>{data.builds.filter(build => at < 0 || build.version === picked).map(build =>
           <tr key={`${build.appHash}:${build.versionHash}`} className="border-b last:border-0">
             <td className="break-all py-2 pr-3"><strong>{build.version || words.unknown}</strong>
               {build.shortVersion && build.shortVersion !== build.version && <small className="ml-2 text-muted-foreground">({build.shortVersion})</small>}

@@ -3617,7 +3617,7 @@ nothing here is a permissions problem in Jamf.
     - *No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
     - *Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch.*
       → the next device sweep, or **Sync now**.
-    - *No Jamf Patch title this instance has synced matched this inventory record.* → search **Devices › Applications › Jamf Patch** for the app
+    - *No Jamf Patch title this instance has synced matches these installations.* → search **Devices › Applications › Jamf Patch** for the app
       with *Only titles with devices* unticked. No title there means Jamf publishes none for it; a title there that matches none of these Macs is §6 step 6.
     - *Several channels or identities can fit the inventory evidence. Confirm the intended channel before planning an update.*
       → open each title under **Fleet channels** and compare its manifest and history with the installed build.
