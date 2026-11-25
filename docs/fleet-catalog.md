@@ -262,6 +262,26 @@ The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
 
+### The migration report (API only, so far)
+
+`GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected
+Macs, with the Fleet titles that carry its bundle identifier. It needs `app:read` and `device:read`
+and takes `deviceScope`, the filter Installed Apps and Patch Plans use, so all three count the same
+Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag off it answers
+`enabled: false` and counts nothing.
+
+- **`scope`.** *Eligible* is every current Jamf Mac the filter's connection and style allow;
+  departed Macs and other platforms never count. *Selected* is the eligible Macs the conditions
+  keep; the rest of the report counts only these. *Unknown contact* and *unknown inventory* are
+  eligible Macs whose date is missing or in the future, which only *is unknown* selects.
+- **`match`.** `exact` is one Fleet title in a complete snapshot; `none`, no title in a complete
+  snapshot; `ambiguous`, several titles, an EA-assumed build or more than one Jamf Patch title;
+  `unknown`, anything else. In `fleetDeviceCounts`, Fleet titles that share a bundle identifier
+  share a count.
+- **One known difference from a patch plan.** When an app's one Jamf Patch title is in the synced
+  Jamf Patch catalog but missing from some of its builds or Macs, this reads `exact`, while a
+  patch plan withholds Fleet's version as its target and asks for identity review.
+
 ## What it leaves out
 
 - **No vulnerability or patch judgement.** Fleet's titles are not joined to the vulnerability
