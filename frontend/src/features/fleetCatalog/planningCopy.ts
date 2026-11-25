@@ -1,11 +1,11 @@
 import type { MigrationScope, PriorityReason } from "./migrationTypes";
 import type { CoverageKey, PolicySummary, PortfolioEmpty, PortfolioSort, ReviewFilter } from "./portfolioView";
 
-// The migration list's words (#903). The answer carries codes and counts, never a sentence, so every word the list
-// shows is here, the German typed against the English through `Translations`; an error's `detail` is the one server
-// sentence, shown as sent like the other server diagnostics. Each code map `satisfies` its union, so a new member
-// fails the type check until both languages word it. No sentence names the list or a segment: each next check is
-// named by something on main that keeps its name, which planningCopy.test.ts holds them to.
+// The migration list's words (#903). Its answer carries codes and counts, never a sentence, so they are worded here,
+// the German typed against the English through `Translations`. The list borrows only main's `fleetCatalog.title` and
+// `emptyFlagOff`, and shows an error's `detail`, the one server sentence, as sent. Each code map `satisfies` its
+// union, so a new member fails the type check until both languages word it. No sentence names the list or a
+// segment: each next check is named by something on main that keeps its name, which planningCopy.test.ts holds.
 
 /** `n` grouped the reader's way, its noun singular at 1: "1 build", "1,234 builds", "1.234 Builds". */
 const english = (n: number, one: string, many: string) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
@@ -26,13 +26,13 @@ export const fleetPlanningEnglish = {
     outside: "Outside both catalogs", fleet: "Fleet", channels: "Confirm channel", jamf: "Jamf Patch",
     noFleet: "No Fleet title", unavailable: "Coverage unknown"
   } satisfies Record<CoverageKey, string>,
-  // Main's Jamf Patch legend: the same judgement, under the same rule.
+  // `overdue`, `within` and `unassessed` are main's Jamf Patch legend: the same judgement, under the same rule.
   policy: {
     overdue: "Out of policy", partial: "Partly judged", unassessed: "Not judged", within: "Within policy", exempt: "Exempt"
   } satisfies Record<PolicySummary, string>,
   // Against Fleet's latest version, the list's only target; the app page's header reuses them. The out-of-policy
-  // build is not called an older one: the rule judges every build, so it can be one at or past Fleet's latest
-  // while another build is behind (#897).
+  // build is not called an older one: the patch rule judges every build, so the one out of policy can be at or
+  // past Fleet's latest while another build is behind (#897).
   reasons: {
     out_of_policy: "An installed build is outside its confirmed Jamf Patch rule.",
     kev: "An older installed build carries a finding on CISA’s Known Exploited Vulnerabilities list.",
