@@ -1321,6 +1321,95 @@
         "title": "AuthStatusOut",
         "type": "object"
       },
+      "BriefingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "BriefingIn",
+        "type": "object"
+      },
+      "BriefingOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/Highlight"
+            },
+            "title": "Highlights",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "enum": [
+              "selected",
+              "fallback"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "nothing_to_rank",
+                  "unusable",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "highlights",
+          "outcome"
+        ],
+        "title": "BriefingOut",
+        "type": "object"
+      },
       "BuildPlan": {
         "additionalProperties": false,
         "properties": {
@@ -4843,6 +4932,430 @@
         "title": "FindingDetectedOut",
         "type": "object"
       },
+      "FleetAssessmentOut": {
+        "properties": {
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "behindBuilds": {
+            "default": 0,
+            "title": "Behindbuilds",
+            "type": "integer"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/FleetBuildAssessmentOut"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "corpusAsOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusasof"
+          },
+          "exactBuilds": {
+            "default": 0,
+            "title": "Exactbuilds",
+            "type": "integer"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "management": {
+            "default": "observe",
+            "enum": [
+              "recurring",
+              "one_time",
+              "observe"
+            ],
+            "title": "Management",
+            "type": "string"
+          },
+          "netOnlyBuilds": {
+            "default": 0,
+            "title": "Netonlybuilds",
+            "type": "integer"
+          },
+          "oldestGapDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldestgapdays"
+          },
+          "outOfPolicyBuilds": {
+            "default": 0,
+            "title": "Outofpolicybuilds",
+            "type": "integer"
+          },
+          "policyExemptBuilds": {
+            "default": 0,
+            "title": "Policyexemptbuilds",
+            "type": "integer"
+          },
+          "policyUnassessedBuilds": {
+            "default": 0,
+            "title": "Policyunassessedbuilds",
+            "type": "integer"
+          },
+          "priority": {
+            "default": "monitor",
+            "enum": [
+              "review_now",
+              "plan_update",
+              "review_identity",
+              "monitor"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "priorityReason": {
+            "default": "none_behind",
+            "enum": [
+              "none_behind",
+              "unordered",
+              "identity",
+              "out_of_policy",
+              "kev",
+              "comparable"
+            ],
+            "title": "Priorityreason",
+            "type": "string"
+          },
+          "recentVersions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recentversions"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          },
+          "unorderedBuilds": {
+            "default": 0,
+            "title": "Unorderedbuilds",
+            "type": "integer"
+          },
+          "withinPolicyBuilds": {
+            "default": 0,
+            "title": "Withinpolicybuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "targetVersion"
+        ],
+        "title": "FleetAssessmentOut",
+        "type": "object"
+      },
+      "FleetBuildAssessmentOut": {
+        "properties": {
+          "addressedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressedids"
+          },
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "comparison": {
+            "enum": [
+              "exact",
+              "net_only",
+              "off",
+              "unknown_source",
+              "unknown_target",
+              "ambiguous"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "installedKev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installedkev"
+          },
+          "introducedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introducedids"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "policyDueAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policydueat"
+          },
+          "policyRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatchRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policySource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "override"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policysource"
+          },
+          "policyState": {
+            "default": "unassessed",
+            "enum": [
+              "within",
+              "out",
+              "exempt",
+              "unassessed"
+            ],
+            "title": "Policystate",
+            "type": "string"
+          },
+          "policyTitleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policytitleid"
+          },
+          "policyUnassessed": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identity",
+                  "no_jamf_title",
+                  "no_rule",
+                  "not_judged"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policyunassessed"
+          },
+          "policyVerdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyVersionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remainingIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainingids"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comparison",
+          "deviceCount",
+          "name",
+          "version"
+        ],
+        "title": "FleetBuildAssessmentOut",
+        "type": "object"
+      },
+      "FleetCandidate": {
+        "properties": {
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundleId",
+          "latestVersion",
+          "name",
+          "slug"
+        ],
+        "title": "FleetCandidate",
+        "type": "object"
+      },
       "FleetCatalogOut": {
         "properties": {
           "enabled": {
@@ -5358,6 +5871,33 @@
         "title": "HeldEvents",
         "type": "object"
       },
+      "Highlight": {
+        "properties": {
+          "code": {
+            "enum": [
+              "apps_overdue",
+              "apps_with_kev",
+              "ambiguous_apps",
+              "incomplete_comparisons",
+              "recurring_review",
+              "exact_candidates",
+              "scoped_macs"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
+        ],
+        "title": "Highlight",
+        "type": "object"
+      },
       "HostDetectionOut": {
         "properties": {
           "alias": {
@@ -5688,6 +6228,122 @@
           "versionHash"
         ],
         "title": "InstalledAppOut",
+        "type": "object"
+      },
+      "InstalledBuild": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "shortVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortversion"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "versionHash": {
+            "title": "Versionhash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appHash",
+          "macs",
+          "shortVersion",
+          "version",
+          "versionHash"
+        ],
+        "title": "InstalledBuild",
+        "type": "object"
+      },
+      "InstalledEvidence": {
+        "description": "One app's builds on the selected Macs, each read through the answer it already stores (#896).\n\nA build is one version, however many Macs carry it. Installed Apps counts device/build pairs, so a build\non 500 Macs reads 500 there and 1 here. The three finding counts count builds, never findings summed\nacross builds, and are null, never 0, under `off` and `unknown_app`, where nobody looked.",
+        "properties": {
+          "affectedBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affectedbuilds"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "assessedBuilds": {
+            "default": 0,
+            "title": "Assessedbuilds",
+            "type": "integer"
+          },
+          "assessment": {
+            "enum": [
+              "off",
+              "unknown_app",
+              "partial",
+              "covered"
+            ],
+            "title": "Assessment",
+            "type": "string"
+          },
+          "highOrCriticalBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highorcriticalbuilds"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "assessment"
+        ],
+        "title": "InstalledEvidence",
         "type": "object"
       },
       "JamfPatchCoverageOut": {
@@ -6080,6 +6736,24 @@
         "title": "JamfPatchTitleOut",
         "type": "object"
       },
+      "JamfTitle": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "JamfTitle",
+        "type": "object"
+      },
       "KnownDepartment": {
         "description": "A department id and the name Jamf's catalog gives it. One row per distinct pair: two\nconnections that both have a department 5 with different names send both, and the page\nlabels an id only when its name is unambiguous.",
         "properties": {
@@ -6147,6 +6821,68 @@
           "name"
         ],
         "title": "KnownGroup",
+        "type": "object"
+      },
+      "LocalApp": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "fleetCandidates": {
+            "items": {
+              "$ref": "#/components/schemas/FleetCandidate"
+            },
+            "title": "Fleetcandidates",
+            "type": "array"
+          },
+          "hasJamfMatch": {
+            "title": "Hasjamfmatch",
+            "type": "boolean"
+          },
+          "jamfEvaluated": {
+            "title": "Jamfevaluated",
+            "type": "boolean"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "match": {
+            "enum": [
+              "exact",
+              "ambiguous",
+              "none",
+              "unknown"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appHash",
+          "bundleId",
+          "fleetCandidates",
+          "hasJamfMatch",
+          "jamfEvaluated",
+          "macs",
+          "match",
+          "name",
+          "versionCount"
+        ],
+        "title": "LocalApp",
         "type": "object"
       },
       "LoginRequest": {
@@ -7169,6 +7905,308 @@
           "recoveryCodesRemaining"
         ],
         "title": "MfaStatusOut",
+        "type": "object"
+      },
+      "MigrationDetail": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "assessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Assessments",
+            "type": "object"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionImpact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "impactUnavailable": {
+            "anyOf": [
+              {
+                "enum": [
+                  "catalog_incomplete",
+                  "no_fleet_title",
+                  "identity_review",
+                  "unordered_target"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactunavailable"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalApp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "jamfTitles": {
+            "items": {
+              "$ref": "#/components/schemas/JamfTitle"
+            },
+            "title": "Jamftitles",
+            "type": "array"
+          },
+          "observedChanges": {
+            "$ref": "#/components/schemas/ObservedChanges"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "builds",
+          "installedMacs",
+          "items",
+          "jamfTitles",
+          "observedChanges",
+          "scope"
+        ],
+        "title": "MigrationDetail",
+        "type": "object"
+      },
+      "MigrationReport": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "fleetDeviceCounts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Fleetdevicecounts",
+            "type": "object"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          }
+        },
+        "required": [
+          "asOf",
+          "scope"
+        ],
+        "title": "MigrationReport",
+        "type": "object"
+      },
+      "MigrationScope": {
+        "properties": {
+          "eligibleMacs": {
+            "default": 0,
+            "title": "Eligiblemacs",
+            "type": "integer"
+          },
+          "selectedMacs": {
+            "default": 0,
+            "title": "Selectedmacs",
+            "type": "integer"
+          },
+          "unknownContactMacs": {
+            "default": 0,
+            "title": "Unknowncontactmacs",
+            "type": "integer"
+          },
+          "unknownInventoryMacs": {
+            "default": 0,
+            "title": "Unknowninventorymacs",
+            "type": "integer"
+          }
+        },
+        "title": "MigrationScope",
+        "type": "object"
+      },
+      "ObservedChanges": {
+        "description": "Version moves of the detail's identities on the selected Macs over the last `windowDays` (#900). Both adoption\nfields are null when timing was not measured (no one `exact` Fleet title); measured, nothing paired reads 0 and null.",
+        "properties": {
+          "adoptionSamples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adoptionsamples"
+          },
+          "lastAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastat"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "medianDaysAfterFleetPublication": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediandaysafterfleetpublication"
+          },
+          "versionChanges": {
+            "title": "Versionchanges",
+            "type": "integer"
+          },
+          "windowDays": {
+            "title": "Windowdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adoptionSamples",
+          "lastAt",
+          "macs",
+          "medianDaysAfterFleetPublication",
+          "versionChanges",
+          "windowDays"
+        ],
+        "title": "ObservedChanges",
         "type": "object"
       },
       "ObservedEntryOut": {
@@ -11251,6 +12289,39 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionImpact": {
+        "properties": {
+          "atOrAboveMacs": {
+            "title": "Atorabovemacs",
+            "type": "integer"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "olderMacs": {
+            "title": "Oldermacs",
+            "type": "integer"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownMacs": {
+            "title": "Unknownmacs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atOrAboveMacs",
+          "installedMacs",
+          "olderMacs",
+          "targetVersion",
+          "unknownMacs"
+        ],
+        "title": "VersionImpact",
         "type": "object"
       },
       "VersionOperator": {
@@ -15425,6 +16496,296 @@
           }
         },
         "summary": "Read Catalog",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/briefing": {
+      "get": {
+        "description": "Whether a briefing can be asked for: the Fleet catalog flag, then the AI switches as every AI surface reads them.",
+        "operationId": "briefing_status_api_fleet_catalog_briefing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Briefing Status",
+        "tags": [
+          "fleet-catalog"
+        ]
+      },
+      "post": {
+        "description": "Which of the report's counts for the Macs `deviceScope` selects lead, as a saved provider ranks them.",
+        "operationId": "briefing_api_fleet_catalog_briefing_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Briefing",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration": {
+      "get": {
+        "description": "Each app on the Macs `deviceScope` selects, with the Fleet titles that carry its bundle identifier.",
+        "operationId": "migration_report_api_fleet_catalog_migration_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Migration Report",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/apps/{app_hash}": {
+      "get": {
+        "description": "One installed app on the Macs `deviceScope` selects: its builds, Jamf Patch titles and a Fleet target's impact.",
+        "operationId": "read_app_api_fleet_catalog_migration_apps__app_hash__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_hash",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read App",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/titles/{slug}": {
+      "get": {
+        "description": "One Fleet title and every app with its bundle ID, as `/apps` answers one. Finding IDs need `vuln:read` on both.",
+        "operationId": "read_title_api_fleet_catalog_migration_titles__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title",
         "tags": [
           "fleet-catalog"
         ]
