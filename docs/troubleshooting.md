@@ -3420,8 +3420,10 @@ has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Noth
 
 ## 27. "The Fleet catalog tab is missing, empty, or says its last check did not get an answer"
 
-**Devices › Applications › Fleet catalog** lists the Mac apps Fleet maintains beside what this
-organization has installed ([`fleet-catalog.md`](fleet-catalog.md), #794). The list is one copy
+**Devices › Applications › Fleet catalog** opens on **Migration review**, the installed apps on the
+Macs in the device filter against Fleet's and Jamf's catalogs (step 12). Its other view, **Fleet
+titles**, lists the Mac apps Fleet maintains beside what this organization has installed
+([`fleet-catalog.md`](fleet-catalog.md), #794); steps 2 to 10 are about it. Fleet's list is one copy
 for the whole instance, read from Fleet's public repository on GitHub once a day, and only
 while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
 nothing here is a permissions problem in Jamf.
@@ -3575,6 +3577,26 @@ nothing here is a permissions problem in Jamf.
     **Devices › Applications › Jamf Patch**); or
     `unordered_target`, the target holds no number (choose a numeric version from the history; a
     qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
+12. **Migration review is empty, or a sentence stands above or in place of its list.** It counts the
+    Macs the device filter above it selects, every current Jamf Mac when none is applied
+    ([`fleet-catalog.md`](fleet-catalog.md#migration-review)). By the sentence:
+    - *No current Jamf Mac is on record for the filter’s Jamf connection, so there is nothing to review. Apps appear here once a device sweep collects a Mac.* → §1.
+    - *No Mac matches the device filter. Widen or clear the filter.*, or beside **Retry**
+      *The device filter is invalid. Check each condition or clear the filter and try again.*
+      → **Clear filter** in the device filter above, then §30.
+    - *The Macs in the device filter have no installed apps on record. Installed Apps, with the same filter, shows what their last sweep collected.*
+      → **Installed Apps** under the same filter. Apps there and none here is §8.
+    - *No installed app matches this search and Show choice. Clear the search or choose All installed apps.* → as it says.
+    - *The installed apps for this device filter could not be read. Check connectivity and retry; this does not mean no app needs review.*
+      → no answer came: reload the page, and if it stays, §4. *Insufficient permissions* beside
+      **Retry** instead → the account lacks `app:read` or `device:read`, which every built-in role holds.
+    - *Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why.*
+      or *Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.*
+      → the status line on **Fleet titles**: steps 2, 3 and 6.
+    - *Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+
+    *Unknown* beside **Outside both catalogs** is not zero: an app is outside both only once Fleet's
+    catalog is read whole and Jamf Patch titles are synced, and the sentence above says which is not.
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.
