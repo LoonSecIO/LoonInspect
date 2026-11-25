@@ -530,6 +530,14 @@ describe("with LoonSec's data, the page walks it", () => {
     expect(asked()).toHaveLength(1);
   });
 
+  it("names the stale copy's cause the instance judged, not the one this browser's clock would", async () => {
+    // A build of 2025-01-11 is years old by this browser's clock; the instance says it judged the
+    // publisher running, and the page follows the instance, as its own sentence does.
+    feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([appFixture()], { state: "stale", publisherRunning: true }));
+    await open();
+    expect(text()).toContain("LoonSec's publisher last ran on 2025-01-11, but its NVD data has not advanced since 2025-01-11");
+  });
+
   it("asks nothing for a source the address names and the instance cannot date", async () => {
     await open("?source=fleet");
     expect(walkApi.getPatchPolicyWalk).not.toHaveBeenCalled();

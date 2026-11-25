@@ -109,7 +109,7 @@ export const walkEnglish = {
     not_held: ({ app }: ReasonContext) =>
       `Fleet's catalog, as this instance last read it, holds no Mac title for ${app}. Choose another source (troubleshooting.md §33 step 5).`,
     catalog_partial: ({ app }: ReasonContext) =>
-      `Fleet's catalog has been read only in part on this instance, and the part read holds no Mac title for ${app}: it may be among the titles not read yet. The Fleet catalog tab's status line says why. Choose another source until a check reads the whole catalog (troubleshooting.md §27 step 6, §33 step 5).`,
+      `Fleet's catalog has been read only in part on this instance, and the part read holds no Mac title for ${app}: it may be among the titles not read yet. The instance's words below name the cause. Choose another source until a check reads the whole catalog (troubleshooting.md §33 step 5).`,
     history_unread: ({ app }: ReasonContext) =>
       `Fleet's version history for a title of ${app} has not been read on this instance yet (the instance's words name the title); an administrator with patch:catalog-sync can read it now with Read history on the Fleet catalog tab (troubleshooting.md §27, §33 step 5).`,
     history_failed: ({ app }: ReasonContext) =>
@@ -391,7 +391,7 @@ export const walkGerman: WalkCopy = {
     not_held: ({ app }: ReasonContext) =>
       `Fleets Katalog, wie diese Instanz ihn zuletzt gelesen hat, hat keinen Mac-Titel für ${app}. Wählen Sie eine andere Quelle (troubleshooting.md §33 Schritt 5).`,
     catalog_partial: ({ app }: ReasonContext) =>
-      `Fleets Katalog wurde auf dieser Instanz nur teilweise gelesen, und der gelesene Teil hat keinen Mac-Titel für ${app}: Er kann unter den noch nicht gelesenen Titeln sein. Die Statuszeile des Fleet-Katalogs nennt den Grund. Wählen Sie eine andere Quelle, bis eine Prüfung den ganzen Katalog liest (troubleshooting.md §27 Schritt 6, §33 Schritt 5).`,
+      `Fleets Katalog wurde auf dieser Instanz nur teilweise gelesen, und der gelesene Teil hat keinen Mac-Titel für ${app}: Er kann unter den noch nicht gelesenen Titeln sein. Der Wortlaut der Instanz darunter nennt die Ursache. Wählen Sie eine andere Quelle, bis eine Prüfung den ganzen Katalog liest (troubleshooting.md §33 Schritt 5).`,
     history_unread: ({ app }: ReasonContext) =>
       `Fleets Versionshistorie für einen Titel von ${app} wurde auf dieser Instanz noch nicht gelesen (der Wortlaut der Instanz nennt den Titel); eine Administratorin oder ein Administrator mit patch:catalog-sync kann sie jetzt mit Historie lesen auf dem Tab Fleet-Katalog lesen (troubleshooting.md §27, §33 Schritt 5).`,
     history_failed: ({ app }: ReasonContext) =>

@@ -247,11 +247,14 @@ describe("the words for how a fix was dated", () => {
 describe("a Fleet catalog read only in part", () => {
   const context = { app: "Example Browser", track: "Example Browser (release)", source: "this instance's Fleet history", sourceId: "fleet" as const };
 
-  it("says the title may be unread, not that Fleet holds none, and points at the catalog's status line", () => {
+  it("says the title may be unread, not that Fleet holds none, and leaves the cause to the instance's words", () => {
+    // The cause is one of three (a check cut short, titles it could not read, the 1.3.0 upgrade,
+    // which leaves the status line without words): the instance's sentence, shown beneath, names it.
     const english = walkEnglish.reasons.catalog_partial(context);
     expect(english).toBe(
-      "Fleet's catalog has been read only in part on this instance, and the part read holds no Mac title for Example Browser: it may be among the titles not read yet. The Fleet catalog tab's status line says why. Choose another source until a check reads the whole catalog (troubleshooting.md §27 step 6, §33 step 5)."
+      "Fleet's catalog has been read only in part on this instance, and the part read holds no Mac title for Example Browser: it may be among the titles not read yet. The instance's words below name the cause. Choose another source until a check reads the whole catalog (troubleshooting.md §33 step 5)."
     );
+    expect(english).not.toContain("status line says why");
     // not_held's conclusion is the one a partial read cannot draw.
     expect(english).not.toContain(walkEnglish.reasons.not_held(context).split(". ")[0]);
   });
@@ -260,7 +263,8 @@ describe("a Fleet catalog read only in part", () => {
     const german = walkGerman.reasons.catalog_partial(context);
     expect(german).toContain("nur teilweise gelesen");
     expect(german).toContain("keinen Mac-Titel für Example Browser");
-    expect(german).toContain("(troubleshooting.md §27 Schritt 6, §33 Schritt 5).");
+    expect(german).toContain("Der Wortlaut der Instanz darunter nennt die Ursache.");
+    expect(german).toContain("(troubleshooting.md §33 Schritt 5).");
     expect(german).not.toContain(walkGerman.reasons.not_held(context).split(". ")[0]);
   });
 });
