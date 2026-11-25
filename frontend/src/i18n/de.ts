@@ -1267,7 +1267,16 @@ export const de: Translations = {
     noMatches: "Keine Zeilen entsprechen diesem Filter.",
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} Zeile${total === 1 ? "" : "n"}` : `${shown} von ${total} Zeilen`,
-    tableVuln: "Schwachstellen"
+    tableVuln: "Schwachstellen",
+    refresh: "Aktualisieren",
+    refreshing: "Wird aktualisiert…",
+    refreshHint:
+      "Jede App-Version dieser Organisation jetzt gegen den aktuellen Jamf-Katalog und den Schwachstellen-Korpus neu beurteilen, statt auf die stündliche Aktualisierung zu warten. Der Gerätefilter schränkt das nicht ein.",
+    refreshed: (n: number) => `${n} ${n === 1 ? "App-Version" : "App-Versionen"} dieser Organisation neu beurteilt.`,
+    refreshedNone:
+      "Nichts neu zu beurteilen: Der Katalog dieser Organisation enthält noch keine App-Versionen. Er füllt sich, sobald Geräte verarbeitet werden.",
+    refreshFailed:
+      "Der Katalog konnte nicht neu beurteilt werden, und diese Instanz nannte keinen Grund; die Liste zeigt deshalb weiter die Antworten des letzten Durchlaufs. Prüfen Sie, ob LoonInspect erreichbar ist, und lesen Sie dann in docker compose logs app die Anfrage an /api/catalog/refresh, bevor Sie erneut Aktualisieren drücken."
   },
   // #536 — kein Rahmenwerk wird in diesem Block genannt; `compliance.test.ts` prüft das.
   compliance: {

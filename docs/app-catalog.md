@@ -185,7 +185,7 @@ tests are not applicable. A per-device override that reads a carried attribute i
   `CatalogEntryAssessedOut`, which does. A caller wanting an assessment asks `GET /api/catalog`,
   whose every row is its own build.
 - `POST /api/catalog/refresh` — re-judge every row of the tenant (Analyst and up, like the
-  catalog sync).
+  catalog sync). The Catalog tab's **Refresh** button calls it (#931).
 
 ## 5. The UI
 
@@ -193,6 +193,13 @@ Devices › Applications › **Catalog**: one row per distinct app version — n
 version, devices, first seen, last seen, Jamf title(s) (linking to the title page), state, latest,
 released, **vulnerabilities** — with search, the Jamf filter, and "installed now only"; four tiles
 (distinct app versions, installed now, known to Jamf, not in Jamf's catalog). en + de.
+
+**Refresh** (#931), shown only to an account holding `patch:catalog-sync`, calls
+`POST /api/catalog/refresh` and reads the list again. It re-judges the whole organization,
+whatever the device filter says, and makes no outbound call. It reports how many rows it
+judged, or that the catalog is empty. A failure shows the server's sentence, or, when the
+server gave none, what to check. It is the control `docs/troubleshooting.md` §5 step 3 and
+the Vulnerabilities page's *not yet judged* sentence name.
 
 The **State** and **Latest** cells are the shared patch-answer cell of
 `docs/jamf-patch-matching.md` §6 (#313): the state with #68's sentence under it, the
