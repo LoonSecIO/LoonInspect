@@ -211,6 +211,35 @@ The API is `GET /api/fleet-catalog/{slug}/history` (`app:read`, asks GitHub noth
 to the same address (`patch:catalog-sync`, reads it now). Both are refused in words with the
 flag off. A refused read is a `409` with the sentence as its `detail`.
 
+### Observed upgrades
+
+Each [migration detail](#migration-detail) carries `observedChanges` (#900): how this fleet has
+been taking the app's updates, read from the [change log](change-log.md) and timed against
+Fleet's dates. It counts only the Macs the request's `deviceScope` selects, and only the
+detail's app identities. An app with no bundle ID is matched under its name, as inventory
+stores it.
+
+- **The counts.** `windowDays` is 90, the window everything covers. `versionChanges` counts the
+  change log's application updates there in which `version`, `cfBundleShortVersionString` or
+  `cfBundleVersion` moved, with both sides present; `macs` counts the distinct Macs among them,
+  and `lastAt` is the newest. Rows dated after the request are left out.
+- **They need the change log.** Applications are recorded only with **Settings › Change
+  tracking** at *High + normal* (the default) or *Everything*, and a Mac's first sweep is its
+  baseline, so it counts from its second.
+- **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
+  dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
+  this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair
+  counts when its first recorded upgrade is inside the window and on or after Fleet's date. A
+  Mac that took the version before the window, rolled back and took it again is not counted; a
+  rollback alone drops nothing. `medianDaysAfterFleetPublication` is the median of the days from
+  Fleet's date to each pair's first upgrade, to two decimals.
+- **Null is not 0.** Timing is measured only when the detail has one Fleet title to compare:
+  a [complete](#complete-or-partial) catalog and every identity `exact`. Otherwise both
+  adoption fields are null, because nobody looked. Measured with nothing paired,
+  `adoptionSamples` is 0 and the median null.
+- **The interval ends at the sweep that recorded the upgrade**, not at the install, so each is
+  long by up to the time between two sweeps of that Mac.
+
 ## What a check can find
 
 The last check's outcome is one word, with a sentence when there is something to say. Both are
@@ -366,6 +395,7 @@ Fleet title and every installed identity with its bundle ID) take the report's `
 holds. Each lists the builds with distinct Macs, `installedMacs` and the matched Jamf Patch titles.
 `impact` counts each Mac once as older, at or above, or unknown; when it is null,
 `impactUnavailable` says why. Finding IDs need `vuln:read`; every caller gets the counts.
+`observedChanges` is described under [Observed upgrades](#observed-upgrades).
 Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
 
 ## What it leaves out

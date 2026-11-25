@@ -13,7 +13,15 @@ from app.core.auth import Principal, current_principal, principal_permissions, r
 from app.core.device_scope import parse_scope
 from app.core.device_scope_queries import get_scope_snapshot_db, prepare_scope
 from app.core.fleet_assessment import app_assessments, fleet_assessments, installed_evidence
-from app.core.fleet_migration import build_spread, catalog_device_counts, cohort, impact_for, local_apps, title_index
+from app.core.fleet_migration import (
+    build_spread,
+    catalog_device_counts,
+    cohort,
+    impact_for,
+    local_apps,
+    local_changes,
+    title_index,
+)
 from app.core.permissions import Permission
 from app.core.vuln_library import earned_corpus, loaded_epoch_signature
 from app.core.vuln_read import corpus_as_of
@@ -138,12 +146,13 @@ async def _detail(
     read = {"eligible_devices": devices, "corpus": corpus, "epoch": epoch, "rules": await patching_rules(db)}
     read |= {"include_builds": True, "include_ids": include_ids, "target_version": target}
     impact = await impact_for(db, devices, items, builds, target, installed_macs) if comparison is not None else None
-    whole_title = comparison is not None and title is not None and all(item.match == "exact" for item in items)
+    timed = comparison is not None and all(item.match == "exact" for item in items)  # one Fleet title to date against
     return MigrationDetail(
         **context,
+        observed_changes=await local_changes(db, devices, items, context["as_of"], comparison.slug if timed else None),
         installed_evidence=evidence,
         app_assessments=await app_assessments(db, safe_apps, **read),
-        assessments=await fleet_assessments(db, [title], **read) if whole_title else {},
+        assessments=await fleet_assessments(db, [title], **read) if timed and title is not None else {},
         item=items[0] if app_hash is not None else None,
         title=FleetCandidate.model_validate(title) if title is not None else None,
         items=items,

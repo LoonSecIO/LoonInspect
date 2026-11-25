@@ -91,7 +91,20 @@ class VersionImpact(ReportModel):
     unknown_macs: int
 
 
+class ObservedChanges(ReportModel):
+    """Version moves of the detail's identities on the selected Macs over the last `windowDays` (#900). Both adoption
+    fields are null when timing was not measured (no one `exact` Fleet title); measured, nothing paired reads 0 and null."""
+
+    window_days: int
+    version_changes: int
+    macs: int
+    last_at: datetime | None
+    adoption_samples: int | None
+    median_days_after_fleet_publication: float | None
+
+
 class MigrationDetail(ReportContext):
+    observed_changes: ObservedChanges
     item: LocalApp | None = None
     title: FleetCandidate | None = None
     items: list[LocalApp]

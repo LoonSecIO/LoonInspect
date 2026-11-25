@@ -7906,6 +7906,9 @@
             "title": "Jamftitles",
             "type": "array"
           },
+          "observedChanges": {
+            "$ref": "#/components/schemas/ObservedChanges"
+          },
           "scope": {
             "$ref": "#/components/schemas/MigrationScope"
           },
@@ -7926,6 +7929,7 @@
           "installedMacs",
           "items",
           "jamfTitles",
+          "observedChanges",
           "scope"
         ],
         "title": "MigrationDetail",
@@ -8026,6 +8030,67 @@
           }
         },
         "title": "MigrationScope",
+        "type": "object"
+      },
+      "ObservedChanges": {
+        "description": "Version moves of the detail's identities on the selected Macs over the last `windowDays` (#900). Both adoption\nfields are null when timing was not measured (no one `exact` Fleet title); measured, nothing paired reads 0 and null.",
+        "properties": {
+          "adoptionSamples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adoptionsamples"
+          },
+          "lastAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastat"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "medianDaysAfterFleetPublication": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediandaysafterfleetpublication"
+          },
+          "versionChanges": {
+            "title": "Versionchanges",
+            "type": "integer"
+          },
+          "windowDays": {
+            "title": "Windowdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adoptionSamples",
+          "lastAt",
+          "macs",
+          "medianDaysAfterFleetPublication",
+          "versionChanges",
+          "windowDays"
+        ],
+        "title": "ObservedChanges",
         "type": "object"
       },
       "ObservedEntryOut": {
