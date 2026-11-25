@@ -577,6 +577,11 @@ def _row_problem(row: Mapping[str, object], size: int) -> str | None:
         index = fix.get("index") if isinstance(fix, Mapping) else "?"
         if index is not None and (not _is_count(index) or index >= size):
             return f"{cve} has a fix index {json.dumps(index)} outside its {size} versions"
+        # NVD's fix version as written, present only where the index does not point at it (ruled
+        # 2026-11-25); the walk shows it beside the version that dated the fix, so it must be text.
+        named = fix.get("named") if isinstance(fix, Mapping) else None
+        if isinstance(fix, Mapping) and "named" in fix and (not isinstance(named, str) or not named):
+            return f"{cve} has a fix whose named version {json.dumps(named)} is not text"
     return None
 
 

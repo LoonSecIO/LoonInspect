@@ -150,10 +150,17 @@ def test_golden_a_window_join_and_counts() -> None:
     Placement by clock (detectable_at, else published): before the window CVE-4 (det d20) and CVE-5
     (published d10, no det); after it CVE-7 (d185); in it CVE-1 (d40), -2 (d45), -3 (d50), -6
     (d170), -9 (published d50), -10 (d35), -11 (published d60) = 7. Every device runs line "", so
-    "" is visited: CVE-10 is ambiguous on it (branch_ambiguity), CVE-3's fix is 1.3, which the
-    timeline does not date (fixed_version_not_in_timeline), and CVE-9 is the document's own
-    exclusion (rejected). CVE-11 is ambiguous only on 2.0, which nobody visits. So replayed 4
-    (-1, -2, -6, -11), excluded 3; by clock 3 detectable_at (-1, -2, -6) and 1 published (-11).
+    "" is visited: CVE-10 is ambiguous on it (branch_ambiguity), and CVE-9 is the document's own
+    exclusion (rejected). CVE-11 is ambiguous only on 2.0, which nobody visits. CVE-3's fix is 1.3,
+    which the timeline does not date, and nothing above it on line "" is dated either: since the
+    2026-11-25 ruling that excludes nothing, and CVE-3 is walked by its affected run (fix_dated_by
+    says `undated`). So replayed 5 (-1, -2, -3, -6, -11), excluded 2; by clock 4 detectable_at
+    (-1, -2, -3, -6) and 1 published (-11).
+
+    fix_dated_by, over the rows `cves` lists (the five replayed, and CVE-4 and CVE-5 from before
+    the window): CVE-1, -2, -4, -5 and -6 name a fix the timeline dates (`fix`); CVE-3's 1.3 is
+    dated by nothing at or above it, and CVE-11 names no fix version at all (a null index): both
+    `undated`. So fix_dating is fix 5, next_dated 0, undated 2.
     """
     doc, observed = golden_a()
     result = walk(doc, app="demo", track="demo/stable", timeline=observed)
@@ -173,19 +180,25 @@ def test_golden_a_window_join_and_counts() -> None:
     counts = result["counts"]
     assert counts["cves_in_doc"] == 10
     assert (counts["before_window"], counts["in_window"], counts["after_window"]) == (2, 7, 1)
-    assert (counts["replayed"], counts["excluded"], counts["not_detectable"]) == (4, 3, 1)
-    assert counts["replayed_by_clock"] == {"detectable_at": 3, "published": 1}
+    assert (counts["replayed"], counts["excluded"], counts["not_detectable"]) == (5, 2, 1)
+    assert counts["replayed_by_clock"] == {"detectable_at": 4, "published": 1}
     by_reason = result["exclusions"]["by_reason"]
-    assert (by_reason["rejected"], by_reason["branch_ambiguity"], by_reason["fixed_version_not_in_timeline"]) == (1, 1, 1)
-    assert sum(by_reason.values()) == 3
+    assert (by_reason["rejected"], by_reason["branch_ambiguity"]) == (1, 1)
+    assert sum(by_reason.values()) == 2
+    assert "fixed_version_not_in_timeline" not in by_reason
     assert {row["cve_id"]: row["reason"] for row in result["exclusions"]["cves"]} == {
-        "CVE-2026-0003": "fixed_version_not_in_timeline",
         "CVE-2026-0009": "rejected",
         "CVE-2026-0010": "branch_ambiguity",
     }
     details = {row["cve_id"]: row["detail"] for row in result["exclusions"]["cves"]}
-    assert details["CVE-2026-0003"] == "the fix on '' is 1.3, which this timeline does not date"
     assert details["CVE-2026-0010"] == "the range is ambiguous on '', which the path visits"
+    dated_by = {row["cve_id"]: row["fix_dated_by"] for row in result["cves"]}
+    assert dated_by["CVE-2026-0001"] == [{"line": "", "fix": "1.1", "named": None, "dated_as": "1.1", "on": d(60), "how": "fix"}]
+    assert dated_by["CVE-2026-0003"] == [
+        {"line": "", "fix": "1.3", "named": None, "dated_as": None, "on": None, "how": "undated"}
+    ]
+    assert dated_by["CVE-2026-0011"] == [{"line": "", "fix": None, "named": None, "dated_as": None, "on": None, "how": "undated"}]
+    assert counts["fix_dating"] == {"fix": 5, "next_dated": 0, "undated": 2}
     assert result["check"]["state"] == "no_entry"
     assert invariant_failures(result) == []
 
@@ -202,6 +215,10 @@ def test_golden_a_devices_and_totals_per_stop() -> None:
       never: the newest available by d31 -> 1.0, nothing after.
 
     In-window CVEs (inclusive day intervals):
+      CVE-3 (det d50, affected 1.2 only, fix 1.3, which nothing dates): walked by its run, so every
+             day stop is exposed from its 1.2 install to the window's end, open:
+             1d [d100,d180]=81  7d [d106,d180]=75  14d [d113,d180]=68  30d [d129,d180]=52
+             60d [d159,d180]=22. never runs 1.0: never seen, outside the affected range.
       CVE-1 (det d40, affected 0.9-1.0, fix 1.1): exposed until the 1.1 install.
              1d [d40,d59]=20  7d [d40,d65]=26  14d [d40,d72]=33  30d [d40,d88]=49  60d [d40,d118]=79
              never [d40,d180]=141, open at the window's end.
@@ -224,12 +241,12 @@ def test_golden_a_devices_and_totals_per_stop() -> None:
 
     expected = {
         # stop: (initial, installs, never_seen, outside, exposed, exposure_days, carried, entered, closed, days_carried)
-        "1d": ("1.0", [(60, "1.1"), (100, "1.2")], 3, 1, 1, 20, 1, 1, 0, 29),
-        "7d": ("1.0", [(66, "1.1"), (106, "1.2")], 3, 1, 1, 26, 1, 1, 0, 35),
-        "14d": ("1.0", [(73, "1.1"), (113, "1.2")], 3, 1, 1, 33, 1, 1, 0, 42),
-        "30d": ("1.0", [(89, "1.1"), (129, "1.2")], 3, 1, 1, 49, 1, 1, 0, 58),
-        "60d": ("0.9", [(59, "1.0"), (119, "1.1"), (159, "1.2")], 2, 1, 2, 79 + 14, 1, 1, 0, 88),
-        "never": ("1.0", [], 2, 1, 2, 141 + 11, 1, 0, 1, 150),
+        "1d": ("1.0", [(60, "1.1"), (100, "1.2")], 3, 1, 2, 20 + 81, 1, 1, 0, 29),
+        "7d": ("1.0", [(66, "1.1"), (106, "1.2")], 3, 1, 2, 26 + 75, 1, 1, 0, 35),
+        "14d": ("1.0", [(73, "1.1"), (113, "1.2")], 3, 1, 2, 33 + 68, 1, 1, 0, 42),
+        "30d": ("1.0", [(89, "1.1"), (129, "1.2")], 3, 1, 2, 49 + 52, 1, 1, 0, 58),
+        "60d": ("0.9", [(59, "1.0"), (119, "1.1"), (159, "1.2")], 2, 1, 3, 79 + 14 + 22, 1, 1, 0, 88),
+        "never": ("1.0", [], 3, 2, 2, 141 + 11, 1, 0, 1, 150),
     }
     for stop, (initial, installs, never_seen, outside, exposed, days, carried, entered, closed, days_carried) in expected.items():
         policy = policies[stop]
@@ -248,7 +265,9 @@ def test_golden_a_devices_and_totals_per_stop() -> None:
         assert policy["exposure_days_entered_after_start"] == (40 if entered else 0), stop
 
     assert policies["never"]["open_at_window_end"] == {"in_window": 2, "carried_in": 1, "entered_after_start": 0}
-    assert policies["1d"]["open_at_window_end"] == {"in_window": 0, "carried_in": 0, "entered_after_start": 0}
+    assert policies["1d"]["open_at_window_end"] == {"in_window": 1, "carried_in": 0, "entered_after_start": 0}
+    assert outcome(result, "CVE-2026-0003", "1d")["intervals"] == [[d(100), d(180)]]
+    assert outcome(result, "CVE-2026-0003", "never")["why"] == "outside_affected_range"
 
     one = outcome(result, "CVE-2026-0001", "1d")
     assert one == {
@@ -280,13 +299,15 @@ def test_golden_a_series() -> None:
 
     1d: CVE-5 is open from the first day (opening 1). CVE-1 becomes detectable while affected on d40
     (new, became_detectable). On d60 the 1.1 install closes CVE-1 and CVE-5 (resolved 2) and opens
-    CVE-4 (new, entered_range). On d100 the 1.2 install closes CVE-4. So open is 1 on d31-d39, 2 on
-    d40-d59, 1 on d60-d99 and 0 after; it sums to 9 + 40 + 40 = 89 = 20 + 29 + 40.
+    CVE-4 (new, entered_range). On d100 the 1.2 install closes CVE-4 and opens CVE-3 (new,
+    entered_range), which nothing closes. So open is 1 on d31-d39, 2 on d40-d59, 1 on d60-d99 and 1
+    from d100; it sums to 9 + 40 + 40 + 81 = 170 = 20 + 29 + 40 + 81.
 
     60d: opening 1 (CVE-5); new d40 (CVE-1) and d45 (CVE-2), both became_detectable; resolved d59
     (CVE-2, by 1.0); on d119 the 1.1 install resolves CVE-1 and CVE-5 and opens CVE-4 (entered_range):
-    one CVE new and two others resolved on one day, never the same CVE. Resolved d159 (CVE-4). open is
-    1, 2, 3, 2, 1, 0 over d31-39, d40-44, d45-58, d59-118, d119-158, d159-180: sum 221 = 79 + 14 + 88 + 40.
+    one CVE new and two others resolved on one day, never the same CVE. On d159 the 1.2 install
+    resolves CVE-4 and opens CVE-3 (entered_range). open is 1, 2, 3, 2, 1, 1 over d31-39, d40-44,
+    d45-58, d59-118, d119-158, d159-180: sum 243 = 79 + 14 + 88 + 40 + 22.
     """
     doc, observed = golden_a()
     result = walk(doc, app="demo", track="demo/stable", timeline=observed)
@@ -297,17 +318,18 @@ def test_golden_a_series() -> None:
     one = result["policies"]["1d"]["series"]
     assert one["opening"] == 1
     assert nonzero(one["new_by_reason"]["became_detectable"]) == {d(40): 1}
-    assert nonzero(one["new_by_reason"]["entered_range"]) == {d(60): 1}
+    assert nonzero(one["new_by_reason"]["entered_range"]) == {d(60): 1, d(100): 1}
     assert nonzero(one["resolved"]) == {d(60): 2, d(100): 1}
     assert one["open"][:9] == [1] * 9 and one["open"][9:29] == [2] * 20 and one["open"][29:69] == [1] * 40
-    assert sum(one["open"]) == 89 and one["open"][-1] == 0
+    assert one["open"][69:] == [1] * 81
+    assert sum(one["open"]) == 170 and one["open"][-1] == 1
 
     sixty = result["policies"]["60d"]["series"]
     assert sixty["opening"] == 1
     assert nonzero(sixty["new_by_reason"]["became_detectable"]) == {d(40): 1, d(45): 1}
-    assert nonzero(sixty["new_by_reason"]["entered_range"]) == {d(119): 1}
+    assert nonzero(sixty["new_by_reason"]["entered_range"]) == {d(119): 1, d(159): 1}
     assert nonzero(sixty["resolved"]) == {d(59): 1, d(119): 2, d(159): 1}
-    assert sum(sixty["open"]) == 221
+    assert sum(sixty["open"]) == 243
     assert sixty["resolved_by_reason"]["update_installed"] == sixty["resolved"]
 
 
@@ -316,7 +338,9 @@ def test_never_is_not_a_longer_stop_than_sixty_days() -> None:
     by plan 4.6), which the 60-day device has not installed yet. In golden A the 60d device sees CVE-2
     (it runs 0.9 until d58) and `never` does not (it runs 1.0); `never` sees CVE-6 and the 60d device
     does not. So "a longer stop never sees fewer CVEs" holds along 1d, 7d, 14d, 30d, 60d and from 1d to
-    never, and not between 60d and never: the definitions say so (`steady_state`)."""
+    never, and not between 60d and never: the definitions say so (`steady_state`). It holds for ranges
+    that run from the oldest release up (the property tests' monotone documents); CVE-3, whose range
+    is the newest dated release alone, is seen by every device that installs 1.2 and never by `never`."""
     doc, observed = golden_a()
     result = walk(doc, app="demo", track="demo/stable", timeline=observed)
     exposed = {
@@ -329,7 +353,7 @@ def test_never_is_not_a_longer_stop_than_sixty_days() -> None:
     }
     assert "CVE-2026-0002" in exposed["60d"] - exposed["never"]
     assert "CVE-2026-0006" in exposed["never"] - exposed["60d"]
-    assert exposed["1d"] <= exposed["never"]
+    assert exposed["1d"] - exposed["never"] == {"CVE-2026-0003"}
     assert "59 days" in result["definitions"]["steady_state"]
 
 
@@ -832,7 +856,7 @@ def test_public_timeline_reads_the_documents_dates_and_refuses_without_them() ->
     built = public_timeline(doc, app="demo", track="demo/stable")
     assert built["source"] == "public" and built["name"] == "Vendor tags"
     assert [row["version"] for row in built["observations"]] == ["0.9", "1.0", "1.1", "1.2"]
-    assert walk(doc, app="demo", track="demo/stable", timeline=built)["counts"]["replayed"] == 4
+    assert walk(doc, app="demo", track="demo/stable", timeline=built)["counts"]["replayed"] == 5  # as golden A's
     doc["apps"][0]["tracks"][0]["timeline"] = None
     with pytest.raises(WalkRefused) as caught:
         public_timeline(doc, app="demo", track="demo/stable")
@@ -888,7 +912,7 @@ def test_parity_with_the_documents_check() -> None:
     doc["apps"][0]["tracks"][0]["check"]["2y"]["60d"]["exposure_days"] += 1
     refused = refusal(doc, observed)
     assert refused.reason == "parity"
-    assert "60d: exposure_days is 93 here and 94 in the data" in refused.sentence
+    assert "60d: exposure_days is 115 here and 116 in the data" in refused.sentence
 
 
 def test_window_for_names_the_window_without_walking() -> None:
@@ -987,6 +1011,190 @@ def test_uncertain_over_one_day_counts_more_than_a_day_and_not_one() -> None:
     _track(doc)["cves"][1]["detectable_not_before"] = d(43)  # CVE-2, detectable d45: two days
     result = walk(doc, app="demo", track="demo/stable", timeline=observed)
     assert result["counts"]["uncertain_over_1d"] == 1
+
+
+# --- Golden E: a fix the timeline does not date (ruled 2026-11-25) ----------------------------
+#
+# "Count the next dated version at or above the fix." Each case is one line (or two) with the
+# window d31 to d180 (the detectable record begins 2026-01-31; the first release, d-100, is older
+# than d31 - 59), and one CVE detectable d40 whose range is the oldest release alone.
+
+
+def fix_dating_walk(versions: list[dict[str, Any]], cves: list[dict[str, Any]], **doc_extra: Any) -> dict[str, Any]:
+    track = {
+        "track": "demo/stable",
+        "label": "Demo",
+        "path": {"kind": "latest"},
+        "timeline": "vendor",
+        "versions": versions,
+        "cves": cves,
+    }
+    doc = {**document([track], coverage="2026-01-31"), **doc_extra}
+    observed = timeline([{"version": v["v"], "date": v["date"]} for v in versions if v["date"]])
+    return walk(doc, app="demo", track="demo/stable", timeline=observed)
+
+
+def test_an_undated_fix_counts_from_the_next_dated_version_and_installing_it_clears() -> None:
+    """1.0 (d-100), 1.1 (undated: the fix), 1.2 (d60). CVE-401 (det d40, range 1.0, fix 1.1, which
+    NVD names 1.0.5) was excluded as fixed_version_not_in_timeline before the ruling. Now its
+    effective fix is 1.2, the lowest version at or above 1.1 on line "" the timeline dates, and its
+    day is d60. 1.1 is never installed (undated), so a device clears by installing 1.2:
+      1d   runs 1.0, installs 1.2 on d60  -> [d40,d59]  = 20 days, cleared d60 by 1.2
+      60d  1.0 installed d-41, 1.2 on d119 -> [d40,d118] = 79 days, cleared d119 by 1.2
+      never runs 1.0                      -> [d40,d180] = 141 days, open.
+    fix_dated_by records it: fix 1.1, named 1.0.5, dated_as 1.2 on d60, how next_dated. The document
+    still lists the old reason word, so `by_reason` carries it as the document's own, counted 0."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100)), version("1.1", None), version("1.2", d(60))],
+        [
+            cve(
+                "CVE-2026-0401",
+                published=d(40),
+                detectable=d(40),
+                affected=[[0, 0]],
+                fixes=[{"line": "", "index": 1, "named": "1.0.5"}],
+            )
+        ],
+        exclusion_reasons=[*walk_module.EXCLUSION_REASONS, "fixed_version_not_in_timeline"],
+    )
+    assert (result["counts"]["replayed"], result["counts"]["excluded"]) == (1, 0)
+    assert result["exclusions"]["by_reason"]["fixed_version_not_in_timeline"] == 0
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [
+        {"line": "", "fix": "1.1", "named": "1.0.5", "dated_as": "1.2", "on": d(60), "how": "next_dated"}
+    ]
+    assert result["counts"]["fix_dating"] == {"fix": 0, "next_dated": 1, "undated": 0}
+    one, sixty, never = (row["outcomes"][stop] for stop in ("1d", "60d", "never"))
+    assert (one["intervals"], one["cleared_on"], one["cleared_by"]) == ([[d(40), d(59)]], d(60), "1.2")
+    assert (sixty["intervals"], sixty["cleared_by"]) == ([[d(40), d(118)]], "1.2")
+    assert (never["exposure_days"], never["open_at_window_end"]) == (141, True)
+    assert "2026-11-25" in result["definitions"]["fix_dating"]
+    assert invariant_failures(result) == []
+
+
+def test_rule_5_reads_the_effective_fixs_day() -> None:
+    """1.0 (d-100), 1.1 (undated: the fix), 1.2 (d90: the effective fix), 2.0 (d60), 2.1 (d120), each
+    its own train. CVE-402: range 1.0, fix 1.1. 2.0 is ranked above the fix, on its line, dated d60,
+    before the effective fix's day d90, and of neither 1.1's train nor 1.2's: rule 5, affected. 2.1
+    (d120) is dated after it, so clean.
+      1d device: 1.0, 2.0 on d60, 1.2 on d90 (ranked below 2.0: no event), 2.1 on d120.
+           1.0 [d40,d59] by range + 2.0 [d60,d119] by rule 5 = one interval [d40,d119], 80 days,
+           cleared d120 by 2.1. Were rule 5 to read the undated fix's own day, 2.0 would clear it on d60.
+      60d device: 1.0, 2.0 on d119, 2.1 on d179: [d40,d178], 139 days, cleared by 2.1."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100)), version("1.1", None), version("1.2", d(90)), version("2.0", d(60)), version("2.1", d(120))],
+        [cve("CVE-2026-0402", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])],
+    )
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [{"line": "", "fix": "1.1", "named": None, "dated_as": "1.2", "on": d(90), "how": "next_dated"}]
+    one, sixty = row["outcomes"]["1d"], row["outcomes"]["60d"]
+    assert (one["intervals"], one["exposure_days"], one["cleared_on"], one["cleared_by"]) == (
+        [[d(40), d(119)]],
+        80,
+        d(120),
+        "2.1",
+    )
+    assert (sixty["intervals"], sixty["cleared_by"]) == ([[d(40), d(178)]], "2.1")
+
+
+def test_rule_5_spares_a_build_of_the_fixs_train() -> None:
+    """The train test stays on the fix's own train. 1.0 (d-100), 1.1.0 (undated: the fix, train 1.1),
+    1.1.1 (d90, train 1.1: the effective fix), 1.1.2 (d60, train 1.1). CVE-403: range 1.0, fix 1.1.0.
+    1.1.2 is ranked above the fix and dated before d90, but it is a build of the fix's train: clean.
+    The 1-day device installs 1.1.2 on d60 (1.1.1 on d90 is ranked below it): [d40,d59], cleared d60
+    by 1.1.2. Without the train test it would stay open to the window's end.
+
+    A second CVE shows the test reads the fix's train wherever it sits in the list: 3.0 (undated: the
+    fix, train x), 3.1 (d90, train y: the effective fix), 3.2 (d60, train x). CVE-404 (range 1.0, fix
+    3.0) is cleared on d60 by 3.2, a build of the fix's train, though the effective fix is of another."""
+    versions = [
+        version("1.0", d(-100)),
+        version("1.1.0", None, train="1.1"),
+        version("1.1.1", d(90), train="1.1"),
+        version("1.1.2", d(60), train="1.1"),
+    ]
+    result = fix_dating_walk(
+        versions, [cve("CVE-2026-0403", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])]
+    )
+    clean = outcome(result, "CVE-2026-0403", "1d")
+    assert (clean["intervals"], clean["cleared_by"]) == ([[d(40), d(59)]], "1.1.2")
+
+    apart = [
+        version("1.0", d(-100)),
+        version("3.0", None, train="x"),
+        version("3.1", d(90), train="y"),
+        version("3.2", d(60), train="x"),
+    ]
+    result = fix_dating_walk(apart, [cve("CVE-2026-0404", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])])
+    clean = outcome(result, "CVE-2026-0404", "1d")
+    assert (clean["intervals"], clean["cleared_by"]) == ([[d(40), d(59)]], "3.2")
+
+
+def test_rule_5_spares_a_build_of_the_effective_fixs_train() -> None:
+    """The version that dated the fix stands in for it, so a later build of its train carries what it
+    carries. 1.0 (d-100), 1.1.0 (undated: the fix, train 1.1), 1.2.0 (d90, train 1.2: the effective
+    fix), 1.2.1 (d60, train 1.2), 2.0 (d60, train 2.0).
+      CVE-405, the walk over 1.0, 1.1.0, 1.2.0, 1.2.1: the 1-day device installs 1.2.1 on d60 (ranked
+           above 1.2.0, dated before d90, of 1.2.0's train): clean, [d40,d59], cleared d60 by 1.2.1.
+      CVE-406, the walk over 1.0, 1.1.0, 1.2.0, 2.0: 2.0 is of neither train and dated before d90:
+           rule 5, affected to the window's end, [d40,d180]."""
+    base = [version("1.0", d(-100)), version("1.1.0", None, train="1.1"), version("1.2.0", d(90), train="1.2")]
+    row = [cve("CVE-2026-0405", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])]
+    same_train = fix_dating_walk([*base, version("1.2.1", d(60), train="1.2")], row)
+    clean = outcome(same_train, "CVE-2026-0405", "1d")
+    assert (clean["intervals"], clean["cleared_by"]) == ([[d(40), d(59)]], "1.2.1")
+
+    row = [cve("CVE-2026-0406", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1)])]
+    other_train = fix_dating_walk([*base, version("2.0", d(60), train="2.0")], row)
+    open_ = outcome(other_train, "CVE-2026-0406", "1d")
+    assert (open_["intervals"], open_["open_at_window_end"]) == ([[d(40), d(180)]], True)
+
+
+def test_a_fix_with_nothing_dated_at_or_above_it_on_its_line_is_walked_by_its_runs() -> None:
+    """Two lines: 1.0 (line 1, d-100), 1.1 (line 1, undated: the fix), 2.0 (line 2, d60). CVE-407:
+    range 1.0, fix 1.1 on line 1. 2.0 is dated and ranked above the fix, but on another line, so it
+    does not date the fix: line 1 has no fix a device could install (`undated`), and the CVE is
+    walked by its range. The 1-day device runs 1.0 and installs 2.0 on d60, outside the range (and
+    rule 5 reads only the fix's line): [d40,d59], cleared d60 by 2.0. Both lines are visited, and the
+    row has a fix on line 1 only, so one entry."""
+    result = fix_dating_walk(
+        [version("1.0", d(-100), "1"), version("1.1", None, "1"), version("2.0", d(60), "2")],
+        [cve("CVE-2026-0407", published=d(40), detectable=d(40), affected=[[0, 0]], fixes=[fix(1, "1")])],
+    )
+    [row] = result["cves"]
+    assert row["fix_dated_by"] == [{"line": "1", "fix": "1.1", "named": None, "dated_as": None, "on": None, "how": "undated"}]
+    assert result["counts"]["fix_dating"] == {"fix": 0, "next_dated": 0, "undated": 1}
+    one = row["outcomes"]["1d"]
+    assert (one["intervals"], one["cleared_by"]) == ([[d(40), d(59)]], "2.0")
+
+
+def test_fix_dated_by_lists_only_the_lines_the_path_visits() -> None:
+    """Golden B's CVE-101 names a fix on 4.2 (4.2.2) and on 4.4 (4.4.1). Every device runs 4.4, so only
+    4.4's is listed; the timeline dates 4.4.1 on d45."""
+    doc, observed = golden_b()
+    result = walk(doc, app="demo", track="demo/4.4", timeline=observed)
+    row = next(row for row in result["cves"] if row["cve_id"] == "CVE-2026-0101")
+    assert row["fix_dated_by"] == [{"line": "4.4", "fix": "4.4.1", "named": None, "dated_as": "4.4.1", "on": d(45), "how": "fix"}]
+
+
+def test_a_named_fix_that_is_not_a_version_is_refused_as_the_documents_fault() -> None:
+    for bad in (5, "", None, ["1.0.5"]):
+        doc, observed = golden_a()
+        _track(doc)["cves"][0]["fixes"][0]["named"] = bad
+        refused = refusal(doc, observed)
+        assert refused.reason == "document_invalid", bad
+        assert refused.detail["where"] == "cves[0].fixes[0].named", bad
+
+
+def test_the_fix_dating_count_must_tally_the_rows() -> None:
+    doc, observed = golden_a()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    assert set(result["counts"]["fix_dating"]) == {"fix", "next_dated", "undated"}
+    for row in result["cves"]:
+        for entry in row["fix_dated_by"]:
+            assert set(entry) == {"line", "fix", "named", "dated_as", "on", "how"}
+    result["counts"]["fix_dating"]["fix"] += 1
+    assert "counts.fix_dating does not tally the rows' fix_dated_by" in invariant_failures(result)
 
 
 # --- Seeded property tests --------------------------------------------------------------------

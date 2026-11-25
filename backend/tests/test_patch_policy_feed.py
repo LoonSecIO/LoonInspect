@@ -151,6 +151,10 @@ def _track(doc: dict, app: str = "wireshark", index: int = 0) -> dict:
         (lambda t: t["not_detectable"].update(count=1), "not_detectable lists 0, says 1"),
         (lambda t: t["cves"][0].update(affected=[[0, 9]]), "has an affected run [0, 9] outside its 4 versions"),
         (lambda t: t["cves"][0].update(fixes=[{"line": "4.4", "index": 4}]), "has a fix index 4 outside its 4 versions"),
+        (
+            lambda t: t["cves"][0].update(fixes=[{"line": "4.4", "index": 3, "named": 4.4}]),
+            "has a fix whose named version 4.4 is not text",
+        ),
         (lambda t: t["cves"][1].update(clock="detectable_at"), "uses the detectable_at clock and has no detectable_at day"),
         (lambda t: t["exclusions"]["cves"][0].update(cve_id="CVE-2099-2001"), "a CVE is listed twice"),
         (lambda t: t["versions"][1].update(keys=["4.4.0"]), "a version key is listed twice"),
@@ -162,6 +166,19 @@ def test_counts_that_do_not_close_refuse_the_whole_document_naming_the_track(cha
     refused = _refusal(_resigned(broken))
     assert refused.startswith("its own counts disagree (wireshark wireshark/4.4: ")
     assert said in refused
+
+
+def test_a_fix_naming_nvds_own_version_as_text_is_read() -> None:
+    """`fixes[].named` (ruled 2026-11-25) is NVD's fix version where the index points at the next
+    listed version at or above it, or is null because none qualifies. Text is read; anything else is
+    refused above."""
+    named = copy.deepcopy(DOC)
+    _track(named)["cves"][0]["fixes"] = [
+        {"line": "4.4", "index": 3, "named": "4.4.2.1"},
+        {"line": "4.2", "index": None, "named": "4.2.9"},
+    ]
+    doc = feed.read_document(_resigned(named))
+    assert _track(doc.body)["cves"][0]["fixes"][0]["named"] == "4.4.2.1"
 
 
 def test_a_track_naming_a_timeline_the_document_does_not_describe_is_refused() -> None:
