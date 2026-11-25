@@ -373,33 +373,134 @@ def test_each_fleet_state_says_which_it_is(held: timelines.FleetHistory, state: 
     assert unavailable.value.sentence.startswith(opening)
 
 
-def test_fleets_catalog_has_no_esr_title_and_follows_only_the_newest_line() -> None:
+def test_a_fleet_title_read_for_the_esr_track_that_names_no_esr_build_says_what_was_read() -> None:
     doc = mozilla_document()
     with pytest.raises(timelines.Unavailable) as esr:
         timelines.fleet(history(FLEET_FIREFOX), doc, "firefox", "firefox/esr")
     assert esr.value.state == "esr_missing"
-    assert esr.value.sentence.startswith("Fleet's catalog has no Mozilla Firefox ESR title (firefox is the release channel)")
+    assert esr.value.sentence == (
+        "This instance's Fleet history (firefox) names no Mozilla Firefox ESR release: every version it names is on "
+        "another track's list, so Mozilla Firefox ESR has no Fleet timeline. Choose another source."
+    )
+
+
+def _esr_title(read: bool) -> timelines.FleetTitle:
+    """Fleet's `firefox@esr`, under the same bundle id as `firefox`, spelling ESR builds as Homebrew does."""
+    return fleet_title(
+        "firefox@esr",
+        "org.mozilla.firefox",
+        [(f"{v}esr" if v.count(".") == 2 else v, when) for v, when in ESR[13:]],
+        history_read_at=at("2026-11-21T08:00:00") if read else None,
+    )
+
+
+def test_a_held_fleet_title_whose_history_is_unread_is_named_never_dropped_in_silence() -> None:
+    """Fleet holds `firefox@esr` beside `firefox`. Before its history is read, the ESR track says
+    that history is unread (not that Fleet has no ESR title), and the release track's view, walked
+    on what was read, names the title it could not include."""
+    doc = mozilla_document()
+    unread = history(FLEET_FIREFOX, _esr_title(read=False))
+    with pytest.raises(timelines.Unavailable) as esr:
+        timelines.fleet(unread, doc, "firefox", "firefox/esr")
+    assert esr.value.state == "history_unread"
+    assert esr.value.sentence.startswith(
+        "Fleet's version history for firefox@esr has not been read on this instance yet, and the history read so far "
+        "(firefox) dates nothing this track can walk."
+    )
+    with pytest.raises(timelines.Unavailable) as failed:
+        failing = history(FLEET_FIREFOX, _esr_title(read=False), history_failure="GitHub did not answer.")
+        timelines.fleet(failing, doc, "firefox", "firefox/esr")
+    assert failed.value.state == "history_failed"
+
+    release = timelines.fleet(unread, doc, "firefox", "firefox/release")
+    assert release.ids == ("firefox",)
+    assert release.note.startswith(timelines.FLEET_CLOCK)
+    assert release.note.endswith(
+        "Fleet's version history for firefox@esr has not been read on this instance, so its versions are not in this "
+        "view; Read history on the Fleet catalog tab reads it (docs/troubleshooting.md §27)."
+    )
+
+    # Once it is read, the ESR track walks Fleet's ESR builds, and the release track sets them aside.
+    both = history(FLEET_FIREFOX, _esr_title(read=True))
+    assert {key for key, _ in timelines.fleet(both, doc, "firefox", "firefox/esr").observations} == {
+        f"{v}esr" for v, _ in ESR[13:] if v.count(".") == 2
+    } | {"140.0"}
+    after = timelines.fleet(both, doc, "firefox", "firefox/release")
+    assert after.ids == ("firefox", "firefox@esr") and after.note == timelines.FLEET_CLOCK
+    assert {key for key, _ in after.observations} == {v for v, _ in RELEASES[12:]}
+
+
+def test_two_read_fleet_titles_are_known_only_up_to_the_earlier_read() -> None:
+    """A history is known up to the moment it was read; two titles walked together are known up
+    to the earlier of the two, or the later one's versions would be walked past what the other
+    knows."""
+    doc = mozilla_document()
+    later = fleet_title("firefox", "org.mozilla.firefox", RELEASES[12:], history_read_at=at("2026-11-22T08:00:00"))
+    earlier = _esr_title(read=True)  # read 2026-11-21
+    assert timelines.fleet(history(later, earlier), doc, "firefox", "firefox/release").as_of == day("2026-11-21")
+    assert timelines.fleet(history(later), doc, "firefox", "firefox/release").as_of == day("2026-11-22")
+
+
+def _held_lists_every_line(doc: dict[str, Any]) -> dict[str, Any]:
+    """The fixture's Wireshark as LoonVD emits it: the held track lists every line, the newest
+    track's list, and holds the device to its ceiling line by `path`, not by what it lists."""
+    shaped = copy.deepcopy(doc)
+    app = next(app for app in shaped["apps"] if app["app"] == "wireshark")
+    held, newest = app["tracks"]
+    held["versions"] = copy.deepcopy(newest["versions"])
+    held["counts"] = {**held["counts"], "versions": len(held["versions"]), "versions_dated": len(held["versions"])}
+    return shaped
 
 
 def test_fleet_follows_only_wiresharks_newest_line_so_the_held_line_has_no_fleet_timeline() -> None:
-    """Fleet's `wireshark-app` carries only the newest line. In a document whose held track lists
-    its own line alone (Wireshark 4.4's versions, inside the newest track's), every version Fleet
-    names is the newest track's, and the held track says so. (A document whose held track lists
-    the newer lines too reaches the walk, which refuses with `ceiling_line_undated`.)"""
+    """Fleet's `wireshark-app` carries only the newest line. The held track holds the device to
+    Wireshark 4.4 (`path.ceiling_line`), and Fleet dates no release the document puts on that line,
+    so the held track says so: whether its list is 4.4's alone (the fixture) or every line (as
+    LoonVD emits it, where the walk would otherwise refuse with `nothing_to_install`)."""
     from tests.test_patch_policy_feed import DOC
 
     wireshark = fleet_title(
         "wireshark-app", "org.wireshark.Wireshark", [("4.6.0", day("2025-10-09")), ("4.6.1", day("2025-11-06"))]
     )
-    with pytest.raises(timelines.Unavailable) as line:
-        timelines.fleet(history(wireshark), DOC, "wireshark", "wireshark/4.4")
-    assert line.value.state == "line_not_followed"
-    assert line.value.sentence == (
-        "This instance's Fleet history follows only Wireshark's newer lines (wireshark-app) and dates no Wireshark 4.4 "
-        "release, so Wireshark 4.4 has no Fleet timeline. Choose a track that follows the newest line, or another source."
+    for doc in (DOC, _held_lists_every_line(DOC)):
+        with pytest.raises(timelines.Unavailable) as line:
+            timelines.fleet(history(wireshark), doc, "wireshark", "wireshark/4.4")
+        assert line.value.state == "line_not_followed"
+        assert line.value.sentence == (
+            "This instance's Fleet history (wireshark-app) dates no Wireshark 4.4 release, so the Wireshark 4.4 device has "
+            "no line to hold and there is no Fleet timeline for it. Fleet's catalog carries only an app's newest line. "
+            "Choose a track that follows the newest line, or another source."
+        )
+        newest = timelines.fleet(history(wireshark), doc, "wireshark", "wireshark/newest")
+        assert [key for key, _ in newest.observations] == ["4.6.0", "4.6.1"] and newest.ids == ("wireshark-app",)
+
+    # A Jamf catalog that holds the 4.4 title walks the held track either way.
+    held_line = [("4.4.0", day("2024-08-28")), ("4.4.1", day("2024-10-09"))]
+    titles = catalog(
+        jamf_title("661", "Wireshark 4.4", "org.wireshark.Wireshark", held_line),
+        jamf_title("817", "Wireshark 4.6", "org.wireshark.Wireshark", [("4.6.0", day("2025-10-08"))]),
     )
-    newest = timelines.fleet(history(wireshark), DOC, "wireshark", "wireshark/newest")
-    assert [key for key, _ in newest.observations] == ["4.6.0", "4.6.1"] and newest.ids == ("wireshark-app",)
+    for doc in (DOC, _held_lists_every_line(DOC)):
+        assert {key for key, _ in timelines.jamf(titles, doc, "wireshark", "wireshark/4.4").observations} >= {"4.4.0", "4.4.1"}
+
+
+def test_no_versions_says_what_to_check_for_each_source() -> None:
+    doc = mozilla_document()
+    empty = catalog(jamf_title("0B3", "Mozilla Firefox", "org.mozilla.firefox", []))
+    with pytest.raises(timelines.Unavailable) as jamf:
+        timelines.jamf(empty, doc, "firefox", "firefox/release")
+    assert jamf.value.state == "no_versions"
+    assert "Sync now on Devices › Applications › Jamf Patch reads the catalog again (docs/troubleshooting.md §6)" in (
+        jamf.value.sentence
+    )
+    with pytest.raises(timelines.Unavailable) as fleet:
+        timelines.fleet(history(fleet_title("firefox", "org.mozilla.firefox", [])), doc, "firefox", "firefox/release")
+    assert fleet.value.state == "no_versions"
+    assert fleet.value.sentence == (
+        "This instance's Fleet history names no Mozilla Firefox version (firefox), so there is nothing to walk. The "
+        "title's history on the Fleet catalog tab says why a version is left out (docs/troubleshooting.md §27 step 10); "
+        "if it reads the same after Read again, choose another source."
+    )
 
 
 # --- public ----------------------------------------------------------------------------------------
@@ -418,7 +519,7 @@ def test_the_public_timeline_is_the_documents_own_dates_and_says_so_when_there_a
         timelines.public(undated, "firefox", "firefox/release")
     assert none.value.state == "no_public_dates"
     assert none.value.sentence == (
-        "LoonSec holds no public release dates for Mozilla Firefox yet. Jamf or Fleet may: they are read from this instance."
+        "LoonSec holds no public release dates for Mozilla Firefox (release) yet, so it has none of its own to walk."
     )
 
 
@@ -475,15 +576,33 @@ async def test_parity_matched_unchecked_and_refused_per_app() -> None:
     doc = _with_checks(mozilla_document(), years=(2,))
     app_row = doc["apps"][0]
     states = await views.app_parity(doc, app_row)
-    assert states[("firefox/release", 2)] == ("matched", None, None)
-    assert states[("firefox/release", 3)] == ("no_entry", None, None)
+    assert states[("firefox/release", 2)] == ("matched", None, None, {})
+    assert states[("firefox/release", 3)] == ("no_entry", None, None, {})
 
-    assert views.check_for(states, app_row, "firefox/release", 2)["state"] == "matched"
+    assert views.check_for(states, app_row, "firefox/release", 2) == {
+        "state": "matched",
+        "detail": "Matches the totals LoonSec published for a 2-year window of Mozilla Firefox.",
+    }
     unchecked = views.check_for(states, app_row, "firefox/release", 3)
     assert unchecked == {
         "state": "unchecked_window",
         "detail": "LoonSec has no check for a 3-year window of Mozilla Firefox; it is shown because the 2-year walk matched.",
     }
+    # Only the walk of LoonSec's published dates is checked, and a view on other dates says so.
+    assert views.check_for(states, app_row, "firefox/release", 2, source="jamf") == {
+        "state": "matched",
+        "detail": "The walk of LoonSec's published dates for a 2-year window of Mozilla Firefox matches the totals LoonSec "
+        "published. This view's dates come from this instance's copy of Jamf's public patch catalog, and its own "
+        "numbers are not checked.",
+    }
+    assert views.check_for(states, app_row, "firefox/release", 3, source="fleet")["detail"] == (
+        "LoonSec has no check for a 3-year window of Mozilla Firefox; it is shown because the 2-year walk of LoonSec's "
+        "published dates matched. This view's dates come from this instance's Fleet history, and its own numbers are "
+        "not checked."
+    )
+    assert views.check_for(states, app_row, "firefox/release", 2, aligned=True)["detail"].endswith(
+        "This view is cut to the days the sources share, and its own numbers are not checked."
+    )
 
     # No window of the app has published totals: nothing is shown, in words.
     bare = mozilla_document()
@@ -508,7 +627,23 @@ async def test_parity_matched_unchecked_and_refused_per_app() -> None:
     with pytest.raises(views.Refused) as invalid:
         views.check_for(await views.app_parity(malformed, malformed["apps"][0]), malformed["apps"][0], "firefox/release", 2)
     assert invalid.value.reason == "document_invalid"
-    assert invalid.value.sentence.startswith("LoonSec's patch-policy data for Mozilla Firefox")
+    # The track's label names the app, once.
+    assert invalid.value.sentence.startswith("LoonSec's patch-policy data for Mozilla Firefox (release) failed")
+
+    # An app LoonSec holds no public dates for has nothing to check, and every view of it says so.
+    undated = copy.deepcopy(bare)
+    undated["doc_id"] = "doc-firefox-undated"
+    for track in undated["apps"][0]["tracks"]:
+        track["timeline"] = None
+    with pytest.raises(views.Refused) as no_dates:
+        views.check_for(await views.app_parity(undated, undated["apps"][0]), undated["apps"][0], "firefox/release", 2)
+    assert no_dates.value.reason == "no_public_dates"
+    assert no_dates.value.sentence == (
+        "LoonSec holds no public release dates for Mozilla Firefox yet, so no walk of Mozilla Firefox can be checked "
+        "against the totals LoonSec publishes, and no view of it is shown from any source, Jamf and Fleet included: a "
+        "view is shown only once the walk of LoonSec's own dates for one of the app's windows matches those totals. "
+        "Nothing on this instance is wrong."
+    )
 
     # One window that disagrees refuses every source and window of the app, the ESR track's too.
     broken = copy.deepcopy(doc)
@@ -518,7 +653,13 @@ async def test_parity_matched_unchecked_and_refused_per_app() -> None:
     with pytest.raises(views.Refused) as disagrees:
         views.check_for(states, broken["apps"][0], "firefox/esr", 2)
     assert disagrees.value.reason == "parity"
-    assert "does not match the totals LoonSec published with the data (60d: exposed is" in disagrees.value.sentence
+    assert disagrees.value.sentence.startswith(
+        "The walk of LoonSec's published dates for Mozilla Firefox (release) over 2 years does not match the totals "
+        "LoonSec published with the data (60d: exposed is"
+    )
+    # The totals that disagreed travel with the refusal, for the page to list beside it.
+    published = broken["apps"][0]["tracks"][0]["check"]["2y"]["60d"]["exposed"]
+    assert disagrees.value.facts == {"stop": "60d", "key": "exposed", "walked": published - 1, "published": published}
 
 
 async def test_a_served_walk_keeps_every_total_and_series_and_trims_intervals_to_the_stop_asked_for(monkeypatch) -> None:

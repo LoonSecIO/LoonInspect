@@ -5,7 +5,9 @@ name, the day it was read and how its days were stamped. This module builds the 
 page's source toggle offers, each from what this instance already holds and from nothing else:
 
 - **public**: the release dates LoonSec's patch-policy document carries for the track
-  (`versions[].date`), from the public vendor records the document names in `sources.timelines`.
+  (`versions[].date`), from the public release records the document names in `sources.timelines`
+  (a vendor's own feed, such as Google's VersionHistory, Mozilla's product-details or Wireshark's
+  tags, or Homebrew's cask history where no vendor feed is read).
 - **jamf**: this instance's copy of Jamf's public patch catalog (`jamf_patch_titles.patches`,
   each patch's `version` and `releaseDate`), for every title whose bundle ids include one of the
   app's. The hourly sync reads Jamf's public server and needs no Jamf Pro connection
@@ -25,6 +27,12 @@ An instance timeline keeps the track's versions and the unmatched ones, and sets
 tracks' aside (`other_track`), so a release channel is never walked over ESR builds and an ESR
 build is never counted against the release channel's 5% unmatched limit. Nothing here compares
 two versions.
+
+**A held line is judged by the document's own lines.** A track that holds a device on one line
+(`path.kind: hold`, Wireshark 4.4) needs a dated release on that line; whether a version is on it
+is the `line` LoonSec's document gives the version, never a comparison here. Fleet's catalog
+carries only an app's newest line, so its history dates no 4.4 release however the document
+lists the held track's versions.
 
 **A source that cannot date a track says why** (docs/diagnosability.md rule 1): `Unavailable`
 carries a state word and its sentence, and every one is a step in docs/troubleshooting.md §33.
@@ -98,6 +106,13 @@ JAMF_NEVER_SYNCED_SENTENCE = (
     "Jamf Patch runs it at once (docs/troubleshooting.md §6)."
 )
 FLEET_FLAG_OFF_SENTENCE = fleet_catalog.FLAG_OFF
+# What to do when the titles read list no version at all (`no_versions`), per source.
+_READ_AGAIN = {
+    JAMF: "Sync now on Devices › Applications › Jamf Patch reads the catalog again (docs/troubleshooting.md §6); if "
+    "it reads the same, choose another source.",
+    FLEET: "The title's history on the Fleet catalog tab says why a version is left out (docs/troubleshooting.md §27 "
+    "step 10); if it reads the same after Read again, choose another source.",
+}
 
 
 class Unavailable(Exception):
@@ -237,26 +252,43 @@ def _track_words(track_row: Mapping[str, Any]) -> tuple[str, str, str]:
     return label, channel, str(path.get("ceiling_line") or "") if path.get("kind") == walk.PATH_HOLD else ""
 
 
+def _no_line(source: str, owner: str, name: str, track_row: Mapping[str, Any], ids: str) -> Unavailable:
+    """The source dates no release on the line a held track holds to (`_dates_line`)."""
+    label, _, ceiling = _track_words(track_row)
+    newest = " Fleet's catalog carries only an app's newest line." if source == FLEET else ""
+    return Unavailable(
+        source,
+        LINE_NOT_FOLLOWED,
+        f"{owner} ({ids}) dates no {name} {ceiling} release, so the {label} device has no line to hold and there is no "
+        f"{source.capitalize()} timeline for it.{newest} Choose a track that follows the newest line, or another source.",
+    )
+
+
+def _dates_line(joined: Split, track_row: Mapping[str, Any], ceiling: str) -> bool:
+    """Whether the timeline dates a release of the track that the document puts on `ceiling`."""
+    line_of = {
+        str(key).strip().lower(): entry.get("line")
+        for entry in track_row.get("versions") or []
+        if isinstance(entry, Mapping)
+        for key in entry.get("keys") or []
+        if isinstance(key, str)
+    }
+    return any(day is not None and line_of.get(key) == ceiling for key, day in joined.kept)
+
+
 def _no_channel(source: str, owner: str, name: str, track_row: Mapping[str, Any], ids: str) -> Unavailable:
     """The source names another track's versions and nothing that shows it carries this track
-    (`Split.channel_missing`): the track's channel or line is not in it. Fleet's catalog has no
-    ESR titles and follows only an app's newest line; Jamf's catalog may hold only one channel's
-    title of the two that share a bundle id."""
-    label, channel, ceiling = _track_words(track_row)
+    (`Split.channel_missing`): the track's channel is not in what was read. Jamf's catalog may
+    hold only one channel's title of the two that share a bundle id; a Fleet title read for the
+    ESR track may carry the release channel only."""
+    label, channel, _ = _track_words(track_row)
     who = source.capitalize()
-    if ceiling:
-        return Unavailable(
-            source,
-            LINE_NOT_FOLLOWED,
-            f"{owner} follows only {name}'s newer lines ({ids}) and dates no {name} {ceiling} release, so {label} has "
-            f"no {who} timeline. Choose a track that follows the newest line, or another source.",
-        )
     if source == FLEET and channel == "esr":
         return Unavailable(
             source,
             ESR_MISSING,
-            f"Fleet's catalog has no {name} ESR title ({ids} is the release channel), so {label} has no Fleet timeline. "
-            "Choose another source.",
+            f"{owner} ({ids}) names no {name} ESR release: every version it names is on another track's list, so "
+            f"{label} has no Fleet timeline. Choose another source.",
         )
     return Unavailable(
         source,
@@ -279,12 +311,28 @@ def _from_split(
     ids: Sequence[str],
     timeline_name: str,
     note: str | None = None,
+    unread: Unavailable | None = None,
 ) -> Timeline:
+    """`unread` is what to say instead when the titles read cannot date the track and others
+    under the app's bundle id are held but not yet read: those may be the track's."""
     shown = _words(ids)
     if not observations:
-        raise Unavailable(source, NO_VERSIONS, f"{owner} names no {name} version ({shown}), so there is nothing to walk.")
+        if unread is not None:
+            raise unread
+        raise Unavailable(
+            source,
+            NO_VERSIONS,
+            f"{owner} names no {name} version ({shown}), so there is nothing to walk. {_READ_AGAIN[source]}",
+        )
     joined = split(observations, app_row, str(track_row["track"]))
+    _, _, ceiling = _track_words(track_row)
+    if ceiling and not _dates_line(joined, track_row, ceiling):
+        if unread is not None:
+            raise unread
+        raise _no_line(source, owner, name, track_row, shown)
     if joined.channel_missing:
+        if unread is not None:
+            raise unread
         raise _no_channel(source, owner, name, track_row, shown)
     return Timeline(
         source=source,
@@ -468,9 +516,10 @@ class FleetHistory:
     """What this instance holds of Fleet's catalog for some bundle ids, for this organization.
 
     `enabled` is the organization's Fleet catalog flag. `catalog_read` is whether any daily check
-    has stored titles; `checked_ok_at` is the last check that got an answer, which confirms a
-    title whose version has not moved since its history was read; `catalog_detail` is the last
-    check's sentence when it failed; `history_failure` the last history read's, when it failed."""
+    has stored titles; `checked_ok_at` is the last check that got an answer and holds every title
+    (a complete snapshot), which confirms a title whose version has not moved since its history
+    was read; `catalog_detail` is the last check's sentence when it failed; `history_failure` the
+    last history read's, when it failed."""
 
     enabled: bool
     catalog_read: bool
@@ -515,27 +564,21 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
         )
     titles = sorted(history.titles, key=lambda title: title.slug)
     read = [title for title in titles if title.history_read_at is not None]
+    unread = [title.slug for title in titles if title.history_read_at is None]
     if not read:
-        slugs = _words(title.slug for title in titles)
-        if history.history_failure:
-            raise Unavailable(
-                FLEET,
-                FLEET_HISTORY_FAILED,
-                f"Fleet's version history for {slugs} has not been read on this instance, and the last history read did "
-                f"not get an answer: {history.history_failure} The background tries again within the hour; an "
-                "administrator with patch:catalog-sync can try at once with Read history on the Fleet catalog tab "
-                "(docs/troubleshooting.md §27).",
-            )
-        raise Unavailable(
-            FLEET,
-            FLEET_HISTORY_UNREAD,
-            f"Fleet's version history for {slugs} has not been read on this instance yet. The background reads the titles "
-            "installed on this organization's Macs, a few minutes apart; an administrator with patch:catalog-sync can "
-            "read it now with Read history on the Fleet catalog tab (docs/troubleshooting.md §27).",
-        )
+        raise _fleet_not_read(history, unread)
     observations = [(version.strip().lower(), seen_at.astimezone(dt.UTC).date()) for t in read for version, seen_at in t.versions]
+    # Known only up to the earliest of them: a later day may hold a version a title read earlier lacks.
     as_of = min(_fleet_as_of(title.history_read_at, title, history.checked_ok_at) for title in read if title.history_read_at)
     slugs = [title.slug for title in read]
+    note = FLEET_CLOCK
+    if unread:
+        # Held under the app's bundle id and not read yet (firefox@esr beside firefox, say): said
+        # with the view, and said instead of the view when what was read cannot date the track.
+        note += (
+            f" Fleet's version history for {_words(unread)} has not been read on this instance, so its versions are not "
+            "in this view; Read history on the Fleet catalog tab reads it (docs/troubleshooting.md §27)."
+        )
     return _from_split(
         source=FLEET,
         owner="This instance's Fleet history",
@@ -547,7 +590,31 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
         clock=FLEET_CLOCK,
         ids=slugs,
         timeline_name=f"this instance's Fleet history ({_words(slugs)})",
-        note=FLEET_CLOCK,
+        note=note,
+        unread=_fleet_not_read(history, unread, read=slugs) if unread else None,
+    )
+
+
+def _fleet_not_read(history: FleetHistory, unread: Sequence[str], *, read: Sequence[str] = ()) -> Unavailable:
+    """The Fleet titles under the app's bundle id whose history is not read yet, when nothing
+    read can date the track: whether the last history read failed, and how to read them."""
+    slugs = _words(unread)
+    besides = f", and the history read so far ({_words(read)}) dates nothing this track can walk" if read else ""
+    if history.history_failure:
+        return Unavailable(
+            FLEET,
+            FLEET_HISTORY_FAILED,
+            f"Fleet's version history for {slugs} has not been read on this instance{besides}, and the last history read "
+            f"did not get an answer: {history.history_failure} The background tries again within the hour; an "
+            "administrator with patch:catalog-sync can try at once with Read history on the Fleet catalog tab "
+            "(docs/troubleshooting.md §27).",
+        )
+    return Unavailable(
+        FLEET,
+        FLEET_HISTORY_UNREAD,
+        f"Fleet's version history for {slugs} has not been read on this instance yet{besides}. The background reads the "
+        "titles installed on this organization's Macs, a few minutes apart; an administrator with patch:catalog-sync "
+        "can read it now with Read history on the Fleet catalog tab (docs/troubleshooting.md §27).",
     )
 
 
@@ -576,7 +643,9 @@ async def read_fleet(db: AsyncSession, bundle_ids: Iterable[str]) -> FleetHistor
         )
         for slug, version, seen_at in found.all():
             versions.setdefault(slug, []).append((version, seen_at))
-    answered = state is not None and state.outcome not in fleet_catalog.FAILED
+    # A check that answered but skipped manifests leaves those titles as held (snapshot `partial`),
+    # so only a complete one confirms that a title's version has not moved since its history was read.
+    answered = state is not None and state.outcome not in fleet_catalog.FAILED and state.snapshot_status == "complete"
     held = await db.scalar(select(func.count()).select_from(FleetMaintainedApp))
     return FleetHistory(
         enabled=True,

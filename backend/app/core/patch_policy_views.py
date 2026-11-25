@@ -5,7 +5,8 @@
 - **`app_sources`**, for `GET /api/patch-policy/apps`: for every app the held document references,
   and every track of it, whether each of the three timelines (`app.core.patch_policy_timelines`)
   can date it and what a default two-year walk would cover. A source that cannot answers with its
-  state word and sentence, the same words the walk route refuses with.
+  state word and sentence, the same words the walk route refuses with; an app whose parity
+  refuses every view answers that refusal for every source, as the walk route does.
 - **`walk_view`**, for `GET /api/patch-policy/walk`: one app, track, source and window, walked by
   `app.core.patch_policy_walk` over the held document, memoised by the walk's `input_id`, held to
   parity with LoonSec's published totals, and trimmed for the wire.
@@ -15,7 +16,9 @@ must equal the totals LoonSec published for it (`check`). Every window of the ap
 per document (memoised): a window whose totals disagree refuses every source of the app; a
 window that matched unlocks the app's other sources and `align=common`; a window with no
 published totals is shown as an *unchecked window* when another window of the app matched, and
-refused otherwise.
+refused otherwise. Only that walk is checked: a view on Jamf's or Fleet's dates, or cut to the
+common window, says its own numbers are not. An app LoonSec holds no public dates for (R22) has
+nothing to check, so no view of it is shown from any source.
 
 **Trimmed, never re-counted** (2026-11-24). A Chrome-sized walk is several megabytes,
 most of it per-CVE day intervals under six stops. The response keeps every total and the whole
@@ -34,7 +37,7 @@ import math
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,10 +61,9 @@ _Refusal = tuple[str, str, dict[str, Any]]
 # page asks for the same few again and again as the slider and the toggle move.
 _WALKS_KEPT = 8
 _walks: OrderedDict[str, dict[str, Any] | _Refusal] = OrderedDict()
-# Each app's parity, by (doc_id, app): per (track, years), its state, the walk's reason when it
-# was refused, and the sentence; never a whole walk.
-_Parity = dict[tuple[str, int], tuple[str, str | None, str | None]]
-_PARITY_KEPT = 32
+# Each app's parity, by (doc_id, app): per (track, years), what `_Judged` holds; never a whole
+# walk. Small, and `GET /api/patch-policy/apps` asks for every app's on each load.
+_PARITY_KEPT = 1024
 _parity: OrderedDict[tuple[str, str], _Parity] = OrderedDict()
 # The windows `GET /api/patch-policy/apps` reports, by `input_id`.
 _WINDOWS_KEPT = 128
@@ -221,14 +223,38 @@ def _timeline(document: Mapping[str, Any], app: str, track: str, source: str, ca
 _MATCHED, _NO_ENTRY, _UNJUDGED, _DISAGREES = "matched", "no_entry", "unjudged", "disagrees"
 
 
+class _Judged(NamedTuple):
+    """One window of an app, walked on LoonSec's published dates: its state; the walk's or the
+    timeline's reason and sentence when it was not matched; and the refusal's facts (for a
+    disagreement, the stop, the total and both values)."""
+
+    state: str
+    reason: str | None = None
+    sentence: str | None = None
+    facts: Mapping[str, Any] = {}
+
+
+# Per (track, years).
+_Parity = dict[tuple[str, int], _Judged]
+
+# How a served walk's numbers were dated, for `check.detail` on a view that is not the walk parity
+# judged: the words `patch_policy_walk` uses for each source.
+_SOURCE_WORDS = {
+    timelines.PUBLIC: "LoonSec's published release dates",
+    timelines.JAMF: "this instance's copy of Jamf's public patch catalog",
+    timelines.FLEET: "this instance's Fleet history",
+}
+
+
 async def app_parity(document: Mapping[str, Any], app_row: Mapping[str, Any]) -> _Parity:
-    """Every window of the app walked on LoonSec's published dates at its default end, as
-    `(state, reason, sentence)`: `matched`; `no_entry` (no published totals for it); `unjudged`
-    (no public dates, or the walk itself was refused, with its reason and sentence); or
-    `disagrees` (with the parity sentence). Once per document."""
+    """Every window of the app walked on LoonSec's published dates at its default end: `matched`;
+    `no_entry` (no published totals for it); `unjudged` (no public dates, or the walk itself was
+    refused, with its reason and sentence); or `disagrees` (with the parity sentence and the
+    totals that disagreed). Once per document."""
     key = (str(document.get("doc_id")), str(app_row["app"]))
     held = _parity.get(key)
     if held is not None:
+        _parity.move_to_end(key)
         return held
     states: _Parity = {}
     for track_row in app_row.get("tracks") or []:
@@ -238,36 +264,71 @@ async def app_parity(document: Mapping[str, Any], app_row: Mapping[str, Any]) ->
                 timeline = timelines.public(document, str(app_row["app"]), track)
                 result = await _walked(document, app=str(app_row["app"]), track=track, timeline=timeline, years=years)
             except timelines.Unavailable as unavailable:
-                states[(track, years)] = (_UNJUDGED, unavailable.state, unavailable.sentence)
+                states[(track, years)] = _Judged(_UNJUDGED, unavailable.state, unavailable.sentence)
             except walk.WalkRefused as refused:
                 state = _DISAGREES if refused.reason == walk.REFUSED_PARITY else _UNJUDGED
-                states[(track, years)] = (state, refused.reason, refused.sentence)
+                states[(track, years)] = _Judged(state, refused.reason, refused.sentence, dict(refused.detail or {}))
             else:
                 matched = result["check"]["state"] == walk.CHECK_MATCHED
-                states[(track, years)] = (_MATCHED if matched else _NO_ENTRY, None, None)
+                states[(track, years)] = _Judged(_MATCHED if matched else _NO_ENTRY)
     _remember(_parity, key, states, _PARITY_KEPT)
     return states
 
 
-def check_for(states: _Parity, app_row: Mapping[str, Any], track: str, years: int) -> dict[str, str]:
-    """The served walk's `check`, from its app's parity, or the refusal it earns: a window whose
-    totals disagree refuses the app; with no window matched, LoonSec's data failing the walk's own
-    check is said as that, and anything else as `unchecked`."""
+def check_for(
+    states: _Parity,
+    app_row: Mapping[str, Any],
+    track: str,
+    years: int,
+    *,
+    source: str = timelines.PUBLIC,
+    aligned: bool = False,
+) -> dict[str, str]:
+    """The served walk's `check`, from its app's parity, or the refusal it earns. A window whose
+    totals disagree refuses the app. With no window matched: an app LoonSec holds no public dates
+    for is said as that, LoonSec's data failing the walk's own check as that, and anything else
+    as `unchecked`. These refusals are the app's, whatever its track, window or source.
+
+    Only the walk of LoonSec's published dates at a default window is checked, so a view on
+    Jamf's or Fleet's dates, or cut to the common window, says that its own numbers are not."""
     name = str(app_row.get("name") or app_row["app"])
     labels = {str(t.get("track")): str(t.get("label") or t.get("track")) for t in app_row.get("tracks") or []}
-    for state, _, sentence in states.values():
-        if state == _DISAGREES:
-            raise Refused(walk.REFUSED_PARITY, str(sentence))
-    if states.get((track, years), ("",))[0] == _MATCHED:
-        return {"state": CHECK_MATCHED, "detail": f"Matches the totals LoonSec published for a {years}-year window of {name}."}
+    for judged in states.values():
+        if judged.state == _DISAGREES:
+            raise Refused(walk.REFUSED_PARITY, str(judged.sentence), facts=judged.facts)
+    unchecked_view = ""
+    if source != timelines.PUBLIC:
+        unchecked_view = f" This view's dates come from {_SOURCE_WORDS[source]}, and its own numbers are not checked."
+    elif aligned:
+        unchecked_view = " This view is cut to the days the sources share, and its own numbers are not checked."
+    if states.get((track, years), _Judged("")).state == _MATCHED:
+        if not unchecked_view:
+            return {
+                "state": CHECK_MATCHED,
+                "detail": f"Matches the totals LoonSec published for a {years}-year window of {name}.",
+            }
+        return {
+            "state": CHECK_MATCHED,
+            "detail": f"The walk of LoonSec's published dates for a {years}-year window of {name} matches the totals "
+            f"LoonSec published.{unchecked_view}",
+        }
     # The same track's other window first, then the app's other tracks, in the document's order.
     order = sorted(states, key=lambda key: (key[0] != track, list(labels).index(key[0]) if key[0] in labels else 0, key[1]))
-    matched = next((key for key in order if states[key][0] == _MATCHED), None)
+    matched = next((key for key in order if states[key].state == _MATCHED), None)
     if matched is None:
-        windows = {f"{t} {y}y": reason or state for (t, y), (state, reason, _) in states.items()}
-        broken = next((sentence for _, reason, sentence in states.values() if reason == walk.REFUSED_DOCUMENT), None)
-        if broken:
-            raise Refused(walk.REFUSED_DOCUMENT, broken, facts={"windows": windows})
+        windows = {f"{t} {y}y": judged.reason or judged.state for (t, y), judged in states.items()}
+        if states and all(judged.reason == timelines.NO_PUBLIC_DATES for judged in states.values()):
+            raise Refused(
+                timelines.NO_PUBLIC_DATES,
+                f"LoonSec holds no public release dates for {name} yet, so no walk of {name} can be checked against the "
+                f"totals LoonSec publishes, and no view of it is shown from any source, Jamf and Fleet included: a view "
+                "is shown only once the walk of LoonSec's own dates for one of the app's windows matches those totals. "
+                "Nothing on this instance is wrong.",
+                facts={"windows": windows},
+            )
+        broken = next((judged for judged in states.values() if judged.reason == walk.REFUSED_DOCUMENT), None)
+        if broken is not None:
+            raise Refused(walk.REFUSED_DOCUMENT, str(broken.sentence), facts={"windows": windows, **broken.facts})
         raise Refused(
             REFUSED_UNCHECKED,
             f"LoonSec has published no totals this build could match for any window of {name}, so no view of {name} is "
@@ -277,10 +338,24 @@ def check_for(states: _Parity, app_row: Mapping[str, Any], track: str, years: in
         )
     other_track, other_years = matched
     which = f"the {other_years}-year walk" + ("" if other_track == track else f" of {labels.get(other_track, other_track)}")
+    which += " of LoonSec's published dates" if unchecked_view else ""
     return {
         "state": CHECK_UNCHECKED,
-        "detail": f"LoonSec has no check for a {years}-year window of {name}; it is shown because {which} matched.",
+        "detail": f"LoonSec has no check for a {years}-year window of {name}; it is shown because {which} matched."
+        + unchecked_view,
     }
+
+
+async def app_refusal(document: Mapping[str, Any], app_row: Mapping[str, Any]) -> Refused | None:
+    """The refusal every view of the app earns from its parity, or None when some can be shown."""
+    tracks = [t for t in app_row.get("tracks") or [] if isinstance(t, Mapping)]
+    if not tracks:
+        return None
+    try:
+        check_for(await app_parity(document, app_row), app_row, str(tracks[0].get("track")), walk.DEFAULT_YEARS)
+    except Refused as refused:
+        return refused
+    return None
 
 
 # --- one walk ------------------------------------------------------------------------------------------
@@ -306,7 +381,9 @@ async def walk_view(
     track_id = str(track_row["track"])
 
     try:
-        check = check_for(await app_parity(document, app_row), app_row, track_id, years)
+        check = check_for(
+            await app_parity(document, app_row), app_row, track_id, years, source=source, aligned=align == ALIGN_COMMON
+        )
     except Refused as refused:
         refused.source = source
         raise
@@ -414,11 +491,22 @@ async def sources_of(
     answer: dict[str, dict[str, Any]] = {}
     for app_row in (app for app in document.get("apps") or [] if isinstance(app, Mapping)):
         mine = _for_app(catalogs, app_row)
-        answer[str(app_row["app"])] = {source: await _source(document, app_row, source, mine) for source in timelines.SOURCES}
+        # Parity first, as the walk route judges it: an app whose every view the route refuses
+        # offers no source, whatever each timeline holds.
+        refused = await app_refusal(document, app_row)
+        answer[str(app_row["app"])] = {
+            source: await _source(document, app_row, source, mine, refused) for source in timelines.SOURCES
+        }
     return answer
 
 
-async def _source(document: Mapping[str, Any], app_row: Mapping[str, Any], source: str, catalogs: _Catalogs) -> dict[str, Any]:
+async def _source(
+    document: Mapping[str, Any],
+    app_row: Mapping[str, Any],
+    source: str,
+    catalogs: _Catalogs,
+    refused: Refused | None = None,
+) -> dict[str, Any]:
     app = str(app_row["app"])
     tracks: list[dict[str, Any]] = []
     as_of, ids, note, matched_keys, days = None, [], None, set(), []
@@ -439,12 +527,14 @@ async def _source(document: Mapping[str, Any], app_row: Mapping[str, Any], sourc
         }
         try:
             timeline = _timeline(document, app, track, source, catalogs)
-        except timelines.Unavailable as unavailable:
-            entry.update(state=unavailable.state, sentence=unavailable.sentence)
-            tracks.append(entry)
-            continue
-        except walk.WalkRefused as refused:
-            entry.update(state=refused.reason, sentence=refused.sentence)
+        except (timelines.Unavailable, walk.WalkRefused) as not_read:
+            # The app's parity refusal, when there is one, is what the walk route answers first.
+            if refused is not None:
+                entry.update(state=refused.reason, sentence=refused.sentence)
+            elif isinstance(not_read, timelines.Unavailable):
+                entry.update(state=not_read.state, sentence=not_read.sentence)
+            else:
+                entry.update(state=not_read.reason, sentence=not_read.sentence)
             tracks.append(entry)
             continue
         joined = timelines.split(timeline.observations, app_row, track)
@@ -461,10 +551,14 @@ async def _source(document: Mapping[str, Any], app_row: Mapping[str, Any], sourc
             other_track=len(timeline.other_track),
             unmatched=len(joined.unmatched),
         )
+        if refused is not None:
+            entry.update(state=refused.reason, sentence=refused.sentence)
+            tracks.append(entry)
+            continue
         try:
             window = await _window(document, app=app, track=track, timeline=timeline, years=walk.DEFAULT_YEARS)
-        except walk.WalkRefused as refused:
-            entry.update(state=refused.reason, sentence=refused.sentence)
+        except walk.WalkRefused as not_walked:
+            entry.update(state=not_walked.reason, sentence=not_walked.sentence)
         else:
             entry.update(available=True, state="available", since=window["since"], until=window["until"])
         tracks.append(entry)

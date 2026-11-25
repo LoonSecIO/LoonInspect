@@ -28,7 +28,7 @@ from app.core import patch_policy_feed as feed
 from app.core.config import settings
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
 from app.models.schema import PatchPolicyDoc, PatchPolicyFeedState
-from tests.test_patch_policy_feed import DOC, GZ, LINK
+from tests.test_patch_policy_feed import DOC, GZ, LINK, published_checks
 from tests.test_patching_policy_db import accounts, viewer  # noqa: F401
 
 pytestmark = [
@@ -288,7 +288,11 @@ async def test_the_route_answers_each_app_with_its_tracks_and_sources(db, clean,
     }
     assert body["feed"]["algorithm"] == "patch_walk/1" and body["feed"]["fromFile"] is False
 
-    await feed.deliver_from_exchange(db, _offer(DOC["doc_id"]), transport=_serving(GZ))
+    # The fixture as LoonVD publishes it, each track's `check` filled in: an app's sources are
+    # offered only once the walk of LoonSec's own dates matches those totals (§33 step 7).
+    checked = published_checks(DOC)
+    payload = gzip.compress(json.dumps(checked).encode(), mtime=0)
+    await feed.deliver_from_exchange(db, _offer(checked["doc_id"]), transport=_serving(payload))
     response = await viewer.get("/api/patch-policy/apps")
     assert response.status_code == 200, response.text
     body = response.json()

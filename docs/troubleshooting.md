@@ -114,7 +114,7 @@ spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never star
 | **AA** | §32 | LoonSec names no patch-policy document, or only an old one, two days running |
 | **AB** | §32 | A patch-policy document is refused by its check two exchanges running, or fails unexpectedly |
 | **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
-| **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, or it fails the walk's check |
+| **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, or it leaves a held line undated |
 | **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, or a timeline or request it built is refused |
 
 ## 0. The four things you can read
@@ -4070,7 +4070,10 @@ after it is dated, under every stop of the slider, for a window of two or three 
 reference analysis: it reads no device, and its result is neither stored nor sent anywhere. The
 timeline is one of three, the **source**:
 
-- **Public**: the release dates LoonSec publishes with its data, from the vendors' own records.
+- **Public**: the release dates LoonSec publishes with its data, from the public release records
+  each timeline names (`sources.timelines`): a vendor's own feed (Google's VersionHistory,
+  Mozilla's product-details, Wireshark's tags), or Homebrew's cask history where no vendor feed
+  is read.
 - **Jamf**: this instance's copy of Jamf's public patch catalog, synced hourly with no Jamf Pro
   connection (§6). Every title whose bundle id is the app's is read.
 - **Fleet**: this instance's copy of Fleet's history, the day Fleet's catalog first carried each
@@ -4090,9 +4093,16 @@ refusal: the sentence is the whole report.
 2. ***No reference yet for …*** (`app_unknown`) or ***… has no … track in LoonSec's patch-policy
    data yet; it has …*** (`track_unknown`). Not a fault and not a count of zero: LoonSec's data
    does not reference that app, or that track of it, yet. The tracks it does have are named.
-3. **The Public source.** `no_public_dates`: ***LoonSec holds no public release dates for … yet.***
-   LoonSec lists the app's versions without dates. Choose Jamf or Fleet; they are read from this
-   instance.
+3. **The Public source.** `no_public_dates`: ***LoonSec holds no public release dates for … yet…***
+   LoonSec lists the track's versions without dates. It reads two ways:
+   - ***…, so it has none of its own to walk.*** Only this track is undated; another track or
+     window of the app matched LoonSec's totals, so Jamf and Fleet can still date this one, and
+     their view says it is shown because that other walk matched (step 7). Choose Jamf or Fleet.
+   - ***…, so no walk of … can be checked against the totals LoonSec publishes, and no view of it
+     is shown from any source, Jamf and Fleet included…*** No track of the app has public dates,
+     so nothing of it can be held to LoonSec's totals (step 7), and every source of the app reads
+     this sentence, here and in `GET /api/patch-policy/apps`. Nothing on this instance is wrong
+     and nothing here changes it; the app is shown once LoonSec publishes dates for it.
 4. **The Jamf source.**
    - `never_synced`: ***This instance has not finished a sync of Jamf's public patch catalog
      yet…*** The catalog is empty: §6 (**Sync now** on Devices › Applications › Jamf Patch runs the
@@ -4101,8 +4111,9 @@ refusal: the sentence is the whole report.
      title names the app's bundle id (the sentence gives it). Search Devices › Applications ›
      Jamf Patch for the bundle id; a title Jamf does not publish cannot be walked. Choose another
      source.
-   - `no_versions`: ***… names no … version …*** The titles found list no versions at all. Sync now;
-     if it reads the same, choose another source.
+   - `no_versions`: ***This instance's copy of Jamf's public patch catalog names no … version …***
+     The titles found list no versions at all. Sync now (§6); if it reads the same, choose another
+     source.
    - `channel_empty`: ***… lists no … release on the … channel …: every version it names is on
      another track's list…*** The titles carry another track of the app and nothing of this one:
      only Jamf's ESR title is held for a release track, say, or only versions both tracks list.
@@ -4128,17 +4139,31 @@ refusal: the sentence is the whole report.
    - `history_unread`: ***Fleet's version history for … has not been read on this instance
      yet.*** The background reads the titles installed on this organization's Macs, two minutes
      apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the
-     title's **Read history**; a title no Mac here has is read only that way.
+     title's **Read history**; a title no Mac here has is read only that way. Fleet can hold more
+     than one title under an app's bundle id (`firefox` and `firefox@esr`). While one is unread,
+     a view walks the titles that are read and its `note` names the one left out; when what was
+     read cannot date the track at all (the ESR track with only `firefox` read), the sentence goes
+     on ***…, and the history read so far (…) dates nothing this track can walk*** and names the
+     unread title instead.
    - `history_failed`: ***Fleet's version history for … has not been read on this instance, and the
      last history read did not get an answer…*** §27 step 9; the sentence after the colon is that
      read's own.
-   - `esr_missing`: ***Fleet's catalog has no … ESR title…*** Fleet maintains the release channel
-     only. Choose another source.
-   - `line_not_followed`: ***… follows only …'s newer lines … and dates no … release…*** Fleet's
-     catalog carries only an app's newest line (Wireshark's, for one), so a track held on an older
-     line has nothing to install. Choose the newest-line track or another source. The walk's own
-     `ceiling_line_undated` (***The timeline from … dates no … release, so the … device has no line
-     to hold…***) is the same finding where LoonSec's data lists the newer lines on the held track.
+   - `no_versions`: ***This instance's Fleet history names no … version …*** The history read
+     dated no version of the title. The title's history on the Fleet catalog tab says why a version
+     is left out (§27 step 10); if **Read again** reads the same, choose another source.
+   - `esr_missing`: ***This instance's Fleet history (…) names no … ESR release…*** Every Fleet
+     title read for the app carries another channel. If Fleet's catalog holds the app's ESR title
+     (`firefox@esr`) unread, the sentence is `history_unread` instead, naming it. Otherwise choose
+     another source.
+   - `line_not_followed`: ***This instance's Fleet history (…) dates no … release, so the …
+     device has no line to hold…*** Fleet's catalog carries only an app's newest line (Wireshark's,
+     for one), so a track held on an older line has nothing to install, whichever lines LoonSec's
+     data lists on that track: which line a version is on is LoonSec's `line`, read, not compared.
+     Choose the newest-line track or another source. Jamf reads the same way when no title held
+     here dates a release on the held line. The walk's own `ceiling_line_undated` (***The timeline
+     from … dates no … release, so the … device has no line to hold…***) is the same finding where
+     no source above caught it first: on Public it means LoonSec's data names a held line it does
+     not date, reportable state **AD**.
    - `channel_empty`: as for Jamf above.
 6. **The window.** A window that was shortened is not a refusal: `window.shortened_by` names each
    reason, with its sentence (the first detectable day LoonSec records, the timeline's first
@@ -4155,15 +4180,21 @@ refusal: the sentence is the whole report.
    - `parity`: ***The walk of LoonSec's published dates for … over N years does not match the
      totals LoonSec published with the data (…), so no view of … is shown.*** One window of the
      app disagrees, and every source and window of that app is refused with it, so a definition
-     that moved on one side can never be read as a finding. Nothing on this instance can fix it:
-     reportable state **AD** if it reads the same after the next day's exchange.
+     that moved on one side can never be read as a finding. `facts` holds the stop, the total and
+     both values; `GET /api/patch-policy/apps` gives every source of the app the same state and
+     sentence. Nothing on this instance can fix it: reportable state **AD** if it reads the same
+     after the next day's exchange.
    - `unchecked`: ***LoonSec has published no totals this build could match for any window of …***
-     No window of the app has published totals, or none walked. An app LoonSec lists without
-     public dates reads this way too, because only a walk of public dates can be checked.
-     Reportable state **AD** if it reads the same after the next day's exchange.
+     No window of the app has published totals, or none walked (`facts.windows` gives each
+     window's reason). An app with no public dates at all reads as `no_public_dates` instead
+     (step 3). Reportable state **AD** if it reads the same after the next day's exchange.
    - Not a refusal: `check.state: unchecked_window` with ***LoonSec has no check for a N-year
      window of …; it is shown because the M-year walk matched.*** The window asked for has no
      published totals, and another window of the app matched them.
+   - Not a refusal either: a Jamf or Fleet view, or one with `align=common`, whose `check.detail`
+     ends ***…, and its own numbers are not checked.*** Only the walk of LoonSec's own dates at a
+     default window can be checked against LoonSec's totals; that walk matched, which is what lets
+     the view be shown, and the view's own numbers come from its own dates and days.
    - `document_invalid`: ***LoonSec's patch-policy data for … failed this build's check (…)…***
      The data does not hold together for this app in a way the copy's own check (§32 step 6)
      does not test. Reportable state **AD**.
@@ -4179,8 +4210,9 @@ refusal: the sentence is the whole report.
 
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
-has totals this build matched (`unchecked`), or the data fails the walk's check
-(`document_invalid`) — and reads the same after the next day's exchange. Report the sentence as
+has totals this build matched (`unchecked`), the data fails the walk's check
+(`document_invalid`), or it names a held line it does not date (`ceiling_line_undated` on
+Public) — and reads the same after the next day's exchange. Report the sentence as
 worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf` from
 `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
 

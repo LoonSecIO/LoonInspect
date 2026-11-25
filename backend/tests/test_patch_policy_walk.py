@@ -613,7 +613,7 @@ def test_a_timeline_with_no_matched_versions_is_refused_with_its_sentence() -> N
     assert refused.reason == "no_matched_versions"
     assert refused.sentence == (
         "None of the 2 versions in the timeline from Vendor tags is a version LoonSec's patch-policy data lists for "
-        "Demo Demo, so there is nothing to install and nothing was walked. These dates are LoonSec's own and the same "
+        "Demo, so there is nothing to install and nothing was walked. These dates are LoonSec's own and the same "
         "on every instance: report the sentence with the data's date (Settings › Support)."
     )
     assert refused.detail["unmatched"] == ["5.0", "6.0"]
@@ -637,7 +637,7 @@ def test_above_five_percent_unmatched_in_reach_is_refused_and_below_it_is_listed
     assert refused.reason == "too_many_unmatched"
     assert refused.sentence.startswith(
         "1 of the 4 versions the timeline from Vendor tags dates from 2025-12-04 to 2026-06-30, the days a device in "
-        "this view could install them, match no version LoonSec's patch-policy data lists for Demo Demo (25.0%). "
+        "this view could install them, match no version LoonSec's patch-policy data lists for Demo (25.0%). "
         "Above 5% the walk is refused"
     )
     assert refused.sentence.endswith("report the sentence with the data's date (Settings › Support).")
@@ -836,9 +836,7 @@ def test_public_timeline_reads_the_documents_dates_and_refuses_without_them() ->
     doc["apps"][0]["tracks"][0]["timeline"] = None
     with pytest.raises(WalkRefused) as caught:
         public_timeline(doc, app="demo", track="demo/stable")
-    assert caught.value.sentence == (
-        "LoonSec holds no public release dates for Demo yet. Jamf or Fleet may: they are read from this instance."
-    )
+    assert caught.value.sentence == ("LoonSec holds no public release dates for Demo yet, so it has none of its own to walk.")
 
 
 # --- Identity and parity ----------------------------------------------------------------------

@@ -2,7 +2,8 @@
 
 The document (`kind: patch_policy_reference`) is one object for every app LoonSec references:
 NVD-derived affected ranges compiled against each track's ordered version list, a first-
-detectable day per CVE, and the public vendor release records each track's dates come from. It
+detectable day per CVE, and the public release records each track's dates come from (a vendor's
+own feed, or Homebrew's cask history where no vendor feed is read). It
 arrives the way the corpus does (`app.core.vuln_library`): a signed link riding the daily
 data-sharing exchange's response, under `patch_policy`, keyed by the algorithm that reads it —
 `{"patch_walk/1": {"signature", "asof", "url"}}` — and downloaded only when the signature, which
@@ -449,10 +450,10 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
         return f"it lacks {where} exclusions.cves, each with a cve_id"
     if not isinstance(undetectable, Mapping) or not isinstance(undetectable.get("cves"), list):
         return f"it lacks {where} not_detectable"
-    if not all(
-        isinstance(row, str) or (isinstance(row, Mapping) and isinstance(row.get("cve_id"), str)) for row in undetectable["cves"]
-    ):
-        return f"it lacks {where} not_detectable.cves, each a cve_id"
+    # CVE ids, as the contract (LoonVD's sharedAssets/contract/patch-policy-reference.md) has them
+    # and the walk reads them.
+    if not all(isinstance(row, str) and row for row in undetectable["cves"]):
+        return f"it lacks {where} not_detectable.cves, each a CVE id"
     if not isinstance(counts, Mapping) or not isinstance(counts.get("clock"), Mapping):
         return f"it lacks {where} counts"
     for key in ("versions", "versions_dated", "candidates", "listed", "excluded", "not_detectable"):
@@ -508,7 +509,7 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
             f"+ not_detectable {len(undetected_rows)}"
         )
     ids = [row["cve_id"] for row in cves] + [row.get("cve_id") for row in excluded_rows]
-    ids += [row.get("cve_id") if isinstance(row, Mapping) else row for row in undetected_rows]
+    ids += undetected_rows
     if len(ids) != len(set(ids)):
         return disagree("a CVE is listed twice across cves, exclusions and not_detectable")
 

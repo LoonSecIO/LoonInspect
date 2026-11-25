@@ -462,8 +462,9 @@ than three days old; without it (an older LoonSec, or the file below) the copy's
 decides, as before.
 
 The document is LoonSec's patch-policy reference: one object for every app LoonSec
-references, built from NVD records, LoonSec's record of NVD changes, and public vendor release
-records. It is sent to exactly the tiers that receive the corpus, and the container treats it
+references, built from NVD records, LoonSec's record of NVD changes, and public release records
+(vendors' own feeds, and Homebrew's cask history where no vendor feed is read; the document names
+each). It is sent to exactly the tiers that receive the corpus, and the container treats it
 the way it treats the corpus: it follows only the entry for the algorithm this build reads,
 downloads only when `signature` (the document's own `doc_id`) differs from the copy it holds,
 checks it whole (the `doc_id` recomputed from the body, its kind, schema and algorithm, and

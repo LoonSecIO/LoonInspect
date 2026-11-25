@@ -330,7 +330,8 @@ class _Join:
 
 
 def _invalid(where: str, what: str, name: str | None = None, label: str | None = None) -> WalkRefused:
-    named = " ".join(part for part in (name, label) if part)
+    # A track's label names its app ("Firefox (release)"), so the label alone says which.
+    named = label or name
     about = f" for {named}" if named else ""
     return WalkRefused(
         REFUSED_DOCUMENT,
@@ -552,13 +553,8 @@ def _rows(
     held = not_detectable.get("count", 0)
     if not isinstance(held, int) or isinstance(held, bool) or held < 0:
         raise _invalid("not_detectable.count", f"{held!r} is not a count", name, label)
-    raw_listed = not_detectable.get("cves") or []
-    # Each entry is a CVE id, or a row carrying one (`{cve_id, published}`), the two shapes the
-    # feed's check (`app.core.patch_policy_feed`) admits: a document stored there must walk here.
-    listed = None
-    if isinstance(raw_listed, list):
-        listed = [entry.get("cve_id") if isinstance(entry, Mapping) else entry for entry in raw_listed]
-    if listed is None or not all(isinstance(cve_id, str) and cve_id for cve_id in listed):
+    listed = not_detectable.get("cves") or []
+    if not isinstance(listed, list) or not all(isinstance(cve_id, str) and cve_id for cve_id in listed):
         raise _invalid("not_detectable.cves", "not a list of CVE ids", name, label)
     if len(set(listed)) != len(listed) or len(listed) > held:
         raise _invalid("not_detectable.cves", f"{len(listed)} listed against a count of {held}", name, label)
@@ -729,8 +725,7 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
         raise WalkRefused(
             REFUSED_NO_MATCH,
             f"None of the {listed_count} versions in the timeline from {read.name} is a version LoonSec's patch-policy "
-            f"data lists for {name} {label}, so there is nothing to install and nothing was walked.{found} "
-            + _next_check(read, name),
+            f"data lists for {label}, so there is nothing to install and nothing was walked.{found} " + _next_check(read, name),
             {"unmatched": join.unmatched, "other_track": join.other_track},
         )
 
@@ -1003,7 +998,7 @@ def _reach(prepared: _Prepared, since: dt.date, until: dt.date) -> dict[str, Any
             REFUSED_UNMATCHED,
             f"{len(unmatched)} of the {total} versions the timeline from {timeline.name} dates from {first} to {until}, "
             f"the days a device in this view could install them, match no version LoonSec's patch-policy data lists for "
-            f"{name} {label} ({share:.1%}). Above {UNMATCHED_LIMIT:.0%} the walk is refused, because a version that "
+            f"{label} ({share:.1%}). Above {UNMATCHED_LIMIT:.0%} the walk is refused, because a version that "
             "matches nothing is never installed and the walk would keep the device on the version before it. The "
             "unmatched versions are listed beside this sentence. " + _next_check(timeline, name),
             {"in_reach": reach},
@@ -1266,7 +1261,7 @@ def walk(
     if failures:
         raise WalkRefused(
             REFUSED_INVARIANT,
-            f"The walk of {prepared.name} {prepared.label} was refused because its own totals disagree ({failures[0]}). "
+            f"The walk of {prepared.label} was refused because its own totals disagree ({failures[0]}). "
             "This is a defect in LoonInspect, not in this instance's data: report the sentence with the Input line "
             "(Settings › Support).",
             {"failures": failures},
@@ -1406,7 +1401,7 @@ def _run_stop(
     if any(day not in starts for day in resolution_days):
         raise WalkRefused(
             REFUSED_INVARIANT,
-            f"The walk of {prepared.name} {prepared.label} was refused because a CVE was closed on a day nothing was "
+            f"The walk of {prepared.label} was refused because a CVE was closed on a day nothing was "
             "installed. This is a defect in LoonInspect: report the sentence (Settings › Support).",
         )
     installs = [{"date": day.isoformat(), "version": name(index)} for day, index in steps[1:]]
@@ -1553,7 +1548,7 @@ def _parity(prepared: _Prepared, result: dict[str, Any], years: int, until: Any,
             shown = stated.get(first) if isinstance(stated, Mapping) else stated
             raise WalkRefused(
                 REFUSED_PARITY,
-                f"The walk of LoonSec's published dates for {prepared.name} {prepared.label} over {years} years does not match "
+                f"The walk of LoonSec's published dates for {prepared.label} over {years} years does not match "
                 f"the totals LoonSec published with the data ({stop}: {first} is {computed.get(first)!r} here and "
                 f"{shown!r} in the data), so no view of {prepared.name} is shown. Report the sentence with the data's date "
                 "(Settings › Support).",
@@ -1646,12 +1641,14 @@ def public_timeline(document: Any, *, app: str, track: str) -> dict[str, Any]:
     app_row, track_row = _find_track(document, app, track)
     name = str(app_row.get("name") or app)
     source_id = track_row.get("timeline")
+    label = str(track_row.get("label") or track)
     if not source_id:
+        # Whether another source may then be shown is the caller's to say: an instance shows one
+        # only once a walk of LoonSec's own dates for another window of the app matched (plan 4.7).
         raise WalkRefused(
             REFUSED_NO_PUBLIC_TIMELINE,
-            f"LoonSec holds no public release dates for {name} yet. Jamf or Fleet may: they are read from this instance.",
+            f"LoonSec holds no public release dates for {label} yet, so it has none of its own to walk.",
         )
-    label = str(track_row.get("label") or track)
     source = ((document.get("sources") or {}).get("timelines") or {}).get(source_id)
     if not isinstance(source, Mapping):
         raise _invalid(f"sources.timelines.{source_id}", "absent", name, label)

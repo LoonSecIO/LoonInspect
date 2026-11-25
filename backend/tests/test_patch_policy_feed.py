@@ -210,7 +210,12 @@ def test_a_document_that_decompresses_past_the_ceiling_is_stopped_there(monkeypa
         ),
         (
             lambda t: t["not_detectable"].update(count=1, cves=[["CVE-2099-2009"]]),
-            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a cve_id",
+            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a CVE id",
+        ),
+        (
+            # A row is not an id: the contract lists not_detectable as CVE ids, as the walk reads them.
+            lambda t: t["not_detectable"].update(count=1, cves=[{"cve_id": "CVE-2099-2009", "published": "2025-10-15"}]),
+            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a CVE id",
         ),
         (
             lambda t: t.update(promotions=[{"major": "4", "date": "2024-08-28"}]),
@@ -450,17 +455,41 @@ async def test_the_patch_policy_download_says_patch_policy_and_keeps_the_status(
 # --- what an organization reads ---------------------------------------------------------------
 
 
+def published_checks(doc: dict) -> dict:
+    """The document as LoonVD publishes it: every track with public dates carries `check`, the walk
+    of those dates at each window the walk does not refuse, and `doc_id` moves with it."""
+    from app.core import patch_policy_walk as walk
+
+    done = copy.deepcopy(doc)
+    for app in done["apps"]:
+        for track in app["tracks"]:
+            if not track.get("timeline"):
+                continue
+            timeline = walk.public_timeline(done, app=app["app"], track=track["track"])
+            track["check"] = {}
+            for years in walk.WINDOW_YEARS:
+                try:
+                    result = walk.walk(done, app=app["app"], track=track["track"], timeline=timeline, years=years)
+                except walk.WalkRefused:
+                    continue
+                track["check"][f"{years}y"] = {stop: walk.check_totals(result, stop) for stop in walk.STOPS}
+    done["doc_id"] = feed.canonical_doc_id(done)
+    return done
+
+
 async def test_each_app_says_which_sources_can_date_it() -> None:
     """Each source answers per track: whether a walk of it can be shown, the default two-year window
-    it would cover, and otherwise the state word and sentence that say why not (§33)."""
+    it would cover, and otherwise the state word and sentence that say why not (§33). Parity comes
+    first, as on the walk route: an app with nothing LoonSec's totals can check offers no source."""
     from app.core import fleet_catalog
     from app.core import patch_policy_views as views
 
     views.reset_for_tests()
-    apps = {app["app"]: app for app in feed.app_summaries(DOC)}
+    doc = published_checks(DOC)
+    apps = {app["app"]: app for app in feed.app_summaries(doc)}
     assert [t["track"] for t in apps["wireshark"]["tracks"]] == ["wireshark/4.4", "wireshark/newest"]
     assert apps["wireshark"]["tracks"][1]["clock"] == {"detectable_at": 2, "published": 1}
-    sources = await views.sources_of(DOC, _NO_JAMF, _FLEET_OFF)
+    sources = await views.sources_of(doc, _NO_JAMF, _FLEET_OFF)
     chrome, wireshark, vlc = sources["chrome"], sources["wireshark"], sources["vlc"]
 
     public = chrome["public"]
@@ -474,18 +503,32 @@ async def test_each_app_says_which_sources_can_date_it() -> None:
     assert public["tracks"][0]["since"] == "2025-11-28" and public["tracks"][0]["until"] == "2026-11-22"
     assert wireshark["public"]["ids"] == ["wireshark-tags"]
     assert [t["since"] for t in wireshark["public"]["tracks"]] == ["2024-11-22", "2024-11-22"]
-    # Undated versions: LoonSec holds no public dates, and says so rather than an empty range.
-    assert vlc["public"]["available"] is False and vlc["public"]["state"] == "no_public_dates"
-    assert vlc["public"]["sentence"] == (
-        "LoonSec holds no public release dates for VLC media player yet. Jamf or Fleet may: they are read from this instance."
-    )
-    for app in sources.values():
+    for app in (chrome, wireshark):
         assert (app["jamf"]["available"], app["jamf"]["state"], app["jamf"]["sentence"]) == (
             False,
             "never_synced",
             timelines.JAMF_NEVER_SYNCED_SENTENCE,
         )
         assert (app["fleet"]["state"], app["fleet"]["sentence"]) == ("flag_off", fleet_catalog.FLAG_OFF)
+    # Undated versions: LoonSec holds no public dates, so nothing of the app can be checked against
+    # its totals, and no source is offered, Jamf's and Fleet's included, in the walk route's words.
+    no_dates = (
+        "LoonSec holds no public release dates for VLC media player yet, so no walk of VLC media player can be checked "
+        "against the totals LoonSec publishes, and no view of it is shown from any source, Jamf and Fleet included"
+    )
+    for source in ("public", "jamf", "fleet"):
+        assert (vlc[source]["available"], vlc[source]["state"]) == (False, "no_public_dates"), source
+        assert vlc[source]["sentence"].startswith(no_dates), source
+
+    # The fixture as it stands, with no published totals at all: every source of every app is refused.
+    views.reset_for_tests()
+    bare = await views.sources_of(DOC, _NO_JAMF, _FLEET_OFF)
+    assert {(app, source["state"]) for app, held in bare.items() for source in held.values()} == {
+        ("chrome", "unchecked"),
+        ("wireshark", "unchecked"),
+        ("vlc", "no_public_dates"),
+    }
+    assert not any(source["available"] for held in bare.values() for source in held.values())
 
 
 @pytest.mark.parametrize("state", feed.FEED_STATES)

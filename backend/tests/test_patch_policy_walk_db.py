@@ -246,9 +246,14 @@ async def test_a_window_with_no_published_totals_is_shown_only_because_another_m
 
 
 async def test_an_app_with_no_public_dates_has_nothing_to_check_and_is_refused_in_words(held, viewer) -> None:  # noqa: F811
-    body = await _walk(viewer, 409, app="vlc")
-    assert body["reason"] == "unchecked" and body["source"] == "public"
-    assert body["detail"].startswith("LoonSec has published no totals this build could match for any window of VLC media player")
+    for source in ("public", "jamf", "fleet"):
+        body = await _walk(viewer, 409, app="vlc", source=source)
+        assert body["reason"] == "no_public_dates" and body["source"] == source
+        assert body["detail"].startswith(
+            "LoonSec holds no public release dates for VLC media player yet, so no walk of VLC media player can be "
+            "checked against the totals LoonSec publishes, and no view of it is shown from any source"
+        )
+        assert body["facts"]["windows"] == {"vlc/latest 2y": "no_public_dates", "vlc/latest 3y": "no_public_dates"}
 
 
 async def test_an_unknown_app_and_bad_requests_are_refused(held, viewer) -> None:  # noqa: F811
@@ -273,7 +278,13 @@ async def test_jamf_dates_walk_the_track_and_the_other_lines_versions_are_set_as
     assert joined["source"] == "jamf" and joined["ids"] == list(JAMF_IDS)
     assert joined["name"] == "this instance's copy of Jamf's public patch catalog (Wireshark 4.4, Wireshark 4.6)"
     assert (joined["other_track"], joined["other_track_versions"], joined["unmatched"]) == (2, ["4.6.0", "4.6.1"], [])
-    assert body["check"]["state"] == "matched"  # the app's public walk matched, which unlocks Jamf
+    # The app's public walk matched, which unlocks Jamf; the Jamf numbers themselves are not checked.
+    assert body["check"] == {
+        "state": "matched",
+        "detail": "The walk of LoonSec's published dates for a 2-year window of Wireshark matches the totals LoonSec "
+        "published. This view's dates come from this instance's copy of Jamf's public patch catalog, and its own "
+        "numbers are not checked.",
+    }
     assert body["clocks"]["release_date"] == timelines.JAMF_CLOCK
     # Jamf dated 4.4.3 a day after the tag, so the 1-day stop installs it a day later than on Public.
     public = await _walk(viewer, app="wireshark", track="wireshark/4.4")
@@ -300,7 +311,8 @@ async def test_fleet_is_read_only_while_the_flag_is_on_and_follows_only_the_newe
     await _flag(db, True)
     line = await _walk(viewer, 409, app="wireshark", track="wireshark/4.4", source="fleet")
     assert line["reason"] == "line_not_followed" and line["detail"].startswith(
-        f"This instance's Fleet history follows only Wireshark's newer lines ({FLEET_SLUG}) and dates no Wireshark 4.4 release"
+        f"This instance's Fleet history ({FLEET_SLUG}) dates no Wireshark 4.4 release, so the Wireshark 4.4 device has no "
+        "line to hold"
     )
     body = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
     assert body["inputs"]["timeline"]["ids"] == [FLEET_SLUG] and body["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK
@@ -337,6 +349,57 @@ async def test_align_common_cuts_every_view_to_the_days_all_the_sources_share(db
     assert without_fleet["window"]["aligned"]["sources"] == ["public", "jamf"]
 
 
+async def test_a_title_the_hourly_sync_adds_is_read_on_the_next_walk(db, held, jamf, viewer) -> None:  # noqa: F811
+    """The titles' bundle ids are parsed once per state of the catalog. A sync that writes a title
+    moves that state, so the next walk reads the new title without a restart."""
+    first = await _walk(viewer, app="wireshark", track="wireshark/newest", source="jamf")
+    assert first["inputs"]["timeline"]["ids"] == list(JAMF_IDS)
+    added = _jamf_row("PPW-612", "Wireshark", [("4.6.1", "2025-11-09")])
+    added.synced_at = datetime.now(UTC) + timedelta(seconds=1)
+    db.add(added)
+    await db.commit()
+    try:
+        again = await _walk(viewer, app="wireshark", track="wireshark/newest", source="jamf")
+        assert again["inputs"]["timeline"]["ids"] == sorted([*JAMF_IDS, "PPW-612"])
+        assert again["inputs"]["timeline"]["digest"] != first["inputs"]["timeline"]["digest"]
+    finally:
+        await db.rollback()
+        await db.execute(delete(JamfPatchTitle).where(JamfPatchTitle.id == "PPW-612"))
+        await db.commit()
+
+
+async def test_a_fleet_history_is_confirmed_past_its_read_only_by_a_complete_check(db, held, fleet, viewer) -> None:  # noqa: F811
+    """A daily check that answered confirms an unmoved title up to the check; one that skipped
+    manifests (`partial`) left some titles as held and confirms nothing past the history read."""
+    from sqlalchemy import update
+
+    from app.models.schema import FleetCatalogState
+
+    await _flag(db, True)
+    read_at = datetime(2026, 11, 20, 8, tzinfo=UTC)
+    await db.execute(update(FleetMaintainedApp).where(FleetMaintainedApp.slug == FLEET_SLUG).values(history_read_at=read_at))
+    before = await db.get(FleetCatalogState, 1)
+    kept = None if before is None else {c.key: getattr(before, c.key) for c in FleetCatalogState.__table__.columns}
+    await db.execute(delete(FleetCatalogState))
+    db.add(
+        FleetCatalogState(id=1, outcome="ok", checked_at=datetime(2026, 11, 22, 9, 20, tzinfo=UTC), snapshot_status="complete")
+    )
+    await db.commit()
+    try:
+        complete = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+        assert complete["inputs"]["timeline"]["as_of"] == "2026-11-22"
+        await db.execute(update(FleetCatalogState).values(snapshot_status="partial"))
+        await db.commit()
+        partial = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+        assert partial["inputs"]["timeline"]["as_of"] == "2026-11-20"
+    finally:
+        await db.rollback()
+        await db.execute(delete(FleetCatalogState))
+        if kept is not None:
+            db.add(FleetCatalogState(**kept))
+        await db.commit()
+
+
 # --- what refuses every source ---------------------------------------------------------------------
 
 
@@ -345,12 +408,20 @@ async def test_totals_that_disagree_refuse_every_source_of_the_app(db, held, jam
     for query in ({"source": "public"}, {"source": "jamf"}, {"track": "wireshark/newest", "years": 3}):
         body = await _walk(viewer, 409, app="wireshark", **query)
         assert body["reason"] == "parity", query
-        assert body["detail"].startswith(
-            "The walk of LoonSec's published dates for Wireshark Wireshark (newest line) over 2 years"
-        )
-    # The apps route still answers: which sources can date the app is not a walk.
-    apps = (await viewer.get("/api/patch-policy/apps")).json()
-    assert [app["app"] for app in apps["apps"]] == ["chrome", "wireshark", "vlc"]
+        assert body["detail"].startswith("The walk of LoonSec's published dates for Wireshark (newest line) over 2 years")
+        # The totals that disagreed, as the walk found them: the page lists them beside the sentence.
+        assert (body["facts"]["stop"], body["facts"]["key"]) == ("never", "exposed")
+        assert body["facts"]["published"] == body["facts"]["walked"] + 1
+    # The apps route still answers, and offers no source of the app, in the walk route's words.
+    apps = {app["app"]: app for app in (await viewer.get("/api/patch-policy/apps")).json()["apps"]}
+    assert list(apps) == ["chrome", "wireshark", "vlc"]
+    for name, source in apps["wireshark"]["sources"].items():
+        assert (source["available"], source["state"]) == (False, "parity"), name
+        assert source["sentence"].startswith("The walk of LoonSec's published dates for Wireshark (newest line)"), name
+        assert all(track["state"] == "parity" and not track["available"] for track in source["tracks"]), name
+    # The timeline's own facts are still reported: what Jamf holds is not a walk.
+    assert apps["wireshark"]["sources"]["jamf"]["ids"] == list(JAMF_IDS)
+    assert apps["chrome"]["sources"]["public"]["available"] is True
 
 
 async def test_an_organization_whose_tier_is_off_reads_the_tier_sentence(db, held, viewer) -> None:  # noqa: F811
@@ -387,7 +458,12 @@ async def test_the_apps_route_says_per_source_and_track_whether_a_walk_can_be_sh
     ]
     assert apps["chrome"]["sources"]["jamf"]["state"] == "no_title"
     assert apps["chrome"]["sources"]["fleet"]["state"] == "not_held"
-    assert apps["vlc"]["sources"]["public"]["state"] == "no_public_dates"
+    # Nothing of VLC can be checked against LoonSec's totals, so no source of it is offered.
+    assert {name: source["state"] for name, source in apps["vlc"]["sources"].items()} == {
+        "public": "no_public_dates",
+        "jamf": "no_public_dates",
+        "fleet": "no_public_dates",
+    }
 
     await _flag(db, False)
     fleet_off = (await viewer.get("/api/patch-policy/apps")).json()["apps"][1]["sources"]["fleet"]

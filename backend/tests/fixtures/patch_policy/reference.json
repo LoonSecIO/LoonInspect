@@ -1,7 +1,7 @@
 {
   "kind": "patch_policy_reference",
   "schema": 1,
-  "doc_id": "efbbf29ac1a047e9b7989971c138ae7f0e30b492c3692c0f8988ee1c401b5409",
+  "doc_id": "e011ca631fddc05a27b675cf79dc770c7810feb5494375e9e754aae23aacd135",
   "as_of": "2026-11-23T20:00:00Z",
   "algorithm": "patch_walk/1",
   "definitions_version": "2",
@@ -255,10 +255,7 @@
           "not_detectable": {
             "count": 1,
             "cves": [
-              {
-                "cve_id": "CVE-2099-1005",
-                "published": "2025-10-15"
-              }
+              "CVE-2099-1005"
             ]
           },
           "check": {},

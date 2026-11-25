@@ -96,7 +96,9 @@ class PatchPolicySourceTrackOut(_Out):
     # `available`, a reason the source cannot date the track (`app.core.patch_policy_timelines`'s
     # states: no_public_dates, never_synced, no_title, flag_off, catalog_unread, not_held,
     # history_unread, history_failed, no_versions, channel_empty, esr_missing, line_not_followed),
-    # or the walk's own refusal (no_matched_versions, too_many_unmatched, window_empty, ...).
+    # the walk's own refusal (no_matched_versions, too_many_unmatched, window_empty, ...), or the
+    # app's parity refusal (parity, unchecked, document_invalid, no_public_dates), which the walk
+    # route answers first and which every source and track of the app then carries.
     state: str
     sentence: str | None
     # The first and last day the source dates one of the track's own versions.
@@ -164,7 +166,9 @@ class PatchPolicyAppsOut(_Out):
 class PatchPolicyWalkCheckOut(BaseModel):
     # `matched`: the walk of LoonSec's own dates for this window matched the totals LoonSec
     # published. `unchecked_window`: LoonSec published none for this window, and another window
-    # of the app matched. Anything else is a 409, never a walk.
+    # of the app matched. Anything else is a 409, never a walk. Only the walk of LoonSec's own
+    # dates at a default window is checked: on a Jamf or Fleet view, or one cut to the common
+    # window, `detail` says this view's own numbers are not.
     state: Literal["matched", "unchecked_window"]
     detail: str
 
