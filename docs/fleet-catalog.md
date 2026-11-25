@@ -315,9 +315,9 @@ catalog again.
 
 ## The tab
 
-**Devices › Applications › Fleet catalog** lists, per title: the name, the bundle identifier,
-Fleet's latest version, *Macs with app*, *Macs behind*, and when the version last moved with
-the version before it.
+**Fleet titles**, the tab's second view, under the device filter [Migration review](#migration-review) uses, lists per
+title: the name, the bundle identifier, Fleet's latest version, *Macs with app*, *Macs in scope*, *Macs behind*, and
+when the version last moved with the version before it.
 
 - **The match is the exact bundle identifier.** A title is on a Mac when an installed app
   there carries the title's bundle identifier, letter for letter. Fleet's own check for a
@@ -328,9 +328,17 @@ the version before it.
   string. A Mac with two copies of an app, one current and one stale, is behind. A Mac on a
   build newer than Fleet lists is not behind. *Macs behind* and the rest are both served, so
   the page never subtracts.
-- **Only titles installed here** is ticked by default and hides Fleet's titles no Mac has.
-  Unticked, the whole catalog is listed. A title on no Mac shows a dash under *Macs behind*,
-  not a zero.
+- **Macs in scope** counts the Macs the device filter selects (every current Jamf Mac without
+  one) that carry the title's bundle identifier: `fleetDeviceCounts` in [the migration
+  report](#the-api). *Macs with app* and *Macs behind* count every Mac the organization has
+  collected, and *installed here*, in the footer and the version history line, means on any of
+  them, whatever the filter. A title Fleet listed after the counts were read shows *Unknown*.
+- **Only titles installed here** starts unticked. Ticked, it keeps the titles on a Mac the filter
+  selects; the page reads the whole catalog once and filters what it holds. The search and the
+  box are in the address as `q` and `installedOnly=1`. A title on no Mac shows a dash under
+  *Macs behind*, not a zero.
+- **Build a patch plan**, under a title on at least one Mac the filter selects, opens Installed
+  Apps with the same `deviceScope`, searched by the title's bundle identifier.
 - **The status line** says when GitHub was last asked and what it answered. After a failed
   check it shows the sentence and says the titles below are as read on the earlier date.
   While the titles held are [partial](#complete-or-partial), an unchanged check's line says

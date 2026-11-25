@@ -1482,6 +1482,7 @@ export const de: Translations = {
     tabLabel: "Fleet-Katalog",
     eyebrow: "Geräte › Anwendungen",
     title: "Fleet-Katalog",
+    titlesHeading: "Alle Fleet-Titel",
     description:
       "Die Mac-Apps, die Fleet pflegt, mit Fleets neuester Version neben dem, was diese Organisation installiert hat. Einmal täglich aus Fleets Repository auf GitHub gelesen; die Versionsgeschichte der hier installierten Titel wird langsam im Hintergrund gelesen.",
     checkNow: "Jetzt prüfen",
@@ -1492,11 +1493,17 @@ export const de: Translations = {
     searchPlaceholder: "Name, Bundle-ID, Version suchen...",
     installedOnly: "Nur hier installierte Titel",
     installedOnlyHint:
-      "Blendet Fleets Titel aus, die kein Mac dieser Organisation hat. Ein Titel wird über die exakte Bundle-ID einer installierten App zugeordnet.",
+      "Blendet Fleets Titel aus, die auf keinem der Macs sind, die der Gerätefilter oben auswählt. Ein Titel wird über die exakte Bundle-ID einer installierten App zugeordnet.",
     tableName: "Name",
     tableBundleId: "Bundle-ID",
     tableLatestVersion: "Fleets neueste",
     tableDeviceCount: "Macs mit App",
+    tableScopedCount: "Macs im Gerätefilter",
+    tableScopedCountHint:
+      "Wie viele der Macs, die der Gerätefilter oben auswählt, die Bundle-ID dieses Titels tragen. „Macs mit App“ zählt die ganze Organisation. Titel mit derselben Bundle-ID, etwa eine Version und ihr ESR-Kanal, zählen dieselben Macs.",
+    scopedUnknown: "Unbekannt",
+    scopedUnknownHint: "Fleet hat diesen Titel aufgenommen, nachdem die Zahlen für diesen Gerätefilter gelesen wurden. Laden Sie die Seite neu, um ihn zu zählen.",
+    buildPlan: "Patch-Plan erstellen",
     tableDevicesBehind: "Macs im Rückstand",
     tableVersionChanged: "Version zuletzt geändert",
     notMoved: "Seit dem ersten Lesen nicht",
@@ -1569,7 +1576,7 @@ export const de: Translations = {
     emptyNeverRead:
       "Noch nichts aufzulisten: Bisher konnte keine Prüfung Fleets Katalog lesen. Der Grund steht oben.",
     emptyNoneInstalled: (count: number) =>
-      `Fleet führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}, und keine ist auf einem Mac, den diese Organisation erfasst hat. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu sehen.`,
+      `Fleet führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}, und keine ist auf einem Mac, den der Gerätefilter oben auswählt. Erweitern Sie den Filter, oder deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu sehen.`,
     emptyNoMatchInstalled:
       "Kein installierter Titel passt zu dieser Suche. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu durchsuchen.",
     emptyNoMatch: "Kein Titel passt zu dieser Suche.",

@@ -3471,9 +3471,11 @@ nothing here is a permissions problem in Jamf.
      short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
      release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
 4. **The check answered and the table is empty.** Read which sentence the table shows.
-   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
-     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
-     title matches an installed app by its exact bundle ID, on Macs only, so an organization
+   - *Fleet lists … Mac apps, and none is on a Mac the device filter above selects* → the
+     catalog is there and nothing matched. Widen the device filter above the table, or press
+     **Clear filter**, which selects every current Jamf Mac; then untick **Only titles installed
+     here** to see the whole catalog.
+     A title matches an installed app by its exact bundle ID, on Macs only, so an organization
      with no device sweep yet matches nothing (§1). For one title you know is installed,
      compare its bundle ID under Devices › Applications with the tab's, letter for letter:
      `com.Example.App` is not `com.example.app`.
@@ -3481,12 +3483,19 @@ nothing here is a permissions problem in Jamf.
      untick the box to search the whole catalog.
    - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
      failed; step 3.
-5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
+5. **A count under *Macs behind* or *Macs in scope* looks wrong.** A Mac is behind when any copy of the app on it
    is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
    a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
    latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
    finding follows from a version is not this tab's question: it judges nothing but older or
    not.
+   - *Macs with app* and *Macs behind* count every Mac the organization has collected. *Macs in
+     scope* counts only the current Jamf Macs the device filter above selects, so it is never
+     more than *Macs with app*, and it can be lower even with no filter applied: departed and
+     non-Jamf Macs count only under *Macs with app*. A release and its ESR channel share a
+     bundle ID, so they count the same Macs.
+   - *Unknown* under *Macs in scope* → Fleet listed the title after the counts for the filter
+     were read. **Check now** reads them again; otherwise, reload the page.
 6. **The status line ends with manifests that *could not be read … and were left as held*, or
    says *The held snapshot still has unread Mac titles*.** The check succeeded. The named
    titles are ones this build could not read: a manifest or an index entry it cannot read, or
@@ -3523,7 +3532,8 @@ nothing here is a permissions problem in Jamf.
    minutes apart, the most-installed first, so *Version history: 12 of the 140 titles installed
    here read* climbs by twenty to thirty an hour at best. It reads only while the flag is on for
    some organization, only titles on a Mac in such an organization, and only after the daily
-   check has read the catalog (step 2).
+   check has read the catalog (step 2). The line counts the whole organization, whatever device
+   filter is applied above the table.
    - *Paused until …* → GitHub said 20 or fewer of this address's 60 requests an hour were
      left, and the history leaves those to the daily check, **Check now** and every other tool
      behind the address. It carries on by itself at the time given. Paused every hour means

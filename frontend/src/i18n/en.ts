@@ -1637,6 +1637,7 @@ export const en = {
     tabLabel: "Fleet catalog",
     eyebrow: "Devices › Applications",
     title: "Fleet catalog",
+    titlesHeading: "All Fleet titles",
     description:
       "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day, with the version history of the titles installed here read slowly in the background.",
     checkNow: "Check now",
@@ -1647,11 +1648,17 @@ export const en = {
     searchPlaceholder: "Search name, bundle ID, version...",
     installedOnly: "Only titles installed here",
     installedOnlyHint:
-      "Hides Fleet's titles that no Mac in this organization has. A title is matched to an installed app by its exact bundle ID.",
+      "Hides Fleet's titles that are on none of the Macs the device filter above selects. A title is matched to an installed app by its exact bundle ID.",
     tableName: "Name",
     tableBundleId: "Bundle ID",
     tableLatestVersion: "Fleet's latest",
     tableDeviceCount: "Macs with app",
+    tableScopedCount: "Macs in scope",
+    tableScopedCountHint:
+      'How many of the Macs the device filter above selects carry this title\'s bundle ID. "Macs with app" counts the whole organization. Titles that share a bundle ID, such as a release and its ESR channel, count the same Macs.',
+    scopedUnknown: "Unknown",
+    scopedUnknownHint: "Fleet listed this title after the counts for this device filter were read. Reload the page to count it.",
+    buildPlan: "Build a patch plan",
     tableDevicesBehind: "Macs behind",
     tableVersionChanged: "Version last moved",
     notMoved: "Not since first read",
@@ -1725,7 +1732,7 @@ export const en = {
     emptyNeverCheckedCanCheck: "Nothing to list yet: Fleet's catalog has not been read. Check now reads it.",
     emptyNeverRead: "Nothing to list yet: no check has been able to read Fleet's catalog. The reason is above.",
     emptyNoneInstalled: (count: number) =>
-      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac this organization has collected. Untick "Only titles installed here" to see the whole catalog.`,
+      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac the device filter above selects. Widen the filter, or untick "Only titles installed here" to see the whole catalog.`,
     emptyNoMatchInstalled:
       'No installed title matches this search. Untick "Only titles installed here" to search the whole catalog.',
     emptyNoMatch: "No title matches this search.",
