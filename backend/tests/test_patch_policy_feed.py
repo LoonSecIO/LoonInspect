@@ -417,7 +417,15 @@ def test_a_row_with_a_detectable_day_must_say_it_uses_that_clock() -> None:
 # Fleet catalog flag off.
 _NO_JAMF = timelines.JamfCatalog(size=0, refreshed_at=None, titles=())
 _FLEET_OFF = timelines.FleetHistory(
-    enabled=False, catalog_read=False, checked_ok_at=None, catalog_detail=None, history_failure=None, titles=()
+    enabled=False,
+    catalog_read=False,
+    checked_ok_at=None,
+    catalog_detail=None,
+    history_failure=None,
+    titles=(),
+    snapshot="unread",
+    snapshot_detail=None,
+    answered_at=None,
 )
 
 
@@ -534,20 +542,56 @@ def test_the_entry_may_say_when_loonsec_last_confirmed_the_document_and_absence_
         assert offer.kind == "pointer" and offer.pointer.built_at is None, unknown
 
 
-def test_stale_says_which_date_decided_it() -> None:
+def test_stale_is_judged_from_the_copys_own_date_and_a_fresh_build_never_makes_it_current() -> None:
+    """LoonSec's exchange contract (2026-11-25): an instance judges a copy's age from `as_of`, the
+    NVD state it was built from, and reads `built_at` only for the cause. A publisher that finishes
+    a build every night over NVD data that has not advanced writes no new document, so `built_at`
+    stays fresh over old data: that copy is stale, and judging from `built_at` would call it current."""
+    from datetime import UTC, datetime, timedelta
+
+    as_of = datetime(2026, 11, 20, 6, tzinfo=UTC)
+    now = as_of + timedelta(days=4)
+    # A build finished an hour ago over a 4-day-old NVD state: stale, and the publisher is running.
+    assert feed.held_freshness(as_of, now - timedelta(hours=1), now) == ("stale", True)
+    # The publisher's last build is itself more than three days old: stale, and it has stopped.
+    assert feed.held_freshness(as_of, as_of + timedelta(hours=1), now) == ("stale", False)
+    # Not said (an older LoonSec, or the file): the copy's own date.
+    assert feed.held_freshness(as_of, None, now) == ("stale", False)
+    # Three days to the second is not more than three days; a minute past is.
+    assert feed.held_freshness(as_of, None, as_of + feed.STALE_AFTER) == ("current", False)
+    assert feed.held_freshness(as_of, None, as_of + feed.STALE_AFTER + timedelta(minutes=1)) == ("stale", False)
+    # A young copy is current whatever the build says.
+    assert feed.held_freshness(now - timedelta(days=1), now - timedelta(hours=1), now) == ("current", True)
+    assert feed.held_freshness(now - timedelta(days=1), None, now) == ("current", False)
+
+
+def test_stale_says_why_the_copy_is_old() -> None:
+    """Three causes, each with its own words: the publisher running over NVD data that has not
+    advanced, the publisher stopped, and (no `built_at`) only the copy's own date. The page's
+    template opens every one the same way (`en.ts`), and §32 step 7 walks each cause."""
     from datetime import date
 
-    unknown = feed.sentence_for("stale", as_of=date(2026, 11, 23))
-    assert unknown == "Showing patch-policy data dated 2026-11-23, more than three days old; the walk ends 2026-11-22."
-    confirmed = feed.sentence_for("stale", as_of=date(2026, 11, 23), built_at=date(2026, 11, 24))
-    assert confirmed == (
-        "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-24, more than three days "
-        "ago, and the walk ends 2026-11-22."
+    unknown = feed.sentence_for("stale", as_of=date(2026, 11, 20))
+    assert unknown == "Showing patch-policy data dated 2026-11-20, more than three days old; the walk ends 2026-11-19."
+    running = feed.sentence_for("stale", as_of=date(2026, 11, 20), built_at=date(2026, 11, 24), publisher_running=True)
+    assert running == (
+        "Showing patch-policy data dated 2026-11-20, more than three days old: LoonSec's publisher last ran on 2026-11-24, "
+        "but its NVD data has not advanced since 2026-11-20, and the walk ends 2026-11-19."
     )
-    for sentence in (unknown, confirmed):
+    stopped = feed.sentence_for("stale", as_of=date(2026, 11, 20), built_at=date(2026, 11, 20))
+    assert stopped == (
+        "Showing patch-policy data dated 2026-11-20, more than three days old: LoonSec's publisher last ran on 2026-11-20, "
+        "more than three days ago, and the walk ends 2026-11-19."
+    )
+    for sentence in (unknown, running, stopped):
         assert sentence.split(" 2026-")[0] in _EN_TS
-    assert "LoonSec last confirmed it current on" in _EN_TS
-    assert "LoonSec last confirmed it current on" in _RUNBOOK
+    step = re.sub(r"\s+", " ", _RUNBOOK.split('\n## 32. "', 1)[1].split("\n## 33. ", 1)[0]).replace("*", "")
+    for cause in (
+        "LoonSec's publisher last ran on …, but its NVD data has not advanced since",
+        "LoonSec's publisher last ran on …, more than three days ago",
+        "more than three days old; the walk ends",
+    ):
+        assert cause in step, f"§32 does not walk the cause {cause!r}"
 
 
 # --- the download it shares with the corpus ---------------------------------------------------

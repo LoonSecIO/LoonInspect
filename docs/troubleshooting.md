@@ -4215,18 +4215,26 @@ stored, and nothing is deleted to make room for one.
 
    The next exchange tries again. The same sentence after the next day's exchange, with no
    proxy in the way, is reportable state **AB**.
-7. ***Showing patch-policy data dated …; LoonSec last confirmed it current on …, more than three
-   days ago, and the walk ends …*** LoonSec rebuilds the document every night and says when it
-   last did, changed or not, and the exchange passes that on (`feed.builtAt`). The copy held was
-   last confirmed more than three days ago: no exchange since has brought a newer confirmation.
-   Read the last exchange on Settings › Data Sharing: *failed* is §5 step 6. *Sent* means
-   LoonSec has not confirmed a document since, which is reportable state **AA** once it has
-   lasted past the next exchange.
-
-   ***Showing patch-policy data dated …, more than three days old; the walk ends …*** is the same
-   state where LoonSec's confirmation is not known (`feed.builtAt` is null: an exchange from an
-   older LoonSec, or the file of step 8), so the copy's own date decides. Read the last exchange
-   the same way. On an instance that reads the file (step 8), put a newer file in its place.
+7. ***Showing patch-policy data dated …, more than three days old…*** The copy held is more than
+   three days old by its own date (`feed.asOf`, the NVD state LoonSec built it from), and that
+   date alone decides it. LoonSec's publisher builds the document every night and says when it
+   last finished a build, changed or not, and the exchange passes that on (`feed.builtAt`). A
+   recent build never makes an old copy current: a publisher that runs every night while
+   LoonSec's NVD data stands still makes the same document each night, and that is what this
+   state is for. What `feed.builtAt` says is the cause, and the sentence goes on with it:
+   - ***…: LoonSec's publisher last ran on …, but its NVD data has not advanced since …*** → the
+     publisher is running (its last build is under three days old) and LoonSec's NVD data has
+     not moved since the copy's date, so each night's build is the copy you hold. Nothing on
+     this instance is wrong, and neither the next exchange nor **Send now** changes it. If it
+     reads the same after the next day's exchange, that is reportable state **AA**.
+   - ***…: LoonSec's publisher last ran on …, more than three days ago, …*** → no build LoonSec
+     finished since has reached this instance. Read the last exchange on Settings › Data
+     Sharing: *failed* is §5 step 6. *Sent* means LoonSec's publisher has finished no build
+     since, which is reportable state **AA** once it has lasted past the next exchange.
+   - ***…, more than three days old; the walk ends …*** → LoonSec's last build is not known
+     (`feed.builtAt` is null: an exchange from an older LoonSec, or the file of step 8), so the
+     sentence names only the copy's date. Read the last exchange the same way. On an instance
+     that reads the file (step 8), put a newer file in its place.
 8. **An instance with no network: `PATCH_POLICY_FEED_FILE`.** Put the document (the
    `.json.gz` file LoonSec provides) on the data volume and name it in `.env`:
    `docker compose cp patch-policy.json.gz app:/app/data/patch-policy.json.gz`, then
@@ -4249,8 +4257,15 @@ running, the held copy keeps answering, and the next exchange or change to the f
 Report it as state **AB**, with that line, the error type and stack locations logged with it, and
 the build (§8).
 
-**AA.** The exchange answers and LoonSec names no patch-policy document, or names one it last
-confirmed (or, when it does not say, dated) more than three days ago, on two consecutive days.
+**AA.** The exchange answers and LoonSec names no patch-policy document, or names one dated more
+than three days ago (step 7), on two consecutive days. The sentence's cause is the part that
+matters:
+- *…LoonSec's publisher last ran on …, but its NVD data has not advanced since …* → LoonSec's
+  publisher is running and its NVD data has stood still: LoonSec's to fix, and nothing an
+  instance can change.
+- *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
+  LoonSec's publisher has finished no build that reached this instance since that day.
+
 Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf` and `feed.builtAt`
 from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8).
 
@@ -4380,7 +4395,21 @@ refusal: the sentence is the whole report.
      stored titles; when the sentence goes on to say the last check did not get an answer, that
      is §27 step 3. Otherwise **Check now** on the Fleet catalog tab reads it (§27 step 2).
    - `not_held`: ***Fleet's catalog, as this instance last read it, holds no Mac title for …***
+     The last check read Fleet's whole catalog, and no Mac title carries the app's bundle id:
      Fleet does not maintain the app. Choose another source.
+   - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
+     this instance has read that catalog only in part…*** The titles held are partial or unread
+     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial), §27 step 6): a check skipped
+     titles this build could not read, a check was cut short after it had changed some, or the
+     1.3.0 upgrade marked a catalog already read as partial. A title missing from a catalog read
+     only in part is not proof that Fleet has none, so the source does not say `not_held`; when
+     the last check left words, the sentence goes on with them (*The last check said: …*). The
+     Fleet catalog's status line says which case it is: a check cut short, or the upgrade, is
+     cleared by the next check (within the hour) or **Check now**; titles this build could not
+     read stay unread until Fleet next changes its catalog, and *unrecognized Mac manifest path*
+     or *unrecognized Mac index entry* among them means updating LoonInspect (§27 step 6). Once a
+     check reads the whole catalog the source dates the track or reads `not_held`. Until then,
+     choose another source.
    - `history_unread`: ***Fleet's version history for … has not been read on this instance
      yet.*** The background reads the titles installed on this organization's Macs, two minutes
      apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the
@@ -4425,6 +4454,20 @@ refusal: the sentence is the whole report.
      release track, not counted here. What is left is a channel the data names nowhere. Choose
      Public. If the versions named are plainly releases of the track, reportable state **AE**; if
      they are plainly builds of a channel the data names under `other_channels`, **AD**.
+   - Not a refusal: a Fleet view's `note` says *Fleet's catalog was read only in part…*, or
+     carries *Fleet's version history for …:* and a title's own history sentence. While the
+     catalog is partial, no daily check confirms a title's history past the day it was read, so
+     the view ends the day before that read (`window.shortened_by`: `timeline_as_of`), and with
+     `align=common` every aligned view ends there too; a check that reads the whole catalog
+     carries it to that check's day. The note says so only when a complete check would have
+     carried the view further. A title's history sentence (§27 step 10) names what its read left
+     undated: those versions are not in the view, and a fix one of them carried is dated by the
+     next version the history dates (step 12), so that CVE counts open longer than Fleet's
+     catalog alone would show. A state concluded from the titles that were read (`esr_missing`,
+     `channel_empty`, `no_versions`, `line_not_followed`) ends, while the catalog is partial, with
+     ***This instance has read Fleet's catalog only in part, so another Fleet title under this
+     bundle id may be among those not read…***: the title that would date the track may be one of
+     them. Read the status line as in `catalog_partial` above.
 6. **The window.** A window that was shortened is not a refusal: `window.shortened_by` names each
    reason, with its sentence (the first detectable day LoonSec records, the timeline's first
    release, a held line's first release, a channel's start, the data's date, the day the

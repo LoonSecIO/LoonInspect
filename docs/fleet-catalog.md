@@ -294,7 +294,7 @@ the value itself, and of the API only the migration report carries it, as `fleet
 ([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
 
-**Besides the check and its schedule, one thing reads it: a saved application patch plan**
+**Besides the check and its schedule, a saved application patch plan reads it**
 ([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
 titles that carry each selected app's bundle identifier, and the value decides what it may
 conclude from them:
@@ -309,6 +309,13 @@ conclude from them:
   under **Open review items at plan creation**, in the plan and in its PDF: the title that
   would match may be one this instance has not read. A saved plan keeps the item; a plan
   built once the catalog is complete does not carry it.
+
+**Posture › Patch policy's Fleet source reads it too** ([`troubleshooting.md`](troubleshooting.md)
+§33 step 5). Only a complete catalog lets it say Fleet holds no title for an app (`not_held`);
+while the titles held are unread or partial it reads `catalog_partial` instead, since the
+missing title may be one this instance has not read. And only a complete check confirms a
+title's history past the day it was read, so while the catalog is partial a Fleet view ends the
+day before that read, and its note says why.
 
 **Upgrading to 1.3.0.** During the 1.3.0 upgrade, an existing cache is marked partial until
 the next eligible scheduled check reconciles it. 1.3.0 reads titles whose directory names

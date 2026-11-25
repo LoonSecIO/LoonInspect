@@ -45,9 +45,9 @@ async def patch_policy_apps(db: AsyncSession = Depends(get_db)) -> PatchPolicyAp
     exchange for sharing (docs/data-sharing.md, "The corpus channel"). Then: `never` before any
     copy arrived, the last attempt's failure when it failed (`not_published`,
     `algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),
-    `stale` for a copy LoonSec last confirmed more than three days ago (or, when LoonSec did not
-    say, dated more than three days ago), and `current`. Every state's sentence says what it
-    means and what to check (docs/troubleshooting.md §32).
+    `stale` for a copy dated (`asOf`) more than three days ago, whatever LoonSec's last build
+    (`builtAt`) says, which names only the cause, and `current`. Every state's sentence says what
+    it means and what to check (docs/troubleshooting.md §32).
 
     `apps` is null, never empty, when no copy answers for this organization. Each app carries its
     tracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,

@@ -201,6 +201,9 @@ def _for_app(catalogs: _Catalogs, app_row: Mapping[str, Any]) -> _Catalogs:
                 catalog_detail=catalogs.fleet.catalog_detail,
                 history_failure=catalogs.fleet.history_failure,
                 titles=tuple(title for title in fleet_titles if title.bundle_id.casefold() in mine),
+                snapshot=catalogs.fleet.snapshot,
+                snapshot_detail=catalogs.fleet.snapshot_detail,
+                answered_at=catalogs.fleet.answered_at,
             )
             if catalogs.fleet
             else None

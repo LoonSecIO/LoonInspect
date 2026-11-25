@@ -40,6 +40,15 @@ is the `line` LoonSec's document gives the version, never a comparison here. Fle
 carries only an app's newest line, so its history dates no 4.4 release however the document
 lists the held track's versions.
 
+**Fleet's catalog read only in part concludes nothing from what it lacks.** This instance records
+whether the Fleet titles it holds are a whole copy of Fleet's listing (`fleet_catalog_state.
+snapshot_status`: `unread`, `partial` or `complete`, docs/fleet-catalog.md "Complete or partial").
+Only a complete copy lets the Fleet source say Fleet holds no title for an app (`not_held`); while
+it is unread or partial a missing title may be one this instance has not read, and the source
+says `catalog_partial` instead. A title that is held is walked either way, ending the day before
+its history was read (only a complete check confirms a history past its read), and its note
+says so when that cut the view short, as it says what the title's history read left undated.
+
 **A source that cannot date a track says why** (docs/diagnosability.md rule 1): `Unavailable`
 carries a state word and its sentence, and every one is a step in docs/troubleshooting.md §33.
 What the walk itself refuses (no matched version, too many unmatched, an empty window) it
@@ -73,6 +82,7 @@ JAMF_NO_TITLE = "no_title"
 FLEET_FLAG_OFF = "flag_off"
 FLEET_CATALOG_UNREAD = "catalog_unread"
 FLEET_NOT_HELD = "not_held"
+FLEET_CATALOG_PARTIAL = "catalog_partial"
 FLEET_HISTORY_UNREAD = "history_unread"
 FLEET_HISTORY_FAILED = "history_failed"
 NO_VERSIONS = "no_versions"
@@ -86,6 +96,7 @@ STATES = (
     FLEET_FLAG_OFF,
     FLEET_CATALOG_UNREAD,
     FLEET_NOT_HELD,
+    FLEET_CATALOG_PARTIAL,
     FLEET_HISTORY_UNREAD,
     FLEET_HISTORY_FAILED,
     NO_VERSIONS,
@@ -119,6 +130,15 @@ _READ_AGAIN = {
     FLEET: "The title's history on the Fleet catalog tab says why a version is left out (docs/troubleshooting.md §27 "
     "step 10); if it reads the same after Read again, choose another source.",
 }
+# Fleet's snapshot of the catalog, as `fleet_catalog_state.snapshot_status` records it: only a
+# complete one lets the Fleet source conclude anything from a title it does not hold.
+SNAPSHOT_COMPLETE = "complete"
+# Added to a Fleet refusal concluded from the titles that were read, while the snapshot is not
+# complete: a title the read did not reach may be the one that would have dated the track.
+PARTIAL_TAIL = (
+    " This instance has read Fleet's catalog only in part, so another Fleet title under this bundle id may be among "
+    "those not read (docs/troubleshooting.md §27 step 6)."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -640,6 +660,9 @@ class FleetTitle:
     # When the daily check last saw the title's version move (None: never seen to move).
     version_changed_at: dt.datetime | None
     versions: tuple[tuple[str, dt.datetime], ...]
+    # The last history read's own sentence when it left a version undated or could not read
+    # something (`fleet_maintained_apps.history_detail`), else None.
+    history_detail: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -650,7 +673,14 @@ class FleetHistory:
     has stored titles; `checked_ok_at` is the last check that got an answer and holds every title
     (a complete snapshot), which confirms a title whose version has not moved since its history
     was read; `catalog_detail` is the last check's sentence when it failed; `history_failure` the
-    last history read's, when it failed."""
+    last history read's, when it failed.
+
+    `snapshot` is whether the titles held are a whole copy of Fleet's listing: `complete`,
+    `partial` or `unread` (`fleet_catalog_state.snapshot_status`; `unread` with no state row).
+    `snapshot_detail` is the last check's sentence while it is not complete (which titles it left
+    out, or why it stopped), and `answered_at` the last check that got an answer, complete or not:
+    how far a complete one would have confirmed. None of the three has a default, so no caller can
+    build a history that reads as complete without saying so."""
 
     enabled: bool
     catalog_read: bool
@@ -658,6 +688,14 @@ class FleetHistory:
     catalog_detail: str | None
     history_failure: str | None
     titles: tuple[FleetTitle, ...]
+    snapshot: str
+    snapshot_detail: str | None
+    answered_at: dt.datetime | None
+
+
+# The Fleet refusals concluded from the titles that were read: while the snapshot is not complete
+# they say a title the read did not reach may be the missing one (`PARTIAL_TAIL`).
+_CONCLUDED_FROM_READ = frozenset({NO_VERSIONS, CHANNEL_EMPTY, ESR_MISSING, LINE_NOT_FOLLOWED})
 
 
 def _fleet_as_of(read_at: dt.datetime, title: FleetTitle, checked_ok_at: dt.datetime | None) -> dt.datetime:
@@ -677,6 +715,7 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
     if not history.enabled:
         raise Unavailable(FLEET, FLEET_FLAG_OFF, FLEET_FLAG_OFF_SENTENCE)
     bundles = _words(app_row.get("bundle_ids") or []) or "none named"
+    partial = history.snapshot != SNAPSHOT_COMPLETE
     if not history.titles:
         if not history.catalog_read:
             failed = f" The last check did not get an answer: {history.catalog_detail}" if history.catalog_detail else ""
@@ -686,6 +725,19 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
                 "Fleet's catalog has not been read on this instance yet, so there is no Fleet history to walk." + failed + " "
                 "The daily check runs at twenty past the hour while the Fleet catalog flag is on; Check now on the Fleet "
                 "catalog tab reads it at once (docs/troubleshooting.md §27).",
+            )
+        if partial:
+            # A title missing from a catalog read only in part is not proof that Fleet has none.
+            said = f" The last check said: {history.snapshot_detail}" if history.snapshot_detail else ""
+            raise Unavailable(
+                FLEET,
+                FLEET_CATALOG_PARTIAL,
+                f"Fleet's catalog, as this instance holds it, has no Mac title for {name} (bundle id {bundles}), but this "
+                "instance has read that catalog only in part, so the title may be one it has not read yet."
+                + said
+                + " The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a check reads the "
+                "whole catalog, this source dates the track or says Fleet holds no title for the app. Until then, choose "
+                "another source.",
             )
         raise Unavailable(
             FLEET,
@@ -701,6 +753,7 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
     observations = [(version.strip().lower(), seen_at.astimezone(dt.UTC).date()) for t in read for version, seen_at in t.versions]
     # Known only up to the earliest of them: a later day may hold a version a title read earlier lacks.
     as_of = min(_fleet_as_of(title.history_read_at, title, history.checked_ok_at) for title in read if title.history_read_at)
+    as_of_day = as_of.astimezone(dt.UTC).date()
     slugs = [title.slug for title in read]
     note = FLEET_CLOCK
     if unread:
@@ -710,20 +763,46 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
             f" Fleet's version history for {_words(unread)} has not been read on this instance, so its versions are not "
             "in this view; Read history on the Fleet catalog tab reads it (docs/troubleshooting.md §27)."
         )
-    return _from_split(
-        source=FLEET,
-        owner="This instance's Fleet history",
-        name=name,
-        app_row=app_row,
-        track_row=track_row,
-        observations=observations,
-        as_of=as_of.astimezone(dt.UTC).date(),
-        clock=FLEET_CLOCK,
-        ids=slugs,
-        timeline_name=f"this instance's Fleet history ({_words(slugs)})",
-        note=note,
-        unread=_fleet_not_read(history, unread, read=slugs) if unread else None,
-    )
+    if partial and history.answered_at is not None:
+        # How far the last answered check would have confirmed, had it read the whole catalog: said
+        # only when the partial snapshot is what ended the view sooner.
+        answered = history.answered_at
+        confirmed = min(_fleet_as_of(title.history_read_at, title, answered) for title in read if title.history_read_at)
+        if confirmed.astimezone(dt.UTC).date() > as_of_day:
+            note += (
+                f" Fleet's catalog was read only in part, so the last check ({answered.astimezone(dt.UTC):%Y-%m-%d}) "
+                f"confirms no title's history past the day it was read ({as_of_day.isoformat()}), and this view ends the "
+                "day before; a check that reads the whole catalog carries it to that check's day (docs/troubleshooting.md "
+                "§27 step 6)."
+            )
+    for title in read:
+        if title.history_detail:
+            # The read's own words for a version it left undated: that version is not walked, and a
+            # fix it carried is dated by the next version this history dates.
+            note += (
+                f" Fleet's version history for {title.slug}: {title.history_detail} A version left undated there is not "
+                "in this view, and a fix it carried is dated by the next version this history dates "
+                "(docs/troubleshooting.md §27 step 10, §33 step 12)."
+            )
+    try:
+        return _from_split(
+            source=FLEET,
+            owner="This instance's Fleet history",
+            name=name,
+            app_row=app_row,
+            track_row=track_row,
+            observations=observations,
+            as_of=as_of_day,
+            clock=FLEET_CLOCK,
+            ids=slugs,
+            timeline_name=f"this instance's Fleet history ({_words(slugs)})",
+            note=note,
+            unread=_fleet_not_read(history, unread, read=slugs) if unread else None,
+        )
+    except Unavailable as refused:
+        if not partial or refused.state not in _CONCLUDED_FROM_READ:
+            raise
+        raise Unavailable(refused.source, refused.state, refused.sentence + PARTIAL_TAIL) from None
 
 
 def _fleet_not_read(history: FleetHistory, unread: Sequence[str], *, read: Sequence[str] = ()) -> Unavailable:
@@ -754,7 +833,15 @@ async def read_fleet(db: AsyncSession, bundle_ids: Iterable[str]) -> FleetHistor
     the acting organization. With its flag off nothing else is read."""
     if not await fleet_catalog.enabled(db):
         return FleetHistory(
-            enabled=False, catalog_read=False, checked_ok_at=None, catalog_detail=None, history_failure=None, titles=()
+            enabled=False,
+            catalog_read=False,
+            checked_ok_at=None,
+            catalog_detail=None,
+            history_failure=None,
+            titles=(),
+            snapshot="unread",
+            snapshot_detail=None,
+            answered_at=None,
         )
     state = await db.get(FleetCatalogState, 1)
     wanted = {bundle.strip().casefold() for bundle in bundle_ids if bundle and bundle.strip()}
@@ -774,14 +861,16 @@ async def read_fleet(db: AsyncSession, bundle_ids: Iterable[str]) -> FleetHistor
         )
         for slug, version, seen_at in found.all():
             versions.setdefault(slug, []).append((version, seen_at))
-    # A check that answered but skipped manifests leaves those titles as held (snapshot `partial`),
+    # Whether the titles held are a whole copy of Fleet's listing; no state row is a catalog no check
+    # has read. A check that answered but skipped manifests leaves those titles as held (`partial`),
     # so only a complete one confirms that a title's version has not moved since its history was read.
-    answered = state is not None and state.outcome not in fleet_catalog.FAILED and state.snapshot_status == "complete"
+    snapshot = state.snapshot_status if state is not None else "unread"
+    answered_at = state.checked_at if state is not None and state.outcome not in fleet_catalog.FAILED else None
     held = await db.scalar(select(func.count()).select_from(FleetMaintainedApp))
     return FleetHistory(
         enabled=True,
         catalog_read=bool(held),
-        checked_ok_at=state.checked_at if answered else None,
+        checked_ok_at=answered_at if snapshot == SNAPSHOT_COMPLETE else None,
         catalog_detail=state.detail if state is not None and state.outcome in fleet_catalog.FAILED else None,
         history_failure=(state.history_detail if state is not None and state.history_outcome in fleet_catalog.FAILED else None),
         titles=tuple(
@@ -792,7 +881,11 @@ async def read_fleet(db: AsyncSession, bundle_ids: Iterable[str]) -> FleetHistor
                 history_read_at=row.history_read_at,
                 version_changed_at=row.version_changed_at,
                 versions=tuple(sorted(versions.get(row.slug, []))),
+                history_detail=row.history_detail,
             )
             for row in rows
         ),
+        snapshot=snapshot,
+        snapshot_detail=state.detail if state is not None and snapshot != SNAPSHOT_COMPLETE else None,
+        answered_at=answered_at,
     )

@@ -55,9 +55,10 @@ class PatchPolicyFeedOut(_Out):
     # True when PATCH_POLICY_FEED_FILE is set: the document is read from that file, and the
     # exchange's link is not followed.
     from_file: bool = False
-    # When LoonSec last confirmed the copy that answers current, as the exchange said; null when
-    # it did not say (an older LoonSec, or the file). `stale` is judged from it when it is known,
-    # and from `asOf` when it is not.
+    # When LoonSec's publisher last finished a build, as the exchange said; null when it did not
+    # say (an older LoonSec, or the file). `stale` is judged from `asOf` alone; this names the
+    # cause: within three days, the publisher runs and its NVD data has not advanced; older, the
+    # publisher has stopped.
     built_at: datetime | None = None
 
 
@@ -95,7 +96,8 @@ class PatchPolicySourceTrackOut(_Out):
     available: bool
     # `available`, a reason the source cannot date the track (`app.core.patch_policy_timelines`'s
     # states: no_public_dates, never_synced, no_title, flag_off, catalog_unread, not_held,
-    # history_unread, history_failed, no_versions, channel_empty, esr_missing, line_not_followed),
+    # catalog_partial, history_unread, history_failed, no_versions, channel_empty, esr_missing,
+    # line_not_followed),
     # the walk's own refusal (no_matched_versions, too_many_unmatched, window_empty, ...), or the
     # app's parity refusal (parity, unchecked, document_invalid, no_public_dates), which the walk
     # route answers first and which every source and track of the app then carries.

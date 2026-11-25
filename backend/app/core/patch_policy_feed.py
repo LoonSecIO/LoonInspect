@@ -22,12 +22,16 @@ version; it receives, verifies and stores, and answers `GET /api/patch-policy/ap
 state and what the document says about each app. The day-walk over a timeline is
 `app.core.patch_policy_walk`, served by `app.core.patch_policy_views`.
 
-**Stale is judged from LoonSec's last confirmation, when LoonSec gives one** (2026-11-24). The
-exchange's entry may carry `built_at`: when LoonSec's publisher last built the document and found
-it current, which it refreshes on every nightly run whether or not the document changed. A copy
-whose last confirmation is more than three days old reads `stale`. An entry without `built_at` (an
-older LoonSec, or the file on an instance with no network) leaves the confirmation unknown, and
-then the copy's own date decides, as it did before the key existed.
+**Stale is judged from the copy's own date, always; LoonSec's last build only names the cause**
+(2026-11-25). A copy whose `as_of` (the NVD state LoonSec built it from) is more than three days
+old reads `stale`. The exchange's entry may carry `built_at`: when LoonSec's publisher last
+finished a build, which it rewrites every night whether or not the document changed. It never
+makes an old copy current, because a publisher that runs every night while LoonSec's NVD data
+stands still makes no new document, so `built_at` stays fresh over old data: that is the case the
+rule exists to catch, and why LoonSec's exchange contract has an instance judge age from `as_of`.
+`built_at` picks the stale sentence: within three days, the publisher is running and its NVD data
+has not advanced; older, the publisher has stopped finishing builds; absent (an older LoonSec, or
+the file on an instance with no network), the copy's own date is all the sentence says.
 
 **The tier gate is the organization.** The document is a global artifact, like the corpus, and
 it is consent-gated the way the corpus is (ruled R21, 2026-11-24): an organization whose
@@ -83,7 +87,7 @@ KEPT = 2
 _MAX_DOC_BYTES = 32 * 1024 * 1024
 _MAX_JSON_BYTES = 256 * 1024 * 1024
 
-# A copy older than this reads `stale` on the page, with the day the walk must end.
+# A copy whose `as_of` is older than this reads `stale` on the page, with the day the walk must end.
 STALE_AFTER = timedelta(days=3)
 
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -157,7 +161,7 @@ class PatchPolicyPointer:
     asof: datetime | None
     # The query string is the credential (`app.core.egress.corpus_url_for_log`): never in a repr.
     url: str = field(repr=False)
-    # When LoonSec's publisher last confirmed the document current (additive; None: not said).
+    # When LoonSec's publisher last finished a build, changed or not (additive; None: not said).
     built_at: datetime | None = None
 
 
@@ -699,8 +703,8 @@ async def record_attempt(
     detail: str | None = None,
     built_at: datetime | None = None,
 ) -> None:
-    """Write the feed's one state row, in the caller's transaction. `built_at` is LoonSec's last
-    confirmation of the document this attempt found current, when the exchange said it."""
+    """Write the feed's one state row, in the caller's transaction. `built_at` is when LoonSec's
+    publisher last finished a build, as the exchange said it with the copy this attempt found."""
     values = {
         "attempted_at": datetime.now(UTC),
         "source": source,
@@ -969,8 +973,8 @@ class FeedView:
     # True when PATCH_POLICY_FEED_FILE is set: the document is read from that file, and the
     # exchange's link is not followed.
     from_file: bool = False
-    # When LoonSec last confirmed the copy that answers current (the exchange's `built_at`), or
-    # None when that is not known; `stale` is judged from it when it is.
+    # When LoonSec's publisher last finished a build (the exchange's `built_at`), or None when that
+    # is not known. `stale` is judged from `as_of` alone; this only picks the stale sentence's cause.
     built_at: datetime | None = None
     document: Mapping[str, object] | None = field(default=None, repr=False)
 
@@ -1047,8 +1051,13 @@ def sentence_for(
     host: str | None = None,
     detail: str | None = None,
     built_at: date | None = None,
+    publisher_running: bool = False,
 ) -> str:
-    """The one sentence for a state, filled from what the state row and the held copy say."""
+    """The one sentence for a state, filled from what the state row and the held copy say.
+
+    For `stale`, `built_at` and `publisher_running` (`built_at` within `STALE_AFTER` of now) name
+    the cause: the publisher running over NVD data that has not advanced, the publisher stopped,
+    or, with no `built_at`, only the copy's own date."""
     if state == STATE_TIER_OFF:
         return TIER_OFF_SENTENCE
     if state == STATE_NEVER:
@@ -1056,15 +1065,14 @@ def sentence_for(
     if state == STATE_CURRENT:
         return f"Showing LoonSec's patch-policy data dated {as_of.isoformat() if as_of else '—'}."
     if state == STATE_STALE:
+        dated = as_of.isoformat() if as_of else "—"
         until = (as_of - timedelta(days=1)).isoformat() if as_of else "—"
-        if built_at is not None:
-            return (
-                f"Showing patch-policy data dated {as_of.isoformat() if as_of else '—'}; LoonSec last confirmed it current "
-                f"on {built_at.isoformat()}, more than three days ago, and the walk ends {until}."
-            )
+        if built_at is None:
+            return f"Showing patch-policy data dated {dated}, more than three days old; the walk ends {until}."
+        cause = f"but its NVD data has not advanced since {dated}" if publisher_running else "more than three days ago"
         return (
-            f"Showing patch-policy data dated {as_of.isoformat() if as_of else '—'}, more than three days old; "
-            f"the walk ends {until}."
+            f"Showing patch-policy data dated {dated}, more than three days old: LoonSec's publisher last ran on "
+            f"{built_at.isoformat()}, {cause}, and the walk ends {until}."
         )
     if state == NOT_PUBLISHED:
         return NOT_PUBLISHED_SENTENCE + copy_clause(as_of)
@@ -1086,6 +1094,18 @@ def sentence_for(
             as_of, still_used=True
         )
     raise ValueError(f"no sentence for feed state {state!r}")
+
+
+def held_freshness(as_of: datetime, built_at: datetime | None, now: datetime) -> tuple[str, bool]:
+    """A held copy whose last attempt was fine: `current` or `stale`, and whether LoonSec's
+    publisher is still running (`built_at` within `STALE_AFTER` of `now`), which picks the stale
+    sentence's cause.
+
+    Stale is judged from the copy's `as_of` alone, whatever `built_at` says: a publisher that
+    finishes a build every night over NVD data that has not advanced writes no new document, so its
+    `built_at` stays fresh over an old copy, and that is the case `stale` exists to catch."""
+    running = built_at is not None and now - built_at <= STALE_AFTER
+    return (STATE_STALE if now - as_of > STALE_AFTER else STATE_CURRENT), running
 
 
 async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedView:
@@ -1116,14 +1136,10 @@ async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedVie
     detectable = sources.get("detectable") if isinstance(sources, Mapping) else None
     coverage = detectable.get("coverage_since") if isinstance(detectable, Mapping) else None
     now = now or datetime.now(UTC)
-    # LoonSec's last confirmation, when the attempt that found the copy current carried one.
+    # LoonSec's last build, when the attempt that found the copy current carried one.
     built_at = attempt.built_at if attempt is not None and attempt.outcome in (STORED, UNCHANGED) else None
-    if failed:
-        state = attempt.outcome
-    elif now - (built_at or held.as_of) > STALE_AFTER:
-        state = STATE_STALE
-    else:
-        state = STATE_CURRENT
+    fresh, running = held_freshness(held.as_of, built_at, now)
+    state = attempt.outcome if failed else fresh
     words = sentence_for(
         state,
         as_of=as_of,
@@ -1131,6 +1147,7 @@ async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedVie
         host=seen["host"],
         detail=seen["detail"],
         built_at=built_at.date() if built_at else None,
+        publisher_running=running,
     )
     return FeedView(
         state=state,

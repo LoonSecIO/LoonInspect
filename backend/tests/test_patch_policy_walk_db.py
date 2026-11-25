@@ -4,8 +4,9 @@ Postgres (#614).
 `test_patch_policy_timelines.py` proves the adapters and the trim without a database. What needs
 one is the route end to end: the held copy behind the tier gate, this instance's copy of Jamf's
 catalog and Fleet's history read from their own tables, the Fleet flag per organization, parity
-per app, `align=common`, the 409 sentences, LoonSec's `built_at` deciding `stale`, and that none of
-it reads a device. Gated on RUN_DB_TESTS like the other database suites.
+per app, `align=common`, the 409 sentences, the copy's `as_of` deciding `stale` and LoonSec's
+`built_at` naming its cause, and that none of it reads a device. Gated on RUN_DB_TESTS like the
+other database suites.
 
 The tables are global, so the document's apps carry bundle ids no other test or catalog uses, the
 rows written here have ids of their own, and every fixture removes what it wrote.
@@ -31,7 +32,14 @@ from app.core import patch_policy_views as views
 from app.core import patch_policy_walk as walk
 from app.core.config import settings
 from app.core.tenancy import OPERATIONAL_TENANT_ID, reset_tenant_id, set_tenant_id
-from app.models.schema import FleetAppVersion, FleetMaintainedApp, JamfPatchTitle, PatchPolicyDoc, PatchPolicyFeedState
+from app.models.schema import (
+    FleetAppVersion,
+    FleetCatalogState,
+    FleetMaintainedApp,
+    JamfPatchTitle,
+    PatchPolicyDoc,
+    PatchPolicyFeedState,
+)
 from tests.test_patch_policy_feed import DOC, LINK
 from tests.test_patching_policy_db import accounts, viewer  # noqa: F401
 
@@ -201,6 +209,30 @@ async def fleet(db):
     await db.commit()
     yield
     await clear()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def snapshot(db):
+    """Sets this instance's one Fleet catalog state row for a test (`put(**columns)`), and puts
+    back whatever was there before. The row is global, so a test that reads the Fleet source says
+    which snapshot it means rather than inheriting another file's."""
+    before = await db.get(FleetCatalogState, 1)
+    kept = None if before is None else {c.key: getattr(before, c.key) for c in FleetCatalogState.__table__.columns}
+
+    async def put(**columns) -> None:
+        await db.rollback()
+        await db.execute(delete(FleetCatalogState))
+        db.add(FleetCatalogState(id=1, **columns))
+        await db.commit()
+
+    try:
+        yield put
+    finally:
+        await db.rollback()
+        await db.execute(delete(FleetCatalogState))
+        if kept is not None:
+            db.add(FleetCatalogState(**kept))
+        await db.commit()
 
 
 async def _walk(client, expect: int = 200, **query) -> dict:
@@ -412,36 +444,94 @@ async def test_a_title_the_hourly_sync_adds_is_read_on_the_next_walk(db, held, j
         await db.commit()
 
 
-async def test_a_fleet_history_is_confirmed_past_its_read_only_by_a_complete_check(db, held, fleet, viewer) -> None:  # noqa: F811
+async def test_a_fleet_history_is_confirmed_past_its_read_only_by_a_complete_check(db, held, fleet, snapshot, viewer) -> None:  # noqa: F811
     """A daily check that answered confirms an unmoved title up to the check; one that skipped
-    manifests (`partial`) left some titles as held and confirms nothing past the history read."""
+    manifests (`partial`) left some titles as held and confirms nothing past the history read, and
+    the view's note says that is why it ends sooner. A title's own history sentence travels with
+    the view either way."""
     from sqlalchemy import update
-
-    from app.models.schema import FleetCatalogState
 
     await _flag(db, True)
     read_at = datetime(2026, 11, 20, 8, tzinfo=UTC)
     await db.execute(update(FleetMaintainedApp).where(FleetMaintainedApp.slug == FLEET_SLUG).values(history_read_at=read_at))
-    before = await db.get(FleetCatalogState, 1)
-    kept = None if before is None else {c.key: getattr(before, c.key) for c in FleetCatalogState.__table__.columns}
-    await db.execute(delete(FleetCatalogState))
-    db.add(
-        FleetCatalogState(id=1, outcome="ok", checked_at=datetime(2026, 11, 22, 9, 20, tzinfo=UTC), snapshot_status="complete")
-    )
     await db.commit()
-    try:
-        complete = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
-        assert complete["inputs"]["timeline"]["as_of"] == "2026-11-22"
-        await db.execute(update(FleetCatalogState).values(snapshot_status="partial"))
-        await db.commit()
-        partial = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
-        assert partial["inputs"]["timeline"]["as_of"] == "2026-11-20"
-    finally:
-        await db.rollback()
-        await db.execute(delete(FleetCatalogState))
-        if kept is not None:
-            db.add(FleetCatalogState(**kept))
-        await db.commit()
+    checked = datetime(2026, 11, 22, 9, 20, tzinfo=UTC)
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="complete")
+    complete = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+    assert complete["inputs"]["timeline"]["as_of"] == "2026-11-22"
+    assert complete["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK
+
+    skipped = "1 Mac manifest could not be read and was left as held: example-app (unrecognized Mac manifest path)."
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="partial", detail=skipped)
+    partial = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+    assert partial["inputs"]["timeline"]["as_of"] == "2026-11-20"
+    assert partial["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK + (
+        " Fleet's catalog was read only in part, so the last check (2026-11-22) confirms no title's history past the day "
+        "it was read (2026-11-20), and this view ends the day before; a check that reads the whole catalog carries it to "
+        "that check's day (docs/troubleshooting.md §27 step 6)."
+    )
+    assert partial["window"]["until"] == "2026-11-19"
+    # The note is not walked: the same days, the same digest, whichever snapshot.
+    assert partial["inputs"]["timeline"]["digest"] == complete["inputs"]["timeline"]["digest"]
+
+    # A check that did not get an answer confirms nothing either way, and says nothing about it.
+    await snapshot(outcome="unreachable", checked_at=checked, snapshot_status="partial", detail="No answer from api.github.com.")
+    failed = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+    assert failed["inputs"]["timeline"]["as_of"] == "2026-11-20"
+    assert failed["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK
+
+    # The title's history read left a version undated: its own words travel with the view.
+    gap = (
+        "2 of the 40 changes did not carry a manifest this build could read, so a version that arrived at one of them has "
+        "no date."
+    )
+    await db.execute(update(FleetMaintainedApp).where(FleetMaintainedApp.slug == FLEET_SLUG).values(history_detail=gap))
+    await db.commit()
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="complete")
+    gappy = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
+    assert gappy["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK + (
+        f" Fleet's version history for {FLEET_SLUG}: {gap} A version left undated there is not in this view, and a fix it "
+        "carried is dated by the next version this history dates (docs/troubleshooting.md §27 step 10, §33 step 12)."
+    )
+
+
+async def test_a_catalog_read_only_in_part_does_not_say_fleet_holds_no_title(db, held, fleet, snapshot, viewer) -> None:  # noqa: F811
+    """Chrome has no Fleet title here. Only a complete read lets the source say Fleet does not
+    maintain it (`not_held`); a partial or unread one says the title may be one not read yet, in
+    the walk route's 409 and in the apps route (through `_for_app`) alike."""
+    await _flag(db, True)
+    checked = datetime(2026, 11, 22, 9, 20, tzinfo=UTC)
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="complete")
+    complete = await _walk(viewer, 409, app="chrome", source="fleet")
+    assert (complete["reason"], complete["source"]) == ("not_held", "fleet")
+
+    skipped = "1 Mac manifest could not be read and was left as held: example-app (unrecognized Mac manifest path)."
+    await snapshot(outcome="ok", checked_at=checked, snapshot_status="partial", detail=skipped)
+    partial = await _walk(viewer, 409, app="chrome", source="fleet")
+    assert (partial["reason"], partial["source"]) == ("catalog_partial", "fleet")
+    assert partial["detail"] == (
+        f"Fleet's catalog, as this instance holds it, has no Mac title for Google Chrome (bundle id {CHROME}), but this "
+        f"instance has read that catalog only in part, so the title may be one it has not read yet. The last check said: "
+        f"{skipped} The Fleet catalog's status line says why (docs/troubleshooting.md §27 step 6); once a check reads the "
+        "whole catalog, this source dates the track or says Fleet holds no title for the app. Until then, choose another "
+        "source."
+    )
+    apps = {app["app"]: app for app in (await viewer.get("/api/patch-policy/apps")).json()["apps"]}
+    chrome = apps["chrome"]["sources"]["fleet"]
+    assert (chrome["available"], chrome["state"], chrome["sentence"]) == (False, "catalog_partial", partial["detail"])
+    # The held Wireshark title still walks; a refusal concluded from what was read says the read was partial.
+    line = await _walk(viewer, 409, app="wireshark", track="wireshark/4.4", source="fleet")
+    assert line["reason"] == "line_not_followed" and line["detail"].endswith(timelines.PARTIAL_TAIL)
+    assert (await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet"))["inputs"]["timeline"]["ids"] == [
+        FLEET_SLUG
+    ]
+
+    # No state row at all: nothing has said the catalog is whole.
+    await db.rollback()
+    await db.execute(delete(FleetCatalogState))
+    await db.commit()
+    unread = await _walk(viewer, 409, app="chrome", source="fleet")
+    assert unread["reason"] == "catalog_partial" and "The last check said" not in unread["detail"]
 
 
 # --- what refuses every source ---------------------------------------------------------------------
@@ -477,8 +567,16 @@ async def test_an_organization_whose_tier_is_off_reads_the_tier_sentence(db, hel
 # --- which sources can date each app --------------------------------------------------------------
 
 
-async def test_the_apps_route_says_per_source_and_track_whether_a_walk_can_be_shown(db, held, jamf, fleet, viewer) -> None:  # noqa: F811
+async def test_the_apps_route_says_per_source_and_track_whether_a_walk_can_be_shown(
+    db,
+    held,
+    jamf,
+    fleet,
+    snapshot,
+    viewer,  # noqa: F811
+) -> None:
     await _flag(db, True)
+    await snapshot(outcome="ok", checked_at=datetime(2026, 11, 22, 9, 20, tzinfo=UTC), snapshot_status="complete")
     body = (await viewer.get("/api/patch-policy/apps")).json()
     apps = {app["app"]: app for app in body["apps"]}
     jamf_source = apps["wireshark"]["sources"]["jamf"]
@@ -537,28 +635,38 @@ async def test_neither_route_reads_a_device(db, held, jamf, fleet, viewer) -> No
             assert table not in statement, statement
 
 
-# --- LoonSec's last confirmation decides stale ------------------------------------------------------
+# --- the copy's own date decides stale; LoonSec's last build names the cause -----------------------
 
 
-async def test_stale_is_judged_from_loonsecs_last_confirmation_when_the_exchange_gives_one(db, held, viewer) -> None:  # noqa: F811
+async def test_stale_is_judged_from_the_copys_date_and_loonsecs_last_build_names_the_cause(db, held, viewer) -> None:  # noqa: F811
     await _empty(db)
+    # A copy dated 2026-11-23, and a publisher that finished a build over it on the 29th.
     await _hold(db, held, built_at="2026-11-29T07:12:03Z")
-    # A copy dated 2026-11-23, confirmed on the 29th: current on the 30th, though its own date is old.
-    current = await feed.feed_view(db, now=datetime(2026, 11, 30, tzinfo=UTC))
-    assert current.state == "current" and current.built_at == datetime(2026, 11, 29, 7, 12, 3, tzinfo=UTC)
-    stale = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
-    assert stale.state == "stale"
-    assert stale.sentence == (
-        "Showing patch-policy data dated 2026-11-23; LoonSec last confirmed it current on 2026-11-29, more than three days "
-        "ago, and the walk ends 2026-11-22."
+    young = await feed.feed_view(db, now=datetime(2026, 11, 25, tzinfo=UTC))
+    assert young.state == "current" and young.built_at == datetime(2026, 11, 29, 7, 12, 3, tzinfo=UTC)
+    # On the 30th the copy is more than three days old, though the build is a day old: stale, and
+    # the publisher is running over NVD data that has not advanced.
+    running = await feed.feed_view(db, now=datetime(2026, 11, 30, tzinfo=UTC))
+    assert running.state == "stale"
+    assert running.sentence == (
+        "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
+        "but its NVD data has not advanced since 2026-11-23, and the walk ends 2026-11-22."
     )
-    # The next exchange finds the copy unchanged and confirms it again.
+    # On 3 December the build is more than three days old too: the publisher has stopped.
+    stopped = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
+    assert stopped.state == "stale"
+    assert stopped.sentence == (
+        "Showing patch-policy data dated 2026-11-23, more than three days old: LoonSec's publisher last ran on 2026-11-29, "
+        "more than three days ago, and the walk ends 2026-11-22."
+    )
+    # The next exchange finds the copy unchanged and a newer build: still stale, running again.
     await _hold(db, held, built_at="2026-12-02T07:00:00Z")
-    assert (await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))).state == "current"
+    again = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
+    assert again.state == "stale" and "LoonSec's publisher last ran on 2026-12-02, but its NVD data" in again.sentence
     body = (await viewer.get("/api/patch-policy/apps")).json()
     assert body["feed"]["builtAt"] == "2026-12-02T07:00:00Z"
 
-    # An exchange that does not say leaves it unknown, and the copy's own date decides again.
+    # An exchange that does not say leaves it unknown, and the sentence names only the copy's date.
     await _hold(db, held)
     unknown = await feed.feed_view(db, now=datetime(2026, 12, 3, tzinfo=UTC))
     assert unknown.built_at is None and unknown.state == "stale"
