@@ -41,7 +41,7 @@ export function FleetPilotGuide({ candidate }: { candidate?: FleetCandidate }) {
     {candidate && <details className={box}><summary className="cursor-pointer font-medium">{words.apiCheck}</summary>
       <ol className="my-2 list-decimal space-y-2 pl-5">
         <li>{words.apiFind}<code className={code}>{`GET ${APPS}?fleet_id={fleet_id}&platform=darwin&query=${encodeURIComponent(candidate.name)}`}</code>
-          <code className={code}>{slug}</code></li>
+          <code className={`${code} mt-1 font-semibold`}>{slug}</code></li>
         <li>{words.apiRead}<code className={code}>{`GET ${APPS}/{id}?fleet_id={fleet_id}`}</code></li>
         <li>{words.apiResult}<code className={code}>{"GET /api/v1/fleet/software/install/{install_uuid}/results"}</code></li></ol>
       <ExternalLink href={API}>{words.apiReference}</ExternalLink></details>}
