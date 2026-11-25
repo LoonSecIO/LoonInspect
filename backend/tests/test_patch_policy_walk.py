@@ -5,7 +5,10 @@ Pure: no database, no network. The goldens are small documents whose whole walk 
 each test's docstring, so a change to a counting rule shows up as a number a reader can check against
 the derivation. Day numbers in the derivations count from 2026-01-01 = d0 (so d59 = 2026-03-01 and
 d180 = 2026-06-30). The property tests draw documents from a seeded generator (`random.Random(seed)`,
-no hypothesis dependency) and hold the plan's invariants on every one that walks.
+no hypothesis dependency) and hold the plan's invariants on every one that walks. The frozen check, last,
+holds this walk to the totals it once wrote into a document shaped like a published one
+(`fixtures/patch_policy/frozen_check.json`): LoonSec's published check is held to every instance's
+copy of this module, so a walk that counts differently is a new algorithm.
 """
 
 from __future__ import annotations
