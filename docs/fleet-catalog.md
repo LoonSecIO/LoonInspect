@@ -252,33 +252,33 @@ A check that fails before it changes a title leaves the value as it was. The tab
 the value, and the API has no field for it. The tab shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
 
-**Outside the check, its one reader is a saved application patch plan**
+**Besides the check and its schedule, one thing reads it: a saved application patch plan**
 ([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
 titles that carry each selected app's bundle identifier, and the value decides what it may
 conclude from them:
 
 - **Complete.** A plan marks a Fleet title as the app's match, and can propose Fleet's latest
   version as the target, only from a complete catalog with exactly one title for the bundle
-  ID. It reads no Fleet title as no Fleet coverage only from a complete catalog, and records
-  that as *No matching Fleet title in the completed cached catalog.*
+  ID. It reads no Fleet title as no Fleet coverage only from a complete catalog, recording
+  *No matching Fleet title in the completed cached catalog.*
 - **Unread or partial.** A plan lists every Fleet title it finds for identity review,
-  proposes no Fleet version as the target, and records *Fleet catalog is unread or
-  incomplete; absence cannot establish lack of coverage.* under **Open review items at plan
-  creation**, in the plan and in its PDF: the title that would match may be one this instance
-  has not read. A saved plan keeps the item; a plan built once the catalog is complete does
-  not carry it.
+  proposes no Fleet version as the target, and records
+  *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.*
+  under **Open review items at plan creation**, in the plan and in its PDF: the title that
+  would match may be one this instance has not read. A saved plan keeps the item; a plan
+  built once the catalog is complete does not carry it.
 
 **Upgrading to 1.3.0.** During the 1.3.0 upgrade, an existing cache is marked partial until
-the next eligible scheduled check reconciles it. 1.3.0 reads directory names that contain `@`
-or `+`, of the form `python@3.13+`, which earlier builds left out without saying so, so a
-catalog an earlier build read whole can lack those titles. The migration (`b13008440001`)
+the next eligible scheduled check reconciles it. 1.3.0 reads titles whose directory names
+contain `@` or `+`, of the form `python@3.13+`, which earlier builds left out without saying
+so: a catalog an earlier build read whole can lack those titles. The migration (`b13008440001`)
 runs once: where a catalog had been read, it marks the titles partial and clears the tree
 sha, so the next check cannot stop at its first request. It removes no title and no history.
 `due()` then makes the scheduler's next hourly look check at once, rather than a day after the
 last check; after a failed last check, the usual retry within the hour applies. **Check now**
 does the same with a person waiting. Either check lists the tree, reads the index, and reads
-only the manifests the instance lacks or holds a copy of that Fleet has since changed, never
-the whole catalog again.
+only the manifests the instance lacks and those Fleet has changed since, never the whole
+catalog again.
 
 ## The tab
 

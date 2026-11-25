@@ -3491,25 +3491,25 @@ nothing here is a permissions problem in Jamf.
    a title the file listing and the index disagree about. They keep what they showed, or stay
    unlisted if they were new, until Fleet next changes its catalog, and the titles held are
    partial ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). While Fleet changes
-   nothing, each later check says *The catalog tree is unchanged. The held snapshot still has
-   unread Mac titles. They are checked again when Fleet changes its catalog.* That is the same
-   state, not a new failure. On the tab there is nothing to do. Beyond it:
+   nothing, each later check's line reads
+   *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.*
+   That is the same state, not a new failure. On the tab there is nothing to do. Beyond it:
    - *unrecognized Mac manifest path* or *unrecognized Mac index entry* among the names → Fleet
      listed a Mac title in a form this build cannot read. Update LoonInspect. On the latest
      release, report it (§8) with the sentence.
    - *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.* under a
      saved patch plan's **Open review items at plan creation**, or in its PDF → the plan was
      built while the titles held were unread or partial, so it drew no conclusion from Fleet:
-     a Fleet title it found is listed for identity review, and none is its target. A saved plan
-     keeps the item. Once the status line shows a check that got an answer and carries neither
-     sentence, build a new plan (§30). Until then, check the app's Fleet title by hand with its
-     **Fleet source** link on this tab; a title the tab does not list is not proof that Fleet
-     has none.
+     a Fleet title it found is listed for identity review, and no Fleet version became its
+     target. A saved plan keeps the item. Once the status line shows a check that got an
+     answer and carries neither sentence, build a new plan (§30). Until then, check the app's
+     Fleet title by hand with its **Fleet source** link on this tab; a title the tab does not
+     list is not proof that Fleet has none.
    - A plan shows that item while the status line carries no sentence → the instance was
-     upgraded to 1.3.0 after its last check, and the upgrade marks a catalog already read
-     partial, once. The next scheduled check, within the hour, or **Check now** clears it,
-     reading only the manifests the instance lacks. If the line reads *Fleet's catalog has not
-     been read yet*, that is step 2; *did not get an answer* is step 3.
+     upgraded to 1.3.0 after its last check, and the upgrade marks a catalog that had been
+     read as partial, once. The next scheduled check, within the hour, or **Check now**
+     clears it, reading only the manifests the instance lacks. If the line reads
+     *Fleet's catalog has not been read yet*, that is step 2; *did not get an answer* is step 3.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
