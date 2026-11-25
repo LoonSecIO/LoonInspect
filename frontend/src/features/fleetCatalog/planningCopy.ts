@@ -2,7 +2,7 @@ import type { MigrationScope, PriorityReason } from "./migrationTypes";
 import type { CoverageKey, PolicySummary, PortfolioEmpty, PortfolioSort, ReviewFilter } from "./portfolioView";
 
 // The migration list's words (#903). Its answer carries codes and counts, never a sentence, so they are worded here,
-// the German typed against the English through `Translations`. The list borrows only main's `fleetCatalog.title` and
+// the German typed against the English through `Translations`. The list borrows only main's `fleetCatalog.eyebrow`, `title` and
 // `emptyFlagOff`, and shows an error's `detail`, the one server sentence, as sent. Each code map `satisfies` its
 // union, so a new member fails the type check until both languages word it. No sentence names the list or a
 // segment: each next check is named by something on main that keeps its name, which planningCopy.test.ts holds.
@@ -48,6 +48,8 @@ export const fleetPlanningEnglish = {
     noApps: "The Macs in the device filter have no installed apps on record. Installed Apps, with the same filter, shows what their last sweep collected.",
     noMatch: "No installed app matches this search and Show choice. Clear the search or choose All installed apps."
   } satisfies Record<PortfolioEmpty, string>,
+  // The Fleet catalog tab's two views (#904): this list, by the name #893 ruled, and main's Fleet titles.
+  segments: { review: "Migration review", titles: "Fleet titles" },
   columns: { app: "Installed app", macs: "Macs", coverage: "Catalog coverage", policy: "Patching policy", findings: "Vulnerability evidence" },
   search: "Find an app or bundle ID",
   show: "Show",
@@ -114,6 +116,7 @@ export const fleetPlanningGerman: FleetPlanningCopy = {
     noApps: "Für die Macs im Gerätefilter sind keine installierten Apps erfasst. „Installierte Apps“ zeigt mit demselben Filter, was ihr letzter Sweep erfasst hat.",
     noMatch: "Keine installierte App passt zu dieser Suche und Anzeige. Leeren Sie die Suche oder wählen Sie „Alle installierten Apps“."
   },
+  segments: { review: "Migrationsprüfung", titles: "Fleet-Titel" },
   columns: { app: "Installierte App", macs: "Macs", coverage: "Katalogabdeckung", policy: "Patch-Richtlinie", findings: "Schwachstellennachweise" },
   search: "App oder Bundle-ID suchen",
   show: "Anzeigen",

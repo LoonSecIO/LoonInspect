@@ -18,7 +18,9 @@ LoonInspect reads that folder once a day and shows it under **Devices › Applic
 catalog**: each title, Fleet's latest version of it, how many of this organization's Macs have
 it and how many of those are behind. In the background, slowly, it also reads the version
 history of the titles installed here from the same repository's commits: every version Fleet's
-catalog carried, and the day it took each.
+catalog carried, and the day it took each. The tab opens on
+[**Migration review**](#migration-review), the installed apps on the Macs in the device filter
+against both catalogs, with these titles beside it as **Fleet titles**.
 
 Each title also has a **Fleet source** link to its current `darwin.json` manifest on
 GitHub (#840). It is separate from the button that opens version history and works with
@@ -285,8 +287,8 @@ listing (#859). The record describes the titles held, not the last check, and ha
 - **`complete`**: a check finished the listing and skipped nothing.
 
 A check that fails before it changes a title leaves the value as it was. The tab never shows
-the value, and of the API only the migration report carries it, as `fleetCatalogReadiness`
-([below](#the-migration-report-api-only-so-far)). The tab shows the check's sentence instead: an
+the value itself, and of the API only the migration report carries it, as `fleetCatalogReadiness`
+([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
 
 **Besides the check and its schedule, one thing reads it: a saved application patch plan**
@@ -319,9 +321,9 @@ catalog again.
 
 ## The tab
 
-**Devices › Applications › Fleet catalog** lists, per title: the name, the bundle identifier,
-Fleet's latest version, *Macs with app*, *Macs behind*, and when the version last moved with
-the version before it.
+**Fleet titles**, the tab's second view, under the device filter [Migration review](#migration-review) uses, lists per
+title: the name, the bundle identifier, Fleet's latest version, *Macs with app*, *Macs in scope*, *Macs behind*, and
+when the version last moved with the version before it.
 
 - **The match is the exact bundle identifier.** A title is on a Mac when an installed app
   there carries the title's bundle identifier, letter for letter. Fleet's own check for a
@@ -332,9 +334,17 @@ the version before it.
   string. A Mac with two copies of an app, one current and one stale, is behind. A Mac on a
   build newer than Fleet lists is not behind. *Macs behind* and the rest are both served, so
   the page never subtracts.
-- **Only titles installed here** is ticked by default and hides Fleet's titles no Mac has.
-  Unticked, the whole catalog is listed. A title on no Mac shows a dash under *Macs behind*,
-  not a zero.
+- **Macs in scope** counts the Macs the device filter selects (every current Jamf Mac without
+  one) that carry the title's bundle identifier: `fleetDeviceCounts` in [the migration
+  report](#the-api). *Macs with app* and *Macs behind* count every Mac the organization has
+  collected, and *installed here*, in the footer and the version history line, means on any of
+  them, whatever the filter. A title Fleet listed after the counts were read shows *Unknown*.
+- **Only titles installed here** starts unticked. Ticked, it keeps the titles on a Mac the filter
+  selects; the page reads the whole catalog once and filters what it holds. The search and the
+  box are in the address as `q` and `installedOnly=1`. A title on no Mac shows a dash under
+  *Macs behind*, not a zero.
+- **Build a patch plan**, under a title on at least one Mac the filter selects, opens Installed
+  Apps with the same `deviceScope`, searched by the title's bundle identifier.
 - **The status line** says when GitHub was last asked and what it answered. After a failed
   check it shows the sentence and says the titles below are as read on the earlier date.
   While the titles held are [partial](#complete-or-partial), an unchanged check's line says
@@ -343,20 +353,48 @@ the version before it.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move
   this instance saw, or that there is neither yet.
-- **A title's name opens its version history**, newest first, each date linked to its commit
+- **A title's name opens its page** ([below](#migration-review)), and the arrow before it its version history, newest first, each date linked to its commit
   in Fleet's repository.
 
-The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`) and
+The API is `GET /api/fleet-catalog` (`app:read`; `installedOnly`, `q`, `page`, `pageSize`), `GET /api/fleet-catalog/migration` for *Macs in scope* (`app:read` and `device:read`) and
 `POST /api/fleet-catalog/refresh` (`patch:catalog-sync`). A refresh that could not read GitHub
 answers `409` with the sentence as its `detail`, and stores the same sentence as the catalog's
 state.
 
-### The migration report (API only, so far)
+## Migration review
+
+**Migration review** (#904) lists each app Jamf inventoried on the Macs the device filter selects:
+the Macs that have it and their share of those in scope, its coverage in both catalogs, its
+patch-policy verdict and its installed builds' vulnerability evidence ([`troubleshooting.md`](troubleshooting.md) §27 step 12).
+
+- **The device filter is Installed Apps' and Patch Plans'**, carried between the tabs as
+  `deviceScope`, so all three count the same Macs. Without one, it counts every current Jamf Mac.
+- **Patch priority**, the default sort, weighs most a finding on CISA's Known Exploited
+  Vulnerabilities list, then a build outside its confirmed Jamf Patch rule, then findings Fleet's
+  latest would address. Less: how many Macs have the app (capped, so reach alone outranks none of
+  those three), a high or critical finding, a build behind Fleet's latest, how long a newer Jamf
+  release has waited, and a title Fleet updated twice or more in 90 days. Unknown evidence weighs
+  nothing. Ties go to the app on more Macs, then the name.
+- **Outside both catalogs** needs a *complete* Fleet snapshot ([above](#complete-or-partial)), not
+  merely a populated one, and synced Jamf Patch titles. Until both, it reads *Unknown*, never 0: a
+  partial snapshot may lack the very title.
+- **Evidence can trail its reason by up to an hour.** After a sweep first judges a build, the other
+  Macs' copies take the answer on the hourly refresh, so until then a row can count the build as not
+  assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
+  line that reads the build's one catalog answer and already rests on it.
+
+**An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
+and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet and Jamf Patch titles that match the bundle
+identifier, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13). Opening it asks GitHub
+nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
+on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
+
+### The API
 
 `GET /api/fleet-catalog/migration` (#895) starts from what is installed: each app on the selected
 Macs, with the Fleet titles that carry its bundle identifier. It needs `app:read` and `device:read`
 and takes `deviceScope`, the filter Installed Apps and Patch Plans use, so all three count the same
-Macs. It asks GitHub and Jamf nothing, and no page reads it yet. With the flag off it answers
+Macs. It asks GitHub and Jamf nothing. With the flag off it answers
 `enabled: false` and counts nothing.
 
 - **`scope`.** *Eligible* is every current Jamf Mac the filter's connection and style allow;
