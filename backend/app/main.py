@@ -52,7 +52,9 @@ from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.exclusion_ranking import router as exclusion_ranking_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.fleet_briefing import router as fleet_briefing_router
 from app.api.fleet_catalog import router as fleet_catalog_router
+from app.api.fleet_migration import router as fleet_migration_router
 from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
@@ -891,6 +893,8 @@ app.include_router(applications_router)
 app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
 app.include_router(application_patch_plans_router)
+app.include_router(fleet_migration_router)
+app.include_router(fleet_briefing_router)
 app.include_router(fleet_catalog_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
