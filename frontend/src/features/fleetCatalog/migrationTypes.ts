@@ -57,9 +57,9 @@ export interface FleetBuildAssessment {
   version: string;
   deviceCount: number;
   comparison: "exact" | "net_only" | "off" | "unknown_source" | "unknown_target" | "ambiguous";
-  addresses: number | null; introduces: number | null; remains: number | null; net: number | null;
+  addresses: number | null; introduces: number | null; remains: number | null;
   addressedIds: string[] | null; introducedIds: string[] | null; remainingIds: string[] | null;
-  installedKev: number | null;
+  net: number | null; installedKev: number | null;
   policyState: PolicyState;
   policySource: "default" | "override" | null;
   policyUnassessed: PolicyUnassessed | null;
@@ -77,9 +77,9 @@ export interface FleetAssessment {
   management: "recurring" | "one_time" | "observe";
   recentVersions: number | null;
   corpusAsOf: string | null;
-  oldestGapDays: number | null;
-  // Builds, by the comparison against the target and by the patch rule's verdict.
-  behindBuilds: number; unorderedBuilds: number; exactBuilds: number; netOnlyBuilds: number; unknownBuilds: number;
+  behindBuilds: number; unorderedBuilds: number; oldestGapDays: number | null;
+  // Builds, by the comparison against the target, then by the patch rule's verdict.
+  exactBuilds: number; netOnlyBuilds: number; unknownBuilds: number;
   outOfPolicyBuilds: number; withinPolicyBuilds: number; policyExemptBuilds: number; policyUnassessedBuilds: number;
   kevBuilds: number | null; addresses: number | null; introduces: number | null; remains: number | null;
   builds: FleetBuildAssessment[];
