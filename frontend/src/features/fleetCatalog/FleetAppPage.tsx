@@ -20,12 +20,11 @@ const label = "text-xs text-muted-foreground";
 
 type Opened = { kind: "apps" | "titles"; id: string; search: string; list: URLSearchParams }; // the list's query, as written and parsed
 
-/** Each build with its Macs, filtered to one exact version; on a title page with several identities, with its app's name. */
+/** Each build with its Macs, filtered to one version (`at` -1: all, also once a re-read drops the one picked); on a title page, with its app. */
 function InstalledBuilds({ data }: { data: MigrationDetail }) {
   const { t, locale } = useLocale();
   const words = t.fleetDetail;
   const [picked, setPicked] = useState<string | null>(null);
-  // `at` is -1 for every version, and again once a re-read no longer lists the one picked.
   const versions = [...new Set(data.builds.map(build => build.version))], at = picked === null ? -1 : versions.indexOf(picked);
   const high = Math.max(1, ...data.builds.map(build => build.macs)), names = new Map(data.items.map(item => [item.appHash, item.name]));
   return <section className={card}><h3 className={heading}>{words.installed}</h3>

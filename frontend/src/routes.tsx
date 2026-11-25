@@ -69,7 +69,6 @@ export function AppRoutes() {
           <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
             <Route path="fleet-catalog" element={<FleetCatalogHome />} />
           </Route>
-          {/* An app's or a Fleet title's page (#906): its read needs both permissions (#895), and the flag's guard goes inside. */}
           <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
             <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
               <Route element={<RequireFlag flag="fleet_maintained_apps" />}>

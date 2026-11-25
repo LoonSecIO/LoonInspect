@@ -97,7 +97,7 @@ describe("the version history panel", () => {
     expect(onSelectVersion).toHaveBeenCalledExactlyOnceWith("1.9");
 
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "9.9" } });
-    expect(screen.getByText(en.fleetCatalog.historySearchNone)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe(en.fleetCatalog.historySearchNone);
     expect(screen.queryByRole("table")).toBeNull();
   });
 
