@@ -219,7 +219,6 @@ async def test_scoped_comparisons_keep_local_identity_and_both_ends_in_one_relea
     db.add(install(macs[0], "One", bundle, "2"))  # A selected Mac carries the target: its stored answer, never the library's.
     carried = await app_assessments(db, {one: title}, include_builds=True, **read)
     db.add(catalog_row("One", bundle, "2", [], held))  # The carried target's own stored answer (#899).
-    await db.flush()
     with statements() as asked:
         served = await app_assessments(db, {one: title}, include_builds=True, **read)
     assert served[one].builds[0].comparison == "exact" and not [sql for sql, _ in asked if "vuln_corpus_release_rows" in sql]

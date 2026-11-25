@@ -24,7 +24,7 @@ from app.models.schema import AppCatalogEntry, Device, FeatureFlag, FleetCatalog
 from app.schemas.patch_plans import DeviceScope
 from tests.patch_plan_fixtures import accounts, admin, flag_off, flag_on, github, inventory, viewer  # noqa: F401
 from tests.test_fleet_assessment import A, B, assessed
-from tests.test_fleet_assessment_db import ALPHA_BETA, AS_OF, EPOCH, answer, behind, catalog_row, counts, statements
+from tests.test_fleet_assessment_db import ALPHA_BETA, AS_OF, EPOCH, answer, behind, catalog_row, counts, install, statements
 from tests.test_fleet_catalog_db import ALPHA, BETA
 from tests.test_patching_policy_db import unstated  # noqa: F401
 
@@ -94,7 +94,7 @@ async def test_installed_evidence_repeats_each_apps_stored_answers(db, inventory
     assert not [sql for sql, _ in seen if "vuln_corpus_release_rows" in sql or "vuln_library_rows" in sql]
 
 
-async def test_population_and_identity_share_a_cohort(db, inventory, viewer, flag_on):  # noqa: F811
+async def test_population_and_identity_share_a_cohort(db, github, inventory, viewer, flag_on):  # noqa: F811
     source, alpha, gamma = inventory
     report = await _read(viewer, _filter(source, "contact"))
     assert report["scope"] == {"eligibleMacs": 3, "selectedMacs": 1, "unknownContactMacs": 1, "unknownInventoryMacs": 1}
@@ -130,9 +130,20 @@ async def test_population_and_identity_share_a_cohort(db, inventory, viewer, fla
     assert every["fleetDeviceCounts"]["alpha"] == 3
     mac = await db.scalar(select(Device).where(Device.mdm_connection_id == source, Device.external_id == "3"))
     mac.last_inventory_at = datetime.now(UTC) + timedelta(days=1)
+    db.add(install(mac, "Alpha", ALPHA, "1.0"))  # Beside its unread copy, which no longer makes the Mac unknown.
     await db.commit()
     future = (await _read(viewer, _filter(source, "inventory")))["scope"]
     assert (future["selectedMacs"], future["unknownInventoryMacs"]) == (1, 1)  # A future date is unknown, not selected.
+    impact = (await _read(viewer, _filter(source), f"/apps/{alpha}"))["impact"]
+    assert (impact["olderMacs"], impact["atOrAboveMacs"], impact["unknownMacs"]) == (2, 1, 0)
+    github.put("alpha", "Alpha", ALPHA, "2.0-b")  # A qualified latest is answered, each Mac it cannot order unknown.
+    await fleet_catalog.check(db, transport=github.transport)
+    qualified = (await _read(viewer, _filter(source), f"/apps/{alpha}"))["impact"]
+    assert (qualified["targetVersion"], qualified["olderMacs"], qualified["unknownMacs"]) == ("2.0-b", 0, 3)
+    github.put("alpha", "Alpha", ALPHA, "latest")  # One with no number in it is not.
+    await fleet_catalog.check(db, transport=github.transport)
+    word = await _read(viewer, _filter(source), f"/apps/{alpha}")
+    assert (word["impact"], word["impactUnavailable"]) == (None, "unordered_target")
     await db.execute(update(InstalledApp).where(InstalledApp.app_hash == alpha).values(jamf_title_ids=["absent-1", "absent-2"]))
     await db.commit()
     claimed = {item["appHash"]: item for item in (await _read(viewer, _filter(source)))["items"]}[alpha]
