@@ -4558,15 +4558,18 @@ refusal: the sentence is the whole report.
       life, so a device left on an old line reads never seen for CVEs that may well affect it.
       These do not show the device was safe.
 
-    How the count splits depends on the app. In LoonSec's data of 2026-11-24, on Public: Firefox's
-    release track over two years keeps the never device on 132.0.2, and 88 of its 96 never seen
-    were already fixed there, so the never stop counts fewer never seen than the 30-day stop (126);
-    Wireshark's newest-line track over three years keeps it on 4.2.5, and 113 of its 120 never seen
-    are outside the affected range, against 13 never seen at 30 days. Read the second kind as "NVD
-    names no range here", not as "this device was never exposed"; the stops that install are the
-    comparison that means something. The reference replays that ship with the build (§22 step 11)
-    split their never stop the same way, in the same words, from the replay file's own
-    `policies.never`. Not a fault.
+    How the count splits depends on the version the never device keeps, so it differs by app,
+    track and window, and it moves whenever a new copy of LoonSec's data moves the window: the
+    page prints both numbers for the view on screen. That version is the newest release available
+    by the window's first day (`definitions.steady_state`): the never stop is a device that stops
+    updating that day, not one already behind, so for the window's first 59 days it can run a
+    newer release than the 60-day stop, which opens the window on the newest release it would
+    already have installed. Where most were already fixed, the never stop can count fewer never
+    seen than the 30-day stop, because the CVEs fixed before the version the device keeps are ones
+    it never ran. Read the second kind as "NVD names no range here", not as "this device was never
+    exposed"; the stops that install are the comparison that means something. The reference
+    replays that ship with the build (§22 step 11) split their never stop the same way, in the
+    same words, from the replay file's own `policies.never`. Not a fault.
 
 12. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
     not date the exact build LoonSec's data names as a CVE's fix: Fleet's history holds only the
