@@ -278,6 +278,22 @@ export function channelsSetAside(value: unknown): WalkChannelSetAside[] {
   });
 }
 
+const FOUR_PART = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+
+/** Whether a fix LoonSec's data points at is an earlier build of the release NVD names (`named`): both
+ *  four-part (Chrome's major.minor.build.patch), the same in their first three parts, the fix's last
+ *  part the lower. LoonSec's data lists a fix below NVD's version only where it corrected NVD's bound
+ *  to the Mac's own build of that release, read from the vendor's release post (troubleshooting.md §33
+ *  step 12); everywhere else its fix is NVD's version or the next one at or above it. The entry
+ *  carries no ranks, so this reads the two version strings, and only to choose the words beside the
+ *  fix: the walk counts nothing by it, and any other shape of version reads false. */
+export function fixBelowNamedBuild(entry: Pick<WalkFixDating, "fix" | "named">): boolean {
+  const fix = entry.fix?.match(FOUR_PART);
+  const named = entry.named?.match(FOUR_PART);
+  if (!fix || !named) return false;
+  return fix[1] === named[1] && fix[2] === named[2] && fix[3] === named[3] && Number(fix[4]) < Number(named[4]);
+}
+
 /** The refusal in a 409's body, or null when the body is not one. */
 function refusalOf(body: unknown): WalkRefusal | null {
   if (!isObject(body) || typeof body.detail !== "string" || typeof body.reason !== "string") return null;

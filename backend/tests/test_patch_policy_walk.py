@@ -1894,8 +1894,11 @@ def test_the_walk_still_counts_the_check_it_wrote() -> None:
     affected until 115.0.2's day), three lines with a track held to one of them and fixes on several,
     a CVE NVD names no fix for, a fix only an undated build carries, a fix NVD names by a build the
     track does not list, a CVE on the ESR edition set aside (`other_edition_only`) beside the ESR
-    channel the app names under `other_channels` and does not walk, and the day boundaries the hand
-    goldens pin (Example Editor: `COUNTING_MUTANTS` names each rule). Its CVE ids are fictional."""
+    channel the app names under `other_channels` and does not walk, the day boundaries the hand
+    goldens pin (Example Editor), and a Chrome-style promotion table (Example Viewer: early builds
+    dated before their major's promotion day, a respin dated after the next major's early build,
+    and a release above the table's newest row that cuts the window). `COUNTING_MUTANTS` names
+    each rule. Its versions, dates and CVE ids are invented."""
     from app.core import patch_policy_feed as feed
 
     assert FROZEN.exists(), (
@@ -2063,6 +2066,24 @@ COUNTING_MUTANTS = {
         "line == versions[at].line and at >= fix for line, fix in row.fixes",
         "line == versions[at].line and at > fix for line, fix in row.fixes",
     ),
+    # The promotion table (Example Viewer): a release of a promoted major waits for the later of its
+    # own date and the major's promotion day, one above the table's newest row is never installed,
+    # and the window ends the day before the timeline dates such a release.
+    "a promoted major's release is available on its own date": (
+        "released = max(released, runs[at][2])",
+        "released = released",
+    ),
+    "a promoted major's release waits a day past the promotion": (
+        "released = max(released, runs[at][2])",
+        "released = max(released, runs[at][2] + _DAY)",
+    ),
+    # Killed through the window's end, as the next mutant is: the window always ends the day before
+    # such a release, so its first difference is `until`. Kept so that the guard stays pinned.
+    "a release above the promotion table's newest row is installed": (
+        "if newest is not None and index > newest:",
+        "if False:",
+    ),
+    "the window runs past the first release above the promotion table": ("if prepared.above_table:", "if False:"),
 }
 
 
@@ -2132,6 +2153,34 @@ def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
         return False
 
     assert any(backported(track) for _, track in tracks), "no backport for rule 5"
+
+    # The promotion table's cases (a Chrome-style track): a fix dated before its major's promotion
+    # day, a release dated on that day, and a release above the table's newest row that the
+    # timeline dates inside the requested window, so the window is cut the day before it.
+    last_day = (dt.date.fromisoformat(doc["as_of"][:10]) - dt.timedelta(days=1)).isoformat()
+    promoted = [track for _, track in tracks if track.get("promotions")]
+    assert promoted, "no promotion table"
+
+    def waits(track: dict[str, Any]) -> dict[int, str]:
+        return {
+            index: row["promoted"] for row in track["promotions"] for index in range(row["versions"][0], row["versions"][1] + 1)
+        }
+
+    assert any(
+        track["versions"][fix["index"]]["date"] < waits(track)[fix["index"]]
+        for track in promoted
+        for row in track["cves"]
+        for fix in row["fixes"]
+        if fix["index"] in waits(track) and track["versions"][fix["index"]]["date"]
+    ), "no fix dated before its major's promotion day"
+    assert any(track["versions"][index]["date"] == day for track in promoted for index, day in waits(track).items()), (
+        "no release dated on its major's promotion day"
+    )
+    assert any(
+        version["date"] and version["date"] <= last_day
+        for track in promoted
+        for version in track["versions"][track["promotions"][-1]["versions"][1] + 1 :]
+    ), "no release above the promotion table's newest row inside the window"
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 import { Fragment } from "react";
 import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
 import { DayGraph } from "@/features/patchPolicy/DayGraph";
+import { KeepDates } from "@/features/patchPolicy/KeepDates";
 import { PolicySlider } from "@/features/patchPolicy/PolicySlider";
 import { SLIDER_STOPS, type SliderStop } from "@/features/patchPolicy/replay";
-import { channelsSetAside, type PatchPolicyWalk, type WalkFixDating, type WalkOutcome, type WalkSource } from "@/features/patchPolicy/walk";
+import { channelsSetAside, fixBelowNamedBuild, type PatchPolicyWalk, type WalkFixDating, type WalkOutcome, type WalkSource } from "@/features/patchPolicy/walk";
 import { reasonWords, type WalkCopy } from "@/features/patchPolicy/walkCopy";
 
 /**
@@ -25,8 +26,15 @@ export interface WalkViewProps {
 const card = "rounded-lg border bg-card p-4";
 const heading = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 const cell = "px-3 py-2";
-// The list of CVEs: six columns beside the app list at a 1280 px window fit only with less padding.
+// Every stop side by side: eight columns beside the app list at a 1280 px window fit only with less padding.
 const tight = "px-2 py-2";
+// The list of CVEs: six columns, the outcome's sentence among them, beside the app list at 1280 px.
+const ledger = "px-1.5 py-2";
+// Headings wrap at their spaces (and a hyphen of their own), never inside a word: smaller than the
+// cells, so a German compound ("Expositionstage", "Mitgebracht") fits its column whole at 1280 px.
+const head = "text-xs font-medium hyphens-manual";
+// The ledger's narrow columns shrink to their widest word or date, so the outcome takes the room.
+const fit = "w-[1%]";
 const mono = "block break-all font-mono text-xs text-muted-foreground";
 
 /** One CVE's outcome under one stop, as a sentence. A value this build does not know is printed as the walk spells it. */
@@ -52,19 +60,6 @@ function fixDatedWords(entry: WalkFixDating, copy: PatchPolicyCopy, words: WalkC
   if (entry.how === "next_dated" && entry.dated_as && entry.on) return words.fixNextDated(entry.fix, entry.dated_as, entry.on);
   if (entry.how === "undated") return words.fixUndated(entry.fix, entry.line);
   return `${entry.fix} (${String(entry.how)})`;
-}
-
-/** A sentence that may wrap anywhere but inside its date, which would otherwise break at a hyphen. */
-function keepDate(sentence: string, date: string) {
-  const at = sentence.indexOf(date);
-  if (at < 0) return sentence;
-  return (
-    <>
-      {sentence.slice(0, at)}
-      <span className="whitespace-nowrap">{date}</span>
-      {sentence.slice(at + date.length)}
-    </>
-  );
 }
 
 const openAtEnd = (open: { in_window: number; carried_in: number; entered_after_start: number }) => open.in_window + open.carried_in + open.entered_after_start;
@@ -113,19 +108,19 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
     <div className="min-w-0 space-y-4">
       <div className="space-y-1 rounded-lg border border-foreground/30 p-3 text-sm">
         <b className="block">{copy.referenceTitle}</b>
-        <span className="block">{words.reference(inputs.label, line, window.since, window.until)}</span>
+        <span className="block"><KeepDates text={words.reference(inputs.label, line, window.since, window.until)} /></span>
         <span className="block">{words.dates(timeline.name)}</span>
         {timeline.source !== "public" && <span className="block text-muted-foreground">{words.readHere}</span>}
         {timeline.source === "fleet" && <span className="block">{words.fleetNote}</span>}
         <span className="block">{words.clockLine}</span>
         {shortened.length > 0 && (
           <span className="block">
-            {words.shortened(window.requested.years, window.since, window.until, shortenedReasons.map((reason) => words.windowReasons[reason] ?? reason))}
+            <KeepDates text={words.shortened(window.requested.years, window.since, window.until, shortenedReasons.map((reason) => words.windowReasons[reason] ?? reason))} />
           </span>
         )}
         {aligned && (
           <span className="block">
-            {words.aligned(aligned.since, aligned.until, aligned.sources.map((each) => words.sources[each] ?? each).join(` ${words.and} `))}
+            <KeepDates text={words.aligned(aligned.since, aligned.until, aligned.sources.map((each) => words.sources[each] ?? each).join(` ${words.and} `))} />
             {aligned.left_out.map((each) => (
               <span key={each.source} className="block text-muted-foreground">
                 {words.leftOut(words.sources[each.source] ?? each.source)} {reasonWords(words, each.reason, context(each.source), each.sentence)}
@@ -187,8 +182,14 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
         {policy.installs.length > 0 && (
           <details>
             <summary className="cursor-pointer">{copy.installs(policy.installs.length)}</summary>
-            <ul className="grid grid-cols-2 gap-x-4 pt-1 font-mono text-xs sm:grid-cols-3 lg:grid-cols-4">
-              {policy.installs.map((install) => <li key={`${install.version} ${install.date}`}>{install.version ?? "—"} · {install.date}</li>)}
+            {/* As many columns as fit one update a line ("152.0.7977.100 · 2026-09-01": two beside the
+                app list at 1024 px, three at 1280), and a date never wraps at its hyphens. */}
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-3 pt-1 font-mono text-xs">
+              {policy.installs.map((install) => (
+                <li key={`${install.version} ${install.date}`}>
+                  {install.version ?? "—"} · <span className="whitespace-nowrap">{install.date}</span>
+                </li>
+              ))}
             </ul>
           </details>
         )}
@@ -197,14 +198,15 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
       <div className="space-y-1">
         <h2 className={heading}>{copy.compareHeading}</h2>
         {/* 38rem, not more: beside the app list at a 1280 px window the view is about 41rem wide, and a
-            floor above that clipped the last column (Carried in) behind a sideways scroll. Hyphenated in
-            the page's language: German headings ("Expositionstage") otherwise pushed it 9rem wider. */}
+            floor above that clipped the last column (Carried in) behind a sideways scroll. The headings
+            are smaller than the cells and the padding tighter, so each German heading's longest word
+            fits whole and the headings wrap at their spaces, never mid-word ("Richtli-nie"). */}
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[38rem] hyphens-auto text-sm">
+          <table className="w-full min-w-[38rem] text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
                 {[copy.colPolicy, copy.colNeverSeen, copy.colOutside, copy.exposed, copy.exposureDays, copy.updateEvents, copy.openAtEnd, words.colCarried].map((label) => (
-                  <th key={label} className={`${cell} font-medium`}>{label}</th>
+                  <th key={label} className={`${tight} ${head}`}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -213,11 +215,11 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                 const totals = walk.policies[each];
                 return (
                   <tr key={each} aria-current={each === stop || undefined} className={`border-b last:border-0 ${each === stop ? "bg-muted font-medium" : ""}`}>
-                    <td className={`${cell} whitespace-nowrap`}>
+                    <td className={`${tight} whitespace-nowrap`}>
                       <button type="button" className="underline-offset-2 hover:underline" onClick={() => onStop(each)}>{copy.stops[each]}</button>
                     </td>
                     {[totals.never_seen, totals.never_seen_outside_affected_range, totals.exposed, totals.exposure_days, totals.update_events, openAtEnd(totals.open_at_window_end), totals.carried_in].map(
-                      (value, index) => <td key={index} className={`${cell} tabular-nums`}>{copy.num(value)}</td>
+                      (value, index) => <td key={index} className={`${tight} tabular-nums`}>{copy.num(value)}</td>
                     )}
                   </tr>
                 );
@@ -240,15 +242,16 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
         ) : (
           <div className="max-h-[32rem] overflow-auto rounded-lg border bg-card">
             {/* How the source dated each fix is a full-width line under its CVE, not a seventh column:
-                a column of sentences ran past the visible width of this box at 1280 to 1440 px. The
-                clock's word and KEV's "listed" wrap beside their dates, the cells are tighter, and words
-                hyphenate in the page's language, so the six columns fit the box beside the app list at a
-                1280 px window too, in German as well. */}
-            <table className="w-full min-w-[38rem] hyphens-auto text-sm">
+                a column of sentences ran past the visible width of this box at 1280 to 1440 px. Every
+                column but the outcome shrinks to its widest word or date (the CVE id, "Zeitfenster,",
+                "Veröffentlichung", "Schweregrad", KEV's date or its dash), so the outcome's sentence
+                takes the room and a row is two lines in either language rather than "Das / Zeit- /
+                fens- / ter" beside a wide dash. Words wrap at their spaces, never inside a word. */}
+            <table className="w-full min-w-[38rem] text-sm">
               <thead className="sticky top-0 border-b bg-card text-left text-muted-foreground">
                 <tr>
-                  {[copy.colCve, copy.colOutcome(copy.stops[stop]), words.colFrom, words.colClock, copy.colSeverity, words.colKev].map((label) => (
-                    <th key={label} className={`${tight} font-medium`}>{label}</th>
+                  {[copy.colCve, copy.colOutcome(copy.stops[stop]), words.colFrom, words.colClock, copy.colSeverity, words.colKev].map((label, index) => (
+                    <th key={label} className={`${ledger} ${head} ${index === 1 ? "" : fit}`}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -259,27 +262,31 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                   return (
                     <Fragment key={row.cve_id}>
                       <tr className={`align-top ${fixes.length > 0 ? "" : "border-b last:border-0"}`}>
-                        <td className={`${tight} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
-                        <td className={tight}>{outcomeWords(outcome, copy, words)}</td>
-                        <td className={tight}>{words.classes[outcome?.class ?? row.class] ?? outcome?.class ?? row.class}</td>
-                        <td className={`${tight} tabular-nums`}>
+                        <td className={`${ledger} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
+                        <td className={ledger}><KeepDates text={outcomeWords(outcome, copy, words)} /></td>
+                        <td className={ledger}>{words.classes[outcome?.class ?? row.class] ?? outcome?.class ?? row.class}</td>
+                        <td className={`${ledger} tabular-nums`}>
                           <span className="whitespace-nowrap">{row.clock_date ?? "—"}</span>
                           {row.clock && <span className="block text-xs text-muted-foreground">{words.clocked[row.clock] ?? row.clock}</span>}
                         </td>
-                        <td className={tight}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
-                        <td className={`${tight} tabular-nums`}>{row.kev_date_added ? keepDate(words.kevListed(row.kev_date_added), row.kev_date_added) : "—"}</td>
+                        <td className={ledger}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
+                        <td className={`${ledger} tabular-nums`}>{row.kev_date_added ? <KeepDates text={words.kevListed(row.kev_date_added)} /> : "—"}</td>
                       </tr>
                       {fixes.length > 0 && (
                         <tr className="border-b last:border-0">
-                          <td colSpan={6} className="px-2 pb-2 hyphens-manual">
+                          <td colSpan={6} className="px-1.5 pb-2">
                             <span className="block text-xs text-muted-foreground">{words.fixDatedLead(row.cve_id, fixes.length)}</span>
                             {/* One item per entry: two entries at one version (the fix, then a bound of NVD's
                                 that lands there, with `named`) are two fixes, not a repeated line. */}
                             <ul className="list-disc space-y-0.5 pl-5">
                               {fixes.map((entry, index) => (
                                 <li key={index}>
-                                  {fixDatedWords(entry, copy, words)}
-                                  {entry.named && <span className="text-muted-foreground"> ({words.nvdNamed(entry.named)})</span>}
+                                  <KeepDates text={fixDatedWords(entry, copy, words)} />
+                                  {/* NVD's own version where it differs; where LoonSec's fix is an earlier build of
+                                      the release NVD names, why: the Mac's build, corrected from the release post. */}
+                                  {entry.named && (
+                                    <span className="text-muted-foreground"> ({fixBelowNamedBuild(entry) ? words.nvdNamedMacBuild(entry.named) : words.nvdNamed(entry.named)})</span>
+                                  )}
                                   {/* Dated by the first version the source dates at all: the fix is older than the source's history. */}
                                   {entry.how === "next_dated" && entry.on !== null && entry.on === timeline.first && (
                                     <span className="block text-xs text-muted-foreground">{words.historyBegins[timeline.source]}</span>
@@ -307,8 +314,8 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
-                <th className={`${cell} font-medium`}>{copy.colReason}</th>
-                <th className={`${cell} font-medium`}>{copy.colCount}</th>
+                <th className={`${cell} ${head}`}>{copy.colReason}</th>
+                <th className={`${cell} ${head}`}>{copy.colCount}</th>
               </tr>
             </thead>
             <tbody>
@@ -317,7 +324,7 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                 .sort(([, a], [, b]) => b - a)
                 .map(([reason, count]) => (
                   <tr key={reason} className={`border-b last:border-0 ${count === 0 ? "text-muted-foreground" : ""}`}>
-                    <td className={cell}>{words.exclusionReasons[reason] ?? copy.reasons[reason] ?? reason}</td>
+                    <td className={cell}><KeepDates text={words.exclusionReasons[reason] ?? copy.reasons[reason] ?? reason} /></td>
                     <td className={`${cell} tabular-nums`}>{copy.num(count)}</td>
                   </tr>
                 ))}
@@ -332,19 +339,26 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
               <table className="w-full min-w-[36rem] text-sm">
                 <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                   <tr>
-                    {[copy.colCve, words.colClock, copy.colReason, copy.colDetail].map((label) => <th key={label} className={`${cell} font-medium`}>{label}</th>)}
+                    {/* The CVE id shrinks to fit; the clock's word wraps under its whole date. */}
+                    {[copy.colCve, words.colClock, copy.colReason, copy.colDetail].map((label, index) => (
+                      <th key={label} className={`${cell} ${head} ${index === 0 ? fit : ""}`}>{label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {walk.exclusions.cves.map((row) => (
                     <tr key={row.cve_id} className="border-b align-top last:border-0">
                       <td className={`${cell} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
-                      <td className={`${cell} whitespace-nowrap tabular-nums`}>
-                        {row.clock_date ?? "—"}
+                      <td className={`${cell} tabular-nums`}>
+                        <span className="whitespace-nowrap">{row.clock_date ?? "—"}</span>
                         {row.clock && <span className="block text-xs text-muted-foreground">{words.clocked[row.clock] ?? row.clock}</span>}
                       </td>
-                      <td className={cell}>{words.exclusionReasons[row.reason] ?? copy.reasons[row.reason] ?? row.reason}</td>
-                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>{row.detail ?? "—"}</td>
+                      <td className={cell}><KeepDates text={words.exclusionReasons[row.reason] ?? copy.reasons[row.reason] ?? row.reason} /></td>
+                      {/* LoonSec's own words (the header says so in German), except a branch ambiguity: the
+                          walk's own reason (LoonSec's data never excludes for it), worded on this instance. */}
+                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>
+                        {row.detail ? <KeepDates text={row.reason === "branch_ambiguity" ? words.serverSaid(row.detail) : row.detail} /> : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -366,7 +380,8 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                   .map(([key, text]) => (
                     <Fragment key={key}>
                       <dt className="font-mono text-xs text-muted-foreground">{key}</dt>
-                      <dd>{String(text)}</dd>
+                      {/* A long address (a timeline's URL) breaks rather than push the page sideways at 1024 px. */}
+                      <dd className="break-words"><KeepDates text={String(text)} /></dd>
                     </Fragment>
                   ))}
               </dl>
@@ -380,15 +395,14 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]">
           <dt className="text-muted-foreground">{words.evidenceDocument}</dt>
           <dd>
-            <span className="block">{words.dated(inputs.doc_as_of)}</span>
+            <span className="block"><KeepDates text={words.dated(inputs.doc_as_of)} /></span>
             <span className={mono}>{inputs.doc_id}</span>
           </dd>
           <dt className="text-muted-foreground">{copy.evidenceTimeline}</dt>
           <dd className="space-y-0.5">
             <span className="block">{words.sources[timeline.source] ?? timeline.source} · {timeline.name}</span>
             <span className="block text-muted-foreground">
-              {words.readOn(timeline.as_of)}
-              {timeline.first && timeline.last && ` · ${words.datesRange(timeline.first, timeline.last)}`}
+              <KeepDates text={words.readOn(timeline.as_of) + (timeline.first && timeline.last ? ` · ${words.datesRange(timeline.first, timeline.last)}` : "")} />
             </span>
             {timeline.ids.length > 0 && <span className={mono}>{timeline.ids.join(", ")}</span>}
             <span className={mono}>{timeline.digest}</span>
@@ -410,15 +424,20 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
           <dt className="text-muted-foreground">{copy.evidenceWindow}</dt>
           <dd className="space-y-0.5">
             <span className="block tabular-nums">
-              {window.since} → {window.until}
-              {(window.since !== window.requested.since || window.until !== window.requested.until) &&
-                ` · ${words.asked(words.years(window.requested.years), window.requested.since, window.requested.until)}`}
+              <KeepDates
+                text={
+                  `${window.since} → ${window.until}` +
+                  (window.since !== window.requested.since || window.until !== window.requested.until
+                    ? ` · ${words.asked(words.years(window.requested.years), window.requested.since, window.requested.until)}`
+                    : "")
+                }
+              />
             </span>
             {/* The instance's own words for each cut: the page names the cut and computes none of it. */}
-            {shortenedSentences.map((sentence) => <span key={sentence} className="block text-muted-foreground">{words.serverSaid(sentence)}</span>)}
+            {shortenedSentences.map((sentence) => <span key={sentence} className="block text-muted-foreground"><KeepDates text={words.serverSaid(sentence)} /></span>)}
             {aligned?.left_out.map((each) => (
               <span key={each.source} className="block text-muted-foreground">
-                {words.leftOut(words.sources[each.source] ?? each.source)} {words.serverSaid(each.sentence)}
+                <KeepDates text={`${words.leftOut(words.sources[each.source] ?? each.source)} ${words.serverSaid(each.sentence)}`} />
               </span>
             ))}
           </dd>

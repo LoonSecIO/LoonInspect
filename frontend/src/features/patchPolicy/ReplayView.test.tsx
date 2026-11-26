@@ -16,9 +16,16 @@ import { heldLineReplay, singleLineReplay } from "@/features/patchPolicy/testing
 const held = readReplay(heldLineReplay()).replay as PatchPolicyReplay;
 const single = readReplay(singleLineReplay()).replay as PatchPolicyReplay;
 const copy = patchPolicyEnglish;
-/** The markup with tags dropped, so a sentence can be matched across the spans that style it. */
+/** The markup with tags dropped, so a sentence can be matched across the spans that style it (a date
+ *  is a span of its own, so no space is left before the punctuation that follows one). */
 const text = (markup: string) =>
-  markup.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+  markup
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .replace(/ ([.,;:)])/g, "$1");
 const markupOf = (stop: SliderStop, words = copy, replay = held, appName = "Example App") =>
   renderToStaticMarkup(<ReplayView replay={replay} appName={appName} stop={stop} onStop={() => {}} copy={words} />);
 const drawn = (stop: SliderStop, words = copy, replay = held, appName = "Example App") => text(markupOf(stop, words, replay, appName));
@@ -89,20 +96,46 @@ describe("ReplayView on an app held on one release line", () => {
     expect(page).toContain("CVE-2099-0005");
   });
 
-  it("lets a long word fold inside its table before the table outgrows its box, as the walk's tables do", () => {
-    // The every-stop and per-CVE tables floor at 38rem and hyphenate, the excluded-CVE list hyphenates,
-    // and an exclusion's detail (a machine word with no break in it) may break anywhere. The
-    // two-column count of each reason already fits.
+  it("keeps its tables in their boxes with words whole: headings wrap at spaces, narrow columns shrink to fit", () => {
+    // Every table but the two-column count floors its width (a phone scrolls it inside its box), and none
+    // hyphenates: a heading wraps at its spaces, smaller than the cells ("Re-lease-Datum" read as
+    // "re-lease"), and in the per-CVE and excluded lists the CVE id, the day and NVD's status shrink to
+    // their widest word or date so the outcome, the fixes, the reason and the detail take the room. An
+    // exclusion's detail (a machine word with no break in it) may still break anywhere.
     const markup = markupOf("7d", patchPolicyGerman);
     const tables = [...markup.matchAll(/<table class="([^"]*)"/g)].map((match) => match[1].split(" "));
     expect(tables).toHaveLength(4);
-    expect(tables[0]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
-    expect(tables[1]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
-    expect(tables[3]).toEqual(expect.arrayContaining(["hyphens-auto"]));
+    expect(tables[0]).toContain("min-w-[38rem]");
+    expect(tables[1]).toContain("min-w-[38rem]");
+    expect(tables[3]).toContain("min-w-[36rem]");
+    for (const table of tables) expect(table).not.toContain("hyphens-auto");
+    const heads = markup.split("<table").slice(1).map((table) => [...table.matchAll(/<th class="([^"]*)"/g)].map((match) => match[1].split(" ").filter(Boolean)));
+    for (const head of heads.flat()) expect(head).toEqual(expect.arrayContaining(["text-xs", "hyphens-manual"]));
+    expect(heads[0].every((head) => head.includes("px-2"))).toBe(true);
+    expect(heads[1].map((head) => head.includes("w-[1%]"))).toEqual([true, false, true, true, false]);
+    expect(heads[3].map((head) => head.includes("w-[1%]"))).toEqual([true, true, false, true, false]);
     const exclusions = markup.split("<table").at(-1)!;
     const lastCells = [...exclusions.matchAll(/<tr[^>]*>(?:<td[^>]*>.*?<\/td>)*?<td class="([^"]*)">[^<]*<\/td><\/tr>/g)].map((match) => match[1]);
     expect(lastCells).toHaveLength(held.exclusions.cves.length);
     for (const detail of lastCells) expect(detail.split(" ")).toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("keeps every date whole: in the list of updates, the outcome and the fix, in English and German", () => {
+    for (const words of [patchPolicyEnglish, patchPolicyGerman]) {
+      const markup = markupOf("1d", words);
+      // The updates: as many columns as fit one a line, each date a span that does not wrap.
+      const updates = markup.split('<ul class="')[1];
+      expect(updates.startsWith("grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]")).toBe(true);
+      expect(updates.split("</ul>")[0]).toContain('4.4.2 · <span class="whitespace-nowrap">2024-11-27</span>');
+      // The outcome and the fix: the date inside the sentence is its own span.
+      expect(markup).toContain('<span class="whitespace-nowrap">2025-03-05</span>');
+      const fix = words === patchPolicyEnglish ? "4.4.2, dated " : "4.4.2, datiert ";
+      expect(markup).toContain(`${fix}<span class="whitespace-nowrap">2024-11-27</span>`);
+      // No date anywhere on the page is left as text a line could break at its hyphens: each is a span,
+      // or a cell, that does not wrap.
+      const whole = /<(span|td) class="[^"]*whitespace-nowrap[^"]*">\d{4}-\d{2}-\d{2}<\/(span|td)>/g;
+      expect(markup.replace(whole, "").match(/\d{4}-\d{2}-\d{2}/g)).toBeNull();
+    }
   });
 
   it("names the release-date source from the file, and never 'released on'", () => {

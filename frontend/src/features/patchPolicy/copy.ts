@@ -161,6 +161,8 @@ export const patchPolicyEnglish = {
     "Published in the window and left out of every number above, each for one reason. They were not replayed, which is not the same as not affecting this Mac.",
   colReason: "Reason",
   colCount: "CVEs",
+  /** An excluded CVE's detail is LoonSec's own words, in English in every language: the German header says so,
+   *  so a German reader knows why the cell is English. A detail the walk wrote itself is marked in its cell. */
   colDetail: "Detail",
   reasons: {
     rejected: "Rejected by the CVE program",
@@ -341,7 +343,7 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     "Im Zeitfenster veröffentlicht und aus jeder Zahl oben herausgelassen, jeweils aus einem Grund. Sie wurden nicht nachgespielt; das ist nicht dasselbe wie: Sie betreffen diesen Mac nicht.",
   colReason: "Grund",
   colCount: "CVEs",
-  colDetail: "Detail",
+  colDetail: "Detail (Wortlaut von LoonSec, englisch)",
   reasons: {
     rejected: "Vom CVE-Programm zurückgewiesen",
     no_configuration_for_pair: "NVD hat die betroffenen Versionen noch nicht aufgeführt",
