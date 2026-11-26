@@ -451,12 +451,23 @@ ignores it, which is the same clause every other field of this response lives un
 that reads the document to a link of the corpus's shape, all three keys or none:
 
 ```jsonc
-"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…" } }
+"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…",
+                                    "built_at": "2026-11-24T07:12:03Z" } }
 ```
 
+`built_at` is additive and optional: when LoonSec's publisher last finished a build, which it
+rewrites nightly whether or not the document changed. The copy reads *stale* once its own `as_of`
+is more than three days old, whatever `built_at` says: a publisher that keeps running over NVD
+data that has not advanced makes no new document, so a fresh `built_at` can sit over old data.
+The container keeps `built_at` with the attempt that found the copy and uses it only to say why
+a stale copy is old: the publisher running over NVD data that has not advanced, or the publisher
+stopped. Without it (an older LoonSec, or the file below) the sentence names only the copy's
+date ([`troubleshooting.md`](troubleshooting.md) §32 step 7).
+
 The document is LoonSec's patch-policy reference: one object for every app LoonSec
-references, built from NVD records, LoonSec's record of NVD changes, and public vendor release
-records. It is sent to exactly the tiers that receive the corpus, and the container treats it
+references, built from NVD records, LoonSec's record of NVD changes, and public release records
+(vendors' own feeds, and Homebrew's cask history where no vendor feed is read; the document names
+each). It is sent to exactly the tiers that receive the corpus, and the container treats it
 the way it treats the corpus: it follows only the entry for the algorithm this build reads,
 downloads only when `signature` (the document's own `doc_id`) differs from the copy it holds,
 checks it whole (the `doc_id` recomputed from the body, its kind, schema and algorithm, and

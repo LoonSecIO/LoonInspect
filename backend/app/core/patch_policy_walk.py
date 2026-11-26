@@ -5,10 +5,10 @@ track in it, one timeline of release dates (the dates LoonSec published, this in
 Jamf's public patch catalog, or this instance's Fleet history) and the window asked for, and
 returns the walk as data: a per-day series of open CVEs, every CVE's outcome under each stop,
 the totals, the installs, the exclusions, how the timeline joined the document, and an
-`input_id` that names the inputs so a caller can memoise the answer. The API that serves it
-(`/api/patch-policy/walk`) and the page that draws it are later slices; nothing calls this yet.
-Each `REFUSED_*` sentence says what failed, why and what to check; the API makes them reachable
-as 409 details, so its pull request lands each one's troubleshooting step (§22) with it.
+`input_id` that names the inputs so a caller can memoise the answer. `GET /api/patch-policy/walk`
+(`app.api.patch_policy`) serves it, over the timelines `app.core.patch_policy_timelines` reads;
+the page that draws it is a later slice. Each `REFUSED_*` sentence says what failed, why and
+what to check; the API answers them as 409 details, and docs/troubleshooting.md §33 walks each.
 
 **Pure.** No database, no network, no inventory, no wall clock: the window's last day comes
 from the dates the inputs carry. The same inputs give the same bytes, so `run_id` (the digest
@@ -19,8 +19,14 @@ indexes into the track's ordered `versions[]`, and the index is the version's ra
 module compares no version strings. It joins a timeline's version strings to `versions[].keys`
 by exact lowercased key and works in ranks from then on. The one judgement made here is rule 5
 (ruled 2026-10-02, run on the instance per R2b): a release at or above a CVE's fix on the
-fix's line, dated by this timeline before the fix and not of the fix's own train, does not
-clear the CVE. It reads the `line` and `train` strings the document gives for equality only.
+fix's line, dated by this timeline before the fix's day and not of the fix's own train (nor of
+the train of the version that dated the fix), does not clear the CVE. The fix's day is the day
+this timeline dates the fix, or, where it does not date it, the day of the lowest-ranked
+version at or above the fix on its line that it does date and that the CVE's affected runs do
+not cover (ruled 2026-11-25, "count the next dated version at or above the fix"); a line where
+it dates none has no fix to install, and the CVE is walked by its affected runs there. Every
+CVE row says which version dated each fix (`fix_dated_by`). It reads the `line` and `train`
+strings the document gives for equality only.
 
 **Every counting rule is in `DEFINITIONS`**, which rides in every output, so a number can be
 read against the rule that made it. `compat_v1` reproduces the v1 replay's rules (CVE clock =
@@ -33,7 +39,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -86,9 +92,11 @@ FIX_INSTALLED_FIRST, OUTSIDE_RANGE = "fix_installed_first", "outside_affected_ra
 BECAME_DETECTABLE, ENTERED_RANGE, UPDATE_INSTALLED = "became_detectable", "entered_range", "update_installed"
 
 BRANCH_AMBIGUITY = "branch_ambiguity"
-FIX_NOT_IN_TIMELINE = "fixed_version_not_in_timeline"
 # The document's own order (`exclusion_reasons[]`) wins when it carries one; this is the plan's
-# order for a document that does not. One reason per CVE, the first that applies.
+# order for a document that does not. One reason per CVE, the first that applies. The walk adds
+# only `branch_ambiguity`: since 2026-11-25 a fix the timeline does not date is dated by the next
+# version at or above it (`fix_dated_by`) rather than excluded, so `fixed_version_not_in_timeline`
+# is no longer the walk's word. A document that still lists it keeps it as its own, counted 0.
 EXCLUSION_REASONS = (
     "rejected",
     "no_configuration_for_pair",
@@ -99,8 +107,15 @@ EXCLUSION_REASONS = (
     "fixed_version_not_in_catalog",
     BRANCH_AMBIGUITY,
     "other_edition_only",
-    FIX_NOT_IN_TIMELINE,
 )
+
+# How a fix's day was found (`fix_dated_by[].how`, `counts.fix_dating`), ruled 2026-11-25: the
+# timeline dates the fix itself; it dates the lowest-ranked version at or above the fix on the
+# fix's line, outside the CVE's affected runs, instead; or it dates nothing at or above it there
+# (or the document names no fix version on the line), so the line has no fix to install and the
+# CVE is walked by its runs.
+FIX_DATED, NEXT_DATED, FIX_UNDATED = "fix", "next_dated", "undated"
+FIX_DATING = (FIX_DATED, NEXT_DATED, FIX_UNDATED)
 
 # Why the window starts after, or ends before, the day asked for. Each binding term is named.
 CLOCK_COVERAGE = "clock_coverage"
@@ -165,9 +180,33 @@ DEFINITIONS = {
     "newer release than the 60-day stop.",
     "affected": "A version is affected by a CVE when its rank is inside one of the CVE's "
     "affected runs, as LoonVD compiled them. Rule 5 (ruled 2026-10-02): a version at or above "
-    "the CVE's fix on the fix's line, that this timeline dates before the fix, and that is not "
-    "a build of the fix's own train, is affected too, because nothing held says an earlier "
-    "build carries a later fix.",
+    "the CVE's fix on the fix's line, that this timeline dates before the fix's day, and that "
+    "is not a build of the fix's own train or of the train of the version that dated the fix, "
+    "is affected too, because nothing held says an earlier build carries a later fix. The "
+    "fix's day is its effective fix's (`fix_dating`); on a line with no effective fix, rule 5 "
+    "does not apply.",
+    "fix_dating": "Ruled 2026-11-25: count the next dated version at or above the fix. A fix "
+    "this timeline does not date excludes nothing. Its effective fix is the lowest-ranked "
+    "version at or above it, on the fix's own line, that this timeline dates and that none of "
+    "the CVE's affected runs covers (a version the CVE still affects cannot stand in for its "
+    "fix), and that version's day is the fix's day for every rule that reads it, rule 5 "
+    "included. A fix the timeline dates itself is its own effective fix, even where one of the "
+    "CVE's runs covers it, because LoonSec's data names it. Dating a fix is not clearing it: a "
+    "device clears the CVE when it installs a version outside the CVE's affected runs that rule "
+    "5 does not hold affected, so installing a fix inside another of the CVE's runs, or a "
+    "stand-in rule 5 holds affected under another fix, clears nothing. On a line that holds "
+    "several release trains, the stand-in can be a build of a later train shipped before the "
+    "fix; rule 5 spares it as the fix's stand-in. Where the timeline dates no version at or "
+    "above the fix on its line outside the CVE's runs, or LoonSec's data names no fix version on "
+    "the line, the line has no fix a device could install, and the CVE is walked there by its "
+    "affected runs alone. Each CVE row says which version dated each fix (`fix_dated_by`), one "
+    "entry for each of the document's `fixes[]` on a line the path visits, in the document's "
+    "order, so two fixes LoonSec's data points at one version, with different `named`, are two "
+    "entries: `fix` is LoonSec's fix version, `named` the version NVD names where LoonSec's fix "
+    "version is not that exact one, `dated_as` and `on` the version and day used, and `how`: "
+    "`fix` when the timeline dates the fix itself, `next_dated` when it dates a later version "
+    "instead, `undated` when it dates none, the way `clock` says which clock placed the row. "
+    "`counts.fix_dating` counts those entries over the rows `cves` lists.",
     "cve_clock": "A CVE is placed by the first day it was detectable (`detectable_at`, from "
     "LoonSec's record of NVD changes) where the document holds one, and by NVD's publication "
     "date where it does not. Every CVE row says which clock placed it (`clock`), and "
@@ -198,11 +237,11 @@ DEFINITIONS = {
     "an affected version (`entered_range`); CVEs open on the first day from before the window "
     "are `opening`. `resolved` counts those an install closed that day (`update_installed`). "
     "open[d] = open[d - 1] + new[d] - resolved[d].",
-    "exclusions": "A CVE the document excludes keeps the document's reason. The walk adds two, "
+    "exclusions": "A CVE the document excludes keeps the document's reason. The walk adds one, "
     "judged on the lines the path visits (the line of any version a device under any of the "
     "six stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
-    "ambiguous on such a line, and `fixed_version_not_in_timeline` when its fix on such a line "
-    "is a version this timeline does not date.",
+    "ambiguous on such a line. A fix this timeline does not date excludes nothing; it is dated "
+    "as `fix_dating` says.",
     "input_id": "The digest of the document's id, the app and track, the timeline's source, name, "
     "date, clock and the digest of its dated versions, the stops and the window asked for. The "
     "same inputs walk to the same `run_id`.",
@@ -296,6 +335,9 @@ class _Row:
     runs: tuple[tuple[int, int], ...]
     starts: tuple[int, ...]
     fixes: tuple[tuple[str, int | None], ...]
+    # NVD's fix version as the document wrote it, beside each fix, where the index does not point
+    # at that exact version (`fixes[].named`); None where the index is the named fix itself.
+    named: tuple[str | None, ...]
     ambiguous_lines: frozenset[str]
     exclusion: str | None
     detail: str | None
@@ -330,7 +372,8 @@ class _Join:
 
 
 def _invalid(where: str, what: str, name: str | None = None, label: str | None = None) -> WalkRefused:
-    named = " ".join(part for part in (name, label) if part)
+    # A track's label names its app ("Firefox (release)"), so the label alone says which.
+    named = label or name
     about = f" for {named}" if named else ""
     return WalkRefused(
         REFUSED_DOCUMENT,
@@ -411,6 +454,20 @@ def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any],
     return row, chosen
 
 
+def track_of(document: Any, app: str, track: str | None = None) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """The app's row and one of its tracks, by id, or its default track when `track` is None;
+    refused in the walk's own words (`app_unknown`, `track_unknown`) when there is none."""
+    if track is None and isinstance(document, Mapping) and isinstance(document.get("apps"), list):
+        row = next((a for a in document["apps"] if isinstance(a, Mapping) and a.get("app") == app), None)
+        tracks = row.get("tracks") if isinstance(row, Mapping) else None
+        if isinstance(tracks, list):
+            listed = [t for t in tracks if isinstance(t, Mapping) and isinstance(t.get("track"), str)]
+            chosen = next((t for t in listed if t.get("default") is True), listed[0] if listed else None)
+            if chosen is not None:
+                track = chosen["track"]
+    return _find_track(document, app, track or "")
+
+
 def _versions(track: Mapping[str, Any], name: str, label: str) -> list[_Version]:
     raw = track.get("versions")
     if not isinstance(raw, list) or not raw:
@@ -454,14 +511,16 @@ def _runs(value: Any, count: int, where: str, name: str, label: str) -> tuple[tu
 
 
 def _rows(
-    track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str
+    track: Mapping[str, Any], versions: list[_Version], reasons: Sequence[str], name: str, label: str, compat_v1: bool = False
 ) -> tuple[list[_Row], int]:
     """The track's CVE rows, walked and excluded, and its count of CVEs not yet detectable.
 
     A CVE is in exactly one of `cves[]`, `exclusions.cves` and `not_detectable.cves`. One the
     document lists both as not detectable and as a row would be walked by its publication date
     while the document also counts it among the CVEs never counted (plan 4.1), so the overlap is
-    refused."""
+    refused. In conformance mode a row's `v1_exclusion` is its reason, so it must be one the
+    document lists, the same as `exclusions.cves[].reason`: otherwise `by_reason` could not count
+    it and the walk would blame itself (`invariant`) for the data's word."""
     count = len(versions)
     rows: list[_Row] = []
     seen: set[str] = set()
@@ -483,6 +542,7 @@ def _rows(
         published, detectable = clocked(entry, where)
         runs: tuple[tuple[int, int], ...] = ()
         fixes: list[tuple[str, int | None]] = []
+        named: list[str | None] = []
         ambiguous: frozenset[str] = frozenset()
         if exclusion is None:
             runs = _runs(entry.get("affected"), count, f"{where}.affected", name, label)
@@ -494,13 +554,21 @@ def _rows(
                 )
                 if not isinstance(line, str) or bad_index:
                     raise _invalid(f"{where}.fixes[{at}]", "not a line and an index into the version list", name, label)
+                spelled = fix.get("named")
+                if "named" in fix and (not isinstance(spelled, str) or not spelled):
+                    raise _invalid(
+                        f"{where}.fixes[{at}].named", f"{spelled!r} is not NVD's fix version written as text", name, label
+                    )
                 fixes.append((line, index))
+                named.append(spelled)
             lines = entry.get("ambiguous_lines") or []
             if not isinstance(lines, list) or not all(isinstance(line, str) for line in lines):
                 raise _invalid(f"{where}.ambiguous_lines", "not a list of lines", name, label)
             ambiguous = frozenset(lines)
         clock, clock_day = (CLOCK_DETECTABLE, detectable) if detectable else (CLOCK_PUBLISHED, published)
         v1 = entry.get("v1_exclusion")
+        if compat_v1 and exclusion is None and v1 is not None and v1 not in reasons:
+            raise _invalid(f"{where}.v1_exclusion", f"{v1!r} is not a reason this build knows", name, label)
         rows.append(
             _Row(
                 cve_id=cve_id,
@@ -512,6 +580,7 @@ def _rows(
                 runs=runs,
                 starts=tuple(run[0] for run in runs),
                 fixes=tuple(fixes),
+                named=tuple(named),
                 ambiguous_lines=ambiguous,
                 exclusion=exclusion,
                 detail=entry.get("detail") if exclusion else None,
@@ -652,6 +721,11 @@ class _Prepared:
     available: list[tuple[int, dt.date]]
     above_table: list[int]
     compat_v1: bool
+    # The ranks this timeline dates, per line, ascending: where a fix it does not date finds the
+    # next dated version at or above it outside the CVE's runs (`_effective_fix`), memoised per
+    # (CVE, line, fix).
+    dated_on_line: dict[str, list[int]]
+    effective_fixes: dict[tuple[str, str, int], tuple[int | None, str]]
 
 
 def _source_words(timeline: _Timeline) -> str:
@@ -684,8 +758,8 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
     versions = _versions(track_row, name, label)
     listed = document.get("exclusion_reasons")
     reasons = tuple(listed) if listed else EXCLUSION_REASONS
-    reasons = reasons + tuple(reason for reason in (BRANCH_AMBIGUITY, FIX_NOT_IN_TIMELINE) if reason not in reasons)
-    rows, not_detectable = _rows(track_row, versions, reasons, name, label)
+    reasons = reasons + ((BRANCH_AMBIGUITY,) if BRANCH_AMBIGUITY not in reasons else ())
+    rows, not_detectable = _rows(track_row, versions, reasons, name, label, compat_v1)
     path = _mapping_or_absent(track_row, "path", "path", name, label)
     _mapping_or_absent(track_row, "check", "check", name, label)
     read = _timeline(timeline)
@@ -710,8 +784,7 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
         raise WalkRefused(
             REFUSED_NO_MATCH,
             f"None of the {listed_count} versions in the timeline from {read.name} is a version LoonSec's patch-policy "
-            f"data lists for {name} {label}, so there is nothing to install and nothing was walked.{found} "
-            + _next_check(read, name),
+            f"data lists for {label}, so there is nothing to install and nothing was walked.{found} " + _next_check(read, name),
             {"unmatched": join.unmatched, "other_track": join.other_track},
         )
 
@@ -761,9 +834,48 @@ def _prepare(document: Any, app: str, track: str, timeline: Any, compat_v1: bool
         available=[],
         above_table=[],
         compat_v1=compat_v1,
+        dated_on_line=_dated_on_line(versions, join),
+        effective_fixes={},
     )
     _availability(prepared, runs)
     return prepared
+
+
+def _dated_on_line(versions: list[_Version], join: _Join) -> dict[str, list[int]]:
+    dated: dict[str, list[int]] = {}
+    for index in sorted(join.dates):
+        dated.setdefault(versions[index].line, []).append(index)
+    return dated
+
+
+def _effective_fix(prepared: _Prepared, row: _Row, line: str, fix: int | None) -> tuple[int | None, str]:
+    """The version whose day is this fix's day under this timeline, and how it was found (ruled
+    2026-11-25, "count the next dated version at or above the fix"): the fix itself when the
+    timeline dates it (`fix`), even where one of the row's runs covers it, since the document
+    names it; else the lowest-ranked version at or above it, on the fix's line, that the
+    timeline dates and that none of the row's affected runs covers (`next_dated`), because a
+    version the CVE still affects cannot stand in for its fix; else none (`undated`), and the
+    line has no fix a device could install. A fix the document names no version for (a null
+    index) is `undated`. Only run-covered versions are passed over: one rule 5 holds affected
+    can still stand in, as the fix itself can."""
+    if fix is None:
+        return None, FIX_UNDATED
+    if fix in prepared.join.dates:
+        return fix, FIX_DATED
+    key = (row.cve_id, line, fix)
+    if key not in prepared.effective_fixes:
+        dated = prepared.dated_on_line.get(line, [])
+        at = bisect_left(dated, fix)
+        found: int | None = None
+        while at < len(dated):
+            run = bisect_right(row.starts, dated[at]) - 1
+            if run < 0 or row.runs[run][1] < dated[at]:
+                found = dated[at]
+                break
+            # Inside a run: the next candidate is the first dated version above that run's end.
+            at = bisect_right(dated, row.runs[run][1], at)
+        prepared.effective_fixes[key] = (found, NEXT_DATED) if found is not None else (None, FIX_UNDATED)
+    return prepared.effective_fixes[key]
 
 
 def _availability(prepared: _Prepared, runs: list[tuple[int, int, dt.date]]) -> None:
@@ -984,7 +1096,7 @@ def _reach(prepared: _Prepared, since: dt.date, until: dt.date) -> dict[str, Any
             REFUSED_UNMATCHED,
             f"{len(unmatched)} of the {total} versions the timeline from {timeline.name} dates from {first} to {until}, "
             f"the days a device in this view could install them, match no version LoonSec's patch-policy data lists for "
-            f"{name} {label} ({share:.1%}). Above {UNMATCHED_LIMIT:.0%} the walk is refused, because a version that "
+            f"{label} ({share:.1%}). Above {UNMATCHED_LIMIT:.0%} the walk is refused, because a version that "
             "matches nothing is never installed and the walk would keep the device on the version before it. The "
             "unmatched versions are listed beside this sentence. " + _next_check(timeline, name),
             {"in_reach": reach},
@@ -1046,6 +1158,7 @@ class _Judge:
     """Whether a rank is affected by a CVE under this timeline's dates, memoised per (CVE, rank)."""
 
     def __init__(self, prepared: _Prepared) -> None:
+        self.prepared = prepared
         self.versions = prepared.versions
         self.dates = prepared.join.dates
         self.memo: dict[tuple[str, int], bool] = {}
@@ -1057,13 +1170,20 @@ class _Judge:
         return self.memo[key]
 
     def _predates_its_fix(self, row: _Row, index: int) -> bool:
+        """Rule 5, against each fix's effective fix: the fix's day is the day of the version that
+        dated it (`_effective_fix`), and a build of the fix's train, or of that version's, is
+        exempt. A line with no effective fix has no day to predate."""
         version = self.versions[index]
         own = self.dates.get(index)
+        if own is None:
+            return False
         for line, fix in row.fixes:
-            if fix is None or line != version.line or index < fix or version.train == self.versions[fix].train:
+            if fix is None or line != version.line or index < fix:
                 continue
-            fixed_on = self.dates.get(fix)
-            if own is not None and fixed_on is not None and own < fixed_on:
+            dated_as, _ = _effective_fix(self.prepared, row, line, fix)
+            if dated_as is None or version.train in (self.versions[fix].train, self.versions[dated_as].train):
+                continue
+            if own < self.dates[dated_as]:
                 return True
         return False
 
@@ -1093,19 +1213,34 @@ def _exclusion(prepared: _Prepared, row: _Row, visited: set[str]) -> tuple[str |
         return row.exclusion, row.detail
     if prepared.compat_v1 and row.has_v1_exclusion:
         return row.v1_exclusion, None
-    found: list[tuple[str, str]] = []
     ambiguous = sorted(row.ambiguous_lines & visited)
     if ambiguous:
-        found.append((BRANCH_AMBIGUITY, f"the range is ambiguous on {', '.join(map(repr, ambiguous))}, which the path visits"))
-    undated = [(line, fix) for line, fix in row.fixes if fix is not None and line in visited and fix not in prepared.join.dates]
-    if undated:
-        line, fix = undated[0]
-        found.append(
-            (FIX_NOT_IN_TIMELINE, f"the fix on {line!r} is {prepared.versions[fix].v}, which this timeline does not date")
+        return BRANCH_AMBIGUITY, f"the range is ambiguous on {', '.join(map(repr, ambiguous))}, which the path visits"
+    return None, None
+
+
+def _fix_dated_by(prepared: _Prepared, row: _Row, visited: set[str]) -> list[dict[str, Any]]:
+    """Which version dated each of the row's fixes on a line the path visits, and how (ruled
+    2026-11-25), the way `clock` says which clock placed the row. One entry per entry of the
+    document's `fixes[]`, in its order: two fixes the document points at one version, with
+    different `named` (NVD's own versions), are two entries, and `counts.fix_dating` counts both."""
+    versions, dates = prepared.versions, prepared.join.dates
+    entries = []
+    for (line, fix), named in zip(row.fixes, row.named, strict=True):
+        if line not in visited:
+            continue
+        dated_as, how = _effective_fix(prepared, row, line, fix)
+        entries.append(
+            {
+                "line": line,
+                "fix": versions[fix].v if fix is not None else None,
+                "named": named,
+                "dated_as": versions[dated_as].v if dated_as is not None else None,
+                "on": _iso(dates[dated_as]) if dated_as is not None else None,
+                "how": how,
+            }
         )
-    if not found:
-        return None, None
-    return min(found, key=lambda pair: prepared.reasons.index(pair[0]))
+    return entries
 
 
 # --- The walk ---------------------------------------------------------------------------------
@@ -1168,6 +1303,11 @@ def walk(
         policies[stop] = _run_stop(prepared, stop, steps, replayed, before, outcomes, since, until_day, judge)
 
     listed = replayed + [row for row in before if any(outcomes[row.cve_id][s]["class"] != PRE_WINDOW_CLOSED for s in stops)]
+    rows_out = [
+        _cve_row(row, outcomes[row.cve_id], compat_v1, _fix_dated_by(prepared, row, visited))
+        for row in sorted(listed, key=lambda r: r.cve_id)
+    ]
+    dating = Counter(entry["how"] for row in rows_out for entry in row["fix_dated_by"])
     by_reason = Counter(exclusion_of[row.cve_id] for row in excluded)
     clock_name = CLOCK_PUBLISHED if compat_v1 else None
     result: dict[str, Any] = {
@@ -1206,6 +1346,7 @@ def walk(
             "uncertain_over_1d": sum(1 for row in replayed if _uncertain(row, compat_v1)),
             "replayed_by_clock": _by_clock(replayed, clock_name),
             "placed_by_clock": _by_clock([row for key in ("before", "in", "after") for row in placed[key]], clock_name),
+            "fix_dating": {how: dating[how] for how in FIX_DATING},
         },
         "exclusions": {
             "by_reason": {reason: by_reason[reason] for reason in prepared.reasons},
@@ -1223,7 +1364,7 @@ def walk(
             "before_window_by_reason": dict(sorted(Counter(exclusion_of[row.cve_id] for row in before_excluded).items())),
         },
         "policies": policies,
-        "cves": [_cve_row(row, outcomes[row.cve_id], compat_v1) for row in sorted(listed, key=lambda r: r.cve_id)],
+        "cves": rows_out,
         "definitions": {**DEFINITIONS, **(COMPAT_V1_DEFINITIONS if compat_v1 else {})},
         "document_definitions": document.get("definitions") or {},
         "clocks": {
@@ -1247,7 +1388,7 @@ def walk(
     if failures:
         raise WalkRefused(
             REFUSED_INVARIANT,
-            f"The walk of {prepared.name} {prepared.label} was refused because its own totals disagree ({failures[0]}). "
+            f"The walk of {prepared.label} was refused because its own totals disagree ({failures[0]}). "
             "This is a defect in LoonInspect, not in this instance's data: report the sentence with the Input line "
             "(Settings › Support).",
             {"failures": failures},
@@ -1387,7 +1528,7 @@ def _run_stop(
     if any(day not in starts for day in resolution_days):
         raise WalkRefused(
             REFUSED_INVARIANT,
-            f"The walk of {prepared.name} {prepared.label} was refused because a CVE was closed on a day nothing was "
+            f"The walk of {prepared.label} was refused because a CVE was closed on a day nothing was "
             "installed. This is a defect in LoonInspect: report the sentence (Settings › Support).",
         )
     installs = [{"date": day.isoformat(), "version": name(index)} for day, index in steps[1:]]
@@ -1419,7 +1560,9 @@ def _run_stop(
     }
 
 
-def _cve_row(row: _Row, outcomes: dict[str, dict[str, Any]], compat_v1: bool) -> dict[str, Any]:
+def _cve_row(
+    row: _Row, outcomes: dict[str, dict[str, Any]], compat_v1: bool, fix_dated_by: list[dict[str, Any]]
+) -> dict[str, Any]:
     raw = row.raw
     clock_day = row.published if compat_v1 else row.clock_day
     return {
@@ -1437,6 +1580,7 @@ def _cve_row(row: _Row, outcomes: dict[str, dict[str, Any]], compat_v1: bool) ->
         "edition_signal": raw.get("edition_signal"),
         "configurations_changed_after_detectable": raw.get("configurations_changed_after_detectable"),
         "affected_text": raw.get("affected_text"),
+        "fix_dated_by": fix_dated_by,
         "outcomes": outcomes,
     }
 
@@ -1534,7 +1678,7 @@ def _parity(prepared: _Prepared, result: dict[str, Any], years: int, until: Any,
             shown = stated.get(first) if isinstance(stated, Mapping) else stated
             raise WalkRefused(
                 REFUSED_PARITY,
-                f"The walk of LoonSec's published dates for {prepared.name} {prepared.label} over {years} years does not match "
+                f"The walk of LoonSec's published dates for {prepared.label} over {years} years does not match "
                 f"the totals LoonSec published with the data ({stop}: {first} is {computed.get(first)!r} here and "
                 f"{shown!r} in the data), so no view of {prepared.name} is shown. Report the sentence with the data's date "
                 "(Settings › Support).",
@@ -1573,6 +1717,11 @@ def invariant_failures(result: Mapping[str, Any]) -> list[str]:
     rows = result["cves"]
     in_window = [row for row in rows if row["class"] == IN_WINDOW]
     expect(len(in_window) == counts["replayed"], f"cves lists {len(in_window)} in-window rows, not replayed")
+    dating = Counter(entry["how"] for row in rows for entry in row["fix_dated_by"])
+    expect(
+        {how: dating[how] for how in FIX_DATING} == counts["fix_dating"],
+        "counts.fix_dating does not tally the rows' fix_dated_by",
+    )
     for stop, policy in result["policies"].items():
         prefix = f"policies.{stop}"
         outcomes = [row["outcomes"][stop] for row in rows]
@@ -1627,12 +1776,14 @@ def public_timeline(document: Any, *, app: str, track: str) -> dict[str, Any]:
     app_row, track_row = _find_track(document, app, track)
     name = str(app_row.get("name") or app)
     source_id = track_row.get("timeline")
+    label = str(track_row.get("label") or track)
     if not source_id:
+        # Whether another source may then be shown is the caller's to say: an instance shows one
+        # only once a walk of LoonSec's own dates for another window of the app matched (plan 4.7).
         raise WalkRefused(
             REFUSED_NO_PUBLIC_TIMELINE,
-            f"LoonSec holds no public release dates for {name} yet. Jamf or Fleet may: they are read from this instance.",
+            f"LoonSec holds no public release dates for {label} yet, so it has none of its own to walk.",
         )
-    label = str(track_row.get("label") or track)
     source = ((document.get("sources") or {}).get("timelines") or {}).get(source_id)
     if not isinstance(source, Mapping):
         raise _invalid(f"sources.timelines.{source_id}", "absent", name, label)

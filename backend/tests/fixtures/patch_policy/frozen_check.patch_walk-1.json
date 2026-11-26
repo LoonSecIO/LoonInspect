@@ -1,0 +1,3682 @@
+{
+ "kind": "patch_policy_reference",
+ "schema": 1,
+ "doc_id": "432caaf03b4b734d366728ee824a5056f61d10a42ba2c0060575678b0b51f521",
+ "as_of": "2026-11-23T20:00:00Z",
+ "algorithm": "patch_walk/1",
+ "definitions_version": "2",
+ "engine": {
+  "parser_version": "fixture",
+  "version_compare": "v0",
+  "rules_digest": "frozen-check fixture"
+ },
+ "definitions": {
+  "fixture": "A hand-made document for LoonInspect's frozen-check test: two invented apps, fictional CVE ids (CVE-2099-7*), and a check each track's walk wrote once. None of its numbers describes a real app."
+ },
+ "clocks": {
+  "detectable_at": "The detectable_at definition's day, when it is known (`clock: detectable_at`).",
+  "published": "NVD `published`, truncated to the UTC date, when detectable_at is not known (`clock: published`)."
+ },
+ "sources": {
+  "nvd": {
+   "as_of": "2026-11-23T20:00:00Z"
+  },
+  "detectable": {
+   "name": "LoonSec's record of NVD changes",
+   "coverage_since": "2024-05-21",
+   "gaps": []
+  },
+  "timelines": {
+   "example-browser-releases": {
+    "name": "Example Browser release notes",
+    "url": "https://releases.example.com/browser/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   },
+   "example-analyzer-tags": {
+    "name": "Example Analyzer tags",
+    "url": "https://releases.example.com/analyzer/tags",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor tagged each version."
+   },
+   "example-editor-releases": {
+    "name": "Example Editor release notes",
+    "url": "https://releases.example.com/editor/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   }
+  }
+ },
+ "exclusion_reasons": [
+  "rejected",
+  "no_configuration_for_pair",
+  "excluded_platform",
+  "configuration_declined",
+  "only_prerelease_criteria",
+  "no_fixed_version_determinable",
+  "fixed_version_not_in_catalog",
+  "branch_ambiguity",
+  "other_edition_only"
+ ],
+ "apps": [
+  {
+   "app": "browser",
+   "name": "Example Browser",
+   "bundle_ids": [
+    "com.example.browser"
+   ],
+   "other_channels": [
+    {
+     "channel": "esr",
+     "label": "Example Browser ESR",
+     "source": "https://releases.example.com/browser/esr.json",
+     "versions": [
+      "115.10.0",
+      "115.11.0",
+      "128.2.0",
+      "128.3.0"
+     ]
+    }
+   ],
+   "tracks": [
+    {
+     "track": "browser/release",
+     "label": "Example Browser",
+     "default": true,
+     "channel": "release",
+     "edition": "release",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-browser-releases",
+     "versions": [
+      {
+       "v": "100.0",
+       "keys": [
+        "100.0"
+       ],
+       "line": "",
+       "train": "100",
+       "date": "2023-05-09"
+      },
+      {
+       "v": "100.0.1",
+       "keys": [
+        "100.0.1"
+       ],
+       "line": "",
+       "train": "100",
+       "date": "2023-05-23"
+      },
+      {
+       "v": "101.0",
+       "keys": [
+        "101.0"
+       ],
+       "line": "",
+       "train": "101",
+       "date": "2023-06-20"
+      },
+      {
+       "v": "101.0.1",
+       "keys": [
+        "101.0.1"
+       ],
+       "line": "",
+       "train": "101",
+       "date": "2023-07-04"
+      },
+      {
+       "v": "102.0",
+       "keys": [
+        "102.0"
+       ],
+       "line": "",
+       "train": "102",
+       "date": "2023-08-01"
+      },
+      {
+       "v": "102.0.1",
+       "keys": [
+        "102.0.1"
+       ],
+       "line": "",
+       "train": "102",
+       "date": "2023-08-15"
+      },
+      {
+       "v": "103.0",
+       "keys": [
+        "103.0"
+       ],
+       "line": "",
+       "train": "103",
+       "date": "2023-09-12"
+      },
+      {
+       "v": "103.0.1",
+       "keys": [
+        "103.0.1"
+       ],
+       "line": "",
+       "train": "103",
+       "date": "2023-09-26"
+      },
+      {
+       "v": "104.0",
+       "keys": [
+        "104.0"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-10-24"
+      },
+      {
+       "v": "104.0.1",
+       "keys": [
+        "104.0.1"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-11-07"
+      },
+      {
+       "v": "104.0.2",
+       "keys": [
+        "104.0.2"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-11-21"
+      },
+      {
+       "v": "105.0",
+       "keys": [
+        "105.0"
+       ],
+       "line": "",
+       "train": "105",
+       "date": "2023-12-05"
+      },
+      {
+       "v": "105.0.1",
+       "keys": [
+        "105.0.1"
+       ],
+       "line": "",
+       "train": "105",
+       "date": "2023-12-19"
+      },
+      {
+       "v": "106.0",
+       "keys": [
+        "106.0"
+       ],
+       "line": "",
+       "train": "106",
+       "date": "2024-01-16"
+      },
+      {
+       "v": "106.0.1",
+       "keys": [
+        "106.0.1"
+       ],
+       "line": "",
+       "train": "106",
+       "date": "2024-01-30"
+      },
+      {
+       "v": "107.0",
+       "keys": [
+        "107.0"
+       ],
+       "line": "",
+       "train": "107",
+       "date": "2024-02-27"
+      },
+      {
+       "v": "107.0.1",
+       "keys": [
+        "107.0.1"
+       ],
+       "line": "",
+       "train": "107",
+       "date": "2024-03-12"
+      },
+      {
+       "v": "108.0",
+       "keys": [
+        "108.0"
+       ],
+       "line": "",
+       "train": "108",
+       "date": "2024-04-09"
+      },
+      {
+       "v": "108.0.1",
+       "keys": [
+        "108.0.1"
+       ],
+       "line": "",
+       "train": "108",
+       "date": "2024-04-23"
+      },
+      {
+       "v": "109.0",
+       "keys": [
+        "109.0"
+       ],
+       "line": "",
+       "train": "109",
+       "date": "2024-05-21"
+      },
+      {
+       "v": "109.0.1",
+       "keys": [
+        "109.0.1"
+       ],
+       "line": "",
+       "train": "109",
+       "date": "2024-06-04"
+      },
+      {
+       "v": "110.0",
+       "keys": [
+        "110.0"
+       ],
+       "line": "",
+       "train": "110",
+       "date": "2024-07-02"
+      },
+      {
+       "v": "110.0.1",
+       "keys": [
+        "110.0.1"
+       ],
+       "line": "",
+       "train": "110",
+       "date": "2024-07-16"
+      },
+      {
+       "v": "111.0",
+       "keys": [
+        "111.0"
+       ],
+       "line": "",
+       "train": "111",
+       "date": "2024-08-13"
+      },
+      {
+       "v": "111.0.1",
+       "keys": [
+        "111.0.1"
+       ],
+       "line": "",
+       "train": "111",
+       "date": "2024-08-27"
+      },
+      {
+       "v": "112.0",
+       "keys": [
+        "112.0"
+       ],
+       "line": "",
+       "train": "112",
+       "date": "2024-09-24"
+      },
+      {
+       "v": "112.0.1",
+       "keys": [
+        "112.0.1"
+       ],
+       "line": "",
+       "train": "112",
+       "date": "2024-10-08"
+      },
+      {
+       "v": "113.0",
+       "keys": [
+        "113.0"
+       ],
+       "line": "",
+       "train": "113",
+       "date": "2024-11-05"
+      },
+      {
+       "v": "113.0.1",
+       "keys": [
+        "113.0.1"
+       ],
+       "line": "",
+       "train": "113",
+       "date": "2024-11-19"
+      },
+      {
+       "v": "114.0",
+       "keys": [
+        "114.0"
+       ],
+       "line": "",
+       "train": "114",
+       "date": "2024-12-17"
+      },
+      {
+       "v": "114.0.1",
+       "keys": [
+        "114.0.1"
+       ],
+       "line": "",
+       "train": "114",
+       "date": "2024-12-31"
+      },
+      {
+       "v": "115.0",
+       "keys": [
+        "115.0"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-01-28"
+      },
+      {
+       "v": "115.0.1",
+       "keys": [
+        "115.0.1"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-02-11"
+      },
+      {
+       "v": "115.0.2",
+       "keys": [
+        "115.0.2"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-03-13"
+      },
+      {
+       "v": "116.0",
+       "keys": [
+        "116.0"
+       ],
+       "line": "",
+       "train": "116",
+       "date": "2025-03-11"
+      },
+      {
+       "v": "116.0.1",
+       "keys": [
+        "116.0.1"
+       ],
+       "line": "",
+       "train": "116",
+       "date": "2025-03-25"
+      },
+      {
+       "v": "117.0",
+       "keys": [
+        "117.0"
+       ],
+       "line": "",
+       "train": "117",
+       "date": "2025-04-22"
+      },
+      {
+       "v": "117.0.1",
+       "keys": [
+        "117.0.1"
+       ],
+       "line": "",
+       "train": "117",
+       "date": "2025-05-06"
+      },
+      {
+       "v": "118.0",
+       "keys": [
+        "118.0"
+       ],
+       "line": "",
+       "train": "118",
+       "date": "2025-06-03"
+      },
+      {
+       "v": "118.0.1",
+       "keys": [
+        "118.0.1"
+       ],
+       "line": "",
+       "train": "118",
+       "date": "2025-06-17"
+      },
+      {
+       "v": "119.0",
+       "keys": [
+        "119.0"
+       ],
+       "line": "",
+       "train": "119",
+       "date": "2025-07-15"
+      },
+      {
+       "v": "119.0.1",
+       "keys": [
+        "119.0.1"
+       ],
+       "line": "",
+       "train": "119",
+       "date": "2025-07-29"
+      },
+      {
+       "v": "120.0",
+       "keys": [
+        "120.0"
+       ],
+       "line": "",
+       "train": "120",
+       "date": "2025-08-26"
+      },
+      {
+       "v": "120.0.1",
+       "keys": [
+        "120.0.1"
+       ],
+       "line": "",
+       "train": "120",
+       "date": "2025-09-09"
+      },
+      {
+       "v": "121.0",
+       "keys": [
+        "121.0"
+       ],
+       "line": "",
+       "train": "121",
+       "date": "2025-10-07"
+      },
+      {
+       "v": "121.0.1",
+       "keys": [
+        "121.0.1"
+       ],
+       "line": "",
+       "train": "121",
+       "date": "2025-10-21"
+      },
+      {
+       "v": "122.0",
+       "keys": [
+        "122.0"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-11-18"
+      },
+      {
+       "v": "122.0.1",
+       "keys": [
+        "122.0.1"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-02"
+      },
+      {
+       "v": "122.0.2",
+       "keys": [
+        "122.0.2"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-16"
+      },
+      {
+       "v": "122.0.2.1",
+       "keys": [
+        "122.0.2.1"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-15"
+      },
+      {
+       "v": "123.0",
+       "keys": [
+        "123.0"
+       ],
+       "line": "",
+       "train": "123",
+       "date": "2025-12-30"
+      },
+      {
+       "v": "123.0.1",
+       "keys": [
+        "123.0.1"
+       ],
+       "line": "",
+       "train": "123",
+       "date": "2026-01-13"
+      },
+      {
+       "v": "124.0",
+       "keys": [
+        "124.0"
+       ],
+       "line": "",
+       "train": "124",
+       "date": "2026-02-10"
+      },
+      {
+       "v": "124.0.1",
+       "keys": [
+        "124.0.1"
+       ],
+       "line": "",
+       "train": "124",
+       "date": "2026-02-24"
+      },
+      {
+       "v": "125.0",
+       "keys": [
+        "125.0"
+       ],
+       "line": "",
+       "train": "125",
+       "date": "2026-03-24"
+      },
+      {
+       "v": "125.0.1",
+       "keys": [
+        "125.0.1"
+       ],
+       "line": "",
+       "train": "125",
+       "date": "2026-04-07"
+      },
+      {
+       "v": "126.0",
+       "keys": [
+        "126.0"
+       ],
+       "line": "",
+       "train": "126",
+       "date": "2026-05-05"
+      },
+      {
+       "v": "126.0.1",
+       "keys": [
+        "126.0.1"
+       ],
+       "line": "",
+       "train": "126",
+       "date": "2026-05-19"
+      },
+      {
+       "v": "126.0.1.1",
+       "keys": [
+        "126.0.1.1"
+       ],
+       "line": "",
+       "train": "126",
+       "date": null
+      },
+      {
+       "v": "127.0",
+       "keys": [
+        "127.0"
+       ],
+       "line": "",
+       "train": "127",
+       "date": "2026-06-16"
+      },
+      {
+       "v": "127.0.1",
+       "keys": [
+        "127.0.1"
+       ],
+       "line": "",
+       "train": "127",
+       "date": "2026-07-31"
+      },
+      {
+       "v": "128.0",
+       "keys": [
+        "128.0"
+       ],
+       "line": "",
+       "train": "128",
+       "date": "2026-07-28"
+      },
+      {
+       "v": "128.0.1",
+       "keys": [
+        "128.0.1"
+       ],
+       "line": "",
+       "train": "128",
+       "date": "2026-08-11"
+      },
+      {
+       "v": "129.0",
+       "keys": [
+        "129.0"
+       ],
+       "line": "",
+       "train": "129",
+       "date": "2026-09-08"
+      },
+      {
+       "v": "129.0.1",
+       "keys": [
+        "129.0.1"
+       ],
+       "line": "",
+       "train": "129",
+       "date": "2026-09-22"
+      },
+      {
+       "v": "130.0",
+       "keys": [
+        "130.0"
+       ],
+       "line": "",
+       "train": "130",
+       "date": "2026-10-20"
+      },
+      {
+       "v": "130.0.1",
+       "keys": [
+        "130.0.1"
+       ],
+       "line": "",
+       "train": "130",
+       "date": "2026-11-03"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7101",
+       "published": "2024-04-12",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-04-13",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 108.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7102",
+       "published": "2025-03-05",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-06",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         32
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 33
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 115.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7103",
+       "published": "2025-06-13",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         0,
+         39
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 40,
+         "named": "118.0.4"
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 118.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7104",
+       "published": "2025-10-12",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-10-13",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         42,
+         45
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": null
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "120.0 to 121.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7105",
+       "published": "2026-01-01",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-01-08",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         21,
+         24
+        ],
+        [
+         46,
+         50
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 25
+        },
+        {
+         "line": "",
+         "index": 51
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "110.0 to 111.0.1, 122.0 to 123.0"
+      },
+      {
+       "cve_id": "CVE-2099-7106",
+       "published": "2026-05-25",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-05-26",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         57
+        ],
+        [
+         59,
+         59
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 58
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 126.0.1, 127.0"
+      },
+      {
+       "cve_id": "CVE-2099-7107",
+       "published": "2026-09-09",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-08",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         66
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": null
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 130.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7108",
+       "published": "2024-10-01",
+       "severity": "low",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         11,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "105.0 to 112.0"
+      },
+      {
+       "cve_id": "CVE-2099-7112",
+       "published": "2025-12-08",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-12-09",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         47
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 48
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 122.0.1"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 1,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 1
+      },
+      "cves": [
+       {
+        "cve_id": "CVE-2099-7109",
+        "reason": "other_edition_only",
+        "published": "2026-02-13",
+        "detectable_at": "2026-02-14",
+        "detail": "NVD's configuration names the ESR edition only."
+       },
+       {
+        "cve_id": "CVE-2099-7110",
+        "reason": "no_configuration_for_pair",
+        "published": "2026-06-24",
+        "detectable_at": null,
+        "detail": "NVD's record names no configuration for example:browser."
+       }
+      ]
+     },
+     "not_detectable": {
+      "count": 1,
+      "cves": [
+       "CVE-2099-7111"
+      ]
+     },
+     "check": {
+      "2y": {
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 221,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 34,
+        "initial_version": "113.0.1",
+        "final_version": "130.0.1"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 257,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "113.0",
+        "final_version": "130.0.1"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 299,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "113.0",
+        "final_version": "130.0.1"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 395,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "112.0.1",
+        "final_version": "130.0"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 556,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 14,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "112.0",
+        "final_version": "129.0.1"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 1731,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "113.0.1",
+        "final_version": "113.0.1"
+       }
+      },
+      "3y": {
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 228,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 43,
+        "initial_version": "109.0",
+        "final_version": "130.0.1"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 270,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 5,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0.1",
+        "final_version": "130.0.1"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 319,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 12,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0.1",
+        "final_version": "130.0.1"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 431,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 28,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 43,
+        "initial_version": "108.0.1",
+        "final_version": "130.0"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 622,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 58,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "107.0.1",
+        "final_version": "129.0.1"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 2,
+        "exposed": 6,
+        "exposure_days": 2514,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "109.0",
+        "final_version": "109.0"
+       }
+      }
+     },
+     "counts": {
+      "versions": 67,
+      "versions_dated": 66,
+      "candidates": 12,
+      "listed": 9,
+      "excluded": 2,
+      "not_detectable": 1,
+      "clock": {
+       "detectable_at": 7,
+       "published": 2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "analyzer",
+   "name": "Example Analyzer",
+   "bundle_ids": [
+    "com.example.analyzer"
+   ],
+   "tracks": [
+    {
+     "track": "analyzer/4.2",
+     "label": "Example Analyzer 4.2",
+     "default": true,
+     "channel": "stable",
+     "edition": "any",
+     "path": {
+      "kind": "hold",
+      "ceiling_line": "4.2"
+     },
+     "promotions": null,
+     "timeline": "example-analyzer-tags",
+     "versions": [
+      {
+       "v": "4.0.0",
+       "keys": [
+        "4.0.0"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-03-01"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-04-12"
+      },
+      {
+       "v": "4.0.2",
+       "keys": [
+        "4.0.2"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-06-07"
+      },
+      {
+       "v": "4.0.3",
+       "keys": [
+        "4.0.3"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-08-02"
+      },
+      {
+       "v": "4.0.4",
+       "keys": [
+        "4.0.4"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-10-04"
+      },
+      {
+       "v": "4.0.5",
+       "keys": [
+        "4.0.5"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-12-06"
+      },
+      {
+       "v": "4.0.6",
+       "keys": [
+        "4.0.6"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-02-07"
+      },
+      {
+       "v": "4.0.7",
+       "keys": [
+        "4.0.7"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-04-03"
+      },
+      {
+       "v": "4.0.8",
+       "keys": [
+        "4.0.8"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-06-05"
+      },
+      {
+       "v": "4.2.0",
+       "keys": [
+        "4.2.0"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-10-11"
+      },
+      {
+       "v": "4.2.1",
+       "keys": [
+        "4.2.1"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-12-13"
+      },
+      {
+       "v": "4.2.2",
+       "keys": [
+        "4.2.2"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-02-14"
+      },
+      {
+       "v": "4.2.3",
+       "keys": [
+        "4.2.3"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-04-10"
+      },
+      {
+       "v": "4.2.4",
+       "keys": [
+        "4.2.4"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-07-10"
+      },
+      {
+       "v": "4.2.5",
+       "keys": [
+        "4.2.5"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-10-09"
+      },
+      {
+       "v": "4.2.6",
+       "keys": [
+        "4.2.6"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.2.7",
+       "keys": [
+        "4.2.7"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-05-14"
+      },
+      {
+       "v": "4.2.8",
+       "keys": [
+        "4.2.8"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-09-10"
+      },
+      {
+       "v": "4.2.9",
+       "keys": [
+        "4.2.9"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.2.10",
+       "keys": [
+        "4.2.10"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-05-13"
+      },
+      {
+       "v": "4.4.0",
+       "keys": [
+        "4.4.0"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-08-28"
+      },
+      {
+       "v": "4.4.1",
+       "keys": [
+        "4.4.1"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-11-22"
+      },
+      {
+       "v": "4.4.2",
+       "keys": [
+        "4.4.2"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.4.3",
+       "keys": [
+        "4.4.3"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-04-09"
+      },
+      {
+       "v": "4.4.4",
+       "keys": [
+        "4.4.4"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-07-09"
+      },
+      {
+       "v": "4.4.5",
+       "keys": [
+        "4.4.5"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-10-08"
+      },
+      {
+       "v": "4.4.6",
+       "keys": [
+        "4.4.6"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.4.7",
+       "keys": [
+        "4.4.7"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-04-08"
+      },
+      {
+       "v": "4.4.8",
+       "keys": [
+        "4.4.8"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-07-08"
+      },
+      {
+       "v": "4.4.9",
+       "keys": [
+        "4.4.9"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-10-07"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7201",
+       "published": "2024-12-20",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-12-21",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         14
+        ],
+        [
+         20,
+         21
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 15
+        },
+        {
+         "line": "4.4",
+         "index": 22
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.5, 4.4.0 to 4.4.1"
+      },
+      {
+       "cve_id": "CVE-2099-7202",
+       "published": "2025-03-18",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-19",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         8
+        ],
+        [
+         9,
+         15
+        ],
+        [
+         20,
+         22
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.0",
+         "index": null
+        },
+        {
+         "line": "4.2",
+         "index": 16
+        },
+        {
+         "line": "4.4",
+         "index": 23
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.0.0 to 4.0.8, 4.2.0 to 4.2.6, 4.4.0 to 4.4.2"
+      },
+      {
+       "cve_id": "CVE-2099-7203",
+       "published": "2025-11-04",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         20,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.4",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.4.0 to 4.4.5"
+      },
+      {
+       "cve_id": "CVE-2099-7204",
+       "published": "2026-02-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-02-03",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.9"
+      },
+      {
+       "cve_id": "CVE-2099-7205",
+       "published": "2026-08-11",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-08-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         19
+        ],
+        [
+         20,
+         28
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": null
+        },
+        {
+         "line": "4.4",
+         "index": 29
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.10, 4.4.0 to 4.4.8"
+      },
+      {
+       "cve_id": "CVE-2099-7206",
+       "published": "2024-05-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-05-23",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         12
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 13
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.3"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 283,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 301,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 322,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 370,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 460,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "4.2.4",
+        "final_version": "4.2.10"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1712,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.5"
+       }
+      },
+      "3y": {
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 331,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 355,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 383,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 447,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 567,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.2.2",
+        "final_version": "4.2.10"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       }
+      }
+     },
+     "counts": {
+      "versions": 30,
+      "versions_dated": 30,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 5,
+       "published": 1
+      }
+     }
+    },
+    {
+     "track": "analyzer/newest",
+     "label": "Example Analyzer (newest line)",
+     "default": false,
+     "channel": "stable",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-analyzer-tags",
+     "versions": [
+      {
+       "v": "4.0.0",
+       "keys": [
+        "4.0.0"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-03-01"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-04-12"
+      },
+      {
+       "v": "4.0.2",
+       "keys": [
+        "4.0.2"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-06-07"
+      },
+      {
+       "v": "4.0.3",
+       "keys": [
+        "4.0.3"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-08-02"
+      },
+      {
+       "v": "4.0.4",
+       "keys": [
+        "4.0.4"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-10-04"
+      },
+      {
+       "v": "4.0.5",
+       "keys": [
+        "4.0.5"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-12-06"
+      },
+      {
+       "v": "4.0.6",
+       "keys": [
+        "4.0.6"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-02-07"
+      },
+      {
+       "v": "4.0.7",
+       "keys": [
+        "4.0.7"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-04-03"
+      },
+      {
+       "v": "4.0.8",
+       "keys": [
+        "4.0.8"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-06-05"
+      },
+      {
+       "v": "4.2.0",
+       "keys": [
+        "4.2.0"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-10-11"
+      },
+      {
+       "v": "4.2.1",
+       "keys": [
+        "4.2.1"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-12-13"
+      },
+      {
+       "v": "4.2.2",
+       "keys": [
+        "4.2.2"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-02-14"
+      },
+      {
+       "v": "4.2.3",
+       "keys": [
+        "4.2.3"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-04-10"
+      },
+      {
+       "v": "4.2.4",
+       "keys": [
+        "4.2.4"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-07-10"
+      },
+      {
+       "v": "4.2.5",
+       "keys": [
+        "4.2.5"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-10-09"
+      },
+      {
+       "v": "4.2.6",
+       "keys": [
+        "4.2.6"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.2.7",
+       "keys": [
+        "4.2.7"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-05-14"
+      },
+      {
+       "v": "4.2.8",
+       "keys": [
+        "4.2.8"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-09-10"
+      },
+      {
+       "v": "4.2.9",
+       "keys": [
+        "4.2.9"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.2.10",
+       "keys": [
+        "4.2.10"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-05-13"
+      },
+      {
+       "v": "4.4.0",
+       "keys": [
+        "4.4.0"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-08-28"
+      },
+      {
+       "v": "4.4.1",
+       "keys": [
+        "4.4.1"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-11-22"
+      },
+      {
+       "v": "4.4.2",
+       "keys": [
+        "4.4.2"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.4.3",
+       "keys": [
+        "4.4.3"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-04-09"
+      },
+      {
+       "v": "4.4.4",
+       "keys": [
+        "4.4.4"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-07-09"
+      },
+      {
+       "v": "4.4.5",
+       "keys": [
+        "4.4.5"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-10-08"
+      },
+      {
+       "v": "4.4.6",
+       "keys": [
+        "4.4.6"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.4.7",
+       "keys": [
+        "4.4.7"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-04-08"
+      },
+      {
+       "v": "4.4.8",
+       "keys": [
+        "4.4.8"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-07-08"
+      },
+      {
+       "v": "4.4.9",
+       "keys": [
+        "4.4.9"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-10-07"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7201",
+       "published": "2024-12-20",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-12-21",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         14
+        ],
+        [
+         20,
+         21
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 15
+        },
+        {
+         "line": "4.4",
+         "index": 22
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.5, 4.4.0 to 4.4.1"
+      },
+      {
+       "cve_id": "CVE-2099-7202",
+       "published": "2025-03-18",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-19",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         8
+        ],
+        [
+         9,
+         15
+        ],
+        [
+         20,
+         22
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.0",
+         "index": null
+        },
+        {
+         "line": "4.2",
+         "index": 16
+        },
+        {
+         "line": "4.4",
+         "index": 23
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.0.0 to 4.0.8, 4.2.0 to 4.2.6, 4.4.0 to 4.4.2"
+      },
+      {
+       "cve_id": "CVE-2099-7203",
+       "published": "2025-11-04",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         20,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.4",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.4.0 to 4.4.5"
+      },
+      {
+       "cve_id": "CVE-2099-7204",
+       "published": "2026-02-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-02-03",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.9"
+      },
+      {
+       "cve_id": "CVE-2099-7205",
+       "published": "2026-08-11",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-08-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         19
+        ],
+        [
+         20,
+         28
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": null
+        },
+        {
+         "line": "4.4",
+         "index": 29
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.10, 4.4.0 to 4.4.8"
+      },
+      {
+       "cve_id": "CVE-2099-7206",
+       "published": "2024-05-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-05-23",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         12
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 13
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.3"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 173,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.9"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 197,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 225,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 289,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 397,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.8"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1803,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.1"
+       }
+      },
+      "3y": {
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 221,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 251,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 286,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 366,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 504,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.2",
+        "final_version": "4.4.8"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       }
+      }
+     },
+     "counts": {
+      "versions": 30,
+      "versions_dated": 30,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 5,
+       "published": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "editor",
+   "name": "Example Editor",
+   "bundle_ids": [
+    "com.example.editor"
+   ],
+   "tracks": [
+    {
+     "track": "editor/release",
+     "label": "Example Editor",
+     "default": true,
+     "channel": "release",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-editor-releases",
+     "versions": [
+      {
+       "v": "1.0",
+       "keys": [
+        "1.0"
+       ],
+       "line": "",
+       "train": "1",
+       "date": "2024-01-08"
+      },
+      {
+       "v": "1.0.1",
+       "keys": [
+        "1.0.1"
+       ],
+       "line": "",
+       "train": "1",
+       "date": "2024-02-12"
+      },
+      {
+       "v": "2.0",
+       "keys": [
+        "2.0"
+       ],
+       "line": "",
+       "train": "2",
+       "date": "2024-04-01"
+      },
+      {
+       "v": "2.0.1",
+       "keys": [
+        "2.0.1"
+       ],
+       "line": "",
+       "train": "2",
+       "date": "2024-06-10"
+      },
+      {
+       "v": "3.0",
+       "keys": [
+        "3.0"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-09-16"
+      },
+      {
+       "v": "3.0.1",
+       "keys": [
+        "3.0.1"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-11-10"
+      },
+      {
+       "v": "3.0.2",
+       "keys": [
+        "3.0.2"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-12-02"
+      },
+      {
+       "v": "4.0",
+       "keys": [
+        "4.0"
+       ],
+       "line": "",
+       "train": "4",
+       "date": "2025-02-03"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "",
+       "train": "4",
+       "date": "2025-03-03"
+      },
+      {
+       "v": "5.0",
+       "keys": [
+        "5.0"
+       ],
+       "line": "",
+       "train": "5",
+       "date": "2025-05-05"
+      },
+      {
+       "v": "6.0",
+       "keys": [
+        "6.0"
+       ],
+       "line": "",
+       "train": "6",
+       "date": "2025-06-02"
+      },
+      {
+       "v": "6.0.1",
+       "keys": [
+        "6.0.1"
+       ],
+       "line": "",
+       "train": "6",
+       "date": null
+      },
+      {
+       "v": "7.0",
+       "keys": [
+        "7.0"
+       ],
+       "line": "",
+       "train": "7",
+       "date": "2025-07-01"
+      },
+      {
+       "v": "7.0.1",
+       "keys": [
+        "7.0.1"
+       ],
+       "line": "",
+       "train": "7",
+       "date": "2025-06-28"
+      },
+      {
+       "v": "8.0",
+       "keys": [
+        "8.0"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-08-11"
+      },
+      {
+       "v": "8.0.1",
+       "keys": [
+        "8.0.1"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-09-08"
+      },
+      {
+       "v": "8.0.2",
+       "keys": [
+        "8.0.2"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-09-22"
+      },
+      {
+       "v": "9.0",
+       "keys": [
+        "9.0"
+       ],
+       "line": "",
+       "train": "9",
+       "date": "2025-09-22"
+      },
+      {
+       "v": "9.0.1",
+       "keys": [
+        "9.0.1"
+       ],
+       "line": "",
+       "train": "9",
+       "date": "2025-10-06"
+      },
+      {
+       "v": "10.0",
+       "keys": [
+        "10.0"
+       ],
+       "line": "",
+       "train": "10",
+       "date": "2025-11-03"
+      },
+      {
+       "v": "10.0.1",
+       "keys": [
+        "10.0.1"
+       ],
+       "line": "",
+       "train": "10",
+       "date": "2025-11-17"
+      },
+      {
+       "v": "11.0",
+       "keys": [
+        "11.0"
+       ],
+       "line": "",
+       "train": "11",
+       "date": "2025-12-15"
+      },
+      {
+       "v": "12.0",
+       "keys": [
+        "12.0"
+       ],
+       "line": "",
+       "train": "12",
+       "date": "2026-02-09"
+      },
+      {
+       "v": "13.0",
+       "keys": [
+        "13.0"
+       ],
+       "line": "",
+       "train": "13",
+       "date": "2026-05-04"
+      },
+      {
+       "v": "14.0",
+       "keys": [
+        "14.0"
+       ],
+       "line": "",
+       "train": "14",
+       "date": "2026-08-03"
+      },
+      {
+       "v": "14.0.1",
+       "keys": [
+        "14.0.1"
+       ],
+       "line": "",
+       "train": "14",
+       "date": "2026-09-14"
+      },
+      {
+       "v": "15.0",
+       "keys": [
+        "15.0"
+       ],
+       "line": "",
+       "train": "15",
+       "date": "2026-10-26"
+      },
+      {
+       "v": "15.0.1",
+       "keys": [
+        "15.0.1"
+       ],
+       "line": "",
+       "train": "15",
+       "date": "2026-11-16"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7301",
+       "published": "2024-11-21",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-11-22",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         5
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 6
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 3.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7302",
+       "published": "2024-11-11",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-11-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         5,
+         5
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 6
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "3.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7303",
+       "published": "2025-06-09",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-06-10",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         10
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 11
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 6.0"
+      },
+      {
+       "cve_id": "CVE-2099-7304",
+       "published": "2025-08-31",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-09-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         15
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 16
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 8.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7305",
+       "published": "2025-11-24",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": "2025-11-25",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         19
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 20
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 10.0"
+      },
+      {
+       "cve_id": "CVE-2099-7306",
+       "published": "2026-09-30",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         26
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 27
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 15.0"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 95,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 10,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 19,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 119,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 16,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 19,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 146,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 19,
+        "initial_version": "3.0",
+        "final_version": "15.0"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 210,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 18,
+        "initial_version": "3.0",
+        "final_version": "14.0.1"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 330,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 18,
+        "initial_version": "3.0",
+        "final_version": "14.0.1"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "3.0.1",
+        "final_version": "3.0.1"
+       }
+      },
+      "3y": {
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 115,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 141,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 168,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "2.0",
+        "final_version": "15.0"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 232,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 20,
+        "initial_version": "2.0",
+        "final_version": "14.0.1"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 352,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "1.0.1",
+        "final_version": "14.0.1"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "2.0",
+        "final_version": "2.0"
+       }
+      }
+     },
+     "counts": {
+      "versions": 28,
+      "versions_dated": 27,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 6,
+       "published": 0
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

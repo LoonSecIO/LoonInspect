@@ -34,14 +34,44 @@ export interface PatchPolicyFeed {
   httpStatus: number | null;
   detail: string | null;
   fromFile: boolean;
+  /** When LoonSec's publisher last finished a build, as the exchange said; null when it did not say.
+   *  It never decides `stale` (the copy's own `asOf` does): it names the cause, the publisher still
+   *  running over NVD data that has not advanced, or the publisher stopped (`publisherRunning`). */
+  builtAt: string | null;
+  /** Which of those two causes the instance judged, by its own clock: true while `builtAt` is within
+   *  three days of its now, false once older, null when `builtAt` is. The page names the cause from
+   *  it, so the page's sentence and `sentence` never name different causes. */
+  publisherRunning: boolean | null;
+}
+
+/** One source against one track: whether a walk of it can be shown at the default two-year window,
+ *  and if not, why (`state` and `sentence`, docs/troubleshooting.md §33). */
+export interface PatchPolicySourceTrack {
+  track: string;
+  available: boolean;
+  state: string;
+  sentence: string | null;
+  first: string | null;
+  last: string | null;
+  matched: number;
+  otherTrack: number;
+  unmatched: number;
+  since: string | null;
+  until: string | null;
 }
 
 export interface PatchPolicySource {
   available: boolean;
+  state: string;
   first: string | null;
   last: string | null;
   sentence: string | null;
   ids: string[];
+  matched: number;
+  asOf: string | null;
+  /** Shown with every view of the source (Fleet's dates trail Homebrew's by hours). */
+  note: string | null;
+  tracks: PatchPolicySourceTrack[];
 }
 
 export interface PatchPolicyTrack {
@@ -83,9 +113,23 @@ export type FeedWords = Translations["support"]["patchPolicyFeed"];
 /** The day a timestamp names, in UTC, as the backend writes it into its sentences. */
 const day = (value: string | null): string | null => (value ? value.slice(0, 10) : null);
 
+/** The backend's `STALE_AFTER`: a copy older than this is stale, and a publisher whose last build is
+ *  older than this has stopped. */
+export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Whether LoonSec's publisher is still running: its last build (`builtAt`) no more than three days
+ *  before `now`, the backend's `held_freshness` rule. Read against this browser's clock, so it is the
+ *  fallback only, for an answer that carries no `publisherRunning`: the instance's own judgement is
+ *  what its sentence says, and a browser whose clock is off near the three-day boundary would
+ *  otherwise name the other cause. */
+export function publisherRunning(builtAt: string, now: Date): boolean {
+  return now.getTime() - Date.parse(builtAt) <= STALE_AFTER_MS;
+}
+
 /** The state's sentence, the way `sentence_for` builds it: the state's words, then the copy that
- *  still answers (or that there is none) after a failure. */
-export function describeFeed(feed: PatchPolicyFeed, words: FeedWords): string {
+ *  still answers (or that there is none) after a failure. A stale copy's cause is the instance's
+ *  `feed.publisherRunning`; `now` is read only when that is missing (`publisherRunning`). */
+export function describeFeed(feed: PatchPolicyFeed, words: FeedWords, now: Date = new Date()): string {
   const s = words.states;
   const asOf = day(feed.asOf);
   const copy = (stillUsed = false) => (asOf === null ? words.noCopy : stillUsed ? words.stillUsed(asOf) : words.showingCopy(asOf));
@@ -98,7 +142,12 @@ export function describeFeed(feed: PatchPolicyFeed, words: FeedWords): string {
     case "current":
       return s.current(asOf ?? "—");
     case "stale":
-      return s.stale(asOf ?? "—", feed.until ?? "—");
+      if (!feed.builtAt) return s.stale(asOf ?? "—", feed.until ?? "—");
+      return ((feed.publisherRunning ?? publisherRunning(feed.builtAt, now)) ? s.staleRunning : s.staleStopped)(
+        asOf ?? "—",
+        day(feed.builtAt) ?? "—",
+        feed.until ?? "—"
+      );
     case "not_published":
       return `${s.not_published} ${copy()}`;
     case "algorithm_unknown":

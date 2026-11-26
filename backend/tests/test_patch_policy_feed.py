@@ -2,8 +2,9 @@
 
 `tests/fixtures/patch_policy/reference.json` is a hand-made `patch_policy_reference` (schema 1)
 that follows the plan's data contract: three apps (two with public timelines, one whose versions
-are undated), every exclusion reason, both CVE clocks, and fictional CVE ids (`CVE-2099-*`) so no
-number in it reads as a fact about a real app. LoonVD's builder produces the real one; until then
+are undated), a channel named beside Chrome's track and not walked (`other_channels`), every
+exclusion reason, both CVE clocks, and fictional CVE ids (`CVE-2099-*`) so no number in it reads
+as a fact about a real app. LoonVD's builder produces the real one; until then
 this file is what the check is held to. Editing it means recomputing its `doc_id`, which the first
 test here prints when it moves.
 
@@ -23,6 +24,7 @@ import httpx
 import pytest
 
 from app.core import patch_policy_feed as feed
+from app.core import patch_policy_timelines as timelines
 from app.core.vuln_library import CorpusRefused, download_signed
 
 FIXTURE = Path(__file__).parent / "fixtures" / "patch_policy" / "reference.json"
@@ -150,6 +152,10 @@ def _track(doc: dict, app: str = "wireshark", index: int = 0) -> dict:
         (lambda t: t["not_detectable"].update(count=1), "not_detectable lists 0, says 1"),
         (lambda t: t["cves"][0].update(affected=[[0, 9]]), "has an affected run [0, 9] outside its 4 versions"),
         (lambda t: t["cves"][0].update(fixes=[{"line": "4.4", "index": 4}]), "has a fix index 4 outside its 4 versions"),
+        (
+            lambda t: t["cves"][0].update(fixes=[{"line": "4.4", "index": 3, "named": 4.4}]),
+            "has a fix whose named version 4.4 is not text",
+        ),
         (lambda t: t["cves"][1].update(clock="detectable_at"), "uses the detectable_at clock and has no detectable_at day"),
         (lambda t: t["exclusions"]["cves"][0].update(cve_id="CVE-2099-2001"), "a CVE is listed twice"),
         (lambda t: t["versions"][1].update(keys=["4.4.0"]), "a version key is listed twice"),
@@ -161,6 +167,39 @@ def test_counts_that_do_not_close_refuse_the_whole_document_naming_the_track(cha
     refused = _refusal(_resigned(broken))
     assert refused.startswith("its own counts disagree (wireshark wireshark/4.4: ")
     assert said in refused
+
+
+def test_a_fix_naming_nvds_own_version_as_text_is_read() -> None:
+    """`fixes[].named` (ruled 2026-11-25) is NVD's fix version where the index points at the next
+    listed version at or above it, or is null because none qualifies. Text is read; anything else is
+    refused above."""
+    named = copy.deepcopy(DOC)
+    _track(named)["cves"][0]["fixes"] = [
+        {"line": "4.4", "index": 3, "named": "4.4.2.1"},
+        {"line": "4.2", "index": None, "named": "4.2.9"},
+    ]
+    doc = feed.read_document(_resigned(named))
+    assert _track(doc.body)["cves"][0]["fixes"][0]["named"] == "4.4.2.1"
+
+
+def test_a_document_with_or_without_the_retired_reason_word_is_read() -> None:
+    """`fixed_version_not_in_timeline` is no longer the walk's (ruled 2026-11-25), and LoonSec's data
+    drops it. The fixture still lists it, in `exclusion_reasons` and in every track's `by_reason`; a
+    document that drops it from both is read the same way. Dropping it from one and not the other is
+    still a count that does not close."""
+    word = "fixed_version_not_in_timeline"
+    assert word in DOC["exclusion_reasons"]
+    assert feed.read_document(GZ).doc_id == DOC["doc_id"]
+    without = copy.deepcopy(DOC)
+    without["exclusion_reasons"].remove(word)
+    for app in without["apps"]:
+        for track in app["tracks"]:
+            assert track["exclusions"]["by_reason"].pop(word) == 0
+    assert word not in feed.read_document(_resigned(without)).body["exclusion_reasons"]
+
+    half = copy.deepcopy(without)
+    _track(half)["exclusions"]["by_reason"][word] = 0
+    assert "does not name exactly the document's exclusion_reasons" in _refusal(_resigned(half))
 
 
 def test_a_track_naming_a_timeline_the_document_does_not_describe_is_refused() -> None:
@@ -209,7 +248,12 @@ def test_a_document_that_decompresses_past_the_ceiling_is_stopped_there(monkeypa
         ),
         (
             lambda t: t["not_detectable"].update(count=1, cves=[["CVE-2099-2009"]]),
-            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a cve_id",
+            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a CVE id",
+        ),
+        (
+            # A row is not an id: the contract lists not_detectable as CVE ids, as the walk reads them.
+            lambda t: t["not_detectable"].update(count=1, cves=[{"cve_id": "CVE-2099-2009", "published": "2025-10-15"}]),
+            "it lacks wireshark wireshark/4.4 not_detectable.cves, each a CVE id",
         ),
         (
             lambda t: t.update(promotions=[{"major": "4", "date": "2024-08-28"}]),
@@ -240,6 +284,101 @@ def test_an_app_whose_bundle_ids_are_not_a_list_of_ids_is_refused() -> None:
     broken = copy.deepcopy(DOC)
     broken["apps"][0]["bundle_ids"] = 7
     assert _refusal(_resigned(broken)) == "it lacks chrome.bundle_ids as a list of bundle ids"
+
+
+def test_the_fixture_names_a_channel_beside_its_tracks_and_a_document_without_one_is_read_too() -> None:
+    """`other_channels` is additive: the fixture's Chrome names its extended stable channel, whose
+    141.0.7390.108 is also on the stable track's list, and absent, null or empty is no channel."""
+    (extended,) = DOC["apps"][0]["other_channels"]
+    assert (extended["channel"], extended["versions"]) == ("extended", ["140.0.7339.207", "140.0.7339.213", "141.0.7390.108"])
+    stable_keys = {key for version in DOC["apps"][0]["tracks"][0]["versions"] for key in version["keys"]}
+    assert "141.0.7390.108" in stable_keys
+    for value in ("absent", None, []):
+        other = copy.deepcopy(DOC)
+        if value == "absent":
+            del other["apps"][0]["other_channels"]
+        else:
+            other["apps"][0]["other_channels"] = value
+        assert feed.read_document(_resigned(other)).body["apps"][0].get("other_channels", "absent") == value
+
+
+_CHANNEL = {"channel": "extended", "label": "Google Chrome (extended stable)", "source": "https://example.test/x", "versions": []}
+
+
+@pytest.mark.parametrize(
+    ("value", "said"),
+    [
+        (
+            "extended",
+            "it lacks chrome.other_channels as a list of channels, each with channel, label and source as text and "
+            "versions as a list of versions",
+        ),
+        (
+            [["extended"]],
+            "it lacks chrome.other_channels as a list of channels, each with channel, label and source as text and "
+            "versions as a list of versions",
+        ),
+        ([{**_CHANNEL, "channel": None}], "it lacks chrome.other_channels[0].channel as text"),
+        ([{**_CHANNEL, "channel": " "}], "it lacks chrome.other_channels[0].channel as text"),
+        ([{**_CHANNEL, "label": {"en": "Extended"}}], "it lacks chrome.other_channels[0].label as text"),
+        ([_CHANNEL, {**_CHANNEL, "source": 7}], "it lacks chrome.other_channels[1].source as text"),
+        ([{key: v for key, v in _CHANNEL.items() if key != "versions"}], "it lacks chrome.other_channels[0].versions"),
+        ([{**_CHANNEL, "versions": "140.0.7339.207"}], "it lacks chrome.other_channels[0].versions as a list of versions"),
+        ([{**_CHANNEL, "versions": ["140.0.7339.207", 141]}], "it lacks chrome.other_channels[0].versions as a list"),
+        ([{**_CHANNEL, "versions": [""]}], "it lacks chrome.other_channels[0].versions as a list of versions"),
+        ([_CHANNEL, _CHANNEL], "its own counts disagree (chrome.other_channels lists extended twice)"),
+        (
+            [{**_CHANNEL, "versions": ["140.0.7339.207", "140.0.7339.207"]}],
+            "its own counts disagree (chrome.other_channels[0]: a version is listed twice)",
+        ),
+        # The contract's spelling: a version spelled otherwise would match nothing an instance reads.
+        *(
+            (
+                [{**_CHANNEL, "versions": ["140.0.7339.207", version]}],
+                "it lacks chrome.other_channels[0].versions spelled as an instance reads them (lowercase, no space "
+                f"around, Mozilla's esr suffix stripped): {json.dumps(version)} is not",
+            )
+            for version in ("128.5.1esr", "128.1.0ESR", "140.0.7339.213B", " 140.0.7339.213", "140.0.7339.213\t")
+        ),
+        (
+            [_CHANNEL, {**_CHANNEL, "channel": "EXTENDED"}],
+            "its own counts disagree (chrome.other_channels lists EXTENDED twice)",
+        ),
+        *(
+            (
+                [{**_CHANNEL, "channel": walked}],
+                f"its own counts disagree (chrome.other_channels[0] names {walked}, a channel a track of chrome walks)",
+            )
+            for walked in ("stable", "Stable")
+        ),
+        *(
+            (
+                [{**_CHANNEL, "source": source}],
+                "it lacks chrome.other_channels[0].source as the https URL its versions were read from",
+            )
+            for source in ("javascript:alert(1)", "http://example.test/x", "not a url", "https://")
+        ),
+    ],
+)
+def test_a_malformed_other_channels_is_refused_in_words(value, said) -> None:
+    """The channels a day-walk sets aside are held to their shape like everything else the route
+    reads: a document whose `other_channels` is not that shape is refused naming where, and the
+    copy already held keeps answering."""
+    broken = copy.deepcopy(DOC)
+    broken["apps"][0]["other_channels"] = value
+    assert _refusal(_resigned(broken)).startswith(said)
+
+
+def test_other_channels_versions_in_any_order_and_a_number_two_channels_share_are_read() -> None:
+    """Order is not held: LoonSec lists a channel's versions in its own version order (Firefox ESR's
+    91.5.0 before 102.0), and an instance matches by membership. Two channels may share a number;
+    a timeline's version is the first listed channel's, as `split` documents."""
+    other = copy.deepcopy(DOC)
+    other["apps"][0]["other_channels"] = [
+        {**_CHANNEL, "versions": ["140.0.7339.213", "140.0.7339.207", "91.5.0"]},
+        {**_CHANNEL, "channel": "beta", "label": "Google Chrome (beta)", "versions": ["140.0.7339.213"]},
+    ]
+    assert len(feed.read_document(_resigned(other)).body["apps"][0]["other_channels"]) == 2
 
 
 def test_json_nested_past_the_parsers_depth_is_refused_in_words() -> None:
@@ -274,14 +413,32 @@ def test_a_row_with_a_detectable_day_must_say_it_uses_that_clock() -> None:
     )
 
 
-def test_every_document_the_check_accepts_is_one_the_route_can_serve() -> None:
+# Catalogs as an instance holds them before either was ever read: no Jamf title synced, and the
+# Fleet catalog flag off.
+_NO_JAMF = timelines.JamfCatalog(size=0, refreshed_at=None, titles=())
+_FLEET_OFF = timelines.FleetHistory(
+    enabled=False,
+    catalog_read=False,
+    checked_ok_at=None,
+    catalog_detail=None,
+    history_failure=None,
+    titles=(),
+    snapshot="unread",
+    snapshot_detail=None,
+    answered_at=None,
+)
+
+
+async def test_every_document_the_check_accepts_is_one_the_route_can_serve() -> None:
     """What `read_document` stores, `GET /api/patch-policy/apps` answers with on every load until
     LoonSec publishes another: its response model is held to the fixture here."""
+    from app.core import patch_policy_views as views
     from app.schemas.patch_policy import PatchPolicyAppOut
 
     body = feed.read_document(GZ).body
+    sources = await views.sources_of(body, _NO_JAMF, _FLEET_OFF)
     for app in feed.app_summaries(body):
-        PatchPolicyAppOut.model_validate(app)
+        PatchPolicyAppOut.model_validate({**app, "sources": sources[app["app"]]})
 
 
 @pytest.mark.asyncio
@@ -367,6 +524,93 @@ def test_the_pointer_is_read_tolerantly_and_says_which_of_four_things_it_is() ->
     assert refused.detail.startswith("the exchange named a link this container refuses (the patch-policy link must be")
 
 
+def test_the_entry_may_say_when_loonsec_last_confirmed_the_document_and_absence_is_not_known() -> None:
+    """`built_at` is additive (2026-11-24): an entry that carries it says when LoonSec's publisher
+    last confirmed the document current; one without it, or with something that is not an instant
+    with a zone, leaves that unknown, and is still a link."""
+    from datetime import UTC, datetime
+
+    def entry(**extra) -> feed.Offer:
+        return feed.read_offer(
+            {"patch_walk/1": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}}
+        )
+
+    assert entry(built_at="2026-11-24T07:12:03Z").pointer.built_at == datetime(2026, 11, 24, 7, 12, 3, tzinfo=UTC)
+    assert entry(built_at="2026-11-24T08:12:03+01:00").pointer.built_at == datetime(2026, 11, 24, 7, 12, 3, tzinfo=UTC)
+    for unknown in ({}, {"built_at": None}, {"built_at": "yesterday"}, {"built_at": "2026-11-24T07:12:03"}, {"built_at": 3}):
+        offer = entry(**unknown)
+        assert offer.kind == "pointer" and offer.pointer.built_at is None, unknown
+
+
+def test_stale_is_judged_from_the_copys_own_date_and_a_fresh_build_never_makes_it_current() -> None:
+    """LoonSec's exchange contract (2026-11-25): an instance judges a copy's age from `as_of`, the
+    NVD state it was built from, and reads `built_at` only for the cause. A publisher that finishes
+    a build every night over NVD data that has not advanced writes no new document, so `built_at`
+    stays fresh over old data: that copy is stale, and judging from `built_at` would call it current."""
+    from datetime import UTC, datetime, timedelta
+
+    as_of = datetime(2026, 11, 20, 6, tzinfo=UTC)
+    now = as_of + timedelta(days=4)
+    # A build finished an hour ago over a 4-day-old NVD state: stale, and the publisher is running.
+    assert feed.held_freshness(as_of, now - timedelta(hours=1), now) == ("stale", True)
+    # The publisher's last build is itself more than three days old: stale, and it has stopped.
+    assert feed.held_freshness(as_of, as_of + timedelta(hours=1), now) == ("stale", False)
+    # Not said (an older LoonSec, or the file): the copy's own date.
+    assert feed.held_freshness(as_of, None, now) == ("stale", False)
+    # Three days to the second is not more than three days; a minute past is.
+    assert feed.held_freshness(as_of, None, as_of + feed.STALE_AFTER) == ("current", False)
+    assert feed.held_freshness(as_of, None, as_of + feed.STALE_AFTER + timedelta(minutes=1)) == ("stale", False)
+    # A young copy is current whatever the build says.
+    assert feed.held_freshness(now - timedelta(days=1), now - timedelta(hours=1), now) == ("current", True)
+    assert feed.held_freshness(now - timedelta(days=1), None, now) == ("current", False)
+
+
+def test_stale_says_why_the_copy_is_old() -> None:
+    """Three causes, each with its own words: the publisher running over NVD data that has not
+    advanced, the publisher stopped, and (no `built_at`) only the copy's own date. The page's
+    template opens every one the same way (`en.ts`), and §32 step 7 walks each cause."""
+    from datetime import date
+
+    unknown = feed.sentence_for("stale", as_of=date(2026, 11, 20))
+    assert unknown == "Showing patch-policy data dated 2026-11-20, more than three days old; the walk ends 2026-11-19."
+    running = feed.sentence_for("stale", as_of=date(2026, 11, 20), built_at=date(2026, 11, 24), publisher_running=True)
+    assert running == (
+        "Showing patch-policy data dated 2026-11-20, more than three days old: LoonSec's publisher last ran on 2026-11-24, "
+        "but its NVD data has not advanced since 2026-11-20, and the walk ends 2026-11-19."
+    )
+    stopped = feed.sentence_for("stale", as_of=date(2026, 11, 20), built_at=date(2026, 11, 20))
+    assert stopped == (
+        "Showing patch-policy data dated 2026-11-20, more than three days old: LoonSec's publisher last ran on 2026-11-20, "
+        "more than three days ago, and the walk ends 2026-11-19."
+    )
+    for sentence in (unknown, running, stopped):
+        assert sentence.split(" 2026-")[0] in _EN_TS
+    # The page says each one word for word: its English templates, filled with the same values.
+    page = {
+        key: re.search(rf"\n {{8}}{key}: \([^)]*\) =>\s*`([^`]*)`", _EN_TS) for key in ("stale", "staleRunning", "staleStopped")
+    }
+    assert all(page.values()), f"en.ts has no template for {[key for key, found in page.items() if not found]}"
+    filled = {
+        key: found.group(1)
+        .replace("${asOf}", "2026-11-20")
+        .replace("${until}", "2026-11-19")
+        .replace("${builtAt}", "2026-11-24" if key == "staleRunning" else "2026-11-20")
+        for key, found in page.items()
+    }
+    assert filled == {"stale": unknown, "staleRunning": running, "staleStopped": stopped}
+    step = re.sub(r"\s+", " ", _RUNBOOK.split('\n## 32. "', 1)[1].split("\n## 33. ", 1)[0]).replace("*", "")
+    for cause in (
+        "LoonSec's publisher last ran on …, but its NVD data has not advanced since",
+        "LoonSec's publisher last ran on …, more than three days ago",
+        "more than three days old; the walk ends",
+    ):
+        assert cause in step, f"§32 does not walk the cause {cause!r}"
+    # The field that says which cause the instance judged is named where the causes are, and in AA's report.
+    seven = step.split(" 7. Showing patch-policy data dated", 1)[1].split(" 8. An instance with no network", 1)[0]
+    report = step.split(" AA. The exchange answers", 1)[1].split(" AB. ", 1)[0]
+    assert "`feed.publisherRunning`" in seven and "`feed.publisherRunning`" in report
+
+
 # --- the download it shares with the corpus ---------------------------------------------------
 
 
@@ -405,31 +649,80 @@ async def test_the_patch_policy_download_says_patch_policy_and_keeps_the_status(
 # --- what an organization reads ---------------------------------------------------------------
 
 
-def test_each_app_says_which_sources_can_date_it() -> None:
-    apps = {app["app"]: app for app in feed.app_summaries(DOC)}
-    chrome, wireshark, vlc = apps["chrome"], apps["wireshark"], apps["vlc"]
+def published_checks(doc: dict) -> dict:
+    """The document as LoonVD publishes it: every track with public dates carries `check`, the walk
+    of those dates at each window the walk does not refuse, and `doc_id` moves with it."""
+    from app.core import patch_policy_walk as walk
 
-    assert chrome["sources"]["public"] == {
-        "available": True,
-        "first": "2025-09-30",
-        "last": "2025-10-28",
-        "sentence": None,
-        "ids": ["chrome-mac-stable"],
+    done = copy.deepcopy(doc)
+    for app in done["apps"]:
+        for track in app["tracks"]:
+            if not track.get("timeline"):
+                continue
+            timeline = walk.public_timeline(done, app=app["app"], track=track["track"])
+            track["check"] = {}
+            for years in walk.WINDOW_YEARS:
+                try:
+                    result = walk.walk(done, app=app["app"], track=track["track"], timeline=timeline, years=years)
+                except walk.WalkRefused:
+                    continue
+                track["check"][f"{years}y"] = {stop: walk.check_totals(result, stop) for stop in walk.STOPS}
+    done["doc_id"] = feed.canonical_doc_id(done)
+    return done
+
+
+async def test_each_app_says_which_sources_can_date_it() -> None:
+    """Each source answers per track: whether a walk of it can be shown, the default two-year window
+    it would cover, and otherwise the state word and sentence that say why not (§33). Parity comes
+    first, as on the walk route: an app with nothing LoonSec's totals can check offers no source."""
+    from app.core import fleet_catalog
+    from app.core import patch_policy_views as views
+
+    views.reset_for_tests()
+    doc = published_checks(DOC)
+    apps = {app["app"]: app for app in feed.app_summaries(doc)}
+    assert [t["track"] for t in apps["wireshark"]["tracks"]] == ["wireshark/4.4", "wireshark/newest"]
+    assert apps["wireshark"]["tracks"][1]["clock"] == {"detectable_at": 2, "published": 1}
+    sources = await views.sources_of(doc, _NO_JAMF, _FLEET_OFF)
+    chrome, wireshark, vlc = sources["chrome"], sources["wireshark"], sources["vlc"]
+
+    public = chrome["public"]
+    assert (public["available"], public["state"], public["first"], public["last"]) == (
+        True,
+        "available",
+        "2025-09-30",
+        "2025-10-28",
+    )
+    assert public["ids"] == ["chrome-mac-stable"] and public["matched"] == 4 and public["sentence"] is None
+    assert public["tracks"][0]["since"] == "2025-11-28" and public["tracks"][0]["until"] == "2026-11-22"
+    assert wireshark["public"]["ids"] == ["wireshark-tags"]
+    assert [t["since"] for t in wireshark["public"]["tracks"]] == ["2024-11-22", "2024-11-22"]
+    for app in (chrome, wireshark):
+        assert (app["jamf"]["available"], app["jamf"]["state"], app["jamf"]["sentence"]) == (
+            False,
+            "never_synced",
+            timelines.JAMF_NEVER_SYNCED_SENTENCE,
+        )
+        assert (app["fleet"]["state"], app["fleet"]["sentence"]) == ("flag_off", fleet_catalog.FLAG_OFF)
+    # Undated versions: LoonSec holds no public dates, so nothing of the app can be checked against
+    # its totals, and no source is offered, Jamf's and Fleet's included, in the walk route's words.
+    no_dates = (
+        "LoonSec holds no public release dates for VLC media player yet, so no walk of VLC media player can be checked "
+        "against the totals LoonSec publishes, and no view of it is shown from any source, Jamf and Fleet included"
+    )
+    for source in ("public", "jamf", "fleet"):
+        assert (vlc[source]["available"], vlc[source]["state"]) == (False, "no_public_dates"), source
+        assert vlc[source]["sentence"].startswith(no_dates), source
+
+    # The fixture as it stands, with no published totals at all: every source of every app is refused.
+    views.reset_for_tests()
+    bare = await views.sources_of(DOC, _NO_JAMF, _FLEET_OFF)
+    assert {(app, source["state"]) for app, held in bare.items() for source in held.values()} == {
+        ("chrome", "unchecked"),
+        ("wireshark", "unchecked"),
+        ("vlc", "no_public_dates"),
     }
-    assert wireshark["sources"]["public"]["ids"] == ["wireshark-tags"]
-    assert [t["track"] for t in wireshark["tracks"]] == ["wireshark/4.4", "wireshark/newest"]
-    assert wireshark["tracks"][1]["clock"] == {"detectable_at": 2, "published": 1}
-    # Undated versions: LoonSec holds no public dates, and says so rather than an empty range.
-    assert vlc["sources"]["public"] == {
-        "available": False,
-        "first": None,
-        "last": None,
-        "sentence": "LoonSec holds no public release dates for VLC media player yet.",
-        "ids": [],
-    }
-    for app in apps.values():
-        assert app["sources"]["jamf"]["available"] is False and app["sources"]["jamf"]["sentence"] == feed.JAMF_NOT_BUILT
-        assert app["sources"]["fleet"]["available"] is False and app["sources"]["fleet"]["sentence"] == feed.FLEET_NOT_BUILT
+    assert not any(source["available"] for held in bare.values() for source in held.values())
 
 
 @pytest.mark.parametrize("state", feed.FEED_STATES)

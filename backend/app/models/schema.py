@@ -749,6 +749,10 @@ class PatchPolicyFeedState(Base):
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # The reason, in the operator's words, when the outcome is not stored or unchanged.
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When LoonSec's publisher last finished a build, as the exchange's entry said (`built_at`):
+    # written with `stored` and `unchanged`, NULL when the entry did not say or the attempt failed.
+    # The page's `stale` is judged from the copy's `as_of` alone; this only names its cause.
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class FleetMaintainedApp(Base):

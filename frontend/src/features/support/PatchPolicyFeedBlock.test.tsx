@@ -18,7 +18,9 @@ const base = {
   outcome: null,
   httpStatus: null,
   detail: null,
-  fromFile: false
+  fromFile: false,
+  builtAt: null,
+  publisherRunning: null
 };
 
 it("says a download failed, names the copy still shown, and when the last attempt was", async () => {

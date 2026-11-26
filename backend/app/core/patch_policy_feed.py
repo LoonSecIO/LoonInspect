@@ -2,7 +2,8 @@
 
 The document (`kind: patch_policy_reference`) is one object for every app LoonSec references:
 NVD-derived affected ranges compiled against each track's ordered version list, a first-
-detectable day per CVE, and the public vendor release records each track's dates come from. It
+detectable day per CVE, and the public release records each track's dates come from (a vendor's
+own feed, or Homebrew's cask history where no vendor feed is read). It
 arrives the way the corpus does (`app.core.vuln_library`): a signed link riding the daily
 data-sharing exchange's response, under `patch_policy`, keyed by the algorithm that reads it —
 `{"patch_walk/1": {"signature", "asof", "url"}}` — and downloaded only when the signature, which
@@ -11,13 +12,26 @@ is the document's own `doc_id`, has moved. An air-gapped instance reads it from
 
 **Checked whole before anything is written.** `read_document` recomputes `doc_id` (the sha256 of
 the canonical body without it), and holds the kind, the schema, the algorithm and the counts each
-track states to the rows it lists. A document that fails any of them is refused in a sentence
-naming what failed, and the copy already held keeps answering. The last two copies are kept.
+track states to the rows it lists, and each app's `other_channels` (the channels it names beside
+its tracks and does not walk) to their shape. A document that fails any of them is refused in a
+sentence naming what failed, and the copy already held keeps answering. The last two copies are
+kept.
 
 **Held, never computed with, here.** Nothing in this module walks a timeline or compares a
 version; it receives, verifies and stores, and answers `GET /api/patch-policy/apps` with the feed's
-state and what the document says about each app. The day-walk over a timeline is a separate
-module, not built yet.
+state and what the document says about each app. The day-walk over a timeline is
+`app.core.patch_policy_walk`, served by `app.core.patch_policy_views`.
+
+**Stale is judged from the copy's own date, always; LoonSec's last build only names the cause**
+(2026-11-25). A copy whose `as_of` (the NVD state LoonSec built it from) is more than three days
+old reads `stale`. The exchange's entry may carry `built_at`: when LoonSec's publisher last
+finished a build, which it rewrites every night whether or not the document changed. It never
+makes an old copy current, because a publisher that runs every night while LoonSec's NVD data
+stands still makes no new document, so `built_at` stays fresh over old data: that is the case the
+rule exists to catch, and why LoonSec's exchange contract has an instance judge age from `as_of`.
+`built_at` picks the stale sentence: within three days, the publisher is running and its NVD data
+has not advanced; older, the publisher has stopped finishing builds; absent (an older LoonSec, or
+the file on an instance with no network), the copy's own date is all the sentence says.
 
 **The tier gate is the organization.** The document is a global artifact, like the corpus, and
 it is consent-gated the way the corpus is (ruled R21, 2026-11-24): an organization whose
@@ -73,7 +87,7 @@ KEPT = 2
 _MAX_DOC_BYTES = 32 * 1024 * 1024
 _MAX_JSON_BYTES = 256 * 1024 * 1024
 
-# A copy older than this reads `stale` on the page, with the day the walk must end.
+# A copy whose `as_of` is older than this reads `stale` on the page, with the day the walk must end.
 STALE_AFTER = timedelta(days=3)
 
 _TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -147,6 +161,8 @@ class PatchPolicyPointer:
     asof: datetime | None
     # The query string is the credential (`app.core.egress.corpus_url_for_log`): never in a repr.
     url: str = field(repr=False)
+    # When LoonSec's publisher last finished a build, changed or not (additive; None: not said).
+    built_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,7 +208,10 @@ def read_offer(value: object) -> Offer:
         url = validate_corpus_url(url, name="the patch-policy link")
     except BlockedCorpusUrl as exc:
         return Offer("unusable", detail=f"the exchange named a link this container refuses ({exc})", host=host)
-    return Offer("pointer", pointer=PatchPolicyPointer(signature=signature, asof=_timestamp(entry.get("asof")), url=url))
+    pointer = PatchPolicyPointer(
+        signature=signature, asof=_timestamp(entry.get("asof")), url=url, built_at=_instant(entry.get("built_at"))
+    )
+    return Offer("pointer", pointer=pointer)
 
 
 def _host(url: str) -> str | None:
@@ -209,6 +228,18 @@ def _timestamp(value: object) -> datetime | None:
         return datetime.strptime(value, _TIMESTAMP_FORMAT).replace(tzinfo=UTC)
     except ValueError:
         return None
+
+
+def _instant(value: object) -> datetime | None:
+    """An ISO-8601 instant with its zone (`…Z` or an offset), in UTC; None for anything else, so an
+    additive key that is absent or malformed reads as not said rather than as a refusal."""
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment.astimezone(UTC) if moment.tzinfo else None
 
 
 # --- the check: what stands between the bytes and the table ----------------------------------
@@ -373,6 +404,9 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
         bundle_ids = app.get("bundle_ids")
         if bundle_ids is not None and not (isinstance(bundle_ids, list) and all(isinstance(b, str) for b in bundle_ids)):
             return f"it lacks {name}.bundle_ids as a list of bundle ids"
+        problem = _channels_problem(name, app.get("other_channels"), app.get("tracks"))
+        if problem is not None:
+            return problem
         tracks = app.get("tracks")
         if not isinstance(tracks, list) or not tracks:
             return f"it lacks {name}.tracks"
@@ -384,6 +418,60 @@ def _first_problem(body: Mapping[str, object]) -> str | None:
             problem = _track_problem(name, track, reasons, timelines, seen_tracks)
             if problem is not None:
                 return problem
+    return None
+
+
+def _channels_problem(app: str, channels: object, tracks: object) -> str | None:
+    """An app's `other_channels`, when it has any: the channels LoonSec names beside its tracks and
+    does not walk, each `{channel, label, source, versions[]}`. A day-walk sets those versions
+    aside when it splits a Jamf or Fleet timeline (`app.core.patch_policy_timelines.split`). Absent,
+    null or empty is none; anything else must be that shape, or the document is refused naming
+    where.
+
+    Held to the contract's spelling too (LoonVD's sharedAssets/contract/patch-policy-reference.md),
+    because a version spelled otherwise would match nothing an instance reads and be counted as
+    unmatched without a word: each version as an instance reads it (lowercase, no space around it,
+    Mozilla's `esr` suffix stripped), none twice; each channel once, ignoring case, and never one
+    the app's tracks walk; `source` the https URL the versions were read from. Order is not held:
+    the contract lists versions in its own version order, and a reader matches by membership."""
+    if channels is None:
+        return None
+    shape = "a list of channels, each with channel, label and source as text and versions as a list of versions"
+    if not isinstance(channels, list):
+        return f"it lacks {app}.other_channels as {shape}"
+    walked = {
+        track["channel"].strip().lower()
+        for track in (tracks if isinstance(tracks, list) else [])
+        if isinstance(track, Mapping) and isinstance(track.get("channel"), str)
+    }
+    seen: set[str] = set()
+    for index, entry in enumerate(channels):
+        where = f"{app}.other_channels[{index}]"
+        if not isinstance(entry, Mapping):
+            return f"it lacks {app}.other_channels as {shape}"
+        for key in ("channel", "label", "source"):
+            if not isinstance(entry.get(key), str) or not entry[key].strip():
+                return f"it lacks {where}.{key} as text"
+        versions = entry.get("versions")
+        if not isinstance(versions, list) or not all(isinstance(v, str) and v.strip() for v in versions):
+            return f"it lacks {where}.versions as a list of versions"
+        channel = entry["channel"].strip().lower()
+        if channel in seen:
+            return f"its own counts disagree ({app}.other_channels lists {entry['channel']} twice)"
+        seen.add(channel)
+        if channel in walked:
+            return f"its own counts disagree ({where} names {entry['channel']}, a channel a track of {app} walks)"
+        source = entry["source"].strip()
+        if not source.lower().startswith("https://") or _host(source) is None:
+            return f"it lacks {where}.source as the https URL its versions were read from"
+        for version in versions:
+            if version != version.strip().lower() or version.endswith("esr"):
+                return (
+                    f"it lacks {where}.versions spelled as an instance reads them (lowercase, no space around, "
+                    f"Mozilla's esr suffix stripped): {_shown(version)} is not"
+                )
+        if len(versions) != len(set(versions)):
+            return f"its own counts disagree ({where}: a version is listed twice)"
     return None
 
 
@@ -425,10 +513,10 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
         return f"it lacks {where} exclusions.cves, each with a cve_id"
     if not isinstance(undetectable, Mapping) or not isinstance(undetectable.get("cves"), list):
         return f"it lacks {where} not_detectable"
-    if not all(
-        isinstance(row, str) or (isinstance(row, Mapping) and isinstance(row.get("cve_id"), str)) for row in undetectable["cves"]
-    ):
-        return f"it lacks {where} not_detectable.cves, each a cve_id"
+    # CVE ids, as the contract (LoonVD's sharedAssets/contract/patch-policy-reference.md) has them
+    # and the walk reads them.
+    if not all(isinstance(row, str) and row for row in undetectable["cves"]):
+        return f"it lacks {where} not_detectable.cves, each a CVE id"
     if not isinstance(counts, Mapping) or not isinstance(counts.get("clock"), Mapping):
         return f"it lacks {where} counts"
     for key in ("versions", "versions_dated", "candidates", "listed", "excluded", "not_detectable"):
@@ -484,7 +572,7 @@ def _track_problem(app: str, track: object, reasons: list[str], timelines: Mappi
             f"+ not_detectable {len(undetected_rows)}"
         )
     ids = [row["cve_id"] for row in cves] + [row.get("cve_id") for row in excluded_rows]
-    ids += [row.get("cve_id") if isinstance(row, Mapping) else row for row in undetected_rows]
+    ids += undetected_rows
     if len(ids) != len(set(ids)):
         return disagree("a CVE is listed twice across cves, exclusions and not_detectable")
 
@@ -552,6 +640,11 @@ def _row_problem(row: Mapping[str, object], size: int) -> str | None:
         index = fix.get("index") if isinstance(fix, Mapping) else "?"
         if index is not None and (not _is_count(index) or index >= size):
             return f"{cve} has a fix index {json.dumps(index)} outside its {size} versions"
+        # NVD's fix version as written, present only where the index does not point at it (ruled
+        # 2026-11-25); the walk shows it beside the version that dated the fix, so it must be text.
+        named = fix.get("named") if isinstance(fix, Mapping) else None
+        if isinstance(fix, Mapping) and "named" in fix and (not isinstance(named, str) or not named):
+            return f"{cve} has a fix whose named version {json.dumps(named)} is not text"
     return None
 
 
@@ -608,8 +701,10 @@ async def record_attempt(
     host: str | None = None,
     http_status: int | None = None,
     detail: str | None = None,
+    built_at: datetime | None = None,
 ) -> None:
-    """Write the feed's one state row, in the caller's transaction."""
+    """Write the feed's one state row, in the caller's transaction. `built_at` is when LoonSec's
+    publisher last finished a build, as the exchange said it with the copy this attempt found."""
     values = {
         "attempted_at": datetime.now(UTC),
         "source": source,
@@ -617,6 +712,7 @@ async def record_attempt(
         "host": host,
         "http_status": http_status,
         "detail": detail[:2000] if detail else None,
+        "built_at": built_at,
     }
     await db.execute(
         pg_insert(PatchPolicyFeedState).values(id=1, **values).on_conflict_do_update(index_elements=["id"], set_=values)
@@ -680,7 +776,7 @@ async def _follow(db: AsyncSession, pointer: PatchPolicyPointer, *, transport: h
     host = _host(pointer.url)
     held = await current_doc(db)
     if held is not None and held.doc_id == pointer.signature:
-        await record_attempt(db, source=SOURCE_EXCHANGE, outcome=UNCHANGED, host=host)
+        await record_attempt(db, source=SOURCE_EXCHANGE, outcome=UNCHANGED, host=host, built_at=pointer.built_at)
         logger.debug("patch-policy data unchanged (doc_id %s…)", pointer.signature[:12])
         return UNCHANGED
     try:
@@ -697,7 +793,7 @@ async def _follow(db: AsyncSession, pointer: PatchPolicyPointer, *, transport: h
         _log_refusal(INVALID, str(exc), host, held)
         return INVALID
     await store_document(db, doc)
-    await record_attempt(db, source=SOURCE_EXCHANGE, outcome=STORED, host=host)
+    await record_attempt(db, source=SOURCE_EXCHANGE, outcome=STORED, host=host, built_at=pointer.built_at)
     _log_stored(doc, SOURCE_EXCHANGE)
     return STORED
 
@@ -877,23 +973,23 @@ class FeedView:
     # True when PATCH_POLICY_FEED_FILE is set: the document is read from that file, and the
     # exchange's link is not followed.
     from_file: bool = False
+    # When LoonSec's publisher last finished a build (the exchange's `built_at`), or None when that
+    # is not known. `stale` is judged from `as_of` alone; this only picks the stale sentence's cause.
+    built_at: datetime | None = None
+    # Whether that build is within `STALE_AFTER` of now by this instance's clock (`held_freshness`):
+    # the cause `sentence` names for a stale copy, sent so the page names the same one rather than
+    # judging it again by the browser's clock. None when `built_at` is.
+    publisher_running: bool | None = None
     document: Mapping[str, object] | None = field(default=None, repr=False)
 
 
-# The two instance timelines are a later slice (the walk's Jamf and Fleet positions, LI-4), so
-# until then each app's answer says so in place of a timeline. Replaced there, not here.
-JAMF_NOT_BUILT = "This build does not read a Jamf timeline for patch policy yet."
-FLEET_NOT_BUILT = "This build does not read a Fleet timeline for patch policy yet."
-
-
 def app_summaries(body: Mapping[str, object]) -> list[dict]:
-    """Each app the document references, its tracks with the counts the document states, and
-    which sources could date it: the public timeline when one of its tracks names a timeline with
-    dated versions. Read from a checked document, so every key is there; nothing is computed
-    beyond the first and last dated day."""
+    """Each app the document references and its tracks, with the counts the document states. Read
+    from a checked document, so every key is there; nothing is computed. Which sources can date
+    each track is `app.core.patch_policy_views.app_sources`, which reads this instance's catalogs."""
     summaries = []
     for app in body["apps"]:
-        tracks, days, public = [], [], set()
+        tracks = []
         for track in app["tracks"]:
             counts = track["counts"]
             tracks.append(
@@ -913,27 +1009,12 @@ def app_summaries(body: Mapping[str, object]) -> list[dict]:
                     "clock": {"detectable_at": counts["clock"]["detectable_at"], "published": counts["clock"]["published"]},
                 }
             )
-            dated = [v["date"] for v in track["versions"] if v.get("date")]
-            if track.get("timeline") and dated:
-                public.add(track["timeline"])
-                days += dated
         summaries.append(
             {
                 "app": app["app"],
                 "name": app["name"],
                 "bundle_ids": [b for b in app.get("bundle_ids") or [] if isinstance(b, str)],
                 "tracks": tracks,
-                "sources": {
-                    "public": {
-                        "available": bool(public),
-                        "first": min(days) if days else None,
-                        "last": max(days) if days else None,
-                        "sentence": None if public else f"LoonSec holds no public release dates for {app['name']} yet.",
-                        "ids": sorted(public),
-                    },
-                    "jamf": {"available": False, "first": None, "last": None, "sentence": JAMF_NOT_BUILT, "ids": []},
-                    "fleet": {"available": False, "first": None, "last": None, "sentence": FLEET_NOT_BUILT, "ids": []},
-                },
             }
         )
     return summaries
@@ -973,8 +1054,14 @@ def sentence_for(
     source: str | None = None,
     host: str | None = None,
     detail: str | None = None,
+    built_at: date | None = None,
+    publisher_running: bool = False,
 ) -> str:
-    """The one sentence for a state, filled from what the state row and the held copy say."""
+    """The one sentence for a state, filled from what the state row and the held copy say.
+
+    For `stale`, `built_at` and `publisher_running` (`built_at` within `STALE_AFTER` of now) name
+    the cause: the publisher running over NVD data that has not advanced, the publisher stopped,
+    or, with no `built_at`, only the copy's own date."""
     if state == STATE_TIER_OFF:
         return TIER_OFF_SENTENCE
     if state == STATE_NEVER:
@@ -982,10 +1069,14 @@ def sentence_for(
     if state == STATE_CURRENT:
         return f"Showing LoonSec's patch-policy data dated {as_of.isoformat() if as_of else '—'}."
     if state == STATE_STALE:
+        dated = as_of.isoformat() if as_of else "—"
         until = (as_of - timedelta(days=1)).isoformat() if as_of else "—"
+        if built_at is None:
+            return f"Showing patch-policy data dated {dated}, more than three days old; the walk ends {until}."
+        cause = f"but its NVD data has not advanced since {dated}" if publisher_running else "more than three days ago"
         return (
-            f"Showing patch-policy data dated {as_of.isoformat() if as_of else '—'}, more than three days old; "
-            f"the walk ends {until}."
+            f"Showing patch-policy data dated {dated}, more than three days old: LoonSec's publisher last ran on "
+            f"{built_at.isoformat()}, {cause}, and the walk ends {until}."
         )
     if state == NOT_PUBLISHED:
         return NOT_PUBLISHED_SENTENCE + copy_clause(as_of)
@@ -1007,6 +1098,18 @@ def sentence_for(
             as_of, still_used=True
         )
     raise ValueError(f"no sentence for feed state {state!r}")
+
+
+def held_freshness(as_of: datetime, built_at: datetime | None, now: datetime) -> tuple[str, bool]:
+    """A held copy whose last attempt was fine: `current` or `stale`, and whether LoonSec's
+    publisher is still running (`built_at` within `STALE_AFTER` of `now`), which picks the stale
+    sentence's cause.
+
+    Stale is judged from the copy's `as_of` alone, whatever `built_at` says: a publisher that
+    finishes a build every night over NVD data that has not advanced writes no new document, so its
+    `built_at` stays fresh over an old copy, and that is the case `stale` exists to catch."""
+    running = built_at is not None and now - built_at <= STALE_AFTER
+    return (STATE_STALE if now - as_of > STALE_AFTER else STATE_CURRENT), running
 
 
 async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedView:
@@ -1037,15 +1140,24 @@ async def feed_view(db: AsyncSession, *, now: datetime | None = None) -> FeedVie
     detectable = sources.get("detectable") if isinstance(sources, Mapping) else None
     coverage = detectable.get("coverage_since") if isinstance(detectable, Mapping) else None
     now = now or datetime.now(UTC)
-    if failed:
-        state = attempt.outcome
-    elif now - held.as_of > STALE_AFTER:
-        state = STATE_STALE
-    else:
-        state = STATE_CURRENT
+    # LoonSec's last build, when the attempt that found the copy current carried one.
+    built_at = attempt.built_at if attempt is not None and attempt.outcome in (STORED, UNCHANGED) else None
+    fresh, running = held_freshness(held.as_of, built_at, now)
+    state = attempt.outcome if failed else fresh
+    words = sentence_for(
+        state,
+        as_of=as_of,
+        source=seen["source"],
+        host=seen["host"],
+        detail=seen["detail"],
+        built_at=built_at.date() if built_at else None,
+        publisher_running=running,
+    )
     return FeedView(
         state=state,
-        sentence=sentence_for(state, as_of=as_of, source=seen["source"], host=seen["host"], detail=seen["detail"]),
+        sentence=words,
+        built_at=built_at,
+        publisher_running=running if built_at is not None else None,
         doc_id=held.doc_id,
         as_of=held.as_of,
         fetched_at=held.fetched_at,
