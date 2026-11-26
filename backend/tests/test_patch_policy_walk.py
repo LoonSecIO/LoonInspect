@@ -2077,6 +2077,8 @@ COUNTING_MUTANTS = {
         "released = max(released, runs[at][2])",
         "released = max(released, runs[at][2] + _DAY)",
     ),
+    # Killed through the window's end, as the next mutant is: the window always ends the day before
+    # such a release, so its first difference is `until`. Kept so that the guard stays pinned.
     "a release above the promotion table's newest row is installed": (
         "if newest is not None and index > newest:",
         "if False:",

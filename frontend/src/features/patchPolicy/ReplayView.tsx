@@ -317,7 +317,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                     <Fragment key={key}>
                       <dt className="font-mono text-xs text-muted-foreground">{key}</dt>
                       {/* A long address (a timeline's URL) breaks rather than push the page sideways at 1024 px. */}
-                      <dd className="break-words"><KeepDates text={text} /></dd>
+                      <dd className="break-words"><KeepDates text={String(text)} /></dd>
                     </Fragment>
                   ))}
               </dl>

@@ -754,7 +754,7 @@ describe("in German", () => {
   });
 });
 
-describe("the walk's tables and dates, as a reader at 1280 px sees them (w5 e2e)", () => {
+describe("the walk's tables and dates, as a reader at 1280 px sees them", () => {
   /** A table's markup with every date that cannot wrap taken out: what is left is a date a line could
    *  break at its hyphens ("2026-" above "09-01"). */
   const bareDates = (element: Element) =>
@@ -803,10 +803,15 @@ describe("the walk's tables and dates, as a reader at 1280 px sees them (w5 e2e)
         { line: "4.4", fix: "4.4.3", named: null, dated_as: "4.4.3", on: "2025-01-09", how: "fix" },
         { line: "4.4", fix: "4.4.2", named: null, dated_as: "4.4.4", on: "2024-10-01", how: "next_dated" }
       ];
-      walk.exclusions.cves = [{ ...walk.exclusions.cves[0], detail: "recorded exception ruled 2026-11-25" }];
+      walk.exclusions.cves = [
+        { ...walk.exclusions.cves[0], detail: "recorded exception ruled 2026-11-25" },
+        // A copy of LoonSec's data can still list this reason, whose words carry a date (2026-11-25).
+        { ...walk.exclusions.cves[0], cve_id: "CVE-2099-0002", reason: "fixed_version_not_in_catalog", detail: null }
+      ];
+      walk.exclusions.by_reason = { ...walk.exclusions.by_reason, fixed_version_not_in_catalog: 1 };
       walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
       await open("?source=fleet");
-      const { ledger, excluded } = tables();
+      const { ledger, reasons, excluded } = tables();
       // The list of updates: as many columns as fit one update a line, each date a span of its own.
       const updates = document.querySelector("details ul")!;
       expect(classes(updates)).toContain("grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]");
@@ -825,6 +830,9 @@ describe("the walk's tables and dates, as a reader at 1280 px sees them (w5 e2e)
       expect(fixes[1].innerHTML).toContain('<span class="whitespace-nowrap">2024-10-01</span>');
       // The outcome ("…until 4.4.3 on 2025-01-09"), the clock day, KEV: nothing left to break.
       expect(bareDates(ledger)).toEqual([]);
+      // A reason's own words, in the count of reasons and in the excluded list, keep their date whole.
+      expect(reasons.textContent).toMatch(/\d{4}-\d{2}-\d{2}/);
+      expect(bareDates(reasons)).toEqual([]);
       expect(bareDates(excluded)).toEqual([]);
       // The view's own window line, the dates it reads, and Evidence.
       const view = ledger.closest("div.min-w-0")!;

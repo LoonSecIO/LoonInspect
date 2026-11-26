@@ -1,4 +1,4 @@
-/** A sentence's ISO dates kept whole (#614, w5 e2e): a browser breaks "2026-09-01" at a hyphen wherever
+/** A sentence's ISO dates kept whole (#614): a browser breaks "2026-09-01" at a hyphen wherever
  *  a line runs out, so each date is a span that does not wrap, and the rest is the sentence as it was.
  *  Node lane: rendered to markup. */
 
