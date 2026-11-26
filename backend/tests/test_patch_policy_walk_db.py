@@ -252,7 +252,8 @@ async def test_a_public_walk_is_served_whole_in_its_totals_and_paged_in_its_rows
     assert body["inputs"]["timeline"]["source"] == "public" and body["inputs"]["timeline"]["ids"] == ["wireshark-tags"]
     assert body["check"] == {
         "state": "matched",
-        "detail": "Matches the totals LoonSec published for a 2-year window of Wireshark.",
+        "detail": "The walk of LoonSec's published dates for Wireshark 4.4 over 2 years matches the totals LoonSec published "
+        "with the data.",
     }
     assert (body["window"]["since"], body["window"]["until"]) == ("2024-11-22", "2026-11-22")
     assert set(body["policies"]) == set(walk.STOPS) and len(body["policies"]["60d"]["series"]["open"]) == body["window"]["days"]
@@ -310,13 +311,9 @@ async def test_jamf_dates_walk_the_track_and_the_other_lines_versions_are_set_as
     assert joined["source"] == "jamf" and joined["ids"] == list(JAMF_IDS)
     assert joined["name"] == "this instance's copy of Jamf's public patch catalog (Wireshark 4.4, Wireshark 4.6)"
     assert (joined["other_track"], joined["other_track_versions"], joined["unmatched"]) == (2, ["4.6.0", "4.6.1"], [])
-    # The app's public walk matched, which unlocks Jamf; the Jamf numbers themselves are not checked.
-    assert body["check"] == {
-        "state": "matched",
-        "detail": "The walk of LoonSec's published dates for a 2-year window of Wireshark matches the totals LoonSec "
-        "published. This view's dates come from this instance's copy of Jamf's public patch catalog, and its own "
-        "numbers are not checked.",
-    }
+    assert body["check"]["state"] == "matched"  # the app's public walk matched, which unlocks Jamf
+    # The check is the public walk's, so its sentence names that walk and never says this view matched.
+    assert body["check"]["detail"].startswith("The walk of LoonSec's published dates for Wireshark 4.4 over 2 years matches")
     assert body["clocks"]["release_date"] == timelines.JAMF_CLOCK
     # Jamf dated 4.4.3 a day after the tag, so the 1-day stop installs it a day later than on Public.
     public = await _walk(viewer, app="wireshark", track="wireshark/4.4")
@@ -494,7 +491,7 @@ async def test_a_fleet_history_is_confirmed_past_its_read_only_by_a_complete_che
     gappy = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
     assert gappy["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK + (
         f" Fleet's version history for {FLEET_SLUG}: {gap} A version left undated there is not in this view, and a fix it "
-        "carried is dated by the next version this history dates (docs/troubleshooting.md §27 step 10, §33 step 10)."
+        "carried is dated by the next version this history dates (docs/troubleshooting.md §27 step 10, §33 step 12)."
     )
 
 

@@ -30,6 +30,7 @@ ends with a reading order through the rest.
 | [`ingest-scheduling.md`](ingest-scheduling.md) | implemented, 2026-08-22 (#27) | Collections, the minute tick, the claim, the rate floor — what is read and when. |
 | [`jamf-observations.md`](jamf-observations.md) | settled at v0 | What an observation is, how it is identified and hashed, how the ledger stores it. |
 | [`jamf-patch-matching.md`](jamf-patch-matching.md) | v0, 2026-08-22 (#65); on the wire since 2026-09-04 (#311) | Which Jamf Patch title an app is, whether it is the latest, and what Jamf has seen. |
+| [`patch-policy.md`](patch-policy.md) | built, 2026-11-24 (#614) | Posture › Patch policy: the reference replays and the day-walk, the three sources of release dates (Public, Jamf, Fleet), and the terms each source was found under (R10). |
 | [`posture-snapshot.md`](posture-snapshot.md) | implemented, 2026-08-29 (#102) | The nightly tape of fleet posture: 34 keys, their definitions, and the freeze on them. |
 | [`runs.md`](runs.md) | implemented, 2026-08-23 (#31) | The run object: mutex, `jobID`, time window, heartbeat, reclaim, log. |
 | [`splunk-event-shaping.md`](splunk-event-shaping.md) | built, since 2026-09-03 (#241) | The per-device snapshot and how Splunk expands it into per-section events. |

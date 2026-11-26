@@ -37,7 +37,7 @@ describe("ReplayView on an app held on one release line", () => {
   it("at 1 day: 3 of 4 never seen, 1 exposed for 1 day, 3 update events", () => {
     const page = drawn("1d");
     expect(page).toContain("3 of 4 vulnerabilities never seen");
-    expect(page).toContain("1 of the 3 never seen were never in range: they affect only versions off the 4.4 line");
+    expect(page).toContain("1 of the 3 never seen was never in range: it affects only versions off the 4.4 line, so no patch policy meets it here.");
     expect(page).toContain("Exposed 1 CVEs this Mac ran");
     expect(page).toContain("Exposure days 1 CVE-days");
     expect(page).toContain("Update events 3 days on which");
@@ -61,6 +61,23 @@ describe("ReplayView on an app held on one release line", () => {
     expect(page).not.toContain("this Mac makes");
   });
 
+  it("never: splits the never seen by why, as the walk does, in place of 'never in range', in English and German", () => {
+    // The device keeps 4.4.1, and its one never seen is outside every range NVD names: `outside` would
+    // say it never affects this Mac, which is what the split warns against.
+    const page = drawn("never");
+    expect(page).toContain(copy.neverStays("4.4.1", 1, 1));
+    expect(page).toContain(
+      "A device that never updates stays on 4.4.1. The one never seen falls outside every range NVD names: either it affects only other versions, or NVD names no range for 4.4.1's line, since NVD often stops naming a line once it reaches end of life. It does not show the device was safe (troubleshooting.md §33 step 11)."
+    );
+    expect(page).not.toContain("never seen was never in range");
+    const german = drawn("never", patchPolicyGerman);
+    expect(german).toContain(patchPolicyGerman.neverStays("4.4.1", 1, 1));
+    expect(german).toContain("Ein Gerät, das nie aktualisiert, bleibt auf 4.4.1. Die eine nie gesehene liegt außerhalb jedes Bereichs, den NVD nennt");
+    expect(german).not.toContain("nie gesehenen war nie im betroffenen Bereich");
+    // The other stops keep `outside`.
+    expect(drawn("60d")).toContain("never seen was never in range");
+  });
+
   it("never presents the replayed count as all the CVEs, and shows the exclusions with their reasons", () => {
     const page = drawn("7d");
     expect(page).toContain("4 CVEs were replayed, of 5 published in the window. The other 1 are excluded and counted below");
@@ -70,6 +87,22 @@ describe("ReplayView on an app held on one release line", () => {
     expect(page).toContain("Rejected by the CVE program 0");
     expect(page).toContain("The fixed version is not a release on this replay's release timeline 0");
     expect(page).toContain("CVE-2099-0005");
+  });
+
+  it("lets a long word fold inside its table before the table outgrows its box, as the walk's tables do", () => {
+    // The every-stop and per-CVE tables floor at 38rem and hyphenate, the excluded-CVE list hyphenates,
+    // and an exclusion's detail (a machine word with no break in it) may break anywhere. The
+    // two-column count of each reason already fits.
+    const markup = markupOf("7d", patchPolicyGerman);
+    const tables = [...markup.matchAll(/<table class="([^"]*)"/g)].map((match) => match[1].split(" "));
+    expect(tables).toHaveLength(4);
+    expect(tables[0]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
+    expect(tables[1]).toEqual(expect.arrayContaining(["min-w-[38rem]", "hyphens-auto"]));
+    expect(tables[3]).toEqual(expect.arrayContaining(["hyphens-auto"]));
+    const exclusions = markup.split("<table").at(-1)!;
+    const lastCells = [...exclusions.matchAll(/<tr[^>]*>(?:<td[^>]*>.*?<\/td>)*?<td class="([^"]*)">[^<]*<\/td><\/tr>/g)].map((match) => match[1]);
+    expect(lastCells).toHaveLength(held.exclusions.cves.length);
+    for (const detail of lastCells) expect(detail.split(" ")).toContain("[overflow-wrap:anywhere]");
   });
 
   it("names the release-date source from the file, and never 'released on'", () => {
@@ -276,6 +309,38 @@ describe("ReplayView on every shipped replay", () => {
     });
   }
 
+  it("splits each shipped replay's never stop the way its file does, in English and German (w4b review, F7)", async () => {
+    // Chrome's never device keeps 131.0.6778.86: of its 6 never seen, 5 were already fixed there and 1
+    // falls outside every NVD range. Firefox's and Thunderbird's split unevenly too, so a view that
+    // swapped the two counts would say so here; Wireshark's 16 of 16 cannot tell them apart.
+    const loaded = async (id: string) => {
+      const entry = REPLAY_INDEX.find((each) => each.id === id)!;
+      const { replay } = await loadReplay(entry);
+      return { replay: replay!, name: entry.name };
+    };
+    const chrome = await loaded("chrome");
+    expect(drawn("never", copy, chrome.replay, chrome.name)).toContain(
+      "A device that never updates stays on 131.0.6778.86. Of the 6 never seen, 5 were already fixed in 131.0.6778.86, so the device never ran a version they affect. The other one falls outside every range NVD names: either it affects only other versions, or NVD names no range for 131.0.6778.86's line, since NVD often stops naming a line once it reaches end of life. It does not show the device was safe (troubleshooting.md §33 step 11)."
+    );
+    expect(drawn("never", patchPolicyGerman, chrome.replay, chrome.name)).toContain(
+      "Ein Gerät, das nie aktualisiert, bleibt auf 131.0.6778.86. Von den 6 nie gesehenen waren 5 in 131.0.6778.86 bereits behoben; auf dem Gerät lief also nie eine Version, die sie betreffen. Die übrige liegt außerhalb jedes Bereichs, den NVD nennt: Entweder betrifft sie nur andere Versionen, oder NVD nennt keinen Bereich für die Linie von 131.0.6778.86"
+    );
+    const firefox = await loaded("firefox");
+    expect(drawn("never", copy, firefox.replay, firefox.name)).toContain(
+      "A device that never updates stays on 132.0.2. Of the 17 never seen, 9 were already fixed in 132.0.2, so the device never ran a version they affect. The other 8 fall outside every range NVD names"
+    );
+    expect(drawn("never", patchPolicyGerman, firefox.replay, firefox.name)).toContain(
+      "Von den 17 nie gesehenen waren 9 in 132.0.2 bereits behoben; auf dem Gerät lief also nie eine Version, die sie betreffen. Die übrigen 8 liegen außerhalb"
+    );
+    const thunderbird = await loaded("thunderbird");
+    expect(drawn("never", copy, thunderbird.replay, thunderbird.name)).toContain(
+      "A device that never updates stays on 132.0.1. Of the 19 never seen, 3 were already fixed in 132.0.1, so the device never ran a version they affect. The other 16 fall outside every range NVD names"
+    );
+    expect(drawn("never", patchPolicyGerman, thunderbird.replay, thunderbird.name)).toContain(
+      "Von den 19 nie gesehenen waren 3 in 132.0.1 bereits behoben; auf dem Gerät lief also nie eine Version, die sie betreffen. Die übrigen 16 liegen außerhalb"
+    );
+  });
+
   it("Google Chrome: ends on 2026-11-17, waits for each major's promotion, and gives the window's cut, not the table, as the cause", async () => {
     const chrome = REPLAY_INDEX.find((entry) => entry.id === "chrome")!;
     const { replay } = await loadReplay(chrome);
@@ -299,6 +364,10 @@ describe("ReplayView on every shipped replay", () => {
     expect(page).toContain("One hypothetical Mac that runs Wireshark, held on its 4.4 release line, replayed from 2024-11-23 to 2026-11-23");
     expect(page).toContain("16 of 115 vulnerabilities never seen");
     expect(page).toContain("16 of the 16 never seen were never in range: they affect only versions off the 4.4 line");
+    const never = replay!.policies.never;
+    expect(drawn("never", copy, replay!, wireshark.name)).toContain(
+      copy.neverStays(never.initial_version, never.never_seen, never.never_seen_outside_affected_range)
+    );
     expect(page).toContain("Release dates: The wireshark/wireshark repository's tags on GitLab (gitlab.com/wireshark/wireshark).");
     expect(page).toContain("Fix on 4.4, with its release date");
     expect(page).toContain("Following the newest release line instead");

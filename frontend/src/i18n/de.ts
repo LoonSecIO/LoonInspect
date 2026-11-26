@@ -1,5 +1,6 @@
 import { historyGerman } from "@/features/devices/historyCopy";
 import { patchPolicyGerman } from "@/features/patchPolicy/copy";
+import { walkGerman } from "@/features/patchPolicy/walkCopy";
 import { mcpGerman } from "@/features/mcp/copy";
 import { aiActivityGerman } from "@/features/ai/activityCopy";
 import { fleetPlanningGerman } from "@/features/fleetCatalog/planningCopy";
@@ -9,6 +10,7 @@ import type { Translations } from "@/i18n/en";
 export const de: Translations = {
   deviceHistory: historyGerman,
   patchPolicy: patchPolicyGerman,
+  patchPolicyWalk: walkGerman,
   mcp: mcpGerman,
   aiActivity: aiActivityGerman,
   fleetPlanning: fleetPlanningGerman,

@@ -115,7 +115,7 @@ spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never star
 | **AB** | §32 | A patch-policy document is refused by its check two exchanges running, or fails unexpectedly |
 | **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
 | **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, it leaves a held line undated, or a channel it names misses builds |
-| **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, or a timeline or request it built is refused |
+| **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, a timeline or request it built is refused, or the page cannot read or draw it |
 
 ## 0. The four things you can read
 
@@ -3008,10 +3008,14 @@ that log, then repeat the act.
 
 Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
 runs one app, replayed against public CVE records under each stop of a patch-policy slider. It is
-not this organization's exposure. It reads no inventory, sends nothing, and stores nothing; each
-replay is a file that ships inside the build, the same for every organization, and the file names
-the public release record its dates come from. The page is at `/posture/patch-policy` and needs
-**app:read**, which every role holds.
+not this organization's exposure. It reads no inventory, sends nothing, and stores nothing. The page
+is at `/posture/patch-policy` and needs **app:read**, which every role holds.
+
+The page has two modes. Once LoonSec's patch-policy data (§32) is held for this organization, it
+walks that data day by day, with a source toggle (Public, Jamf, Fleet) and a day graph: that page is
+§33. Until then it draws the **reference replays**: files that ship inside the build, the same for
+every organization, each naming the public release record its dates come from. This path is about
+the replays, and step 11 about how the page chooses between the two.
 
 1. **The entry is not in the sidebar.** It is listed under Posture, last, for every account that
    holds **app:read**, with nothing to switch on. An administrator checks Settings › Feature Flags:
@@ -3100,6 +3104,23 @@ the public release record its dates come from. The page is at `/posture/patch-po
     closes, in NVD's bounds. The one that matters to this Mac is the range its versions fell in,
     which the file has already judged: the *Outcome* beside it names the release that cleared the
     CVE, where one did. Not a fault of the instance.
+
+11. **The page opens with a sentence about LoonSec's patch-policy data, then draws a reference
+    replay.** The page asked this instance for LoonSec's data first (`GET /api/patch-policy/apps`)
+    and is drawing the replays in its place. The first sentence says which of two things happened:
+    - It is the same sentence Settings › Support › **LoonSec patch-policy data** shows, followed by
+      *…Until this instance holds LoonSec's data, this page shows the reference replays that ship
+      with this build instead…* → no copy of LoonSec's data answers for this organization: data
+      sharing is off (nothing arrives until it is turned on), nothing has arrived yet, or every copy
+      was refused. §32 walks that sentence. Once a copy is held, the page walks it on the next load
+      (§33).
+    - *The state of LoonSec's patch-policy data could not be read from this instance (…)* → the request
+      failed, which is not missing data. The bracket gives what answered: `HTTP 403` is an account
+      without **app:read**; *no answer* is a container that did not answer, which is §4; any other
+      status, with the container up, is reportable state **AE**.
+
+    Either way the replay underneath is complete and correct on its own terms. Nothing on this page
+    mixes the two: a replay is never drawn under the walk's words, or a walk under the replay's.
 
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
 or the page says no reference replay ships with the build. Report the page's sentence as it is
@@ -4408,7 +4429,21 @@ timeline is one of three, the **source**:
   version, read while this organization's **Fleet catalog (maintained apps)** flag is on (§27).
   Every Fleet view says it: these are Fleet's dates, not the vendor's, some hours after Homebrew.
 
-Where to read it: `GET /api/patch-policy/apps` (**app:read**) lists, for each app, each source and
+Where to read it: **Posture › Patch policy**, once LoonSec's data is held for this organization
+(until then the page draws the reference replays, §22 step 11). The page lists the apps the data
+references first (*In LoonSec's data*) and every other Jamf Patch title after them (*No reference
+yet*, never a count of zero), then a track, the source toggle (**Public**, **Jamf**, **Fleet**;
+Public by default), the window (2 or 3 years) and *Compare sources on the days they all cover*
+(`align=common`). A source that cannot date the track is drawn disabled, and its sentence is printed
+under the toggle in the page's language, with the instance's own English sentence beneath it as
+*This instance's words: …*: that second sentence is the one to report. A walk the instance refuses is
+printed the same way where the walk would be, and Evidence marks each sentence it prints from the
+instance (the timeline's note, each cut of the window, a source left out, the check's detail) the
+same way. Under the slider the day graph draws the CVEs open
+on each day at the selected stop, with the days CVEs opened and the days an install resolved them
+marked in a strip beneath; *The days the count moved, as a table* lists every one of those days.
+
+The same answers, read directly: `GET /api/patch-policy/apps` (**app:read**) lists, for each app, each source and
 each track, `available`, a `state` word and, when it is not available, the sentence that says why;
 `GET /api/patch-policy/walk?app=…&track=…&source=public|jamf|fleet&years=2|3` answers the walk,
 or a `409` whose `detail` is the sentence, `reason` the word, `source` the timeline it concerns
@@ -4461,13 +4496,15 @@ refusal: the sentence is the whole report.
      (its label, the public record LoonSec read the versions from, and the versions),
      `definitions.other_channel` states the rule beside the walk's own `join`,
      `GET /api/patch-policy/apps` gives each track's `otherChannel`, and a `409`'s
-     `facts.other_channels` says the same beside the refusal. They are counted there and not
-     worded in the view's `note`, which stays the source's own. A version a track lists is that
-     track's even when a channel lists it too: ESR 153.0 shares its number with release 153.0 and
-     is walked as the release. LoonSec's data lists a channel's versions without Mozilla's `esr`
-     suffix; a source that spells one with it (`128.5.1esr`) is matched by its spelling as given,
-     then without the suffix, and a track that lists either spelling still takes it first
-     (`153.0esr` is the release's 153.0). Nothing to do: the view walks the track's own channel.
+     `facts.other_channels` says the same beside the refusal. The instance counts them and leaves
+     the words to the page, so the view's `note` stays the source's own: the page says it once per
+     channel in the reader's language, under Evidence › Versions joined, and beside a refusal's
+     unmatched versions. A version a track lists is that track's even when a channel lists it too:
+     ESR 153.0 shares its number with release 153.0 and is walked as the release. LoonSec's data
+     lists a channel's versions without Mozilla's `esr` suffix; a source that spells one with it
+     (`128.5.1esr`) is matched by its spelling as given, then without the suffix, and a track that
+     lists either spelling still takes it first (`153.0esr` is the release's 153.0). Nothing to do:
+     the view walks the track's own channel.
    - `too_many_unmatched` (the walk's own refusal): ***N of the M versions the timeline from …
      dates from … to …, the days a device in this view could install them, match no version
      LoonSec's patch-policy data lists…*** A version LoonSec's data does not list is never
@@ -4490,7 +4527,9 @@ refusal: the sentence is the whole report.
      The last check read Fleet's whole catalog, and no Mac title carries the app's bundle id:
      Fleet does not maintain the app. Choose another source.
    - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
-     this instance has read that catalog only in part…*** The titles held are partial or unread
+     this instance has read that catalog only in part…*** (the page's own words: *Fleet's catalog
+     has been read only in part on this instance, and the part read holds no Mac title for …*).
+     The titles held are partial or unread
      ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). A title missing from a catalog
      read only in part is not proof that Fleet has none, so the source does not say `not_held`.
      The sentence goes on with the cause, as the Fleet catalog tab's status line has it:
@@ -4542,6 +4581,14 @@ refusal: the sentence is the whole report.
      no source above caught it first: on Public it means LoonSec's data names a held line it does
      not date, reportable state **AD**.
    - `channel_empty`: as for Jamf above.
+   - `too_many_unmatched` and `no_matched_versions` (the walk's own): as for Jamf above, with the
+     versions Fleet's history dates (`facts.in_reach.unmatched`). Every Fleet title with the app's
+     bundle id is read, and the builds of the channels LoonSec's data names under
+     `other_channels` are set aside first (`facts.other_channels`): Fleet's `firefox@esr` shares
+     Firefox's bundle id, and once its history is read its ESR builds are set aside for the
+     release track, not counted here. What is left is a channel the data names nowhere. Choose
+     Public. If the versions named are plainly releases of the track, reportable state **AE**; if
+     they are plainly builds of a channel the data names under `other_channels`, **AD**.
    - Not a refusal: a Fleet view's `note` says *Fleet's catalog was read only in part…*, or
      carries *Fleet's version history for …:* and a title's own history sentence. While the
      catalog is partial, no daily check confirms a title's history past the day it was read, so
@@ -4550,7 +4597,7 @@ refusal: the sentence is the whole report.
      carries it to that check's day. The note says so only when a complete check would have
      carried the view further. A title's history sentence (§27 step 10) names what its read left
      undated: those versions are not in the view, and a fix one of them carried is dated by the
-     next version the history dates (step 10), so that CVE counts open longer than Fleet's
+     next version the history dates (step 12), so that CVE counts open longer than Fleet's
      catalog alone would show. A state concluded from the titles that were read (`esr_missing`,
      `channel_empty`, `no_versions`, `line_not_followed`) ends, while the catalog is partial, with
      ***This instance has read Fleet's catalog only in part, so another Fleet title under this
@@ -4582,10 +4629,16 @@ refusal: the sentence is the whole report.
    - Not a refusal: `check.state: unchecked_window` with ***LoonSec has no check for a N-year
      window of …; it is shown because the M-year walk matched.*** The window asked for has no
      published totals, and another window of the app matched them.
-   - Not a refusal either: a Jamf or Fleet view, or one with `align=common`, whose `check.detail`
-     ends ***…, and its own numbers are not checked.*** Only the walk of LoonSec's own dates at a
-     default window can be checked against LoonSec's totals; that walk matched, which is what lets
-     the view be shown, and the view's own numbers come from its own dates and days.
+   - Which view was checked: LoonSec publishes totals only for its own dates over a whole window,
+     so the check is the Public walk of the window asked for, without `align=common`, and every
+     source and aligned window of the track is shown under that one check. Evidence › Check on
+     that Public view says *Matches the totals LoonSec published for this window*. On a Jamf,
+     Fleet or aligned view it says *Not checked itself: …*, and the instance's `check.detail`
+     (***The walk of LoonSec's published dates for … over N years matches the totals LoonSec
+     published with the data.***) names the walk that was. Not a fault: no published total
+     exists for a Jamf, Fleet or aligned view to be held to. On an unchecked window (above), a
+     Jamf, Fleet or aligned view's `check.detail` ends ***…, and its own numbers are not
+     checked.*** for the same reason.
    - `document_invalid`: ***LoonSec's patch-policy data for … failed this build's check (…)…***
      The data does not hold together for this app in a way the copy's own check (§32 step 6)
      does not test. Reportable state **AD**.
@@ -4598,7 +4651,60 @@ refusal: the sentence is the whole report.
    sources that can date the track share (`window.aligned` names them, and any left out with its
    sentence), and read each view's own counts. `input_id` names a walk's inputs and `run_id` its
    result; the same pair is the same numbers.
-10. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
+10. **The page says the walk could not be read, or cannot be drawn.**
+    - *The walk could not be read from this instance (…)* → the request failed, which is not a
+      refusal: a refusal always prints its own sentence. The bracket gives what answered. *no answer*
+      is a container that did not answer (§4); `HTTP 403` is an account without **app:read**;
+      `HTTP 422` is a request the page built and the route did not accept, as is any other status with
+      the container up: reportable state **AE**.
+    - *This instance answered with a walk this page cannot draw (…)* → the answer arrived and is not
+      the shape this page reads; the bracket names the part. A page left open across an update of the
+      instance does this: reload. If it reads the same after a reload, it is reportable state **AE**.
+    - *Nothing is walked over … for this track: the reason is under the toggle above* → the address
+      names a source the instance reported it cannot date for this track (a link from another
+      organization, say). The sentence under the toggle is that source's step above; choose another.
+    - *LoonSec's patch-policy data does not walk … ESR yet; it walks …* → Jamf's catalog has an ESR
+      title that shares the app's bundle ID, so the list shows it under the app's row; the walk is of
+      the release channel only. Whether the ESR builds a Jamf or Fleet view reads are set aside
+      depends on the copy held: one that names the ESR channel under `other_channels` sets them
+      aside (step 4); one that does not counts them as unmatched, and the view can be refused as
+      `too_many_unmatched` (step 4, step 5 on Fleet; choose Public). `feed.docId` from
+      `GET /api/patch-policy/apps` names the copy. Not a fault.
+    - *Page P is past the end of this list: it holds N CVEs on M pages…* → the address names a page
+      of the CVE list (`page=`) that the walk does not have, because the list is shorter now than
+      when the link was saved: each new copy of LoonSec's data can change how many CVEs a window
+      lists. The route answers such a page with no rows and `cves_page.page` above
+      `cves_page.pages`. **Show page M** opens the last page. Not a fault.
+11. **The never stop's never-seen count, and what it does not show.** A device kept to the never
+    stop never leaves the first version the window starts it on (the walk's
+    `policies.never.initial_version`), so under that stop's count the page splits it by why, in
+    place of the other stops' *… never seen were never in range…*: *A device that never updates
+    stays on … Of the N never seen, F were already fixed in …, so the device never ran a version
+    they affect. The other O fall outside every range NVD names…* The two kinds read differently:
+    - **Already fixed** (`fix_installed_first`; the stop's `never_seen` less
+      `never_seen_outside_affected_range`): the version the device keeps carries the CVE's fix on
+      its line, so it never ran a version the CVE affects. An old CVE whose clock day falls in the
+      window, years after its fix shipped, reads this way. These are a real never seen.
+    - **Outside every range NVD names** (`never_seen_outside_affected_range`): no affected range NVD
+      gives the CVE holds that version. Either the CVE affects only other versions, or NVD names no
+      range for that version's line: NVD's ranges often stop naming a line once it reaches end of
+      life, so a device left on an old line reads never seen for CVEs that may well affect it.
+      These do not show the device was safe.
+
+    How the count splits depends on the version the never device keeps, so it differs by app,
+    track and window, and it moves whenever a new copy of LoonSec's data moves the window: the
+    page prints both numbers for the view on screen. That version is the newest release available
+    by the window's first day (`definitions.steady_state`): the never stop is a device that stops
+    updating that day, not one already behind, so for the window's first 59 days it can run a
+    newer release than the 60-day stop, which opens the window on the newest release it would
+    already have installed. Where most were already fixed, the never stop can count fewer never
+    seen than the 30-day stop, because the CVEs fixed before the version the device keeps are ones
+    it never ran. Read the second kind as "NVD names no range here", not as "this device was never
+    exposed"; the stops that install are the comparison that means something. The reference
+    replays that ship with the build (§22 step 11) split their never stop the same way, in the
+    same words, from the replay file's own `policies.never`. Not a fault.
+
+12. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
     not date the exact build LoonSec's data names as a CVE's fix: Fleet's history holds only the
     builds Fleet's catalog carried, from the day it began. Such a CVE is not left out. As ruled on
     2026-11-25, the walk counts the next dated version at or above the fix on the
@@ -4614,8 +4720,24 @@ refusal: the sentence is the whole report.
     - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where the version
       LoonSec points at is not that exact one (null otherwise): the next listed version above it,
       or, where that one is still in the CVE's range, the first listed version above the range.
-      NVD can name a build the Mac never got: for Chrome's Linux-only 142.0.7444.59, LoonSec
-      points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
+      NVD can name a build the Mac never got: for Chrome's Linux and Windows build 142.0.7444.59,
+      LoonSec points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
+    - for Chrome, NVD's build can be another platform's that Google numbered above the Mac's build
+      of the same release. LoonSec keeps NVD's bound, and the fix counts from the first Mac build
+      at or above it, which is a release late where NVD named such a build. As ruled on
+      2026-11-25, three releases are corrected, and only for the CVEs that release's own Chrome
+      Releases post names as fixed by it: a CVE on the post whose range NVD ends at the release's
+      build counts from the Mac's own build read from that post, and `named` keeps NVD's build
+      (106.0.5249.61 for NVD's 106.0.5249.62, 135.0.7049.41/.42 for 135.0.7049.52, and
+      136.0.7103.48/.49 for 136.0.7103.59). Any other CVE NVD ends at one of those builds keeps
+      NVD's range. One does: CVE-2025-3066, which NVD ends at 135.0.7049.52, is not on the
+      2025-04-01 post that 135.0.7049.41/.42 shipped with; Google's 2025-04-08 post names it fixed
+      in 135.0.7049.84/.85, and NVD's own description says "prior to 135.0.7049.84". Its `fix`
+      135.0.7049.84 beside `named` 135.0.7049.52 is the build that fixed it, not a fault. NVD's
+      114.0.5735.110 and 144.0.7559.99 keep NVD's bound too: LoonSec has not read which Mac build
+      carries those fixes, so they can count a release late. A copy built before the ruling counts
+      all three releases from the first Mac build at or above NVD's. That is LoonSec's data, the
+      same on every source, not a fault;
     - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
       not clearing it: a device clears the CVE when it installs a version outside the CVE's
       affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
@@ -4644,23 +4766,47 @@ refusal: the sentence is the whole report.
     `how: next_dated` or `fix` with no `dated_as`, or a `next_dated` entry whose `dated_as` the
     CVE's affected range covers, is reportable state **AE**.
 
+    On the page, the list of CVEs gives each row's `fix_dated_by` on a line beneath the row, *Fixes
+    of CVE-…, as this source dates them:*, one list item per entry (two entries at one version are
+    two items: the fix, then NVD's bound that lands there, with `named`): a `fix` entry is the fix
+    and the date the source gives it, with nothing more; a `next_dated` entry reads *…: not dated by this source, so counted from …,
+    the first version at or above the fix that it dates outside the CVE's affected range, on …*
+    (a version the source dates inside the range is passed over, so this can be later than the
+    next version the source dates); an `undated` one reads *…: this source dates no version at or
+    above it on the … line outside the CVE's affected range, so this CVE is walked by its affected
+    ranges there* (*No fix version on the … line in LoonSec's data…* where the data names none). NVD's own
+    version follows in brackets where `named` differs. Where the version that dated a fix is dated on
+    the timeline's first day (`inputs.timeline.first`), the line goes on *Fleet's history begins
+    here* (or Jamf's): the fix is older than anything the source holds, and its `on` is where that
+    history starts, not a day the fix shipped. Evidence › *Fixes dated* gives `counts.fix_dating`,
+    over the lines a device under any stop runs in the window.
+    A copy of LoonSec's data from before 2026-11-25 still lists `fixed_version_not_in_timeline`
+    among the exclusion reasons; the walk counts it 0, and the page's exclusion table says it is no
+    longer a reason. Since the same day LoonSec's data no longer excludes a CVE as
+    `fixed_version_not_in_catalog` either: it lists a fix the track's version list does not hold
+    at the next version at or above it, with `named`. A copy built since counts that reason 0, and
+    the table says it is no longer a reason; an older copy can still count some. Not a fault.
+
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
 has totals this build matched (`unchecked`), the data fails the walk's check
 (`document_invalid`), it names a held line it does not date (`ceiling_line_undated` on
 Public), or a Jamf or Fleet timeline is refused over builds of a channel the data names under
 `other_channels` and does not list in full (`too_many_unmatched`, with Firefox ESR builds among
-`facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the sentence as
-worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf` from
-`GET /api/patch-policy/apps`, and the build from Settings › Support (§8). A walk that was shown is
-reportable state **AD** too when a CVE row's `fix_dated_by` names a `fix` the row's own
-`affected_text` covers (§33 step 10): report that CVE row with the same.
+`facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the
+sentence as worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf`
+from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8). A walk that was
+shown is reportable state **AD** too when a CVE row's `fix_dated_by` names a `fix` the row's own
+`affected_text` covers (§33 step 12): report that CVE row with the same.
 
 **AE.** A patch-policy walk is refused as a defect in LoonInspect: its own totals disagree
 (`invariant`), the timeline or the request it built is refused (`timeline_invalid`,
 `request_invalid`), or a Jamf or Fleet timeline is refused over versions that are plainly the
-track's own (`too_many_unmatched`, `no_matched_versions`); or a walk that was shown says it dated
-a fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated` and no
-`dated_as`, step 10), or dated an undated fix by a version the CVE's `affected_text` still covers
-(`how: next_dated`, step 10). Report the sentence as worded (or the CVE row), the refusal's `facts`, the
-app, track, source and window asked for, and the build (§8).
+track's own (`too_many_unmatched`, `no_matched_versions`); or, with the container up and the
+account holding **app:read**, the page cannot read LoonSec's data's state or a walk (§22 step 11,
+step 10), or cannot draw a walk it read, after a reload; or a walk that was shown says it dated a
+fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated` and no
+`dated_as`, step 12), or dated an undated fix by a version the CVE's `affected_text` still covers
+(`how: next_dated`, step 12). Report the sentence as worded (or the CVE row), the refusal's
+`facts`, the app, track, source and window asked for (the page's address carries all four), and
+the build (§8).

@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
+import { PolicySlider } from "@/features/patchPolicy/PolicySlider";
 import {
   SLIDER_STOPS,
   TABLED_POLICY,
@@ -100,39 +101,10 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         {cut && <span className="block pt-1">{copy.shortened(replay.window.until, cut.requested)}</span>}
       </div>
 
-      <div className={card}>
-        <label htmlFor="patch-policy-stop" className={heading}>{copy.policyHeading}</label>
-        {/* Inset by half a column so the thumb sits over the stop it names. */}
-        <div className="px-[calc(100%/12_-_8px)] pt-3">
-          <input
-            id="patch-policy-stop"
-            type="range"
-            className="block w-full"
-            min={0}
-            max={SLIDER_STOPS.length - 1}
-            step={1}
-            value={SLIDER_STOPS.indexOf(stop)}
-            aria-valuetext={copy.stops[stop]}
-            onChange={(event) => onStop(SLIDER_STOPS[Number(event.target.value)])}
-          />
-        </div>
-        <div className="grid grid-cols-6 pt-1">
-          {SLIDER_STOPS.map((each) => (
-            <button
-              key={each}
-              type="button"
-              aria-pressed={each === stop}
-              onClick={() => onStop(each)}
-              className={`rounded-md px-0.5 py-1 text-xs sm:text-sm ${each === stop ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {copy.stops[each]}
-            </button>
-          ))}
-        </div>
-        <p className="pt-2 text-sm text-muted-foreground">{copy.policySaid(stop)}</p>
+      <PolicySlider stop={stop} onStop={onStop} copy={copy}>
         {waits && stop !== "never" && <p className="pt-1 text-sm text-muted-foreground">{copy.waitsForPromotion}</p>}
         {waits && behind && <p className="pt-1 text-sm text-muted-foreground">{copy.promotionTableBehind}</p>}
-      </div>
+      </PolicySlider>
 
       <div className={card}>
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -140,16 +112,25 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <span className="text-xl text-muted-foreground tabular-nums">{copy.of} {copy.num(replayed)}</span>
           <span className="text-xl font-semibold">{copy.neverSeenLabel}</span>
         </p>
-        <p className="pt-3 text-sm">{copy.outside(policy.never_seen_outside_affected_range, policy.never_seen, line)}</p>
+        {/* As on the walk view: the never stop's device keeps its first version, so its never seen is split
+            by why, already fixed in that version or outside every range NVD names. `outside` would say the
+            second kind never affects this Mac, the conclusion the split warns against. */}
+        <p className="pt-3 text-sm">
+          {stop === "never"
+            ? copy.neverStays(policy.initial_version, policy.never_seen, policy.never_seen_outside_affected_range)
+            : copy.outside(policy.never_seen_outside_affected_range, policy.never_seen, line)}
+        </p>
         <p className="pt-1 text-sm">{copy.denominators(replayed, inWindow, excluded)}</p>
         <p className="pt-1 text-sm text-muted-foreground">{copy.neverSeenSaid}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Four abreast only from 1280 px: beside the app list at 1024 px a tile is narrower than a
+          six-digit German figure ("134.587"), which then ran under the next tile. */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {tiles.map(([label, value, hint]) => (
-          <div key={label} className="rounded-lg border bg-card p-3">
+          <div key={label} className="min-w-0 rounded-lg border bg-card p-3">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
+            <p className="break-words text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
             <p className="text-xs text-muted-foreground">{hint}</p>
           </div>
         ))}
@@ -171,7 +152,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
       <div className="space-y-1">
         <h2 className={heading}>{copy.compareHeading}</h2>
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[40rem] text-sm">
+          <table className="w-full min-w-[38rem] hyphens-auto text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
                 {[copy.colPolicy, copy.colNeverSeen, copy.colOutside, copy.exposed, copy.exposureDays, copy.updateEvents, copy.openAtEnd].map((label) => (
@@ -217,7 +198,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         </div>
         {/* A floor on the width: a phone scrolls the table inside its box and no cell folds to a letter a line. */}
         <div className="max-h-[32rem] overflow-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[44rem] text-sm">
+          <table className="w-full min-w-[38rem] hyphens-auto text-sm">
             <thead className="sticky top-0 border-b text-left text-muted-foreground">
               <tr>
                 {/* The outcome sits beside the CVE, so it is the column a phone shows before any sideways scroll. */}
@@ -281,7 +262,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <details className="text-sm">
             <summary className="cursor-pointer text-muted-foreground">{copy.excludedList(excluded)}</summary>
             <div className="mt-1 overflow-x-auto rounded-lg border bg-card">
-              <table className="w-full min-w-[36rem] text-sm">
+              <table className="w-full min-w-[36rem] hyphens-auto text-sm">
                 <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                   <tr>
                     {[copy.colCve, copy.colPublished, copy.colReason, copy.colStatus, copy.colDetail].map((label) => <th key={label} className={`${cell} font-medium`}>{label}</th>)}
@@ -294,7 +275,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                       <td className={`${cell} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
                       <td className={cell}>{row.reason ? (copy.reasons[row.reason] ?? row.reason) : "—"}</td>
                       <td className={`${cell} whitespace-nowrap`}>{statusOf.get(row.cve_id) ?? "—"}</td>
-                      <td className={`${cell} text-muted-foreground`}>{row.detail ?? "—"}</td>
+                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>{row.detail ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>

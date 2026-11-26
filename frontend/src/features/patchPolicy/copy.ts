@@ -86,7 +86,28 @@ export const patchPolicyEnglish = {
   of: "of",
   neverSeenSaid: "Never seen: on or after the day NVD published the CVE, this Mac ran no version the CVE affects.",
   outside: (outside: number, neverSeen: number, line: string | null) =>
-    `${outside} of the ${neverSeen} never seen were never in range: they affect only versions ${line ? `off the ${line} line` : "this Mac never runs"}, so no patch policy meets them here.`,
+    `${outside} of the ${neverSeen} never seen ${plural(outside, "was", "were")} never in range: ${plural(outside, "it affects", "they affect")} only versions ${line ? `off the ${line} line` : "this Mac never runs"}, so no patch policy meets ${plural(outside, "it", "them")} here.`,
+  /** The never stop, in place of `outside`, in the walk and in the reference replays alike: the device
+   *  keeps one version, so its never-seen count is split by why. Those already fixed in that version
+   *  are a real never seen; those outside every range NVD names may only be a line NVD stopped
+   *  listing (troubleshooting.md §33 step 11). */
+  neverStays: (version: string | null, neverSeen: number, outside: number) => {
+    const fixed = neverSeen - outside;
+    const kept = version ?? "the version it starts the window on";
+    const that = version ?? "that version";
+    const parts = [`A device that never updates stays on ${kept}.`];
+    if (fixed > 0) {
+      const whom = fixed === neverSeen ? `${plural(fixed, "The one", `All ${fixed}`)} never seen` : `Of the ${neverSeen} never seen, ${fixed}`;
+      parts.push(`${whom} ${plural(fixed, "was", "were")} already fixed in ${that}, so the device never ran a version ${plural(fixed, "it affects", "they affect")}.`);
+    }
+    if (outside > 0) {
+      const whom = fixed > 0 ? plural(outside, "The other one falls", `The other ${outside} fall`) : plural(outside, "The one never seen falls", `All ${outside} never seen fall`);
+      parts.push(
+        `${whom} outside every range NVD names: either ${plural(outside, "it affects", "they affect")} only other versions, or NVD names no range for ${that}'s line, since NVD often stops naming a line once it reaches end of life. ${plural(outside, "It does", "They do")} not show the device was safe`
+      );
+    }
+    return `${parts.join(" ").replace(/\.$/, "")} (troubleshooting.md §33 step 11).`;
+  },
   denominators: (replayed: number, inWindow: number, excluded: number) =>
     `${replayed} CVEs were replayed, of ${inWindow} published in the window. The other ${excluded} are excluded and counted below; excluded is not safe.`,
 
@@ -149,7 +170,6 @@ export const patchPolicyEnglish = {
     only_prerelease_criteria: "Names only pre-release builds",
     no_fixed_version_determinable: "No fixed version can be read from the record",
     fixed_version_not_in_catalog: "The fixed version is not a release on this replay's release timeline",
-    fixed_version_not_in_timeline: "The fixed version is not a release on this replay's release timeline",
     branch_ambiguity: "The affected range covers a release line whose fix it does not name",
     other_edition_only: "NVD lists only another edition (ESR) as affected: no release this channel was shipping when the CVE was published"
   } as Record<string, string>,
@@ -249,7 +269,26 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   of: "von",
   neverSeenSaid: "Nie gesehen: Ab dem Tag, an dem NVD die CVE veröffentlicht hat, lief auf diesem Mac keine Version, die sie betrifft.",
   outside: (outside: number, neverSeen: number, line: string | null) =>
-    `${outside} der ${neverSeen} nie gesehenen waren nie im betroffenen Bereich: Sie betreffen nur Versionen ${line ? `außerhalb der Linie ${line}` : "die dieser Mac nie ausführt"}, sodass ihnen hier keine Patch-Richtlinie begegnet.`,
+    `${outside} der ${neverSeen} nie gesehenen ${mehrzahl(outside, "war", "waren")} nie im betroffenen Bereich: ${mehrzahl(outside, "Sie betrifft", "Sie betreffen")} nur Versionen${line ? ` außerhalb der Linie ${line}` : ", die dieser Mac nie ausführt"}, sodass ${mehrzahl(outside, "ihr", "ihnen")} hier keine Patch-Richtlinie begegnet.`,
+  neverStays: (version: string | null, neverSeen: number, outside: number) => {
+    const fixed = neverSeen - outside;
+    const kept = version ?? "der Version, mit der es das Zeitfenster beginnt";
+    const that = version ?? "dieser Version";
+    const parts = [`Ein Gerät, das nie aktualisiert, bleibt auf ${kept}.`];
+    if (fixed > 0) {
+      const whom =
+        fixed === neverSeen ? mehrzahl(fixed, "Die eine nie gesehene war", `Alle ${fixed} nie gesehenen waren`) : `Von den ${neverSeen} nie gesehenen ${mehrzahl(fixed, "war 1", `waren ${fixed}`)}`;
+      parts.push(`${whom} in ${that} bereits behoben; auf dem Gerät lief also nie eine Version, die ${mehrzahl(fixed, "sie betrifft", "sie betreffen")}.`);
+    }
+    if (outside > 0) {
+      const whom =
+        fixed > 0 ? mehrzahl(outside, "Die übrige liegt", `Die übrigen ${outside} liegen`) : mehrzahl(outside, "Die eine nie gesehene liegt", `Alle ${outside} nie gesehenen liegen`);
+      parts.push(
+        `${whom} außerhalb jedes Bereichs, den NVD nennt: Entweder ${mehrzahl(outside, "betrifft sie", "betreffen sie")} nur andere Versionen, oder NVD nennt keinen Bereich für ${version ? `die Linie von ${version}` : "die Linie dieser Version"}, denn NVD führt eine Linie oft nicht mehr auf, sobald sie das Ende ihres Supports erreicht hat. ${mehrzahl(outside, "Sie zeigt", "Sie zeigen")} nicht, dass das Gerät sicher war`
+      );
+    }
+    return `${parts.join(" ").replace(/\.$/, "")} (troubleshooting.md §33 Schritt 11).`;
+  },
   denominators: (replayed: number, inWindow: number, excluded: number) =>
     `${replayed} CVEs wurden nachgespielt, von ${inWindow} im Zeitfenster veröffentlichten. Die übrigen ${excluded} sind ausgeschlossen und unten gezählt; ausgeschlossen heißt nicht sicher.`,
 
@@ -311,7 +350,6 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     only_prerelease_criteria: "Nennt nur Vorabversionen",
     no_fixed_version_determinable: "Aus dem Eintrag lässt sich keine korrigierte Version lesen",
     fixed_version_not_in_catalog: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
-    fixed_version_not_in_timeline: "Die korrigierte Version ist kein Release auf der Release-Zeitleiste dieses Replays",
     branch_ambiguity: "Der betroffene Bereich umfasst eine Release-Linie, deren Fix er nicht nennt",
     other_edition_only: "NVD führt nur eine andere Edition (ESR) als betroffen: kein Release, das dieser Kanal bei Veröffentlichung der CVE auslieferte"
   },

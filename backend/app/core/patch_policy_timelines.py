@@ -795,7 +795,7 @@ def fleet(history: FleetHistory, document: Mapping[str, Any], app: str, track: s
             note += (
                 f" Fleet's version history for {title.slug}: {title.history_detail} A version left undated there is not "
                 "in this view, and a fix it carried is dated by the next version this history dates "
-                "(docs/troubleshooting.md §27 step 10, §33 step 10)."
+                "(docs/troubleshooting.md §27 step 10, §33 step 12)."
             )
     try:
         return _from_split(

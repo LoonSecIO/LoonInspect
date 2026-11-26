@@ -7,11 +7,26 @@ import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
 const UNSEARCHED_ROWS = 40;
 
 /**
- * The app picker (#614, first slice). Presentational, like `ReplayView`: it is handed its rows and
- * loads none. An app with no replay is listed and cannot be picked, and says *no reference replay
- * yet* where a count would otherwise be read as zero.
+ * The app picker (#614). Presentational, like `ReplayView`: it is handed its rows and loads none. An
+ * app with nothing to draw is listed and cannot be picked, and says so (*no reference replay yet*,
+ * or *no reference yet* once LoonSec's data is walked) where a count would otherwise be read as zero.
+ * `labels` names the two kinds of row; the reference replays' words when it is absent.
  */
-export function AppPicker({ apps, selected, onSelect, copy }: { apps: PickerApp[]; selected: string | null; onSelect: (replayId: string) => void; copy: PatchPolicyCopy }) {
+export function AppPicker({
+  apps,
+  selected,
+  onSelect,
+  copy,
+  labels
+}: {
+  apps: PickerApp[];
+  selected: string | null;
+  onSelect: (replayId: string) => void;
+  copy: PatchPolicyCopy;
+  labels?: { has: string; none: string };
+}) {
+  const has = labels?.has ?? copy.appHasReplay;
+  const none = labels?.none ?? copy.appNoReplay;
   const [term, setTerm] = useState("");
   const wanted = term.trim().toLowerCase();
   const matching = wanted ? apps.filter((app) => app.name.toLowerCase().includes(wanted)) : apps;
@@ -39,12 +54,12 @@ export function AppPicker({ apps, selected, onSelect, copy }: { apps: PickerApp[
                 className={`flex w-full flex-wrap items-baseline justify-between gap-x-2 px-3 py-2 text-left hover:bg-muted ${app.replayId === selected ? "bg-muted font-semibold" : ""}`}
               >
                 <span>{app.name}</span>
-                <span className="text-xs font-normal text-muted-foreground">{copy.appHasReplay}</span>
+                <span className="text-xs font-normal text-muted-foreground">{has}</span>
               </button>
             ) : (
               <div aria-disabled="true" className="flex flex-wrap items-baseline justify-between gap-x-2 px-3 py-2 text-muted-foreground">
                 <span>{app.name}</span>
-                <span className="text-xs">{copy.appNoReplay}</span>
+                <span className="text-xs">{none}</span>
               </div>
             )}
           </li>

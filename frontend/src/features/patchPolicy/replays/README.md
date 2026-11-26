@@ -3,6 +3,12 @@
 Each `.json` here is one whole output of LoonVD's patch-policy replay, schema 2, copied byte for
 byte. LoonInspect draws these files and computes nothing in them (#614, first slice).
 
+Since the day-walk page (2026-11-24) these files are the page's **fallback**: they are drawn only
+when no copy of LoonSec's patch-policy data answers for the organization, under a sentence that says
+why ([docs/patch-policy.md](../../../../../docs/patch-policy.md); troubleshooting.md §22 step 11).
+They stay until that data is live in production, so the page is never blank between a release and
+the data reaching an instance.
+
 A schema-2 replay names its own release dates: its `timeline` block says which public release
 record the dates come from, where that record is, when it was fetched, its SHA-256, and what one of
 its dates means. The page prints that block as it stands under *Evidence › Release dates*. Every

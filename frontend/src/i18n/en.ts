@@ -1,5 +1,6 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
+import { walkEnglish } from "@/features/patchPolicy/walkCopy";
 import { mcpEnglish } from "@/features/mcp/copy";
 import { aiActivityEnglish } from "@/features/ai/activityCopy";
 import { fleetPlanningEnglish } from "@/features/fleetCatalog/planningCopy";
@@ -9,6 +10,7 @@ import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
+  patchPolicyWalk: walkEnglish,
   mcp: mcpEnglish,
   aiActivity: aiActivityEnglish,
   fleetPlanning: fleetPlanningEnglish,
