@@ -213,10 +213,10 @@ describe("a fix below the build NVD names", () => {
 
   it("is said with NVD's build, why the Mac's is lower, and where the step-through is, in English and German", () => {
     expect(walkEnglish.nvdNamedMacBuild("131.0.6700.52")).toBe(
-      "NVD names 131.0.6700.52, another platform's build of the same release; the vendor's release post gives the Mac's build (troubleshooting.md §33 step 12)"
+      "NVD names 131.0.6700.52, another platform's build of the same release; the vendor's release post gives the Mac's build; troubleshooting.md §33 step 12"
     );
     expect(walkGerman.nvdNamedMacBuild("131.0.6700.52")).toBe(
-      "NVD nennt 131.0.6700.52, den Build einer anderen Plattform aus demselben Release; die Release-Mitteilung des Herstellers nennt den Build für den Mac (troubleshooting.md §33 Schritt 12)"
+      "NVD nennt 131.0.6700.52, den Build einer anderen Plattform aus demselben Release; die Release-Mitteilung des Herstellers nennt den Build für den Mac; troubleshooting.md §33 Schritt 12"
     );
   });
 });

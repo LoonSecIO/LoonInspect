@@ -324,7 +324,7 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                 .sort(([, a], [, b]) => b - a)
                 .map(([reason, count]) => (
                   <tr key={reason} className={`border-b last:border-0 ${count === 0 ? "text-muted-foreground" : ""}`}>
-                    <td className={cell}>{words.exclusionReasons[reason] ?? copy.reasons[reason] ?? reason}</td>
+                    <td className={cell}><KeepDates text={words.exclusionReasons[reason] ?? copy.reasons[reason] ?? reason} /></td>
                     <td className={`${cell} tabular-nums`}>{copy.num(count)}</td>
                   </tr>
                 ))}
@@ -353,7 +353,7 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                         <span className="whitespace-nowrap">{row.clock_date ?? "—"}</span>
                         {row.clock && <span className="block text-xs text-muted-foreground">{words.clocked[row.clock] ?? row.clock}</span>}
                       </td>
-                      <td className={cell}>{words.exclusionReasons[row.reason] ?? copy.reasons[row.reason] ?? row.reason}</td>
+                      <td className={cell}><KeepDates text={words.exclusionReasons[row.reason] ?? copy.reasons[row.reason] ?? row.reason} /></td>
                       {/* LoonSec's own words (the header says so in German), except a branch ambiguity: the
                           walk's own reason (LoonSec's data never excludes for it), worded on this instance. */}
                       <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>

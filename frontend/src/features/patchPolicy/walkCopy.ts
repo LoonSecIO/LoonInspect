@@ -259,7 +259,7 @@ export const walkEnglish = {
   /** `nvdNamed` where LoonSec's fix is an earlier build of the release NVD names (`fixBelowNamedBuild`):
    *  the Mac's own build, which LoonSec read from the vendor's release post (troubleshooting.md §33 step 12). */
   nvdNamedMacBuild: (named: string) =>
-    `NVD names ${named}, another platform's build of the same release; the vendor's release post gives the Mac's build (troubleshooting.md §33 step 12)`,
+    `NVD names ${named}, another platform's build of the same release; the vendor's release post gives the Mac's build; troubleshooting.md §33 step 12`,
   pageOf: (page: number, pages: number, total: number) => `Page ${page} of ${pages} · ${total} ${plural(total, "CVE", "CVEs")}`,
   previous: "Previous",
   next: "Next",
@@ -534,7 +534,7 @@ export const walkGerman: WalkCopy = {
     `Keine Fix-Version ${line ? `auf der Linie ${line}` : "auf ihrer Linie"} in den Daten von LoonSec; diese CVE wird dort nach ihren betroffenen Bereichen nachgespielt`,
   nvdNamed: (named: string) => `NVD nennt ${named}`,
   nvdNamedMacBuild: (named: string) =>
-    `NVD nennt ${named}, den Build einer anderen Plattform aus demselben Release; die Release-Mitteilung des Herstellers nennt den Build für den Mac (troubleshooting.md §33 Schritt 12)`,
+    `NVD nennt ${named}, den Build einer anderen Plattform aus demselben Release; die Release-Mitteilung des Herstellers nennt den Build für den Mac; troubleshooting.md §33 Schritt 12`,
   pageOf: (page: number, pages: number, total: number) => `Seite ${page} von ${pages} · ${total} ${mehrzahl(total, "CVE", "CVEs")}`,
   previous: "Zurück",
   next: "Weiter",
