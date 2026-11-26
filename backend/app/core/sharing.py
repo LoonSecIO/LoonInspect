@@ -15,6 +15,11 @@ published vulnerability corpus, and `run_exchange` hands that pointer to
 `app.core.vuln_library`, which downloads and verifies an epoch only when its signature
 has moved. That is where the reciprocity in the paragraph above stops being a claim —
 the feed and the sharing are literally one request.
+
+A third rides beside it (#614): the response may also point at LoonSec's patch-policy
+reference document under `patch_policy`, keyed by algorithm, and `run_exchange` hands that to
+`app.core.patch_policy_feed` after the corpus, on the same terms — downloaded only when its
+signature moves, checked whole, and held for the organizations whose tier earns it.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.service import rejudge_every_tenant
-from app.core import participation
+from app.core import participation, patch_policy_feed
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.feature_flags import APP_PROMOTION_FLAG
@@ -616,6 +621,9 @@ async def run_exchange(
     participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None
+    # The patch-policy half (#614): what the response said about LoonSec's patch-policy document.
+    # None on a failed exchange and on a revoke, which bring nothing.
+    patch_offer: patch_policy_feed.Offer | None = None
     log = ShareLog(
         occurred_at=now,
         tier=settings_row.tier,
@@ -650,6 +658,8 @@ async def run_exchange(
         log.promotions_shed = result.promotions_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
+        if isinstance(response, dict) and response.get("revoke") is not True:
+            patch_offer = patch_policy_feed.read_offer(response.get("patch_policy"))
         asked = request_body.get("participation_receipt") is True
         if asked or (settings_row.tier == "off" and settings_row.participation_receipt is not None):
             # Before the day's commit, so the receipt and the row that earned it land together.
@@ -676,6 +686,22 @@ async def run_exchange(
         missed = "upload_failed" if log.outcome == "failed" else "no_corpus"
     # A receipt can fetch what the exchange did not bring, without another upload (#622).
     await participation.after_delivery(db, missed)
+
+    # LoonSec's patch-policy document (#614), after the corpus and in its own transaction for
+    # the corpus's reasons: a download and a refusal must not touch the record of what left the
+    # box. Downloaded only when its signature moved; a refusal is a state row and a logged
+    # sentence, the copy already held keeps answering, and it never raises into the exchange.
+    if patch_offer is not None:
+        try:
+            await patch_policy_feed.deliver_from_exchange(db, patch_offer, transport=transport)
+        except Exception:
+            # A defect, not a refusal: every refusal is caught and worded inside. The day's row is
+            # already durable, so Send now still answers with it.
+            await db.rollback()
+            logger.exception(
+                "patch-policy data not updated: an unexpected failure, not a refusal; the copy already held keeps "
+                "answering. Report this line (docs/troubleshooting.md §32)"
+            )
     return log
 
 

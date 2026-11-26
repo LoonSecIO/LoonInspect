@@ -737,6 +737,33 @@ export const de: Translations = {
         sessions: "Einen Tag nach Ablauf oder Widerruf, stündlich."
       } as Record<string, string>,
       note: "Größen sind die von Postgres — Heap, Indizes und TOAST zusammen — für diese Datenbank und jeden Mandanten darin; Zeilen sind die Schätzung des Planers seit dem letzten VACUUM oder ANALYZE. Eine Bereinigung gibt Seiten zur Wiederverwendung frei, nicht Platz an die Platte zurück (KNOWN_ISSUES §1). Das Audit-Log ist eine Datei auf dem Daten-Volume, keine Tabelle, und wird hier nicht gezählt."
+    },
+    patchPolicyFeed: {
+      heading: "Patch-Policy-Daten von LoonSec",
+      help: "Das Patch-Policy-Referenzdokument von LoonSec: eine Datei für jede App, auf die LoonSec verweist, empfangen mit dem täglichen Datenaustausch, den diese Organisation ohnehin führt, oder auf einer Instanz ohne Netzwerk aus PATCH_POLICY_FEED_FILE gelesen, und auf dieser Instanz gehalten. Es kommt nur zu einer Organisation, die Daten teilt, und sein Empfang fügt dem, was der Austausch sendet, nichts hinzu.",
+      loading: "Der Stand der Patch-Policy-Daten wird gelesen…",
+      errorLoading: "Der Stand der Patch-Policy-Daten konnte von dieser Instanz nicht gelesen werden.",
+      states: {
+        tier_off: "Diese Organisation teilt keine Daten mit LoonSec und erhält daher keine Patch-Policy-Daten von LoonSec. Einstellungen › Datenfreigabe.",
+        never: "Die Patch-Policy-Daten von LoonSec sind auf dieser Instanz noch nicht angekommen. Sie kommen mit dem täglichen Datenaustausch; Einstellungen › Datenfreigabe zeigt den letzten Austausch.",
+        neverFile: "Die Patch-Policy-Daten von LoonSec wurden noch nicht aus PATCH_POLICY_FEED_FILE gelesen. Die Datei wird beim Start gelesen und erneut, sobald sie sich ändert; das Container-Log sagt, was gefunden wurde.",
+        current: (asOf: string) => `Angezeigt werden die Patch-Policy-Daten von LoonSec vom ${asOf}.`,
+        stale: (asOf: string, until: string) => `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt; der Durchlauf endet am ${until}.`,
+        not_published: "Der letzte Austausch mit LoonSec enthielt keine Patch-Policy-Daten. Auf dieser Instanz ist nichts falsch; melden Sie es, wenn es länger als einen Tag anhält.",
+        algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}. Nennt der nächste Austausch dasselbe, aktualisieren Sie LoonInspect.`,
+        downloadFailed: (host: string, reason: string) => `Die Patch-Policy-Datei konnte nicht von ${host} heruntergeladen werden: ${reason}.`,
+        readFailed: (path: string, reason: string) => `Die Patch-Policy-Datei konnte nicht aus ${path} gelesen werden: ${reason}.`,
+        invalid: (reason: string) => `Die Patch-Policy-Daten von LoonSec haben ihre Prüfung nicht bestanden (${reason}) und wurden nicht gespeichert.`
+      },
+      showingCopy: (asOf: string) => `Angezeigt wird die Kopie vom ${asOf}.`,
+      stillUsed: (asOf: string) => `Die Kopie vom ${asOf} wird weiter verwendet.`,
+      noCopy: "Diese Instanz hält noch keine Kopie.",
+      anotherAlgorithm: "andere Algorithmen",
+      exchangeLink: "dem Link des Austauschs",
+      held: (docId: string, received: string) => `Dokument ${docId}…, empfangen ${received}.`,
+      attempted: (when: string, where: string) => `Letzter Versuch ${when}, über ${where}.`,
+      fromExchange: "den Datenaustausch",
+      fromFile: "PATCH_POLICY_FEED_FILE"
     }
   },
   apiTokens: {
