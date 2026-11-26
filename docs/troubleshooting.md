@@ -4439,7 +4439,10 @@ under the toggle in the page's language, with the instance's own English sentenc
 *This instance's words: …*: that second sentence is the one to report. A walk the instance refuses is
 printed the same way where the walk would be, and Evidence marks each sentence it prints from the
 instance (the timeline's note, each cut of the window, a source left out, the check's detail) the
-same way. Under the slider the day graph draws the CVEs open
+same way. So does the list of excluded CVEs, for the one detail the walk words itself (a branch
+ambiguity, which LoonSec's data never excludes for); every other detail there is LoonSec's own
+words, in English in every language, and the German column heading says so (*Detail (Wortlaut von
+LoonSec, englisch)*). Under the slider the day graph draws the CVEs open
 on each day at the selected stop, with the days CVEs opened and the days an install resolved them
 marked in a strip beneath; *The days the count moved, as a table* lists every one of those days.
 
@@ -4775,7 +4778,12 @@ refusal: the sentence is the whole report.
     next version the source dates); an `undated` one reads *…: this source dates no version at or
     above it on the … line outside the CVE's affected range, so this CVE is walked by its affected
     ranges there* (*No fix version on the … line in LoonSec's data…* where the data names none). NVD's own
-    version follows in brackets where `named` differs. Where the version that dated a fix is dated on
+    version follows in brackets where `named` differs. Where the fix is an earlier build of the
+    release NVD names (the same major.minor.build, a lower last number: the Mac-build correction
+    above, the only place LoonSec's data lists a fix below NVD's version), the brackets say why:
+    *(NVD names …, another platform's build of the same release; the vendor's release post gives
+    the Mac's build …)*. A `fix` above NVD's build, as CVE-2025-3066's is, keeps the plain
+    *(NVD names …)*. Where the version that dated a fix is dated on
     the timeline's first day (`inputs.timeline.first`), the line goes on *Fleet's history begins
     here* (or Jamf's): the fix is older than anything the source holds, and its `on` is where that
     history starts, not a day the fix shipped. Evidence › *Fixes dated* gives `counts.fix_dating`,

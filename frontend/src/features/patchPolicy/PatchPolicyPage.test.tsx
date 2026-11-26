@@ -753,3 +753,151 @@ describe("in German", () => {
     expect(button("Seite 2 zeigen")).toBeTruthy();
   });
 });
+
+describe("the walk's tables and dates, as a reader at 1280 px sees them (w5 e2e)", () => {
+  /** A table's markup with every date that cannot wrap taken out: what is left is a date a line could
+   *  break at its hyphens ("2026-" above "09-01"). */
+  const bareDates = (element: Element) =>
+    element.innerHTML.replace(/<(span|td) class="[^"]*whitespace-nowrap[^"]*">\d{4}-\d{2}-\d{2}<\/(span|td)>/g, "").match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+  const classes = (element: Element) => element.className.split(" ").filter(Boolean);
+  /** The walk view's tables in their order: the day graph's, every stop, each listed CVE, the count of
+   *  each reason, and the excluded CVEs. */
+  const tables = () => {
+    const all = Array.from(document.querySelectorAll("table"));
+    expect(all).toHaveLength(5);
+    return { stops: all[1], ledger: all[2], reasons: all[3], excluded: all[4] };
+  };
+  const heads = (table: Element) => Array.from(table.querySelectorAll("thead th")).map(classes);
+
+  it("lets the outcome take the room, and wraps every heading and cell at its spaces, never inside a word", async () => {
+    for (const language of ["en", "de"] as const) {
+      locale.current = language;
+      await open();
+      const { stops, ledger, reasons, excluded } = tables();
+      for (const table of [stops, ledger, reasons, excluded]) {
+        // Hyphenated, a German heading broke mid-word ("Richtli-nie", "Expositi-onstage") while a space
+        // was free: no table of the walk hyphenates, and every heading is smaller than its cells.
+        expect(classes(table)).not.toContain("hyphens-auto");
+        for (const head of heads(table)) expect(head).toEqual(expect.arrayContaining(["text-xs", "hyphens-manual"]));
+      }
+      // Eight columns at a 1280 px window: tighter cells, so each German heading's longest word fits.
+      expect(heads(stops).every((head) => head.includes("px-2"))).toBe(true);
+      expect(Array.from(stops.querySelectorAll("tbody td")).every((cell) => classes(cell).includes("px-2"))).toBe(true);
+      // Each listed CVE: every column but the outcome shrinks to its widest word or date, so "Herkunft"
+      // is not squeezed to a syllable beside a KEV column holding a dash.
+      expect(heads(ledger).map((head) => head.includes("w-[1%]"))).toEqual([true, false, true, true, true, true]);
+      const firstRow = ledger.querySelector("tbody tr")!;
+      expect(Array.from(firstRow.children).every((cell) => classes(cell).includes("px-1.5"))).toBe(true);
+      // The excluded CVEs: the id shrinks to fit, and the clock's word wraps under its whole date.
+      expect(heads(excluded).map((head) => head.includes("w-[1%]"))).toEqual([true, false, false, false]);
+      cleanup();
+    }
+  });
+
+  it("keeps every date whole: the updates, the outcome, KEV, each fix line, the window and Evidence, in English and German", async () => {
+    for (const language of ["en", "de"] as const) {
+      locale.current = language;
+      feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([openApp()]));
+      const walk = walkFixture({ source: "fleet" });
+      walk.cves[0].fix_dated_by = [
+        { line: "4.4", fix: "4.4.3", named: null, dated_as: "4.4.3", on: "2025-01-09", how: "fix" },
+        { line: "4.4", fix: "4.4.2", named: null, dated_as: "4.4.4", on: "2024-10-01", how: "next_dated" }
+      ];
+      walk.exclusions.cves = [{ ...walk.exclusions.cves[0], detail: "recorded exception ruled 2026-11-25" }];
+      walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
+      await open("?source=fleet");
+      const { ledger, excluded } = tables();
+      // The list of updates: as many columns as fit one update a line, each date a span of its own.
+      const updates = document.querySelector("details ul")!;
+      expect(classes(updates)).toContain("grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]");
+      const items = Array.from(updates.querySelectorAll("li"));
+      expect(items.length).toBeGreaterThan(0);
+      for (const item of items) expect(item.querySelector("span.whitespace-nowrap")?.textContent).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // Each fix line, in the reader's language: the fix's date and the date a later version gave it.
+      const fixes = Array.from(ledger.querySelectorAll("li"));
+      expect(fixes.map((each) => each.textContent)).toEqual([
+        language === "en" ? "4.4.3, dated 2025-01-09" : "4.4.3, datiert 2025-01-09",
+        (language === "en" ? walkEnglish : walkGerman).fixNextDated("4.4.2", "4.4.4", "2024-10-01") +
+          (language === "en" ? walkEnglish : walkGerman).historyBegins.fleet
+      ]);
+      for (const each of fixes) expect(bareDates(each)).toEqual([]);
+      expect(fixes[0].innerHTML).toContain('<span class="whitespace-nowrap">2025-01-09</span>');
+      expect(fixes[1].innerHTML).toContain('<span class="whitespace-nowrap">2024-10-01</span>');
+      // The outcome ("…until 4.4.3 on 2025-01-09"), the clock day, KEV: nothing left to break.
+      expect(bareDates(ledger)).toEqual([]);
+      expect(bareDates(excluded)).toEqual([]);
+      // The view's own window line, the dates it reads, and Evidence.
+      const view = ledger.closest("div.min-w-0")!;
+      expect(bareDates(view.firstElementChild!)).toEqual([]);
+      expect(bareDates(view.querySelector("dl")!)).toEqual([]);
+      cleanup();
+    }
+  });
+
+  it("says why a fix sits below the build NVD names: the Mac's build of that release, in English and German", async () => {
+    for (const language of ["en", "de"] as const) {
+      locale.current = language;
+      const words = language === "en" ? walkEnglish : walkGerman;
+      const copy = language === "en" ? patchPolicyEnglish : patchPolicyGerman;
+      feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture([openApp()]));
+      const walk = walkFixture({ source: "fleet" });
+      // Invented four-part builds of one release: the Mac's .41 below NVD's .52, dated itself and, over
+      // a source that does not date it, by the next build; a fix above NVD's build (.84, a later
+      // release of the same build) and one on another build keep the plain words.
+      walk.cves[0].fix_dated_by = [
+        { line: "", fix: "131.0.6700.41", named: "131.0.6700.52", dated_as: "131.0.6700.41", on: "2025-01-03", how: "fix" },
+        { line: "", fix: "131.0.6700.41", named: "131.0.6700.52", dated_as: "131.0.6700.42", on: "2025-01-05", how: "next_dated" },
+        { line: "", fix: "131.0.6700.84", named: "131.0.6700.52", dated_as: "131.0.6700.84", on: "2025-01-08", how: "fix" },
+        { line: "", fix: "131.0.6650.90", named: "131.0.6700.52", dated_as: "131.0.6650.90", on: "2025-01-08", how: "fix" }
+      ];
+      walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
+      await open("?source=fleet");
+      const lines = Array.from(tables().ledger.querySelectorAll("li")).map((each) => each.textContent);
+      expect(lines).toEqual([
+        `${copy.fix("131.0.6700.41", "2025-01-03")} (${words.nvdNamedMacBuild("131.0.6700.52")})`,
+        `${words.fixNextDated("131.0.6700.41", "131.0.6700.42", "2025-01-05")} (${words.nvdNamedMacBuild("131.0.6700.52")})`,
+        `${copy.fix("131.0.6700.84", "2025-01-08")} (${words.nvdNamed("131.0.6700.52")})`,
+        `${copy.fix("131.0.6650.90", "2025-01-08")} (${words.nvdNamed("131.0.6700.52")})`
+      ]);
+      // The reason, and where the step-through is.
+      expect(words.nvdNamedMacBuild("131.0.6700.52")).toContain(language === "en" ? "another platform's build of the same release" : "anderen Plattform aus demselben Release");
+      expect(words.nvdNamedMacBuild("131.0.6700.52")).toContain(language === "en" ? "troubleshooting.md §33 step 12" : "troubleshooting.md §33 Schritt 12");
+      cleanup();
+    }
+  });
+
+  it("marks an exclusion's detail as LoonSec's English words in German, and one the walk worded as the instance's", async () => {
+    for (const language of ["en", "de"] as const) {
+      locale.current = language;
+      const words = language === "en" ? walkEnglish : walkGerman;
+      const walk = walkFixture();
+      walk.counts = { ...walk.counts, excluded: 2, in_window: 5 };
+      walk.exclusions = {
+        ...walk.exclusions,
+        by_reason: { rejected: 0, no_configuration_for_pair: 1, branch_ambiguity: 1 },
+        cves: [
+          { ...walk.exclusions.cves[0], detail: "no configuration names this CPE pair" },
+          {
+            cve_id: "CVE-2099-0010",
+            reason: "branch_ambiguity",
+            clock: "detectable_at",
+            clock_date: "2025-01-05",
+            published: "2025-01-04",
+            detail: "the range is ambiguous on '4.2', which the path visits"
+          }
+        ]
+      };
+      walkApi.getPatchPolicyWalk.mockResolvedValue({ walk } satisfies WalkAnswer);
+      await open();
+      const { excluded } = tables();
+      // The header says whose words the column holds, in German only: English needs no note.
+      expect(Array.from(excluded.querySelectorAll("thead th")).map((each) => each.textContent).at(-1)).toBe(
+        language === "en" ? "Detail" : "Detail (Wortlaut von LoonSec, englisch)"
+      );
+      const details = Array.from(excluded.querySelectorAll("tbody tr")).map((row) => row.lastElementChild!.textContent);
+      // LoonSec's detail as it is; the walk's own (LoonSec's data never excludes for a branch ambiguity) marked as the instance's.
+      expect(details).toEqual(["no configuration names this CPE pair", words.serverSaid("the range is ambiguous on '4.2', which the path visits")]);
+      cleanup();
+    }
+  });
+});

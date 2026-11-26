@@ -11,6 +11,7 @@ import {
   dayAfter,
   defaultTrack,
   esrFoldedIn,
+  fixBelowNamedBuild,
   getPatchPolicyWalk,
   movedDays,
   seriesDay,
@@ -185,6 +186,38 @@ describe("the channels set aside before a walk", () => {
       "1 Version von Firefox ESR beiseitegelegt: Die Daten von LoonSec spielen diesen Kanal noch nicht nach; sie wird daher weder nachgespielt noch als ohne Treffer gezählt (troubleshooting.md §33 Schritt 4)."
     );
     expect(walkGerman.channelSetAside(3, "Firefox ESR", 5)).toContain("3 Versionen von Firefox ESR beiseitegelegt: Die Daten von LoonSec spielen diesen Kanal noch nicht nach; sie werden daher");
+  });
+});
+
+describe("a fix below the build NVD names", () => {
+  it("is an earlier build of the same four-part release, and nothing else", () => {
+    // The Mac-build correction's shape (invented builds): the fix's last part below NVD's, the rest equal.
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.41", named: "131.0.6700.52" })).toBe(true);
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.9", named: "131.0.6700.52" })).toBe(true);
+    // Compared as numbers, not as text: .100 is above .52.
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.100", named: "131.0.6700.52" })).toBe(false);
+    // At or above NVD's build: LoonSec's next listed version, or the build that fixed it.
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.52", named: "131.0.6700.52" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.84", named: "131.0.6700.52" })).toBe(false);
+    // Another build, minor or major: not the same release, so no reason is given.
+    expect(fixBelowNamedBuild({ fix: "131.0.6650.90", named: "131.0.6700.52" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "131.1.6700.41", named: "131.0.6700.52" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "130.0.6700.41", named: "131.0.6700.52" })).toBe(false);
+    // Any other shape of version reads false: three parts, a suffix, or a side not given.
+    expect(fixBelowNamedBuild({ fix: "4.4.2", named: "4.4.3" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "4.4.2", named: "4.4.1.5" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "128.0.1.1esr", named: "128.0.1.2" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: null, named: "131.0.6700.52" })).toBe(false);
+    expect(fixBelowNamedBuild({ fix: "131.0.6700.41", named: null })).toBe(false);
+  });
+
+  it("is said with NVD's build, why the Mac's is lower, and where the step-through is, in English and German", () => {
+    expect(walkEnglish.nvdNamedMacBuild("131.0.6700.52")).toBe(
+      "NVD names 131.0.6700.52, another platform's build of the same release; the vendor's release post gives the Mac's build (troubleshooting.md §33 step 12)"
+    );
+    expect(walkGerman.nvdNamedMacBuild("131.0.6700.52")).toBe(
+      "NVD nennt 131.0.6700.52, den Build einer anderen Plattform aus demselben Release; die Release-Mitteilung des Herstellers nennt den Build für den Mac (troubleshooting.md §33 Schritt 12)"
+    );
   });
 });
 
