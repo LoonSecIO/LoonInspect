@@ -1411,7 +1411,18 @@ export const en = {
     noMatches: "No rows match this filter.",
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`,
-    tableVuln: "Vulnerabilities"
+    tableVuln: "Vulnerabilities",
+    // #931: the control troubleshooting §5 and `vulnerabilities.notYetJudged` name, so the
+    // label is held to those sentences by `CatalogPage.test.tsx`. Shown to patch:catalog-sync.
+    refresh: "Refresh",
+    refreshing: "Refreshing…",
+    refreshHint:
+      "Re-judge every app version this organization has against the current Jamf catalog and vulnerability corpus now, instead of at the hourly refresh. The device filter does not narrow it.",
+    refreshed: (n: number) => `Re-judged ${n} app version${n === 1 ? "" : "s"} of this organization.`,
+    refreshedNone:
+      "Nothing to re-judge: this organization has no app versions in its catalog yet. The catalog fills as devices are processed.",
+    refreshFailed:
+      "The catalog could not be re-judged, and this instance gave no reason, so the list still shows the last pass's answers. Check that LoonInspect is reachable, then read docker compose logs app for the request to /api/catalog/refresh before pressing Refresh again."
   },
   // #536 — the evidence report on screen. NO FRAMEWORK IS NAMED IN THIS BLOCK, not as an example and not
   // in a hint: `compliance.test.ts` greps it for the four words `test_evidence_report_db.py` refuses on

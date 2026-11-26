@@ -7,6 +7,7 @@ import { defaultScope } from "@/features/catalog/deviceScope";
 import { fleetCatalogPath } from "@/features/catalog/patchPlanNavigation";
 import { fleetScopeQuery, getMigrationReport } from "@/features/fleetCatalog/api";
 import { detailPath } from "@/features/fleetCatalog/catalogView";
+import { FleetBriefing } from "@/features/fleetCatalog/FleetBriefing";
 import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
 import type { MigrationPortfolio } from "@/features/fleetCatalog/migrationTypes";
 import { coverage, needsReview, policySummary, portfolioEmpty, portfolioRows, portfolioSorts, quickCounts, readFilter, readSort,
@@ -161,6 +162,8 @@ function MigrationReview() {
           <Button variant="outline" disabled={page === 1} onClick={() => change("page", String(page - 1))}>{words.previous}</Button>
           <Button variant="outline" disabled={page === pages} onClick={() => change("page", String(page + 1))}>{words.next}</Button></div>}
       </div>}
+      {/* Keyed on the query the report was read with: a new device filter remounts it, aborting a briefing still out (#911). */}
+      <FleetBriefing key={query} scope={query} />
       <p className={note}>{words.asOf} {new Date(report.asOf).toLocaleString(locale)}</p>
     </>}
   </div>;

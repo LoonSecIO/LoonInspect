@@ -15,7 +15,7 @@ from pydantic import ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.adapters import OUTCOME_ANSWERED, AdapterError, CompletionRequest, complete
-from app.ai.changes_prompt import CALL_TIMEOUT_SECONDS
+from app.ai.changes_prompt import CALL_TIMEOUT_SECONDS, MAX_REPLY_TOKENS
 from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config, prompt_status
@@ -155,7 +155,7 @@ async def briefing(
         serial=provider is Provider.apple_fm,
         base_url=base_url, model=model, prompt=json.dumps(counts), system=SYSTEM, api_key=api_key,
         reasoning_effort=None if provider is Provider.apple_fm else config.reasoning_effort,
-        max_tokens=100, temperature=0, host_header=host_header,
+        max_tokens=MAX_REPLY_TOKENS, temperature=0, host_header=host_header,
     )  # fmt: skip
     asked = {"provider": provider, "model": model}
     started = time.monotonic()

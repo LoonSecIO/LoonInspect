@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.changes.derive import collecting_departures
 from app.core.runs import LOCK_DEVICE_REFRESH, TRIGGER_MANUAL, acquire, beat, entered, finish
 from app.core.vuln_library import read_tenant_tier
+from app.core.vuln_selection import CorpusSelectionRefused
 from app.mdm.census import _log_collapsed_departures
 from app.mdm.credentials import CredentialUnusable
 from app.mdm.factory import get_mdm_client
@@ -81,6 +82,10 @@ async def refresh_device(db: AsyncSession, connection: MdmConnection, external_i
                 error = DeviceRefreshError(504, "Jamf did not finish the device update within 60 seconds. Try again.")
             elif isinstance(exc, CredentialUnusable):
                 error = DeviceRefreshError(409, "The Jamf connection's credentials need attention in Settings › Connections.")
+            elif isinstance(exc, CorpusSelectionRefused):
+                # Not Jamf's: the selected intelligence this read binds first (#932). Its own
+                # sentence and status, as every other route answers it.
+                error = DeviceRefreshError(503, str(exc))
             elif isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
                 error = DeviceRefreshError(502, "This computer was not found in Jamf. The saved inventory has been kept.")
             else:
