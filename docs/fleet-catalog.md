@@ -233,7 +233,10 @@ stores it.
   and `lastAt` is the newest, null with none. Rows dated after the request are left out.
 - **They need the change log.** Applications are recorded only with **Settings › Change
   tracking** at *High + normal* (the default) or *Everything*, with applications not switched
-  off, and a Mac's first sweep is its baseline, so it counts from its second.
+  off, and a Mac's first sweep is its baseline, so it counts from its second. They count only what
+  the log still keeps: with `CHANGE_LOG_RETENTION_DAYS` ([change log](change-log.md) §6) set between 1 and 89 they
+  cover fewer days while `windowDays` still says 90, and with applications not recorded
+  `versionChanges` and `adoptionSamples` read 0, which measured nothing.
 - **The pairing.** `adoptionSamples` counts (Mac, version) pairs: a Mac's move from one plain
   dotted number to a higher one (`2.0` to `2.1`; `2.1-beta` is never ordered), to a version
   this title's history dated, with Jamf's short version, where sent, equal to `version`. A pair
@@ -290,6 +293,8 @@ A check that fails before it changes a title leaves the value as it was. The tab
 the value itself, and of the API only the migration report carries it, as `fleetCatalogReadiness`
 ([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
 `ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
+After the 1.3.0 upgrade (below) it has no sentence for the partial record until the next check, so
+**Migration review**'s sentence names that case itself (#942, [troubleshooting §27 step 6](troubleshooting.md#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)).
 
 **Besides the check and its schedule, a saved application patch plan reads it**
 ([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
@@ -390,11 +395,40 @@ patch-policy verdict and its installed builds' vulnerability evidence ([`trouble
   assessed (every selected Mac's copy needs the answer) beside a reason or an *addressed at target*
   line that reads the build's one catalog answer and already rests on it.
 
+**Migration briefing** (#911), under the list's table, asks a saved provider which of the report's own counts should lead for the Macs in the
+device filter ([`ai-layer.md`](ai-layer.md#fleet-migration-briefing-v140)). It shows while the Fleet catalog flag, AI features, AI-inference consent
+(granted on Settings › AI) and a saved provider are all on, and it sends only when **Generate briefing** is pressed: at most seven counts, and no app,
+bundle ID, version, connection or Mac. The reply can only choose among those counts, and the page words them in English or German. When the reply
+is unusable or the provider fails, the report's own first counts show instead, under a sentence saying why. Nothing is stored
+([`troubleshooting.md`](troubleshooting.md) §27 step 17).
+
 **An app's or a title's page** (#906): an app's name here, or a title's under Fleet titles, opens it with the list's query, so it counts the same Macs
-and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet and Jamf Patch titles that match the bundle
-identifier, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13). Opening it asks GitHub
+and **Back to Fleet catalog** restores the list. It shows the installed builds and their Macs, the Fleet titles that carry the bundle identifier, the
+Jamf Patch titles the builds were matched to, and once one Fleet title is known its release history ([`troubleshooting.md`](troubleshooting.md) §27 step 13).
+It also shows the list's verdict and **Patching policy** word for the app, how often Fleet dated the title's versions, the findings the corpus holds for
+each installed build (distinct builds; *not assessed*, never 0, where nothing answers), the [observed upgrades](#observed-upgrades) on the selected Macs,
+and, for an Admin or Analyst, **Build a patch plan for these Macs**, which opens Patch Plans with the same device filter and the page's apps (§27 step 14). Opening it asks GitHub
 nothing; only **Read history** does, for `patch:catalog-sync`. The cadence above the history counts dated versions by week over the 13 UTC weeks ending
 on the day the history was read, and gives the median gap between dated versions only for a whole history, one the read dated with no version left out.
+
+**Compare a target version** (#908), on a page with one Fleet title to compare and a selected Mac with the app, counts those Macs (*Matched Macs*) as
+*Below target*, *At or above target* or *Version unknown* (no numeric order) against Fleet's latest version, from the page's own answer. **Compare** on a row
+of the release history asks the same detail for that version; **Use latest Fleet version** goes back. Under it, **Vulnerability and policy evidence** counts
+every installed build within, out of, exempt from or without a patch-rule judgement, then gives each older build its Macs, what the target changes (addressed,
+introduced and remaining findings where both builds have a whole corpus answer, the change in total where a list is capped, else which side the corpus lacks),
+its known exploited findings, and the Jamf Patch title page's verdict with its rule and due date. With `vuln:read` each finding ID opens its own page. Where
+there is no impact, the panel or the evidence says why ([`troubleshooting.md`](troubleshooting.md) §27 step 15).
+
+**Plan a Fleet pilot** (#909). A line under the header counts the selected Macs with the app below Fleet's latest version, where a pilot
+starts; with none below, it says whether some run versions that cannot be ordered against it, or whether every one is current. After the
+release history, for an app with one Fleet title or on a title's own page, **Plan a Fleet pilot** describes Fleet's three maintained-app
+workflows, each with Fleet's guide: patching existing installations, offering the app in Self-service, and installing it where it is
+missing. Three Fleet API reads confirm a pilot (the maintained app's numeric ID, its version for the pilot fleet, an install's result), and
+for patching a GitOps draft adds the app and a `type: patch` policy. Where Fleet's catalog, read whole, has no title for the app, it offers
+five paths instead: a custom package, a request or contribution to Fleet's catalog, an Installomator label, a Munki package or the App
+Store. While the channel is unconfirmed or coverage is unknown there is no guide; the header says why. Nothing here deploys, and a title in
+Fleet's catalog is no evidence that any policy is deployed. It names no vendor: #857's per-vendor notes were dropped (#893)
+([`troubleshooting.md`](troubleshooting.md) §27 step 16).
 
 ### The API
 
@@ -457,7 +491,8 @@ Refusals: [`troubleshooting.md`](troubleshooting.md) §27 step 11.
   do not count as a public source where the product asks whether one knows an app.
 - **Dataset scope.** The migration report repeats the answer each installed build already
   carries and asks the corpus nothing new for it. It writes nothing, and it leaves the source
-  catalogs, the Jamf matches and the organization's patch rules unchanged.
+  catalogs, the Jamf matches and the organization's patch rules unchanged. Choosing a Fleet target
+  recalculates only the local projection. It changes neither catalog nor the organization's patch rules.
 - **Nothing on the wire.** No event, no posture key, no alert when Fleet's version moves.
 - **No vendor release dates.** The history's dates are when Fleet's catalog took a version.
 - **No history in the background for a title no Mac here has.** A person's **Read history**

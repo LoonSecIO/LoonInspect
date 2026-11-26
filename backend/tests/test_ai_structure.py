@@ -245,6 +245,7 @@ def _rendering_files() -> list[Path]:
         for pattern in ("[Pp]rompt*.ts", "[Pp]rompt*.tsx", "SearchBox.tsx", page):
             files.extend(folder.glob(pattern))
     files.append(_FEATURES / "system" / "DataSharingPage.tsx")
+    files.append(_FEATURES / "fleetCatalog" / "FleetBriefing.tsx")  # The migration briefing (#911): codes the page words.
     return sorted(set(files))
 
 
