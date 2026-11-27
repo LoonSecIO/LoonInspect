@@ -112,6 +112,10 @@ services:
       # Where the daily exchange posts, path included: the container appends nothing
       # (docs/data-sharing.md).
       SHARING_ENDPOINT: ${SHARING_ENDPOINT:-https://api.next.loonsec.io/v1/exchange}
+      # LoonSec's patch-policy data from a file instead of the exchange, for an air-gapped
+      # instance: a path inside the container, on the data volume (/app/data/…). Empty is the
+      # exchange's link. docs/troubleshooting.md §32.
+      PATCH_POLICY_FEED_FILE: ${PATCH_POLICY_FEED_FILE:-}
       # The v2 preview, every switch off by default (docs/feature-flags.md). Paid access needs
       # the first three and dials INTELLIGENCE_ENDPOINT, an origin with no path
       # (docs/troubleshooting.md "Paid intelligence preview"); contribution receipts need the

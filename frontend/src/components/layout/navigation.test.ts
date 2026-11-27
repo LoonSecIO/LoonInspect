@@ -104,7 +104,9 @@ describe("visibleNavigation", () => {
       const items = visibleNavigation(VIEWER, flags, answering);
       expect(paths(items).includes("/posture/vulnerabilities")).toBe(listed);
       // A section follows its children: with the one child hidden, Posture goes with it.
-      expect(posture(items)?.children?.map((child) => child.labelKey) ?? []).toEqual(listed ? ["vulnerabilities", "osPosture"] : ["osPosture"]);
+      expect(posture(items)?.children?.map((child) => child.labelKey) ?? []).toEqual(
+        listed ? ["vulnerabilities", "osPosture", "patchPolicy"] : ["osPosture", "patchPolicy"]
+      );
     });
 
     it("a read that failed hides it, and is not the corpus being off", () => {
@@ -139,30 +141,38 @@ describe("visibleNavigation", () => {
   });
 
   describe("Posture \u203a Patch policy (#614, first slice)", () => {
-    const PATCH_POLICY_ON: ReadonlySet<string> = new Set(["patch_policy"]);
+    /** The registry key that listed it until 2026-11-24, when it was promoted and removed. */
+    const RETIRED_FLAG: ReadonlySet<string> = new Set(["patch_policy"]);
 
-    it("is not listed until its flag is on, for any role", () => {
+    it("is listed last for every role, with no flag on and no corpus answering", () => {
       for (const permissions of [VIEWER, AUDITOR, EVERYTHING]) {
-        expect(posture(visibleNavigation(permissions, NO_FLAGS, ANSWERING))?.children?.map((child) => child.labelKey)).not.toContain("patchPolicy");
+        const children = posture(visibleNavigation(permissions, NO_FLAGS, SILENT))?.children?.map((child) => child.labelKey) ?? [];
+        expect(children.at(-1)).toBe("patchPolicy");
       }
-      // And a viewer's tree is what it was: the flag off adds no Posture section.
-      expect(paths(visibleNavigation(VIEWER, NO_FLAGS))).toEqual(["/", "/devices", "/patch-plans", "/posture/macos", "/settings/my-account"]);
-    });
-
-    it("with the flag on it is listed last, and needs app:read like its route", () => {
-      expect(posture(visibleNavigation(EVERYTHING, PATCH_POLICY_ON, ANSWERING))?.children?.map((child) => child.labelKey)).toEqual([
+      expect(posture(visibleNavigation(EVERYTHING, NO_FLAGS, ANSWERING))?.children?.map((child) => child.labelKey)).toEqual([
         "vulnerabilities",
         "compliance",
         "osPosture",
         "patchPolicy"
       ]);
-      expect(posture(visibleNavigation([PERMISSIONS.DEVICE_READ], PATCH_POLICY_ON))?.to).toBe("/posture/macos");
     });
 
-    it("a viewer with no corpus sees it alone, and the section points at it", () => {
-      const section = posture(visibleNavigation(VIEWER, PATCH_POLICY_ON, SILENT));
+    it("a viewer with no corpus sees it beside macOS versions, and the section points at the first", () => {
+      const section = posture(visibleNavigation(VIEWER, NO_FLAGS, SILENT));
       expect(section?.children?.map((child) => child.labelKey)).toEqual(["osPosture", "patchPolicy"]);
       expect(section?.to).toBe("/posture/macos");
+    });
+
+    it("needs app:read like its route", () => {
+      const section = posture(visibleNavigation([PERMISSIONS.DEVICE_READ], NO_FLAGS));
+      expect(section?.children?.map((child) => child.labelKey)).toEqual(["osPosture"]);
+      expect(section?.to).toBe("/posture/macos");
+    });
+
+    it("the retired flag lists nothing: a stored patch_policy row changes no account's tree", () => {
+      for (const permissions of [[], [PERMISSIONS.DEVICE_READ], VIEWER, AUDITOR, EVERYTHING]) {
+        expect(visibleNavigation(permissions, RETIRED_FLAG, SILENT)).toEqual(visibleNavigation(permissions, NO_FLAGS, SILENT));
+      }
     });
   });
 
@@ -171,13 +181,13 @@ describe("visibleNavigation", () => {
     // is not — it follows its children, and Compliance needs no corpus to answer for it.
     const section = posture(visibleNavigation(AUDITOR, NO_FLAGS, SILENT));
 
-    expect(section?.children?.map((child) => child.labelKey)).toEqual(["compliance", "osPosture"]);
+    expect(section?.children?.map((child) => child.labelKey)).toEqual(["compliance", "osPosture", "patchPolicy"]);
     // And re-pointed at it: the section's declared target is the child that went (#301).
     expect(section?.to).toBe("/posture/compliance");
     // `audit:read` is the gate, not the corpus: a viewer with both the flag and the data still lacks it.
     expect(paths(visibleNavigation(VIEWER, VULN_ON, ANSWERING))).not.toContain("/posture/compliance");
     const both = posture(visibleNavigation(EVERYTHING, NO_FLAGS, ANSWERING));
-    expect(both?.children?.map((child) => child.labelKey)).toEqual(["vulnerabilities", "compliance", "osPosture"]);
+    expect(both?.children?.map((child) => child.labelKey)).toEqual(["vulnerabilities", "compliance", "osPosture", "patchPolicy"]);
   });
 
   describe("Settings › Intelligence Access (#622, #706)", () => {

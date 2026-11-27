@@ -78,6 +78,7 @@ ALIASES = {
 # Parameters that name no tenant's row: one value any tenant may send.
 SHARED = {
     "revision": 1,
+    "app": "route-sweep",  # an app in LoonSec's patch-policy data (#614): global, like the document itself
     "app_hash": "0" * 32,  # an installed app (#899): a hash of its name and bundle ID, alike in every tenant
     "bundle_id": "com.example.sweep",
     "client_id": "c",
@@ -170,7 +171,10 @@ STOPS = {
         *("POST /api/system/intelligence/activate", "POST /api/system/intelligence/rotate"),
         *("POST /api/system/intelligence/refresh", "POST /api/submissions/preview", "POST /api/submissions"),
     ],
-    "sharing is off": ["POST /api/system/data-sharing/send"],
+    "sharing is off": [
+        "POST /api/system/data-sharing/send",
+        "GET /api/patch-policy/walk",  # LoonSec's patch-policy data answers only a tenant that shares (#614)
+    ],
     "promoting applications is switched off": ["POST /api/system/data-sharing/promotions"],
     "no Jamf patch title: titles are global, and the sweep loads none": [
         *("GET /api/jamf-patch/titles/{title_id}", "PUT /api/settings/patching-policy/overrides/{title_id}"),

@@ -28,6 +28,24 @@ describe("the migration list's words", () => {
     }
   });
 
+  it("say what the status line shows for each way the catalog is read in part, and the step that walks them (#942)", () => {
+    // The status line says why after a check with no answer or titles left unread, and nothing after the 1.3.0
+    // upgrade's one more read, so the sentence may not claim it always does. Each cause is worded as main's status
+    // line words it, so a change there fails here.
+    const cases = [{ t: en, failed: "did not get an answer", step: "troubleshooting.md §27 step 6" },
+      { t: de, failed: "keine Antwort erhalten", step: "troubleshooting.md §27 Schritt 6" }];
+    for (const { t, failed, step } of cases) {
+      const sentence = t.fleetPlanning.partialCatalog;
+      expect(t.fleetCatalog.statusFailed("…")).toContain(failed);
+      expect(sentence).toContain(failed);
+      expect(sentence).toContain("1.3.0");
+      expect(sentence).toContain(t.fleetCatalog.checkNow);
+      expect(sentence).toContain(step);
+    }
+    expect(fleetPlanningEnglish.partialCatalog).not.toMatch(/status line says why\.$/);
+    expect(fleetPlanningGerman.partialCatalog).not.toMatch(/nennt den Grund\.$/);
+  });
+
   it("judge builds in the words of main's Jamf Patch legend", () => {
     for (const t of dictionaries) {
       const { legendOut, legendWithin, legendNotJudged } = t.jamfPatch.rules;

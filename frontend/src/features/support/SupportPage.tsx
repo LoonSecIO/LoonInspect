@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { PERMISSIONS } from "@/features/auth/types";
 import { useHasPermission } from "@/features/auth/store";
+import { PatchPolicyFeedBlock } from "@/features/support/PatchPolicyFeedBlock";
 import { StorageBlock } from "@/features/support/StorageBlock";
 import { UpdatesBlock } from "@/features/support/UpdatesBlock";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
@@ -45,6 +46,7 @@ export function SupportPage() {
   const version = useBuildVersion();
   const build = copyableBuild(version, t.support);
   const canSeeUpdates = useHasPermission(PERMISSIONS.SYSTEM_READ);
+  const canReadApps = useHasPermission(PERMISSIONS.APP_READ);
   const { hash } = useLocation();
 
   // The banner's "how to update" and the Needs Attention row land on `#updates`. A
@@ -140,6 +142,10 @@ export function SupportPage() {
       {/* What the database holds and the clock each table is on (#786): the capacity
           question KNOWN_ISSUES §1–§3 answer with arithmetic, read from the instance. */}
       {canSeeUpdates && <StorageBlock />}
+
+      {/* Whether LoonSec's patch-policy data has arrived and how old it is (#614): the line
+          docs/troubleshooting.md §32 starts from. Every role that can open Posture holds APP_READ. */}
+      {canReadApps && <PatchPolicyFeedBlock />}
 
       {/* The site and its docs: where the how-to pages live, so a question that is
           "how do I set this up" has somewhere to go before it becomes an issue. */}

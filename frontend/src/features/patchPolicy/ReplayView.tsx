@@ -1,11 +1,16 @@
 import { Fragment, useState } from "react";
 import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
+import { KeepDates } from "@/features/patchPolicy/KeepDates";
+import { PolicySlider } from "@/features/patchPolicy/PolicySlider";
 import {
   SLIDER_STOPS,
   TABLED_POLICY,
-  heldFix,
+  affectedBounds,
+  heldFixes,
   replayedRows,
+  windowCut,
   type LedgerOutcome,
+  type NamedFix,
   type PatchPolicyReplay,
   type SliderStop
 } from "@/features/patchPolicy/replay";
@@ -29,8 +34,18 @@ type Shown = "all" | "never_seen" | "exposed";
 const card = "rounded-lg border bg-card p-4";
 const heading = "text-xs font-medium uppercase tracking-wide text-muted-foreground";
 const cell = "px-3 py-2";
+// Every stop side by side: tighter, as on the walk view, so the German headings fit whole.
+const tight = "px-2 py-2";
+// Headings wrap at their spaces (and a hyphen of their own), never inside a word ("Re-lease-Datum").
+const head = "text-xs font-medium hyphens-manual";
+// The list of CVEs, as on the walk view: tighter cells, and the CVE id, the publication day and the
+// severity shrink to their widest word or date, so the outcome and the fixes take the room.
+const ledger = "px-1.5 py-2";
+const fit = "w-[1%]";
 /** To the minute, with its clock spelled out. */
 const when = (value: string) => `${value.slice(0, 16).replace("T", " ")} UTC`;
+/** A link only for an https address: the file ships with the build, and still names no other scheme here. */
+const linkable = (url: string | undefined): url is string => typeof url === "string" && url.startsWith("https://");
 
 /** One CVE's outcome as a sentence. A value this build does not know is printed as the file spells it. */
 function outcomeWords(outcome: LedgerOutcome | undefined, copy: PatchPolicyCopy): string {
@@ -45,12 +60,32 @@ function outcomeWords(outcome: LedgerOutcome | undefined, copy: PatchPolicyCopy)
   return outcome.open_at_window_end ? copy.outcome.open(outcome.exposure_days) : copy.outcome.exposed;
 }
 
+/** One fix as the Fix column prints it. Beside others on the same line it carries NVD's statement it
+ *  closes, so a reader can tell the fix for the ESR range from the one for the release channel. */
+function fixWords(fix: NamedFix, copy: PatchPolicyCopy, withRange: boolean): string {
+  const said = copy.fix(fix.fixed_version, fix.release_date);
+  const range = withRange ? affectedBounds(fix) : null;
+  return range ? `${said}, ${copy.affected(range)}` : said;
+}
+
 export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewProps) {
   const [shown, setShown] = useState<Shown>("all");
   const policy = replay.policies[stop];
   const { cves_in_window: inWindow, cves_replayed: replayed, cves_excluded: excluded } = replay.counts;
-  const line = replay.branch_choice?.held_at_branch;
-  const changed = replay.branch_choice?.cves_where_the_choice_changes_the_answer?.by_policy?.[stop];
+  // `null` is an app replayed as one release line: no line to name, and no other line to choose.
+  const line = replay.branch_choice.held_at_branch;
+  const changed = line === null ? undefined : replay.branch_choice.cves_where_the_choice_changes_the_answer?.by_policy?.[stop];
+  const { timeline } = replay;
+  const cut = windowCut(replay);
+  const waits = replay.early_stable_choice?.device === "skip";
+  // Once the file has cut its window at the promotion table, the major the table lacks is past the
+  // window's end, so it limits nothing shown: the shortened sentence and Evidence › Window give that cause.
+  const cutAtPromotionTable = (Array.isArray(replay.window.shortened_by) ? replay.window.shortened_by : []).some(
+    (each: unknown) => typeof each === "object" && each !== null && (each as { reason?: unknown }).reason === "promotion_table"
+  );
+  const behind = replay.early_stable_choice?.promotion_table_behind_timeline === true && !cutAtPromotionTable;
+  // NVD's status per CVE, for the excluded list: the exclusion rows do not carry it, their ledger rows do.
+  const statusOf = new Map(replay.ledger.map((row) => [row.cve_id, typeof row.status === "string" && row.status !== "" ? row.status : null]));
   const rows = replayedRows(replay).filter((row) => shown === "all" || row.outcomes?.[stop]?.outcome === shown);
   const filters: [Shown, string, number][] = [
     ["all", copy.filterAll, replayed],
@@ -69,40 +104,16 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
     <div className="min-w-0 space-y-4">
       <div className="rounded-lg border border-foreground/30 p-3 text-sm">
         <b className="block">{copy.referenceTitle}</b>
-        {copy.reference(line ? `${appName} ${line}` : appName, replay.window.since, replay.window.until)}
+        <KeepDates text={copy.reference(appName, line, replay.window.since, replay.window.until)} />
+        <span className="block pt-1">{copy.sources(timeline.name)}</span>
+        {timeline.edition === "release" && <span className="block pt-1">{copy.releaseChannelOnly(appName)}</span>}
+        {cut && <span className="block pt-1"><KeepDates text={copy.shortened(replay.window.until, cut.requested)} /></span>}
       </div>
 
-      <div className={card}>
-        <label htmlFor="patch-policy-stop" className={heading}>{copy.policyHeading}</label>
-        {/* Inset by half a column so the thumb sits over the stop it names. */}
-        <div className="px-[calc(100%/12_-_8px)] pt-3">
-          <input
-            id="patch-policy-stop"
-            type="range"
-            className="block w-full"
-            min={0}
-            max={SLIDER_STOPS.length - 1}
-            step={1}
-            value={SLIDER_STOPS.indexOf(stop)}
-            aria-valuetext={copy.stops[stop]}
-            onChange={(event) => onStop(SLIDER_STOPS[Number(event.target.value)])}
-          />
-        </div>
-        <div className="grid grid-cols-6 pt-1">
-          {SLIDER_STOPS.map((each) => (
-            <button
-              key={each}
-              type="button"
-              aria-pressed={each === stop}
-              onClick={() => onStop(each)}
-              className={`rounded-md px-0.5 py-1 text-xs sm:text-sm ${each === stop ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {copy.stops[each]}
-            </button>
-          ))}
-        </div>
-        <p className="pt-2 text-sm text-muted-foreground">{copy.policySaid(stop)}</p>
-      </div>
+      <PolicySlider stop={stop} onStop={onStop} copy={copy}>
+        {waits && stop !== "never" && <p className="pt-1 text-sm text-muted-foreground">{copy.waitsForPromotion}</p>}
+        {waits && behind && <p className="pt-1 text-sm text-muted-foreground">{copy.promotionTableBehind}</p>}
+      </PolicySlider>
 
       <div className={card}>
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -110,16 +121,25 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <span className="text-xl text-muted-foreground tabular-nums">{copy.of} {copy.num(replayed)}</span>
           <span className="text-xl font-semibold">{copy.neverSeenLabel}</span>
         </p>
-        <p className="pt-3 text-sm">{copy.outside(policy.never_seen_outside_affected_range, policy.never_seen, line)}</p>
+        {/* As on the walk view: the never stop's device keeps its first version, so its never seen is split
+            by why, already fixed in that version or outside every range NVD names. `outside` would say the
+            second kind never affects this Mac, the conclusion the split warns against. */}
+        <p className="pt-3 text-sm">
+          {stop === "never"
+            ? copy.neverStays(policy.initial_version, policy.never_seen, policy.never_seen_outside_affected_range)
+            : copy.outside(policy.never_seen_outside_affected_range, policy.never_seen, line)}
+        </p>
         <p className="pt-1 text-sm">{copy.denominators(replayed, inWindow, excluded)}</p>
         <p className="pt-1 text-sm text-muted-foreground">{copy.neverSeenSaid}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Four abreast only from 1280 px: beside the app list at 1024 px a tile is narrower than a
+          six-digit German figure ("134.587"), which then ran under the next tile. */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {tiles.map(([label, value, hint]) => (
-          <div key={label} className="rounded-lg border bg-card p-3">
+          <div key={label} className="min-w-0 rounded-lg border bg-card p-3">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
+            <p className="break-words text-2xl font-semibold tabular-nums">{copy.num(value)}</p>
             <p className="text-xs text-muted-foreground">{hint}</p>
           </div>
         ))}
@@ -131,8 +151,13 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         {policy.installs.length > 0 && (
           <details>
             <summary className="cursor-pointer">{copy.installs(policy.installs.length)}</summary>
-            <ul className="grid grid-cols-2 gap-x-4 pt-1 font-mono text-xs sm:grid-cols-3 lg:grid-cols-4">
-              {policy.installs.map((install) => <li key={`${install.version} ${install.date}`}>{install.version} · {install.date}</li>)}
+            {/* As many columns as fit one update a line, and a date never wraps at its hyphens. */}
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-3 pt-1 font-mono text-xs">
+              {policy.installs.map((install) => (
+                <li key={`${install.version} ${install.date}`}>
+                  {install.version} · <span className="whitespace-nowrap">{install.date}</span>
+                </li>
+              ))}
             </ul>
           </details>
         )}
@@ -141,11 +166,11 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
       <div className="space-y-1">
         <h2 className={heading}>{copy.compareHeading}</h2>
         <div className="overflow-x-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[40rem] text-sm">
+          <table className="w-full min-w-[38rem] text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
                 {[copy.colPolicy, copy.colNeverSeen, copy.colOutside, copy.exposed, copy.exposureDays, copy.updateEvents, copy.openAtEnd].map((label) => (
-                  <th key={label} className={`${cell} font-medium`}>{label}</th>
+                  <th key={label} className={`${tight} ${head}`}>{label}</th>
                 ))}
               </tr>
             </thead>
@@ -154,11 +179,11 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                 const totals = replay.policies[each];
                 return (
                   <tr key={each} aria-current={each === stop || undefined} className={`border-b last:border-0 ${each === stop ? "bg-muted font-medium" : ""}`}>
-                    <td className={`${cell} whitespace-nowrap`}>
+                    <td className={`${tight} whitespace-nowrap`}>
                       <button type="button" className="underline-offset-2 hover:underline" onClick={() => onStop(each)}>{copy.stops[each]}</button>
                     </td>
                     {[totals.never_seen, totals.never_seen_outside_affected_range, totals.exposed, totals.exposure_days, totals.update_events, totals.open_at_window_end].map(
-                      (value, index) => <td key={index} className={`${cell} tabular-nums`}>{copy.num(value)}</td>
+                      (value, index) => <td key={index} className={`${tight} tabular-nums`}>{copy.num(value)}</td>
                     )}
                   </tr>
                 );
@@ -185,28 +210,35 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
             ))}
           </div>
         </div>
-        {/* A floor on the width: a phone scrolls the table inside its box and no cell folds to a letter a line. */}
+        {/* A floor on the width: a phone scrolls the table inside its box and no cell folds to a letter a line.
+            Words wrap at their spaces, never inside a word ("(inclu-ding)"), and a date stays whole. */}
         <div className="max-h-[32rem] overflow-auto rounded-lg border bg-card">
-          <table className="w-full min-w-[44rem] text-sm">
+          <table className="w-full min-w-[38rem] text-sm">
             <thead className="sticky top-0 border-b text-left text-muted-foreground">
               <tr>
                 {/* The outcome sits beside the CVE, so it is the column a phone shows before any sideways scroll. */}
-                {[copy.colCve, copy.colOutcome(copy.stops[stop]), copy.colPublished, copy.colSeverity, copy.colFix(line)].map((label) => (
-                  <th key={label} className={`${cell} font-medium`}>{label}</th>
+                {[copy.colCve, copy.colOutcome(copy.stops[stop]), copy.colPublished, copy.colSeverity, copy.colFix(line)].map((label, index) => (
+                  <th key={label} className={`${ledger} ${head} ${index === 0 || index === 2 || index === 3 ? fit : ""}`}>{label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
-                const fix = heldFix(row, line);
+                const fixes = heldFixes(row, line);
                 return (
                   <tr key={row.cve_id} className="border-b align-top last:border-0">
-                    <td className={`${cell} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
-                    <td className={cell}>{outcomeWords(row.outcomes?.[stop], copy)}</td>
-                    <td className={`${cell} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
-                    <td className={cell}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
-                    <td className={`${cell} tabular-nums`}>
-                      {fix?.fixed_version ? copy.fix(fix.fixed_version, fix.release_date_reported_by_jamf) : <span className="text-muted-foreground">{copy.noFixOnLine}</span>}
+                    <td className={`${ledger} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
+                    <td className={ledger}><KeepDates text={outcomeWords(row.outcomes?.[stop], copy)} /></td>
+                    <td className={`${ledger} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
+                    <td className={ledger}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
+                    <td className={`${ledger} tabular-nums`}>
+                      {fixes.length === 0 ? (
+                        <span className="text-muted-foreground">{copy.noFixOnLine}</span>
+                      ) : (
+                        // Every fix on the line, never the first: which of NVD's ranges this Mac's
+                        // versions fell in is the file's judgement, and the outcome beside it gives it.
+                        fixes.map((fix, index) => <span key={index} className="block"><KeepDates text={fixWords(fix, copy, fixes.length > 1)} /></span>)
+                      )}
                     </td>
                   </tr>
                 );
@@ -223,8 +255,8 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/30 text-left text-muted-foreground">
               <tr>
-                <th className={`${cell} font-medium`}>{copy.colReason}</th>
-                <th className={`${cell} font-medium`}>{copy.colCount}</th>
+                <th className={`${cell} ${head}`}>{copy.colReason}</th>
+                <th className={`${cell} ${head}`}>{copy.colCount}</th>
               </tr>
             </thead>
             <tbody>
@@ -245,10 +277,14 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
           <details className="text-sm">
             <summary className="cursor-pointer text-muted-foreground">{copy.excludedList(excluded)}</summary>
             <div className="mt-1 overflow-x-auto rounded-lg border bg-card">
+              {/* Words wrap at their spaces: hyphenated, the reasons squeezed to syllables beside the detail. */}
               <table className="w-full min-w-[36rem] text-sm">
                 <thead className="border-b bg-muted/30 text-left text-muted-foreground">
                   <tr>
-                    {[copy.colCve, copy.colPublished, copy.colReason, copy.colDetail].map((label) => <th key={label} className={`${cell} font-medium`}>{label}</th>)}
+                    {/* The CVE id, the day and NVD's status shrink to fit; the reason and the detail take the room. */}
+                    {[copy.colCve, copy.colPublished, copy.colReason, copy.colStatus, copy.colDetail].map((label, index) => (
+                      <th key={label} className={`${cell} ${head} ${index === 2 || index === 4 ? "" : fit}`}>{label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -257,7 +293,8 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                       <td className={`${cell} whitespace-nowrap font-mono text-xs`}>{row.cve_id}</td>
                       <td className={`${cell} whitespace-nowrap tabular-nums`}>{row.published ?? "—"}</td>
                       <td className={cell}>{row.reason ? (copy.reasons[row.reason] ?? row.reason) : "—"}</td>
-                      <td className={`${cell} text-muted-foreground`}>{row.detail ?? "—"}</td>
+                      <td className={`${cell} whitespace-nowrap`}>{statusOf.get(row.cve_id) ?? "—"}</td>
+                      <td className={`${cell} text-muted-foreground [overflow-wrap:anywhere]`}>{row.detail ? <KeepDates text={row.detail} /> : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -279,7 +316,8 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
                   .map(([key, text]) => (
                     <Fragment key={key}>
                       <dt className="font-mono text-xs text-muted-foreground">{key}</dt>
-                      <dd>{text}</dd>
+                      {/* A long address (a timeline's URL) breaks rather than push the page sideways at 1024 px. */}
+                      <dd className="break-words"><KeepDates text={String(text)} /></dd>
                     </Fragment>
                   ))}
               </dl>
@@ -290,7 +328,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
             <div className="space-y-1 rounded-lg border border-dashed p-3">
               <h3 className={heading}>{copy.tabledHeading}</h3>
               <p className="text-muted-foreground">{copy.tabledSaid}</p>
-              <p>{tabled}</p>
+              <p><KeepDates text={tabled} /></p>
             </div>
           )}
         </div>
@@ -300,16 +338,37 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
         <h2 className={heading}>{copy.evidenceHeading}</h2>
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-[max-content_1fr]">
           <dt className="text-muted-foreground">{copy.evidenceWindow}</dt>
-          <dd className="tabular-nums">{replay.window.since} → {replay.window.until}</dd>
-          <dt className="text-muted-foreground">{copy.evidenceCatalog}</dt>
-          <dd>
-            {copy.fetched(when(replay.evidence.catalog_fetched_at))}
-            {replay.evidence.catalog_snapshot_id && <span className="block break-all font-mono text-xs text-muted-foreground">{replay.evidence.catalog_snapshot_id}</span>}
+          <dd className="space-y-0.5">
+            <span className="block tabular-nums">
+              <KeepDates text={`${replay.window.since} → ${replay.window.until}` + (cut?.requested ? ` · ${copy.asked(cut.requested)}` : "")} />
+            </span>
+            {/* The file's own reasons, as it words them: the page names the cut and computes none of it. */}
+            {cut?.reasons.map((reason) => <span key={reason} className="block text-muted-foreground"><KeepDates text={reason} /></span>)}
+          </dd>
+          <dt className="text-muted-foreground">{copy.evidenceTimeline}</dt>
+          <dd className="space-y-0.5">
+            <span className="block">
+              {linkable(timeline.url) ? (
+                <a href={timeline.url} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">{timeline.name}</a>
+              ) : (
+                timeline.name
+              )}
+              {" · "}
+              <KeepDates text={copy.fetched(when(timeline.fetched_at))} />
+            </span>
+            {timeline.url && !linkable(timeline.url) && <span className="block break-all font-mono text-xs text-muted-foreground">{timeline.url}</span>}
+            {timeline.sha256 && <span className="block break-all font-mono text-xs text-muted-foreground">{timeline.sha256}</span>}
+            <span className="block text-muted-foreground">{timeline.clock}</span>
+          </dd>
+          <dt className="text-muted-foreground">{copy.evidenceClock}</dt>
+          <dd className="space-y-0.5">
+            <span className="block">{copy.cveClock}</span>
+            <span className="block text-muted-foreground">{replay.clocks.published}</span>
           </dd>
           <dt className="text-muted-foreground">{copy.evidenceRun}</dt>
           <dd className="break-all font-mono text-xs">{replay.run_id}</dd>
         </dl>
-        <p className="text-muted-foreground">{copy.releaseDates}</p>
+        <p className="text-muted-foreground">{copy.releaseDatesSaid}</p>
       </div>
     </div>
   );

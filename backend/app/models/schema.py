@@ -24,6 +24,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -689,6 +690,69 @@ class VulnLibraryEpoch(Base):
     loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     title_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PatchPolicyDoc(Base):
+    """A copy of LoonSec's patch-policy reference document this container holds (#614).
+
+    Global, like `vuln_library_epoch`: one document for every app LoonSec references, the same
+    for every consenting container, with no customer data in it, so it sits outside row-level
+    security. Which organization may read it is the tier gate in `app.core.patch_policy_feed`,
+    as it is for the corpus.
+
+    The last two copies are kept — the current one and the one before it — so a document that
+    turns out wrong can be compared with its predecessor; `current` marks the one that answers,
+    and a partial unique index holds that there is at most one. A copy is written only after
+    every check in `app.core.patch_policy_feed.read_document` passed.
+    """
+
+    __tablename__ = "patch_policy_docs"
+    __table_args__ = (Index("uq_patch_policy_docs_current", "current", unique=True, postgresql_where=text("current")),)
+
+    # sha256 of the document's canonical body without `doc_id`, which the document also states.
+    # Equality is the only operation, as for the corpus signature: the exchange names it as the
+    # link's `signature`, and an unmoved one downloads nothing.
+    doc_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    schema: Mapped[int] = mapped_column(Integer)
+    algorithm: Mapped[str] = mapped_column(String(64))
+    # The document's own `as_of`: the NVD state hour it describes.
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # sha256 of the bytes as they arrived (the gzip file the link served, or the file read).
+    sha256: Mapped[str] = mapped_column(String(64))
+    # The document, gzip-compressed JSON, exactly as it arrived when it arrived compressed.
+    body_gz: Mapped[bytes] = mapped_column(LargeBinary)
+    current: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PatchPolicyFeedState(Base):
+    """What the last attempt to receive LoonSec's patch-policy document found: one row (#614).
+
+    Written on every exchange that answered and on every read of `PATCH_POLICY_FEED_FILE` that
+    found a change, whatever it found, so the feed's state on the page is the last attempt's and
+    never a guess. An exchange that failed outright writes nothing here: the share log already
+    says so, and the page's sentence for an instance that never received a document points there.
+    """
+
+    __tablename__ = "patch_policy_feed_state"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_patch_policy_feed_state_single_row"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # `exchange` or `file`: where the attempt looked.
+    source: Mapped[str] = mapped_column(String(16))
+    # `app.core.patch_policy_feed`'s word for what it found: stored, unchanged, not_published,
+    # algorithm_unknown, download_failed or invalid.
+    outcome: Mapped[str] = mapped_column(String(32))
+    # The link's host (an object store, not the exchange's host), or the file's path.
+    host: Mapped[str | None] = mapped_column(Text, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The reason, in the operator's words, when the outcome is not stored or unchanged.
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When LoonSec's publisher last finished a build, as the exchange's entry said (`built_at`):
+    # written with `stored` and `unchanged`, NULL when the entry did not say or the attempt failed.
+    # The page's `stale` is judged from the copy's `as_of` alone; this only names its cause.
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class FleetMaintainedApp(Base):
