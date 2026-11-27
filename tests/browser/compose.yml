@@ -1,8 +1,5 @@
 services:
   app:
-    # run.py --app-image sets this to an image already on the Docker host, as CI does with the
-    # one its job built. Empty, Compose builds the checkout and names the image for the project.
-    image: ${SMOKE_APP_IMAGE:-}
     ports: !reset []
     extra_hosts: !reset []
     networks:
@@ -18,14 +15,8 @@ services:
   browser:
     environment:
       UPDATE_CHECK: "false"
-    build:
-      context: ./tests/browser
-      dockerfile_inline: |
-        FROM mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
-        WORKDIR /smoke
-        COPY package.json package-lock.json ./
-        RUN npm ci --no-audit --no-fund
-        COPY smoke.spec.js playwright.config.js ./
+    build: ./tests/browser
+    pull_policy: never
     init: true
     shm_size: 1gb
     command: ["./node_modules/.bin/playwright", "test"]

@@ -747,8 +747,9 @@ a fresh Compose project with its own internal network, generated credentials and
 It signs in through the API, opens each top-level page, checks for browser errors and
 follows one synthetic Mac application through **Devices → Applications → Catalog**.
 The command prints the Playwright results and removes the project when it finishes.
-To test an image already on the Docker host instead of building the checkout, add
-`--app-image NAME`; the run leaves that image in place.
+
+The **Docker image** CI job runs the same suite with `--ci-images`. It tests the
+`looninspect:ci` and `looninspect-db:ci` images built earlier in that job with its cached Chromium runner.
 
 ## 🆘 Support
 
