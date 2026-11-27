@@ -35,7 +35,8 @@ class Base(DeclarativeBase):
 # and upgrade lifecycle: a pooled connection can be dead while the process is fine,
 # and without this the first request after a `docker compose restart db` fails rather
 # than reconnecting.
-engine = create_async_engine(settings.database_url, echo=settings.debug, pool_pre_ping=True)
+# SQL logging and driver errors must not repeat bound inventory or credential values.
+engine = create_async_engine(settings.database_url, echo=settings.debug, pool_pre_ping=True, hide_parameters=True)
 _session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]

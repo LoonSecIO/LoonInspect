@@ -1,12 +1,20 @@
 import { historyEnglish } from "@/features/devices/historyCopy";
 import { patchPolicyEnglish } from "@/features/patchPolicy/copy";
+import { walkEnglish } from "@/features/patchPolicy/walkCopy";
 import { mcpEnglish } from "@/features/mcp/copy";
+import { aiActivityEnglish } from "@/features/ai/activityCopy";
+import { fleetPlanningEnglish } from "@/features/fleetCatalog/planningCopy";
+import { fleetDetailEnglish } from "@/features/fleetCatalog/detailCopy";
 import type { UpdateReason } from "@/features/system/api";
 import type { Unsent } from "@/features/system/updateStatus";
 export const en = {
   deviceHistory: historyEnglish,
   patchPolicy: patchPolicyEnglish,
+  patchPolicyWalk: walkEnglish,
   mcp: mcpEnglish,
+  aiActivity: aiActivityEnglish,
+  fleetPlanning: fleetPlanningEnglish,
+  fleetDetail: fleetDetailEnglish,
   intelligence: {
     title: "Intelligence access", description: "Paid access works without sharing inventory. Activation never changes your sharing choice.",
     pageDescription: "How this instance keeps vulnerability intelligence current. Paid access and community sharing are separate routes; neither turns the other on or off, and held intelligence stays usable when updates stop.",
@@ -385,6 +393,7 @@ export const en = {
     reload: "Reload the page"
   },
   nav: {
+    patchPlans: "Patch Plans",
     overview: "Overview",
     devices: "Devices",
     applications: "Applications",
@@ -394,7 +403,7 @@ export const en = {
     osPosture: "macOS versions",
     vulnerabilities: "Vulnerabilities",
     compliance: "Compliance",
-    // #614. A reference replay, listed only while its flag is on; the page says what it is not.
+    // #614. A reference replay, listed for every app:read holder; the page says what it is not.
     patchPolicy: "Patch policy",
     settings: "Settings",
     connections: "Connections",
@@ -402,6 +411,7 @@ export const en = {
     dataSharing: "Data Sharing",
     intelligenceAccess: "Intelligence Access",
     ai: "AI",
+    aiActivity: "AI Activity",
     apiTokens: "API Tokens",
     aiConnections: "AI connections",
     accounts: "Accounts",
@@ -792,6 +802,43 @@ export const en = {
         sessions: "A day after they expire or are revoked, hourly."
       } as Record<string, string>,
       note: "Sizes are Postgres's own — heap, indexes and TOAST together — for this database and every tenant in it; rows are the planner's estimate since the last VACUUM or ANALYZE. A purge frees pages for reuse and does not give disk back (KNOWN_ISSUES §1). The audit log is a file on the data volume, not a table, and is not counted here."
+    },
+    // #614: the state of LoonSec's patch-policy document on this instance. Each state's sentence
+    // is the backend's own (`app.core.patch_policy_feed`), word for word, and
+    // `backend/tests/test_patch_policy_feed.py` holds the two together; docs/troubleshooting.md
+    // §32 walks each one.
+    patchPolicyFeed: {
+      heading: "LoonSec patch-policy data",
+      help: "LoonSec's patch-policy reference document: one file for every app LoonSec references, received with the daily data-sharing exchange this organization already makes, or read from PATCH_POLICY_FEED_FILE on an instance with no network, and held on this instance. It comes only to an organization that shares data, and receiving it adds nothing to what the exchange sends.",
+      loading: "Reading the patch-policy data's state…",
+      errorLoading: "The patch-policy data's state could not be read from this instance.",
+      states: {
+        tier_off: "This organization does not share data with LoonSec, so it does not receive LoonSec's patch-policy data. Settings › Data Sharing.",
+        never: "LoonSec's patch-policy data has not arrived on this instance yet. It rides the daily data-sharing exchange; Settings › Data Sharing shows the last exchange.",
+        neverFile: "LoonSec's patch-policy data has not been read from PATCH_POLICY_FEED_FILE yet. The file is read at startup and again whenever it changes; the container log says what was found.",
+        current: (asOf: string) => `Showing LoonSec's patch-policy data dated ${asOf}.`,
+        stale: (asOf: string, until: string) => `Showing patch-policy data dated ${asOf}, more than three days old; the walk ends ${until}.`,
+        // The two causes when the exchange said when LoonSec's publisher last finished a build: still
+        // running (within three days) over NVD data that has not advanced, or stopped.
+        staleRunning: (asOf: string, builtAt: string, until: string) =>
+          `Showing patch-policy data dated ${asOf}, more than three days old: LoonSec's publisher last ran on ${builtAt}, but its NVD data has not advanced since ${asOf}, and the walk ends ${until}.`,
+        staleStopped: (asOf: string, builtAt: string, until: string) =>
+          `Showing patch-policy data dated ${asOf}, more than three days old: LoonSec's publisher last ran on ${builtAt}, more than three days ago, and the walk ends ${until}.`,
+        not_published: "LoonSec's last exchange carried no patch-policy data. Nothing on this instance is wrong; report it if it lasts a day.",
+        algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec's last exchange named only ${published}. If the next exchange names the same, update LoonInspect.`,
+        downloadFailed: (host: string, reason: string) => `The patch-policy file could not be downloaded from ${host}: ${reason}.`,
+        readFailed: (path: string, reason: string) => `The patch-policy file could not be read from ${path}: ${reason}.`,
+        invalid: (reason: string) => `LoonSec's patch-policy data failed its check (${reason}), so it was not stored.`
+      },
+      showingCopy: (asOf: string) => `Showing the copy dated ${asOf}.`,
+      stillUsed: (asOf: string) => `The copy dated ${asOf} is still used.`,
+      noCopy: "This instance holds no copy yet.",
+      anotherAlgorithm: "other algorithms",
+      exchangeLink: "the exchange's link",
+      held: (docId: string, received: string) => `Document ${docId}…, received ${received}.`,
+      attempted: (when: string, where: string) => `Last attempt ${when}, from ${where}.`,
+      fromExchange: "the data-sharing exchange",
+      fromFile: "PATCH_POLICY_FEED_FILE"
     }
   },
   apiTokens: {
@@ -1265,6 +1312,7 @@ export const en = {
     eyebrow: "Devices",
     title: "Applications",
     description: "Applications installed across your fleet, aggregated from synced device inventory.",
+    tabPatchPlans: "Patch Plans",
     tabInstalled: "Installed Apps",
     tableName: "Name",
     tableBundleId: "Bundle ID",
@@ -1372,7 +1420,18 @@ export const en = {
     noMatches: "No rows match this filter.",
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} row${total === 1 ? "" : "s"}` : `${shown} of ${total} rows`,
-    tableVuln: "Vulnerabilities"
+    tableVuln: "Vulnerabilities",
+    // #931: the control troubleshooting §5 and `vulnerabilities.notYetJudged` name, so the
+    // label is held to those sentences by `CatalogPage.test.tsx`. Shown to patch:catalog-sync.
+    refresh: "Refresh",
+    refreshing: "Refreshing…",
+    refreshHint:
+      "Re-judge every app version this organization has against the current Jamf catalog and vulnerability corpus now, instead of at the hourly refresh. The device filter does not narrow it.",
+    refreshed: (n: number) => `Re-judged ${n} app version${n === 1 ? "" : "s"} of this organization.`,
+    refreshedNone:
+      "Nothing to re-judge: this organization has no app versions in its catalog yet. The catalog fills as devices are processed.",
+    refreshFailed:
+      "The catalog could not be re-judged, and this instance gave no reason, so the list still shows the last pass's answers. Check that LoonInspect is reachable, then read docker compose logs app for the request to /api/catalog/refresh before pressing Refresh again."
   },
   // #536 — the evidence report on screen. NO FRAMEWORK IS NAMED IN THIS BLOCK, not as an example and not
   // in a hint: `compliance.test.ts` greps it for the four words `test_evidence_report_db.py` refuses on
@@ -1639,6 +1698,7 @@ export const en = {
     tabLabel: "Fleet catalog",
     eyebrow: "Devices › Applications",
     title: "Fleet catalog",
+    titlesHeading: "All Fleet titles",
     description:
       "The Mac apps Fleet maintains, with Fleet's latest version beside what this organization has installed. Read from Fleet's repository on GitHub once a day, with the version history of the titles installed here read slowly in the background.",
     checkNow: "Check now",
@@ -1649,11 +1709,17 @@ export const en = {
     searchPlaceholder: "Search name, bundle ID, version...",
     installedOnly: "Only titles installed here",
     installedOnlyHint:
-      "Hides Fleet's titles that no Mac in this organization has. A title is matched to an installed app by its exact bundle ID.",
+      "Hides Fleet's titles that are on none of the Macs the device filter above selects. A title is matched to an installed app by its exact bundle ID.",
     tableName: "Name",
     tableBundleId: "Bundle ID",
     tableLatestVersion: "Fleet's latest",
     tableDeviceCount: "Macs with app",
+    tableScopedCount: "Macs in scope",
+    tableScopedCountHint:
+      'How many of the Macs the device filter above selects carry this title\'s bundle ID. "Macs with app" counts the whole organization. Titles that share a bundle ID, such as a release and its ESR channel, count the same Macs.',
+    scopedUnknown: "Unknown",
+    scopedUnknownHint: "Fleet listed this title after the counts for this device filter were read. Reload the page to count it.",
+    buildPlan: "Build a patch plan",
     tableDevicesBehind: "Macs behind",
     tableVersionChanged: "Version last moved",
     notMoved: "Not since first read",
@@ -1666,6 +1732,7 @@ export const en = {
       "When Fleet's catalog took this version: the date of the first commit in Fleet's repository that carried it. Fleet takes versions from Homebrew, so this is usually hours to a day after the vendor's release, never before it.",
     notDated: "Not dated",
     historyToggleHint: "Show or hide this title's version history",
+    historyToggleLabel: (name: string) => `Version history of ${name}`,
     sourceLink: "Fleet source ↗",
     sourceLabel: (name: string) => `Open ${name}'s Fleet source on GitHub (opens in browser)`,
     historyProgress: (read: number, installed: number) =>
@@ -1691,6 +1758,21 @@ export const en = {
     historyReplacedNone: "none",
     historyReadNothing: (readAt: string) => `Read ${readAt}.`,
     historyCommitLabel: (at: string, sha: string) => `${at}: commit ${sha} in Fleet's repository (opens in a new tab)`,
+    // The version history's detail layout and its cadence chart (#901), for an app's own page.
+    historySearch: "Find a Fleet version",
+    historySearchNone: "No dated version matches this search.",
+    historyManifest: "Manifest at this commit",
+    historyManifestLabel: (version: string) => `Manifest at this commit for ${version}, Fleet's manifest at the commit that dated it`,
+    historyCompare: (version: string) => `Compare ${version}`,
+    historyTargetColumn: "Fleet target",
+    cadenceTitle: "Update cadence",
+    cadenceRecent: (weeks: number) => `Dated versions in the last ${weeks} weeks`,
+    cadenceMedianGap: "Median gap between dated versions, whole history",
+    cadenceDays: (days: string, one: boolean) => `${days} ${one ? "day" : "days"}`,
+    cadenceChartLabel: (count: string, weeks: number, through: string) =>
+      `Bar chart of dated Fleet versions by week: ${count} in the ${weeks} weeks to ${through} (UTC). The table below lists each version.`,
+    cadenceGaps:
+      "This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.",
     notDatedHint:
       "This title's version history is read, and it could not date the latest version: the read could not see it arrive. Open the title for the reason.",
     // The status line: never asked, answered (changed or not), and no answer. The failure's
@@ -1712,7 +1794,7 @@ export const en = {
     emptyNeverCheckedCanCheck: "Nothing to list yet: Fleet's catalog has not been read. Check now reads it.",
     emptyNeverRead: "Nothing to list yet: no check has been able to read Fleet's catalog. The reason is above.",
     emptyNoneInstalled: (count: number) =>
-      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac this organization has collected. Untick "Only titles installed here" to see the whole catalog.`,
+      `Fleet lists ${count} Mac app${count === 1 ? "" : "s"}, and none is on a Mac the device filter above selects. Widen the filter, or untick "Only titles installed here" to see the whole catalog.`,
     emptyNoMatchInstalled:
       'No installed title matches this search. Untick "Only titles installed here" to search the whole catalog.',
     emptyNoMatch: "No title matches this search.",
@@ -2263,15 +2345,50 @@ export const en = {
     }
   },
   changes: {
+    historical: {
+      subjectKind: "Subject type",
+      subjectKinds: { computer: "Computer", computer_group: "Computer group" } as Record<string, string>,
+      title: "Device attributes at the observation",
+      hint: "These filters use values recorded with each change. Missing historical attributes remain unknown and do not match a filter; current device state is never substituted.",
+      connection: "Connection ID",
+      model: "Model contains",
+      osVersion: "Observed OS version starts with",
+      fileVault: "FileVault state",
+      site: "Site ID",
+      department: "Department ID",
+      managed: "Managed by Jamf",
+      user: "Assigned user contains",
+      any: "Any",
+      yes: "Yes",
+      no: "No",
+      field: "Changed field",
+      anyField: "Any field",
+      changedTo: "Changed to exactly",
+      scalarHint: "Choose a section and scalar field. Named entries such as applications use the named-entry search above.",
+      start: "Observed from (inclusive)",
+      end: "Observed until (exclusive)",
+      zone: "Times use your browser timezone:",
+      invalidTime: "This time window cannot be applied. Enter valid local times; a time skipped by daylight saving does not exist. Check the displayed timezone.",
+      reversed: "This time window cannot be applied: the end must be later than the start. Adjust the observation window.",
+      example: "Example: OS changed to 27.2.1",
+      exampleHint: "Sets Operating system → OS version → exactly 27.2.1, keeping the time window and historical device filters. Named-entry, level and observation-link filters are cleared.",
+      observationHint: "Counts are observed transitions, not installation timestamps or unique people. Repeated transitions count once per device in the device total. A first observation cannot establish a prior change; retained history and tracking policy limit coverage.",
+      policyError: "Changed-field choices could not be loaded. Retry loading the change policy; existing filters still apply.",
+      retry: "Retry field choices",
+      apply: "Apply field, time and device filters",
+      resolvedUser: "Assigned user from shared link",
+      fieldRequired: "Choose a scalar field in the selected section before entering a target value."
+    },
+    matching: (changes: number, devices: number) => `${changes} matching changes · ${devices} distinct devices`,
     title: "Changes",
     // No claim here that the page cannot keep. The second sentence used to promise
     // "every row links back to the two observations it was derived from" — there has
     // never been such a link, on this page or any other (#307).
     description:
       "The change log for each device, between observation periods. Every row is one your change-tracking policy decided mattered.",
-    search: "Search",
+    search: "Device search",
     searchPlaceholder: "Device name, serial, or Jamf id",
-    artifact: "Filter to one thing",
+    artifact: "Named-entry search",
     artifactPlaceholder: "App name, bundle id, username, group…",
     // What the parameter accepts, and what it refuses. `artifact` matches four
     // expressions and paths is not one of them, deliberately (`api/changes.py`) — so the

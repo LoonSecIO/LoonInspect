@@ -1,4 +1,6 @@
 import { apiRequest } from "@/config/api";
+import type { Provider } from "@/features/ai/api";
+import type { MigrationDetail, MigrationPortfolio } from "@/features/fleetCatalog/migrationTypes";
 import type { FleetCatalog, FleetCatalogState, FleetTitleHistory } from "@/features/fleetCatalog/types";
 
 // A few hundred titles at most, so the page reads them in one request and searches and
@@ -9,6 +11,43 @@ const ALL_TITLES_PAGE_SIZE = 5000;
 export function getFleetCatalog(installedOnly: boolean): Promise<FleetCatalog> {
   const params = new URLSearchParams({ installedOnly: String(installedOnly), pageSize: String(ALL_TITLES_PAGE_SIZE) });
   return apiRequest<FleetCatalog>(`/fleet-catalog?${params.toString()}`);
+}
+
+/** The migration answers' query: the page URL's `deviceScope`, the filter Installed Apps and Patch Plans
+ *  share, or "" without one, which the server reads as every Mac, as it reads `defaultScope`. Never
+ *  parsed: `readScope` reads a malformed filter as null, and dropping that would widen the request to
+ *  every Mac. The server refuses a malformed one with its own sentence. */
+export function fleetScopeQuery(params: URLSearchParams): string {
+  const scope = params.get("deviceScope");
+  return scope === null ? "" : new URLSearchParams({ deviceScope: scope }).toString();
+}
+
+/** The apps on the Macs `scope` (`fleetScopeQuery`) selects, against Fleet's and Jamf's catalogs. */
+export function getMigrationReport(scope: string, signal?: AbortSignal): Promise<MigrationPortfolio> {
+  return apiRequest<MigrationPortfolio>(`/fleet-catalog/migration${scope ? `?${scope}` : ""}`, { signal });
+}
+
+/** Whether a migration briefing can be asked for (#910): main's Prompt bar status, or the Fleet catalog flag's 409. Unknown
+ *  until `isPromptStatus` reads it. */
+export function getBriefingStatus(signal?: AbortSignal): Promise<unknown> {
+  return apiRequest<unknown>("/fleet-catalog/briefing", { signal });
+}
+
+/** Which of the report's counts for the Macs `scope` (`fleetScopeQuery`, sent unchanged) selects lead, as the saved `provider`
+ *  ranks them. Unknown until `isBriefing` reads it. */
+export function requestBriefing(scope: string, provider: Provider, signal?: AbortSignal): Promise<unknown> {
+  return apiRequest<unknown>(`/fleet-catalog/briefing${scope ? `?${scope}` : ""}`, { method: "POST", json: { provider }, signal });
+}
+
+/** One installed app (`apps`, by app hash) or Fleet title (`titles`, by slug) on the Macs `scope` selects,
+ *  against `targetVersion`, else Fleet's latest. */
+export function getFleetDetail(
+  kind: "apps" | "titles", id: string, scope: string, targetVersion?: string, signal?: AbortSignal
+): Promise<MigrationDetail> {
+  const params = new URLSearchParams(scope);
+  if (targetVersion) params.set("targetVersion", targetVersion);
+  const query = params.toString();
+  return apiRequest<MigrationDetail>(`/fleet-catalog/migration/${kind}/${encodeURIComponent(id)}${query ? `?${query}` : ""}`, { signal });
 }
 
 /** Check Fleet's catalog now. patch:catalog-sync; a refusal is a 409 whose detail is the sentence to show. */

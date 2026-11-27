@@ -221,6 +221,23 @@ publication it checks that the release carries the files. Environment setup and 
 are in
 [`macos/README.md`](../macos/README.md#github-actions).
 
+### Window navigation and appearance
+
+The native title bar follows the workspace's **Appearance** choice, including when it differs
+from macOS. The normal close, minimize and full-screen buttons remain available. The compact
+**Back** and **Forward** buttons use this window's page history, including applied searches and
+filters. The same actions are in **View**, with **⌘[** and **⌘]** shortcuts. WebKit's native
+back/forward gestures are enabled while the workspace is available; macOS trackpad or mouse
+settings control which gesture is available.
+
+A dimmed direction means there is no available local history entry, or the page is loading,
+starting or recovering. Navigation does not invent a parent page. **Reload Window** reloads the
+current workspace route and query, including a route reached through in-page navigation.
+Back and Forward keep same-document state, including unsaved Patch Plans notes. They do not
+save a plan. An explicit page confirmation, such as **Discard draft**, opens a native sheet;
+**Cancel** is the default action. This is separate from browser unload prompts: save important
+work before quitting or reloading the app.
+
 ### Finding text and searching records
 
 **Edit → Find → Find in Page…** (⌘F) opens a native find bar. Type literal text; **Return** or
@@ -325,6 +342,25 @@ key with a new one: that cannot decrypt the original credentials. There is no bu
 assistant. Keep the original database and Keychain backup until the restored instance has been
 verified. This procedure backs up the database; preserve `data/` and `logs/` separately if their
 audit and diagnostic history is needed.
+
+## Clean uninstall and reinstall
+
+Replacing or deleting the app preserves its local account, inventory and Keychain secrets.
+A reinstall normally returns to the previous sign-in screen. For a deliberate full reset,
+use the standalone **LoonInspect-Uninstall** helper supplied on the disk image, or the copy in
+`LoonInspect.app/Contents/Resources` from the ZIP. Run with `--dry-run` first, then
+`--uninstall` from Terminal and review both confirmations. Never run it with `sudo`.
+
+This permanently removes the previewed local runtime data and this user's app credentials in
+login Keychain, after stopping verified app services and taking the instance lock. It is not
+password recovery. Back up the stopped database and matching Keychain items as described above
+before confirming if anything must be recoverable; the helper creates no backup. Keep backups
+and exported evidence outside every previewed removal directory. Unknown sibling files,
+other users, remote Jamf, custom app locations and app bundles owned by another user remain.
+Other keychains and macOS-managed temporary WebKit caches are outside the helper's scope.
+After removal, install/open the signed app and complete first-time setup with a new account.
+See [the exact helper boundaries](../macos/README.md#where-it-keeps-things-and-how-to-start-over)
+and [failure recovery](troubleshooting.md#macos-clean-uninstall-and-reinstall).
 
 ## What it leaves out
 

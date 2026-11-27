@@ -147,6 +147,8 @@ class AIConfigIn(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     ollama_policy: OllamaPolicy | None = None
+    service_label: str | None = Field(default=None, max_length=64, pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$")
+    service_kind: Literal["auto", "openai", "ollama", "compatible"] | None = None
     host_reach: HostReach | None = None
     base_url: str = Field(max_length=512)
     model: str = Field(min_length=1, max_length=200)
@@ -161,6 +163,9 @@ class AIConfigOut(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     provider: Provider
+    service_label: str | None = None
+    service_kind: str | None = None
+    service_id: str | None = None
     ollama_policy: OllamaPolicy | None = None
     host_reach: HostReach | None
     base_url: str

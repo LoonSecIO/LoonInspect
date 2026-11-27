@@ -33,7 +33,7 @@ function PolicyCell({
 }
 
 export function JamfPatchDetailPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { titleId } = useParams<{ titleId: string }>();
 
   const [title, setTitle] = useState<JamfPatchTitleDetail | null>(null);
@@ -201,12 +201,12 @@ export function JamfPatchDetailPage() {
                         <tr key={row.version} className="border-b align-top last:border-0">
                           <td className="px-4 py-2 font-medium">{row.version}</td>
                           <td className="px-4 py-2">
-                            {row.releaseDate ? new Date(row.releaseDate).toLocaleDateString() : "—"}
+                            {row.releaseDate ? new Date(row.releaseDate).toLocaleDateString(locale) : "—"}
                           </td>
                           <td className="px-4 py-2 tabular-nums">{row.devices}</td>
                           {judged !== null && (
                             <td className="px-4 py-2">
-                              <PolicyCell verdict={judged.versions[row.version]} sentence={(verdict) => policySentence(verdict, judged, t)} />
+                              <PolicyCell verdict={judged.versions[row.version]} sentence={(verdict) => policySentence(verdict, judged, t, locale)} />
                             </td>
                           )}
                           {corpusAsOf !== null && (

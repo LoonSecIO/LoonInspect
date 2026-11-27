@@ -15,10 +15,11 @@ Nothing here judges a URL or asks the AI gate; the routes do both, in the order
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import case, delete, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +51,9 @@ class SavedConfig:
     updated_at: datetime | None
     updated_by: str | None
     ollama_policy: dict | None = None
+    service_id: uuid.UUID | None = None
+    service_label: str | None = None
+    service_kind: str | None = None
 
 
 # The columns of a `SavedConfig`, in its field order. The key is tested, never selected.
@@ -63,6 +67,9 @@ _SAVED_COLUMNS = (
     AIProviderConfig.updated_at,
     AIProviderConfig.updated_by,
     AIProviderConfig.ollama_policy,
+    AIProviderConfig.service_id,
+    AIProviderConfig.service_label,
+    AIProviderConfig.service_kind,
 )
 
 
@@ -107,6 +114,8 @@ async def save_config(
     clear_key: bool,
     updated_by: str | None,
     ollama_policy: dict | None = None,
+    service_label: str | None = None,
+    service_kind: str | None = None,
 ) -> SavedConfig:
     """Create or replace the provider's row, in one statement. The key follows
     ``keeps_key``: written when sent, NULLed when cleared, and otherwise not in the
@@ -122,15 +131,37 @@ async def save_config(
         # behind these settings, which a no-op save still is.
         "updated_at": datetime.now(UTC),
         "updated_by": updated_by,
+        "service_id": uuid.uuid4(),
     }
+    # Omission preserves an existing name/type; an empty label explicitly returns to
+    # the safe automatic label. Snapshot identity changes only for service changes.
+    if service_label is not None:
+        values["service_label"] = service_label or None
+    if service_kind is not None:
+        values["service_kind"] = service_kind
     if api_key:
         values["api_key_encrypted"] = api_key
     elif clear_key:
         values["api_key_encrypted"] = None
     statement = pg_insert(AIProviderConfig).values(**values)
+    changed = [
+        AIProviderConfig.base_url.is_distinct_from(statement.excluded.base_url),
+        # Enabling/disabling automatic Ollama policy can change the automatic label.
+        # SQLAlchemy stores Python None as JSON null, distinct from SQL NULL.
+        func.coalesce(func.jsonb_typeof(AIProviderConfig.ollama_policy), "null")
+        != func.coalesce(func.jsonb_typeof(statement.excluded.ollama_policy), "null"),
+    ]
+    for name in ("service_label", "service_kind"):
+        if name in values:
+            changed.append(getattr(AIProviderConfig, name).is_distinct_from(statement.excluded[name]))
+    updates = {name: statement.excluded[name] for name in values if name not in ("provider", "service_id")}
+    updates["service_id"] = case(
+        (or_(*changed), statement.excluded.service_id),
+        else_=func.coalesce(AIProviderConfig.service_id, statement.excluded.service_id),
+    )
     statement = statement.on_conflict_do_update(
         constraint="uq_ai_provider_configs_tenant_provider",
-        set_={name: statement.excluded[name] for name in values if name != "provider"},
+        set_=updates,
     ).returning(*_SAVED_COLUMNS)
     row = (await db.execute(statement)).one()
     await db.commit()

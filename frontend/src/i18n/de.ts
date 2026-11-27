@@ -1,12 +1,20 @@
 import { historyGerman } from "@/features/devices/historyCopy";
 import { patchPolicyGerman } from "@/features/patchPolicy/copy";
+import { walkGerman } from "@/features/patchPolicy/walkCopy";
 import { mcpGerman } from "@/features/mcp/copy";
+import { aiActivityGerman } from "@/features/ai/activityCopy";
+import { fleetPlanningGerman } from "@/features/fleetCatalog/planningCopy";
+import { fleetDetailGerman } from "@/features/fleetCatalog/detailCopy";
 import type { Translations } from "@/i18n/en";
 
 export const de: Translations = {
   deviceHistory: historyGerman,
   patchPolicy: patchPolicyGerman,
+  patchPolicyWalk: walkGerman,
   mcp: mcpGerman,
+  aiActivity: aiActivityGerman,
+  fleetPlanning: fleetPlanningGerman,
+  fleetDetail: fleetDetailGerman,
   intelligence: {
     title: "Zugang zu Sicherheitsinformationen", description: "Bezahlter Zugang funktioniert ohne Inventarfreigabe. Die Aktivierung ändert Ihre Freigabeentscheidung nicht.",
     pageDescription: "Wie diese Instanz Sicherheitsinformationen aktuell hält. Bezahlter Zugang und Community-Freigabe sind getrennte Wege; keiner schaltet den anderen ein oder aus, und gespeicherte Informationen bleiben nach Updateende nutzbar.",
@@ -350,6 +358,7 @@ export const de: Translations = {
     reload: "Seite neu laden"
   },
   nav: {
+    patchPlans: "Patch-Pläne",
     overview: "Übersicht",
     devices: "Geräte",
     applications: "Anwendungen",
@@ -365,6 +374,7 @@ export const de: Translations = {
     dataSharing: "Datenfreigabe",
     intelligenceAccess: "Informationszugang",
     ai: "KI",
+    aiActivity: "KI-Aktivität",
     apiTokens: "API-Token",
     aiConnections: "KI-Verbindungen",
     accounts: "Konten",
@@ -738,6 +748,37 @@ export const de: Translations = {
         sessions: "Einen Tag nach Ablauf oder Widerruf, stündlich."
       } as Record<string, string>,
       note: "Größen sind die von Postgres — Heap, Indizes und TOAST zusammen — für diese Datenbank und jeden Mandanten darin; Zeilen sind die Schätzung des Planers seit dem letzten VACUUM oder ANALYZE. Eine Bereinigung gibt Seiten zur Wiederverwendung frei, nicht Platz an die Platte zurück (KNOWN_ISSUES §1). Das Audit-Log ist eine Datei auf dem Daten-Volume, keine Tabelle, und wird hier nicht gezählt."
+    },
+    patchPolicyFeed: {
+      heading: "Patch-Policy-Daten von LoonSec",
+      help: "Das Patch-Policy-Referenzdokument von LoonSec: eine Datei für jede App, auf die LoonSec verweist, empfangen mit dem täglichen Datenaustausch, den diese Organisation ohnehin führt, oder auf einer Instanz ohne Netzwerk aus PATCH_POLICY_FEED_FILE gelesen, und auf dieser Instanz gehalten. Es kommt nur zu einer Organisation, die Daten teilt, und sein Empfang fügt dem, was der Austausch sendet, nichts hinzu.",
+      loading: "Der Stand der Patch-Policy-Daten wird gelesen…",
+      errorLoading: "Der Stand der Patch-Policy-Daten konnte von dieser Instanz nicht gelesen werden.",
+      states: {
+        tier_off: "Diese Organisation teilt keine Daten mit LoonSec und erhält daher keine Patch-Policy-Daten von LoonSec. Einstellungen › Datenfreigabe.",
+        never: "Die Patch-Policy-Daten von LoonSec sind auf dieser Instanz noch nicht angekommen. Sie kommen mit dem täglichen Datenaustausch; Einstellungen › Datenfreigabe zeigt den letzten Austausch.",
+        neverFile: "Die Patch-Policy-Daten von LoonSec wurden noch nicht aus PATCH_POLICY_FEED_FILE gelesen. Die Datei wird beim Start gelesen und erneut, sobald sie sich ändert; das Container-Log sagt, was gefunden wurde.",
+        current: (asOf: string) => `Angezeigt werden die Patch-Policy-Daten von LoonSec vom ${asOf}.`,
+        stale: (asOf: string, until: string) => `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt; der Durchlauf endet am ${until}.`,
+        staleRunning: (asOf: string, builtAt: string, until: string) =>
+          `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am ${builtAt}, aber seine NVD-Daten stehen seit dem ${asOf} still, und der Durchlauf endet am ${until}.`,
+        staleStopped: (asOf: string, builtAt: string, until: string) =>
+          `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am ${builtAt}, vor mehr als drei Tagen, und der Durchlauf endet am ${until}.`,
+        not_published: "Der letzte Austausch mit LoonSec enthielt keine Patch-Policy-Daten. Auf dieser Instanz ist nichts falsch; melden Sie es, wenn es länger als einen Tag anhält.",
+        algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}. Nennt der nächste Austausch dasselbe, aktualisieren Sie LoonInspect.`,
+        downloadFailed: (host: string, reason: string) => `Die Patch-Policy-Datei konnte nicht von ${host} heruntergeladen werden: ${reason}.`,
+        readFailed: (path: string, reason: string) => `Die Patch-Policy-Datei konnte nicht aus ${path} gelesen werden: ${reason}.`,
+        invalid: (reason: string) => `Die Patch-Policy-Daten von LoonSec haben ihre Prüfung nicht bestanden (${reason}) und wurden nicht gespeichert.`
+      },
+      showingCopy: (asOf: string) => `Angezeigt wird die Kopie vom ${asOf}.`,
+      stillUsed: (asOf: string) => `Die Kopie vom ${asOf} wird weiter verwendet.`,
+      noCopy: "Diese Instanz hält noch keine Kopie.",
+      anotherAlgorithm: "andere Algorithmen",
+      exchangeLink: "dem Link des Austauschs",
+      held: (docId: string, received: string) => `Dokument ${docId}…, empfangen ${received}.`,
+      attempted: (when: string, where: string) => `Letzter Versuch ${when}, über ${where}.`,
+      fromExchange: "den Datenaustausch",
+      fromFile: "PATCH_POLICY_FEED_FILE"
     }
   },
   apiTokens: {
@@ -1168,6 +1209,7 @@ export const de: Translations = {
     eyebrow: "Geräte",
     title: "Anwendungen",
     description: "Über Ihre Flotte installierte Anwendungen, aggregiert aus dem synchronisierten Geräteinventar.",
+    tabPatchPlans: "Patch-Pläne",
     tabInstalled: "Installierte Apps",
     tableName: "Name",
     tableBundleId: "Bundle-ID",
@@ -1267,7 +1309,16 @@ export const de: Translations = {
     noMatches: "Keine Zeilen entsprechen diesem Filter.",
     filteredTotal: (shown: number, total: number) =>
       shown === total ? `${total} Zeile${total === 1 ? "" : "n"}` : `${shown} von ${total} Zeilen`,
-    tableVuln: "Schwachstellen"
+    tableVuln: "Schwachstellen",
+    refresh: "Aktualisieren",
+    refreshing: "Wird aktualisiert…",
+    refreshHint:
+      "Jede App-Version dieser Organisation jetzt gegen den aktuellen Jamf-Katalog und den Schwachstellen-Korpus neu beurteilen, statt auf die stündliche Aktualisierung zu warten. Der Gerätefilter schränkt das nicht ein.",
+    refreshed: (n: number) => `${n} ${n === 1 ? "App-Version" : "App-Versionen"} dieser Organisation neu beurteilt.`,
+    refreshedNone:
+      "Nichts neu zu beurteilen: Der Katalog dieser Organisation enthält noch keine App-Versionen. Er füllt sich, sobald Geräte verarbeitet werden.",
+    refreshFailed:
+      "Der Katalog konnte nicht neu beurteilt werden, und diese Instanz nannte keinen Grund; die Liste zeigt deshalb weiter die Antworten des letzten Durchlaufs. Prüfen Sie, ob LoonInspect erreichbar ist, und lesen Sie dann in docker compose logs app die Anfrage an /api/catalog/refresh, bevor Sie erneut Aktualisieren drücken."
   },
   // #536 — kein Rahmenwerk wird in diesem Block genannt; `compliance.test.ts` prüft das.
   compliance: {
@@ -1484,6 +1535,7 @@ export const de: Translations = {
     tabLabel: "Fleet-Katalog",
     eyebrow: "Geräte › Anwendungen",
     title: "Fleet-Katalog",
+    titlesHeading: "Alle Fleet-Titel",
     description:
       "Die Mac-Apps, die Fleet pflegt, mit Fleets neuester Version neben dem, was diese Organisation installiert hat. Einmal täglich aus Fleets Repository auf GitHub gelesen; die Versionsgeschichte der hier installierten Titel wird langsam im Hintergrund gelesen.",
     checkNow: "Jetzt prüfen",
@@ -1494,11 +1546,17 @@ export const de: Translations = {
     searchPlaceholder: "Name, Bundle-ID, Version suchen...",
     installedOnly: "Nur hier installierte Titel",
     installedOnlyHint:
-      "Blendet Fleets Titel aus, die kein Mac dieser Organisation hat. Ein Titel wird über die exakte Bundle-ID einer installierten App zugeordnet.",
+      "Blendet Fleets Titel aus, die auf keinem der Macs sind, die der Gerätefilter oben auswählt. Ein Titel wird über die exakte Bundle-ID einer installierten App zugeordnet.",
     tableName: "Name",
     tableBundleId: "Bundle-ID",
     tableLatestVersion: "Fleets neueste",
     tableDeviceCount: "Macs mit App",
+    tableScopedCount: "Macs im Gerätefilter",
+    tableScopedCountHint:
+      "Wie viele der Macs, die der Gerätefilter oben auswählt, die Bundle-ID dieses Titels tragen. „Macs mit App“ zählt die ganze Organisation. Titel mit derselben Bundle-ID, etwa eine Version und ihr ESR-Kanal, zählen dieselben Macs.",
+    scopedUnknown: "Unbekannt",
+    scopedUnknownHint: "Fleet hat diesen Titel aufgenommen, nachdem die Zahlen für diesen Gerätefilter gelesen wurden. Laden Sie die Seite neu, um ihn zu zählen.",
+    buildPlan: "Patch-Plan erstellen",
     tableDevicesBehind: "Macs im Rückstand",
     tableVersionChanged: "Version zuletzt geändert",
     notMoved: "Seit dem ersten Lesen nicht",
@@ -1510,6 +1568,7 @@ export const de: Translations = {
       "Wann Fleets Katalog diese Version übernommen hat: das Datum des ersten Commits in Fleets Repository, der sie enthielt. Fleet übernimmt Versionen von Homebrew, daher liegt dies meist Stunden bis einen Tag nach der Veröffentlichung durch den Hersteller, nie davor.",
     notDated: "Ohne Datum",
     historyToggleHint: "Versionsgeschichte dieses Titels ein- oder ausblenden",
+    historyToggleLabel: (name: string) => `Versionsgeschichte von ${name}`,
     sourceLink: "Fleet-Quelle ↗",
     sourceLabel: (name: string) => `Fleet-Quelle von ${name} auf GitHub öffnen (im Browser)`,
     historyProgress: (read: number, installed: number) =>
@@ -1535,6 +1594,20 @@ export const de: Translations = {
     historyReplacedNone: "keine",
     historyReadNothing: (readAt: string) => `Gelesen ${readAt}.`,
     historyCommitLabel: (at: string, sha: string) => `${at}: Commit ${sha} in Fleets Repository (öffnet in neuem Tab)`,
+    historySearch: "Fleet-Version suchen",
+    historySearchNone: "Keine datierte Version passt zu dieser Suche.",
+    historyManifest: "Manifest zu diesem Commit",
+    historyManifestLabel: (version: string) => `Manifest zu diesem Commit für ${version}, Fleets Manifest beim Commit, der diese Version datiert hat`,
+    historyCompare: (version: string) => `${version} vergleichen`,
+    historyTargetColumn: "Fleet-Ziel",
+    cadenceTitle: "Updatehäufigkeit",
+    cadenceRecent: (weeks: number) => `Datierte Versionen in den letzten ${weeks} Wochen`,
+    cadenceMedianGap: "Medianabstand zwischen datierten Versionen, ganze Geschichte",
+    cadenceDays: (days: string, one: boolean) => `${days} ${one ? "Tag" : "Tage"}`,
+    cadenceChartLabel: (count: string, weeks: number, through: string) =>
+      `Balkendiagramm datierter Fleet-Versionen je Woche: ${count} in den ${weeks} Wochen bis ${through} (UTC). Die Tabelle darunter listet jede Version.`,
+    cadenceGaps:
+      "Diese Geschichte hat Lücken; die Zahlen umfassen daher nur die Versionen, die sie datieren konnte. Die Statuszeile des Lesens unter diesem Diagramm nennt den Grund.",
     notDatedHint:
       "Die Versionsgeschichte dieses Titels ist gelesen, konnte die neueste Version aber nicht datieren: Das Lesen hat ihr Eintreffen nicht gesehen. Öffnen Sie den Titel für den Grund.",
     statusNever:
@@ -1557,7 +1630,7 @@ export const de: Translations = {
     emptyNeverRead:
       "Noch nichts aufzulisten: Bisher konnte keine Prüfung Fleets Katalog lesen. Der Grund steht oben.",
     emptyNoneInstalled: (count: number) =>
-      `Fleet führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}, und keine ist auf einem Mac, den diese Organisation erfasst hat. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu sehen.`,
+      `Fleet führt ${count} ${count === 1 ? "Mac-App" : "Mac-Apps"}, und keine ist auf einem Mac, den der Gerätefilter oben auswählt. Erweitern Sie den Filter, oder deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu sehen.`,
     emptyNoMatchInstalled:
       "Kein installierter Titel passt zu dieser Suche. Deaktivieren Sie „Nur hier installierte Titel“, um den ganzen Katalog zu durchsuchen.",
     emptyNoMatch: "Kein Titel passt zu dieser Suche.",
@@ -2085,12 +2158,47 @@ export const de: Translations = {
     }
   },
   changes: {
+    historical: {
+      subjectKind: "Objekttyp",
+      subjectKinds: { computer: "Computer", computer_group: "Computergruppe" } as Record<string, string>,
+      title: "Geräteeigenschaften zum Beobachtungszeitpunkt",
+      hint: "Diese Filter verwenden die mit jeder Änderung gespeicherten Werte. Fehlende historische Eigenschaften bleiben unbekannt und passen zu keinem Filter; aktuelle Gerätedaten werden nicht eingesetzt.",
+      connection: "Verbindungs-ID",
+      model: "Modell enthält",
+      osVersion: "Beobachtete Betriebssystemversion beginnt mit",
+      fileVault: "FileVault-Status",
+      site: "Standort-ID",
+      department: "Abteilungs-ID",
+      managed: "Von Jamf verwaltet",
+      user: "Zugewiesener Benutzer enthält",
+      any: "Alle",
+      yes: "Ja",
+      no: "Nein",
+      field: "Geändertes Feld",
+      anyField: "Alle Felder",
+      changedTo: "Geändert auf exakt",
+      scalarHint: "Abschnitt und einzelnes Feld auswählen. Benannte Einträge wie Apps werden über die Objektsuche oben gefiltert.",
+      start: "Beobachtet ab (einschließlich)",
+      end: "Beobachtet bis (ausschließlich)",
+      zone: "Zeiten verwenden die Browser-Zeitzone:",
+      invalidTime: "Dieses Zeitfenster kann nicht angewendet werden. Gültige Ortszeiten eingeben; bei der Zeitumstellung übersprungene Zeiten existieren nicht. Angezeigte Zeitzone prüfen.",
+      reversed: "Dieses Zeitfenster kann nicht angewendet werden: Das Ende muss nach dem Anfang liegen. Beobachtungszeitraum anpassen.",
+      example: "Beispiel: OS geändert auf 27.2.1",
+      exampleHint: "Setzt Betriebssystem → OS-Version → exakt 27.2.1 und behält Zeitfenster und historische Gerätefilter bei. Objekt-, Stufen- und Beobachtungslink-Filter werden entfernt.",
+      observationHint: "Gezählt werden beobachtete Übergänge, keine Installationszeitpunkte oder einzelnen Personen. Wiederholte Übergänge zählen in der Gerätezahl einmal je Gerät. Eine erste Beobachtung belegt keine vorherige Änderung; Aufbewahrung und Änderungsrichtlinie begrenzen die Abdeckung.",
+      policyError: "Die Feldauswahl konnte nicht geladen werden. Änderungsrichtlinie erneut laden; bestehende Filter gelten weiterhin.",
+      retry: "Feldauswahl erneut laden",
+      apply: "Feld-, Zeit- und Gerätefilter anwenden",
+      resolvedUser: "Zugewiesener Benutzer aus geteiltem Link",
+      fieldRequired: "Vor Eingabe eines Zielwertes ein einzelnes Feld im ausgewählten Abschnitt wählen."
+    },
+    matching: (changes: number, devices: number) => `${changes} passende Änderungen · ${devices} verschiedene Geräte`,
     title: "Änderungen",
     description:
       "Das Änderungsprotokoll jedes Geräts zwischen zwei Beobachtungszeiträumen. Enthalten ist, was Ihre Änderungsverfolgung als relevant eingestuft hat.",
-    search: "Suche",
+    search: "Gerätesuche",
     searchPlaceholder: "Gerätename, Seriennummer oder Jamf-ID",
-    artifact: "Auf ein Objekt filtern",
+    artifact: "Objektsuche",
     artifactPlaceholder: "App-Name, Bundle-ID, Benutzername, Gruppe…",
     artifactHint: "App, Konto, Gruppe oder Profil – keine Pfade und nicht die Werte selbst.",
     filterTo: (name: string) => `Auf ${name} filtern`,

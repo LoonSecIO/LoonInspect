@@ -30,10 +30,9 @@ router = APIRouter(prefix="/api/destinations", tags=["destinations"])
 async def _health(db: AsyncSession, destination_ids: list[int]) -> dict[int, dict]:
     """Per-destination delivery health, in two grouped queries rather than N+1.
 
-    `outbox_deliveries.last_error` carries the exact upstream refusal — "HTTP 403:
-    Invalid token", "[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in
-    certificate chain" — and until now no API read it, so the symptom an operator
-    experienced was "Splunk is empty and the app says everything is fine".
+    `outbox_deliveries.last_error` carries the delivery status and next check. New
+    attempts withhold upstream response text and raw exception strings, which can echo
+    credentials or inventory. Older persisted errors are not rewritten by this read.
 
     The dead-letter deadline and the 24-hour window ride that first query rather than adding
     one each: both are aggregates of the rows it already groups, and the group is split by

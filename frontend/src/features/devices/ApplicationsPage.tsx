@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useSearchParams } from "react-router";
 import { listConnections } from "@/features/mdm/api";
 import { listFeatureFlags } from "@/features/settings/api";
 import { useFlagGate } from "@/features/settings/flagStore";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/i18n/LocaleContext";
+
+import { applicationFilters, fleetCatalogHref, patchPlanHref } from "@/features/catalog/patchPlanNavigation";
 
 const tabClasses = "border-b-2 px-1 pb-2 text-sm font-medium transition-colors";
 const tabStateClasses = (isActive: boolean) =>
@@ -14,6 +16,7 @@ const tabStateClasses = (isActive: boolean) =>
 
 export function ApplicationsPage() {
   const { t } = useLocale();
+  const [params] = useSearchParams();
   const [hasJamfProCapability, setHasJamfProCapability] = useState(false);
   const [jamfPatchFlagEnabled, setJamfPatchFlagEnabled] = useState(false);
 
@@ -62,9 +65,12 @@ export function ApplicationsPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t.applications.description}</p>
       </div>
 
-      <div className="flex gap-4 border-b">
-        <NavLink to="/devices/applications" end className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
+      <div className="flex flex-wrap gap-4 border-b">
+        <NavLink to={`/devices/applications?${applicationFilters(params)}`} end className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
           {t.applications.tabInstalled}
+        </NavLink>
+        <NavLink to={patchPlanHref(params)} className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
+          {t.applications.tabPatchPlans}
         </NavLink>
         <NavLink to="/devices/applications/catalog" className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}>
           {t.catalog.tabLabel}
@@ -79,7 +85,7 @@ export function ApplicationsPage() {
         )}
         {fleetCatalogEnabled && (
           <NavLink
-            to="/devices/applications/fleet-catalog"
+            to={fleetCatalogHref(params)}
             className={({ isActive }) => cn(tabClasses, tabStateClasses(isActive))}
           >
             {t.fleetCatalog.tabLabel}

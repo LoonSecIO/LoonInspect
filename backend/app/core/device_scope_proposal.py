@@ -14,7 +14,7 @@ from app.ai.providers import HostReach, Provider
 from app.api.ai import judged_endpoint
 from app.api.changes_prompt import chosen_config
 from app.core.ai import AIRefused, require_ai
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.audit import audit
 from app.core.device_scope import scoped_devices
 from app.core.device_scope_queries import prepare_scope
@@ -149,19 +149,18 @@ async def propose_scope(db, payload, options):
         config.base_url,
         carries_key=bool(config.api_key_encrypted),
     )
-    model = selected(
-        await select_model(
-            db,
-            provider=provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base,
-            destination=destination,
-            host=host,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-        )
+    selection = await select_model(
+        db,
+        provider=provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base,
+        destination=destination,
+        host=host,
+        key=config.api_key_encrypted,
+        transport=transport_override,
     )
+    model = selected(selection)
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
@@ -183,7 +182,9 @@ async def propose_scope(db, payload, options):
         host_header=host,
         serial=provider is Provider.apple_fm,
         reasoning_effort=None if provider is Provider.apple_fm else config.reasoning_effort,
-        record_usage=recorder(db, FEATURE, provider.value, model),
+        record_usage=recorder(
+            db, FEATURE, provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+        ),
     )
     try:
         result = await complete(wire, request, timeout_seconds=120, transport=transport_override)
@@ -207,6 +208,7 @@ async def propose_scope(db, payload, options):
         if scope is not None:
             await prepare_scope(db, scope)
     except (ValueError, HTTPException) as exc:
+        await accepted(result, "unusable")
         if isinstance(exc, HTTPException):
             await db.rollback()
         audit(
@@ -224,6 +226,7 @@ async def propose_scope(db, payload, options):
             "warnings": [],
         }
     if scope is None:
+        await accepted(result, "unsupported")
         audit("device-scope.proposal", outcome="unsupported", provider=provider.value, model=model)
         return {
             **common,
@@ -234,6 +237,7 @@ async def propose_scope(db, payload, options):
         }
     population = scoped_devices(scope)
     count = await db.scalar(select(func.count()).select_from(population))
+    await accepted(result)
     audit("device-scope.proposal", outcome="proposed", provider=provider.value, model=model, matched_devices=count)
     return {
         **common,

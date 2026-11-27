@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     private var webView: WKWebView!
     private var statusView: StatusView!
     private var pageFind: PageFindController!
+    private var windowNavigation: WindowNavigationController!
     private lazy var guide = MacGuideWindow()
     private var port: Int?
     private var lastLocalURL: URL?
@@ -136,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         // A restarted backend minted another token, if it minted one: the earlier script would define the stale one first.
         webView.configuration.userContentController.removeAllUserScripts()
         pageFind.installScript()
+        windowNavigation.installScript(port: port)
         guard let token = supervisor.claimToken(),
               token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }) else {
             supervisor.log.info("no usable setup claim token in this session's backend log; none handed to the window")
@@ -200,6 +202,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: min(1280, visible.width - 48), height: min(860, visible.height - 72)),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "LoonInspect"
+        windowNavigation = WindowNavigationController(webView: webView, window: window) { [weak self] url in
+            self?.isOurs(url) == true
+        }
+        windowNavigation.onLocalURLChange = { [weak self] url in
+            self?.lastLocalURL = url
+            self?.pageFind.navigationChanged()
+        }
         window.contentMinSize = NSSize(width: min(760, visible.width - 48), height: min(560, visible.height - 72))
         let content = NSView()
         statusView = StatusView(frame: .zero)
@@ -277,7 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
             .separator(),
             findItem,
         ])
-        _ = submenu("View", [item("Reload Window", #selector(reload), "r"),
+        _ = submenu("View", [item("Back", #selector(goBack), "["),
+            item("Forward", #selector(goForward), "]"), .separator(),
+            item("Reload Window", #selector(reload), "r"),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])])
         NSApp.windowsMenu = submenu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
@@ -296,6 +307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(goBack): return windowNavigation?.canGoBack == true
+        case #selector(goForward): return windowNavigation?.canGoForward == true
         case #selector(openFind), #selector(findNext), #selector(findPrevious), #selector(findSelection):
             return port != nil && !quitting && !restarting && webView != nil && !webView.isHidden && !webView.isLoading
         case #selector(closeFind): return pageFind?.isVisible == true
@@ -323,6 +336,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         show("Opening your workspace", "Connecting to LoonInspect on this Mac.", spinner: true)
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
+    @objc private func goBack() { windowNavigation.back() }
+    @objc private func goForward() { windowNavigation.forward() }
     @objc private func showWindow() { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     @objc private func openFind() { pageFind.show() }
     @objc private func findNext() { pageFind.findNext() }
@@ -332,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     private func show(_ title: String, _ body: String, spinner: Bool, canReload: Bool = false) {
         pageFind?.suspend()
+        windowNavigation?.setAvailable(false)
         webView.isHidden = true
         statusView.isHidden = false
         statusView.update(title: title, message: body, busy: spinner, canReload: canReload)
@@ -345,6 +361,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        // History/gestures stay within this instance even if a non-app document entered WebKit's list.
+        if action.navigationType == .backForward, let url = action.request.url, !isOurs(url) {
+            return decisionHandler(.cancel)
+        }
         if action.shouldPerformDownload { return decisionHandler(.download) }
         if let url = action.request.url, isOurs(url), action.targetFrame?.isMainFrame == true { lastLocalURL = url }
         guard let url = action.request.url, !isOurs(url), !["about", "blob", "data"].contains(url.scheme ?? "") else {
@@ -434,6 +454,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         return nil
     }
 
+    // A local page's explicit confirmation (for example Discard draft) needs a native sheet.
+    // This public delegate does not replace the browser's separate beforeunload behavior.
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        guard !quitting, !restarting, !serviceFailed, let port, frame.isMainFrame,
+              frame.securityOrigin.protocol == "http", frame.securityOrigin.host == "127.0.0.1",
+              frame.securityOrigin.port == port, window.attachedSheet == nil else {
+            completionHandler(false); return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Confirm action in LoonInspect"
+        alert.informativeText = message
+        let cancel = alert.addButton(withTitle: "Cancel")
+        let proceed = alert.addButton(withTitle: "Continue")
+        // NSWindow ties its default button to Return, so handle Escape only while this sheet owns focus.
+        cancel.keyEquivalent = "\r"
+        proceed.keyEquivalent = ""
+        alert.window.defaultButtonCell = cancel.cell as? NSButtonCell
+        let keyboard = ConfirmationEscapeHandler(sheet: alert.window, cancel: cancel)
+        alert.beginSheetModal(for: window) { response in
+            keyboard.stop()
+            completionHandler(response == .alertSecondButtonReturn)
+        }
+    }
+
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         supervisor.log.error("the web view's content process ended; reloading")
         reload()
@@ -461,6 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         guard !quitting, !serviceFailed, !restarting, let url = webView.url, isOurs(url) else { return }
         webView.isHidden = false
         statusView.isHidden = true
+        windowNavigation.setAvailable(true)
         guard !reportedFirstPage else { return }
         reportedFirstPage = true
         // What the window shows, in the log: proof for a --headless-less test that the SPA rendered.
@@ -473,5 +519,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
                 self.supervisor.log.info("window shows \(result.map { "\($0)" } ?? "nothing: \(String(describing: error))")")
             }
         }
+    }
+}
+
+/// Cancels only this local-page sheet; all unrelated keys and windows retain normal AppKit handling.
+@MainActor
+private final class ConfirmationEscapeHandler {
+    private var monitor: Any?
+    private var closeObserver: NSObjectProtocol?
+
+    init(sheet: NSWindow, cancel: NSButton) {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak sheet, weak cancel] event in
+            let consumed = MainActor.assumeIsolated {
+                guard let sheet, NSApp.keyWindow === sheet, event.window === sheet,
+                      event.keyCode == 53,
+                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+                cancel?.performClick(nil)
+                return true
+            }
+            return consumed ? nil : event
+        }
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: sheet, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        if let closeObserver { NotificationCenter.default.removeObserver(closeObserver); self.closeObserver = nil }
     }
 }

@@ -18,11 +18,12 @@ from app.api.ai import judged_endpoint
 from app.changes.derive import load_policy
 from app.core.ai import AIFeaturesDisabled, AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, saved_config
-from app.core.ai_usage import prune, queue_event, recorder
+from app.core.ai_usage import accepted, interrupt_attempts, prune, queue_event, recorder
 from app.core.auth import as_utc
 from app.core.ollama import select_model
 from app.core.outbox import enqueue_event
 from app.core.tenant_jobs import operational_tenant_ids, tenant_job
+from app.core.uuid7 import uuid7
 from app.core.wire import ENVELOPE
 from app.core.wire_vocabulary import INVENTORY_SUMMARY_EVENT_TYPE
 from app.models.schema import EventOutbox, FeatureFlag
@@ -89,7 +90,17 @@ async def finish(db, job, status, summary=None, reason=None):
     if state and state.source_id == job.source_id:
         state.summary_status, state.short_summary = status, summary
     await retain_summary(db, job.source_id, status, summary, job.provider, reason)
-    await queue_event(db, job.provider, reason if reason == "expired" else status, job.finished_at)
+    await queue_event(
+        db,
+        job.provider,
+        reason if reason == "expired" else status,
+        job.finished_at,
+        work_id=job.id,
+        arrived_at=job.created_at,
+        deadline_at=job.expires_at,
+        requested=job.requested_model or "",
+        reason=reason,
+    )
     await count_outcome(db, job.provider, status, reason=reason, at=job.created_at)
     if status in ("dropped", "failed"):
         log_drop(job.source_id, reason, summary_id=str(job.id), age_seconds=(now() - as_utc(job.created_at)).total_seconds())
@@ -225,8 +236,18 @@ async def collect(db):
                     db.add(state)
                 state.source_id = event.id
                 kind = evidence["kind"]
+                work_id = uuid7() if kind == "changed" else None
+                config = await saved_config(db, Provider(settings.provider)) if kind == "changed" else None
                 if kind == "changed":
-                    await queue_event(db, settings.provider, "received", clock)
+                    await queue_event(
+                        db,
+                        settings.provider,
+                        "received",
+                        clock,
+                        work_id=work_id,
+                        config=config,
+                        deadline_at=as_utc(event.created_at) + TTL,
+                    )
                 if kind != "changed":
                     status = "no_updates" if kind == "unchanged" else kind
                     state.summary_status = status
@@ -235,10 +256,9 @@ async def collect(db):
                 elif as_utc(event.created_at) + TTL <= clock:
                     state.summary_status, state.short_summary = "dropped", None
                     log_drop(event.id, "expired")
-                    await queue_event(db, settings.provider, "expired", clock)
+                    await queue_event(db, settings.provider, "expired", clock, work_id=work_id, config=config)
                     await count_outcome(db, settings.provider, "dropped", reason="expired")
                 else:
-                    config = await saved_config(db, Provider(settings.provider))
                     key = config_key(settings, config)
                     cache_key = digest([key, evidence])
                     cached = None if config and config.ollama_policy else await cached_job(db, cache_key)
@@ -248,10 +268,11 @@ async def collect(db):
                     if not cached and pending >= MAX_PENDING:
                         state.summary_status, state.short_summary = "dropped", None
                         log_drop(event.id, "capacity")
-                        await queue_event(db, settings.provider, "capacity", clock)
+                        await queue_event(db, settings.provider, "capacity", clock, work_id=work_id, config=config)
                         await count_outcome(db, settings.provider, "dropped", reason="capacity")
                     else:
                         job = Job(
+                            id=work_id,
                             source_id=event.id,
                             created_at=clock,
                             expires_at=as_utc(event.created_at) + TTL,
@@ -310,6 +331,10 @@ async def work_one(tenant_id, *, transport=None):
         )
         if not job:
             return False
+        # The eligible job is locked and any processing lease has expired. Close a
+        # crashed worker's prior attempt before retry, cache reuse or terminal refusal;
+        # otherwise it disappears from history and can keep this retry looking queued.
+        await interrupt_attempts(db, [job.id], clock)
         if as_utc(job.expires_at) <= clock:
             await finish(db, job, "dropped", reason="expired")
             return True
@@ -371,6 +396,11 @@ async def work_one(tenant_id, *, transport=None):
                 "retry" if job.attempts else "started",
                 clock,
                 max(0, int((clock - as_utc(job.created_at)).total_seconds() * 1000)),
+                work_id=job.id,
+                config=config,
+                arrived_at=job.created_at,
+                deadline_at=job.expires_at,
+                requested=model,
             )
             job.attempts += 1
             await require_ai(
@@ -390,7 +420,16 @@ async def work_one(tenant_id, *, transport=None):
             )
             text = prompt(job.evidence, settings.preprompt)
             request = CompletionRequest(
-                record_usage=recorder(db, "inventory_summary", provider.value, model),
+                record_usage=recorder(
+                    db,
+                    "inventory_summary",
+                    provider.value,
+                    model,
+                    config=config,
+                    work_id=job.id,
+                    attempt_number=job.attempts,
+                    fallback="fallback" in selection.get("reason", ""),
+                ),
                 base_url=base,
                 model=model,
                 prompt=text,
@@ -428,7 +467,11 @@ async def work_one(tenant_id, *, transport=None):
                 await finish(db, job, "dropped", reason="expired")
             else:
                 await finish(db, job, "completed", answer)
+                await accepted(result)
+            if job.status != "completed":
+                await accepted(result, "expired" if job.reason == "expired" else "skipped")
         except InvalidSummary as exc:
+            await accepted(result, "unusable")
             await finish(db, job, "failed", reason=str(exc))
         except HTTPException as exc:
             logger.warning(
@@ -449,6 +492,7 @@ async def work_one(tenant_id, *, transport=None):
             if job.attempts < 3 and (exc.status == 429 or exc.kind in ("timeout", "unreachable")):
                 job.status = "pending"
                 job.next_attempt_at = now() + timedelta(seconds=30 * job.attempts)
+                await queue_event(db, job.provider, "waiting_retry", now(), work_id=job.id, reason=reason)
                 await db.commit()
             else:
                 await finish(db, job, "failed", reason=reason)

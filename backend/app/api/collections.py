@@ -12,6 +12,7 @@ from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.context import Actor, reset_actor, set_actor
 from app.core.database import get_db, session_for_tenant
+from app.core.diagnostics import error_text
 from app.core.permissions import Permission
 from app.core.runs import RunReclaimed, acquire, entered, finish
 from app.core.scheduling import KIND_CATALOG, KIND_DEVICE_SWEEP, KIND_RECENT, KIND_WEBHOOK, ScheduleError, stale_after
@@ -386,7 +387,7 @@ async def _run_collection_task(collection_id: int, actor: Actor, tenant_id: uuid
                     await db.rollback()
                     reloaded = await db.get(Run, job_id)
                     if reloaded is not None:
-                        await finish(db, reloaded, ok=False, error=str(exc))
+                        await finish(db, reloaded, ok=False, error=error_text(exc))
                     raise
                 await finish(db, run, **sync_result_kwargs(result))
     finally:

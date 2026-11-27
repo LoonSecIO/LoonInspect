@@ -61,7 +61,7 @@ from app.api.ai import APPLE_FM_SYSTEM_ONLY, CARD_LABELS, judged_endpoint
 from app.api.changes import CHANGE_KINDS, change_conditions
 from app.core.ai import AIRefused, ai_features_enabled, require_ai
 from app.core.ai_configs import get_config, list_configs
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.crypto import StoredValueUnknownKeyId, StoredValueUnreadable
@@ -260,15 +260,16 @@ async def _dimension_repair(
     from the bar this way instead: the instructions do not change, and neither does their
     measurement.
 
-    **Search.** Asked "which MacBook Airs installed Wireshark", the model puts "MacBook Air" in
-    Search, where it matches no device name, no serial and no Jamf id. A device always wins: the
-    first question is whether any change row names this device, because a Mac can be named after
-    anything — "Kyle's Mac mini" is a device name, and so is a Mac named after its own
-    department. Only a Search that matches no device is read as a dimension, in this order: the
-    words for management state, a model, an OS version, a department from Jamf's own catalog.
+    **Device search.** Asked "which MacBook Airs installed Wireshark", the model puts "MacBook
+    Air" in Device search, where it matches no device name, no serial and no Jamf id. A device
+    always wins: the first question is whether any change row names this device, because a Mac
+    can be named after anything — "Kyle's Mac mini" is a device name, and so is a Mac named
+    after its own department. Only a Device search that matches no device is read as a
+    dimension, in this order: the words for management state, a model, an OS version, a
+    department from Jamf's own catalog.
 
-    **Filter to one thing** (#450). Asked "What changed on Macs in Engineering : Product?", the
-    model read the department as the name of a profile: Filter to one thing "Engineering :
+    **Named-entry search** (#450). Asked "What changed on Macs in Engineering : Product?", the
+    model read the department as the name of a profile: Named-entry search "Engineering :
     Product", Section Configuration profiles — zero rows, over a question the feed can answer. A
     thing always wins here the same way a device does: only a value no change row names is read
     as a department, and only when Jamf's catalog holds exactly that name. The section the model
@@ -364,9 +365,9 @@ async def _summary(
     """What the page will show for ``filters``: the rows, the computers among them, newest
     first, and when they were observed. Three scans, whatever the fleet's size.
 
-    ``dimensions`` are the stamped ones a repair moved a Search value into (#447) and ``since``
-    the start the question's own words asked for (#444), counted here for the same reason every
-    other filter is: the numbers in the box are the page's numbers."""
+    ``dimensions`` are the stamped ones a repair moved a Device search value into (#447) and
+    ``since`` the start the question's own words asked for (#444), counted here for the same
+    reason every other filter is: the numbers in the box are the page's numbers."""
     conditions = change_conditions(
         q=filters["q"],
         artifact=filters["artifact"],
@@ -458,26 +459,27 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
 
     # The gate, before anything is dialled. Its refusals are the operator's switches, so
     # they answer 409 with the gate's own sentence.
-    model = selected(
-        await select_model(
-            db,
-            provider=provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base_url,
-            destination=destination,
-            host=host_header,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-        )
+    selection = await select_model(
+        db,
+        provider=provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base_url,
+        destination=destination,
+        host=host_header,
+        key=config.api_key_encrypted,
+        transport=transport_override,
     )
+    model = selected(selection)
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
-        record_usage=recorder(db, FEATURE, provider.value, model),
+        record_usage=recorder(
+            db, FEATURE, provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+        ),
         serial=provider is Provider.apple_fm,
         base_url=base_url,
         model=model,
@@ -521,6 +523,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     answered = result.outcome == OUTCOME_ANSWERED
     interpretation = interpret(question, result.content, datetime.now(UTC), payload.zone) if answered else None
     if interpretation is None or not interpretation.parsed:
+        await accepted(result, "unusable")
         # empty | budget_exhausted_thinking from the adapter, or an answer holding no
         # filter object: either way nothing is applied, and the page keeps its filters.
         kind = result.outcome if interpretation is None else "malformed"
@@ -542,6 +545,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # as every control unset, which is the whole log, and the page listed every device. No
     # summary is counted: there are no filters to count for, and nothing will run.
     if interpretation.invalid:
+        await accepted(result, "unsupported")
         _audited("invalid", provider, destination, latency_ms, reason=interpretation.invalid)
         return PromptOut(
             outcome="invalid",
@@ -559,14 +563,15 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> PromptOu
     # A widened answer searches for more than the model's did, so a person applies it: the
     # page gets the same filters and summary as an applied one, and runs nothing until then.
     outcome = "proposed" if interpretation.widened else "applied"
-    # A Search the fleet has no device for, but does have a model, an OS version, a department
-    # or a management state for, is read as that instead (#447). It narrows what would otherwise
-    # have matched nothing, so it does not hold the answer back for an Apply.
+    # A Device search the fleet has no device for, but does have a model, an OS version, a
+    # department or a management state for, is read as that instead (#447). It narrows what
+    # would otherwise have matched nothing, so it does not hold the answer back for an Apply.
     dimensions: dict[str, str | None] = dict.fromkeys(PROMPT_DIMENSIONS)
     moved, department_name = await _dimension_repair(db, question, interpretation.filters, dimensions)
     repairs = [str(repair) for repair in interpretation.repairs] + moved
     since = interpretation.since_asked
     summary = await _summary(db, interpretation.filters, dimensions, since.at if since else None)
+    await accepted(result)
     _audited(outcome, provider, destination, latency_ms, repairs=len(repairs), window=since is not None)
     return PromptOut(
         outcome=outcome,

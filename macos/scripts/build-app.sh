@@ -81,6 +81,7 @@ rm -rf "$app" "$src" "$build/requirements.txt"
 mkdir -p "$src/backend/docs" "$res" "$app/Contents/MacOS"
 shell_source="$macos/shell"
 launcher_source="$macos/launcher"
+uninstall_source="$macos/uninstall"
 if [ "${REQUIRE_CLEAN_TREE:-0}" = 1 ]; then
   # Release inputs come from Git, so ignored local files cannot enter the signed bundle. Through a file, not a
   # pipe: tar stops reading at the archive's end marker, git archive is still writing the padding after it, and
@@ -91,6 +92,7 @@ if [ "${REQUIRE_CLEAN_TREE:-0}" = 1 ]; then
   cp "$src/docs/baseline-rules.yml" "$src/backend/docs/"
   shell_source="$src/macos/shell"
   launcher_source="$src/macos/launcher"
+  uninstall_source="$src/macos/uninstall"
 else
 # An allowlist rather than the tree, so a local backend/.env never rides along (INSPECT-0175).
 (cd "$repo/backend" && tar -cf - --exclude __pycache__ --exclude '*.pyc' app migrations alembic.ini pyproject.toml uv.lock) |
@@ -183,6 +185,10 @@ cat >"$res/build-manifest.json" <<JSON
 }
 JSON
 
+step "standalone clean-uninstall helper"
+swiftc -O -target arm64-apple-macosx13.0 "$uninstall_source/Uninstall.swift" "$uninstall_source/main.swift" -o "$res/LoonInspect-Uninstall"
+cp "$uninstall_source/README.txt" "$res/Uninstall-README.txt"
+
 step "sign: every Mach-O file, then the bundle, then the check"
 xattr -cr "$app" 2>/dev/null || true
 # Regular files only: the duplicate Postgres libraries are symlinks to a copy signed once.
@@ -205,7 +211,7 @@ while IFS= read -r -d '' f; do
   is_mach_o "$f" || continue
   codesign --verify --strict "$f" 2>/dev/null || { echo "build-app: signature does not verify: $f" >&2; unsigned=$((unsigned + 1)); }
   codesign -d --verbose=1 "$f" 2>&1 | grep 'flags=.*runtime' >/dev/null || { echo "build-app: no hardened runtime: $f" >&2; unsigned=$((unsigned + 1)); }
-done < <(find "$res" -type f \( -name '*.so' -o -name '*.dylib' -o -path '*/bin/*' \) ! -name '*.py' -print0)
+done < <(find "$res" -type f \( -name '*.so' -o -name '*.dylib' -o -path '*/bin/*' -o -name LoonInspect-Uninstall \) ! -name '*.py' -print0)
 [ "$unsigned" = 0 ] || die "$unsigned Mach-O file(s) in the bundle do not verify with the hardened runtime"
 codesign -dvv "$app" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier|Timestamp|Signature)=' | head -6
 # What Gatekeeper would say today. A Developer ID build reads "rejected" until notarize.sh has run.

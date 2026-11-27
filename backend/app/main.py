@@ -31,6 +31,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.routing import Route
 
 from app.alerts.service import purge_closed_alerts
@@ -51,7 +53,9 @@ from app.api.devices import router as devices_router
 from app.api.evidence import router as evidence_router
 from app.api.exclusion_ranking import router as exclusion_ranking_router
 from app.api.feature_flags import router as feature_flags_router
+from app.api.fleet_briefing import router as fleet_briefing_router
 from app.api.fleet_catalog import router as fleet_catalog_router
+from app.api.fleet_migration import router as fleet_migration_router
 from app.api.intelligence import router as intelligence_router
 from app.api.inventory_summaries import router as inventory_summaries_router
 from app.api.jamf_patch import router as jamf_patch_router
@@ -59,6 +63,7 @@ from app.api.mcp import router as mcp_router
 from app.api.mfa import router as mfa_router
 from app.api.os_posture import router as os_posture_router
 from app.api.outbox import router as outbox_router
+from app.api.patch_policy import router as patch_policy_router
 from app.api.patch_policy_rules import router as patch_policy_rules_router
 from app.api.posture import router as posture_router
 from app.api.promotions import router as promotions_router
@@ -82,11 +87,13 @@ from app.core.config import settings
 from app.core.context import SYSTEM, reset_actor, set_actor
 from app.core.crypto import StoredValueUnreadable, validate_encryption_key
 from app.core.database import init_db, unscoped_session
+from app.core.diagnostics import database_error_message
 from app.core.fleet_catalog import tick as fleet_catalog_check
 from app.core.fleet_history import run_worker as fleet_history_worker
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
+from app.core.patch_policy_feed import load_feed_file as load_patch_policy_feed_file
 from app.core.rekey import rekey_stored_values
 from app.core.runs import AcquisitionBusy, purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
@@ -96,6 +103,7 @@ from app.core.tenant_jobs import operational_tenant_ids, tenant_job
 from app.core.update_check import startup_line as update_check_line
 from app.core.update_check import tick as update_check
 from app.core.vuln_library import refresh_from_db
+from app.core.vuln_selection import CorpusSelectionRefused
 from app.mcp.server import MCPRuntime
 from app.mdm.collections import tick_tenant
 from app.mdm.concurrency import IngestBusy
@@ -103,6 +111,7 @@ from app.mdm.factory import keep_sign_in
 from app.mdm.jamf.sign_in import MODE_NO_CACHE, MODE_PERPETUAL, SIGN_INS
 from app.mdm.patch.jamf_catalog import JamfPatchCatalogUnconfigured, JamfPatchCatalogUnreachable, sync_catalog
 from app.models.schema import MdmConnection, UserSession
+from app.summaries.diagnostics import safe_exception
 from app.summaries.service import run_worker as inventory_summary_worker
 
 # Before anything else in the process emits a line, so migration output and startup
@@ -216,6 +225,20 @@ async def hourly_jamf_patch_sync() -> None:
         reset_actor(actor_token)
 
 
+async def read_patch_policy_feed_file(db: AsyncSession) -> None:
+    """`PATCH_POLICY_FEED_FILE`, at startup and from the exchange tick (#614), never raising.
+
+    `load_feed_file` words every refusal and records it, so this catches only a defect: the
+    container still starts, and the tick still runs the exchanges after it."""
+    try:
+        await load_patch_policy_feed_file(db)
+    except Exception:
+        logger.exception(
+            "patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure, not a refusal; the copy "
+            "already held keeps answering. Report this line (docs/troubleshooting.md §32)"
+        )
+
+
 async def sharing_exchange_tick() -> None:
     """Community data-sharing exchange (docs/data-sharing.md). Runs every five
     minutes but sends at most once per tenant per day, at a minute-of-day derived
@@ -224,7 +247,20 @@ async def sharing_exchange_tick() -> None:
 
     It shares a per-tenant lock with Send now (#408) and never waits on it: a tenant whose
     lock is held is skipped, because the send in flight writes the row that decides
-    whether today's slot is still owed, and the next tick reads it."""
+    whether today's slot is still owed, and the next tick reads it.
+
+    First, once per tick and for no tenant: `PATCH_POLICY_FEED_FILE`, the air-gapped stand-in
+    for the exchange's patch-policy link (#614), read only when the file has changed since this
+    process last read it, so an unset or unchanged file costs nothing."""
+    try:
+        async with unscoped_session() as db:
+            await read_patch_policy_feed_file(db)
+    except Exception:
+        # The session itself failed, opening or closing: the database, not the file.
+        logger.exception(
+            "patch-policy data not read from PATCH_POLICY_FEED_FILE: the database session failed; check database "
+            "availability, and the next tick tries again (docs/troubleshooting.md §32)"
+        )
     for tenant_id in await operational_tenant_ids():
         lock = exchange_lock(tenant_id)
         if lock.locked():
@@ -287,10 +323,24 @@ async def update_check_tick() -> None:
     """The update check (#819): looks every minute; `app.core.update_check.due` decides from its row."""
     try:
         await update_check()
-    except Exception:
+    except SQLAlchemyError:
+        # Both lines begin `update check could not run`: the Updates block's *Owed now* hint
+        # and docs/troubleshooting.md §10 send the operator to that phrase.
         logger.exception(
-            "update check could not run; Settings › Support › Updates keeps the last answer stored and a later "
-            "minute tries again. Check the database container is healthy (docker compose ps db)"
+            "update check could not run: it could not read or save its database state; Settings › Support › Updates "
+            "keeps the last answer stored. Check database health and connectivity (docker compose ps db for the "
+            "bundled database)"
+        )
+    except Exception as exc:
+        # An unexpected provider/plugin failure can still carry a URL or credential.
+        # Keep its type and its frames' file:line:function, never the exception text,
+        # locals or chained traceback.
+        logger.error(
+            "update check could not run because of an unexpected internal failure (%s); Settings › Support › Updates "
+            "keeps the last answer stored. Report this error type, the stack locations logged with it, and the build "
+            "shown in Settings › Support",
+            type(exc).__name__,
+            extra=safe_exception(exc),
         )
 
 
@@ -527,6 +577,25 @@ async def _forget_closed_cases(tenant_id: uuid.UUID) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Keep database values out of Starlette's preformatted startup/shutdown failures."""
+    phase = "startup"
+    try:
+        async with _application_lifespan(app) as state:
+            phase = "shutdown"
+            yield state
+    except Exception as exc:
+        safe = database_error_message(exc)
+        if safe is None:
+            raise
+        # Starlette serializes lifespan failures before Uvicorn logs them, so that
+        # message never reaches our exception formatter. Log safe stack locations
+        # here, then give Starlette only the safe diagnosis with its cause hidden.
+        logger.exception("application %s failed: %s", phase, safe)
+        raise RuntimeError(f"Application {phase} failed. {safe}") from None
+
+
+@asynccontextmanager
+async def _application_lifespan(app: FastAPI):
     # Deliberately called again here, not just at import. fastapi-cli imports this
     # module to resolve the app object *before* uvicorn applies its own dictConfig,
     # so the import-time call gets overwritten and uvicorn's loggers come back with
@@ -582,6 +651,11 @@ async def lifespan(app: FastAPI):
                     "titles": len(library.titles),
                 },
             )
+        # LoonSec's patch-policy document from PATCH_POLICY_FEED_FILE, when an air-gapped
+        # instance sets it (#614): at startup, so a web-only process reads it too, and again by
+        # the exchange tick whenever the file changes. Unset, this reads nothing. A file that
+        # cannot be read or checked is a logged sentence, never a container that will not start.
+        await read_patch_policy_feed_file(db)
 
     # A rotation under way (#144): every stored value opens under ENCRYPTION_KEY or
     # ENCRYPTION_KEY_PREVIOUS, and this rewrites the ones still under the previous key so the
@@ -758,6 +832,27 @@ async def _stored_value_unreadable(request: Request, exc: StoredValueUnreadable)
     return JSONResponse(status_code=503, content={"detail": sentence})
 
 
+# A refused corpus selection (#932). Under VULN_TENANT_SELECTION every read of stored
+# vulnerability answers first binds this organization's selected release, and a selection
+# this database cannot serve is refused with an operator's sentence: most often a restore
+# that brought the pointer back without the release it names. It used to escape every route
+# as a bare 500. Answered as its own sentence, 503 for the reason the handler above gives:
+# the service is up and every page that does not read vulnerability answers works; what is
+# unavailable is the selected intelligence, until the database is restored. Logged once
+# per process with no traceback, so the container log reads it at the top.
+_selection_refusal_reported = False
+
+
+@app.exception_handler(CorpusSelectionRefused)
+async def _corpus_selection_refused(request: Request, exc: CorpusSelectionRefused) -> JSONResponse:
+    global _selection_refusal_reported
+    sentence = str(exc)
+    if not _selection_refusal_reported:
+        _selection_refusal_reported = True
+        logger.error(sentence, extra={"path": request.url.path})
+    return JSONResponse(status_code=503, content={"detail": sentence})
+
+
 # A refused body is answered without the body. FastAPI's own 422 returns pydantic's errors
 # as they stand, and every one carries `input`: the value it refused — which, for a
 # missing field or a rule over the whole model, is the whole body. So a sign-in without
@@ -855,6 +950,8 @@ app.include_router(applications_router)
 app.include_router(catalog_router)
 app.include_router(jamf_patch_router)
 app.include_router(application_patch_plans_router)
+app.include_router(fleet_migration_router)
+app.include_router(fleet_briefing_router)
 app.include_router(fleet_catalog_router)
 app.include_router(smart_groups_router)
 app.include_router(feature_flags_router)
@@ -866,6 +963,7 @@ app.include_router(evidence_router)
 app.include_router(vulnerabilities_prompt_router)
 app.include_router(exclusion_ranking_router)
 app.include_router(patch_policy_rules_router)
+app.include_router(patch_policy_router)
 app.include_router(intelligence_router)
 app.include_router(submissions_router)
 app.include_router(vulnerabilities_router)

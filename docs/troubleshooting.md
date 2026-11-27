@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§28, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§33, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -56,8 +56,8 @@ they were written — §9 ends by saying the paths continue at §10.
   typed"](#20-sign-in-asks-for-a-six-digit-code-or-refuses-the-one-i-typed)
 - **§21** ["Request coverage or Report an incorrect match is refused, or a case never shows a
   status"](#21-request-coverage-or-report-an-incorrect-match-is-refused-or-a-case-never-shows-a-status)
-- **§22** ["Patch policy is not in my sidebar, lists one app, or says its file was
-  refused"](#22-patch-policy-is-not-in-my-sidebar-lists-one-app-or-says-its-file-was-refused)
+- **§22** ["Patch policy is not in my sidebar, an app cannot be picked, or its file was
+  refused"](#22-patch-policy-is-not-in-my-sidebar-an-app-cannot-be-picked-or-its-file-was-refused)
 - **§23** ["Out of policy is missing, a title is not judged, or the rule draft fills
   nothing"](#23-out-of-policy-is-missing-a-title-is-not-judged-or-the-rule-draft-fills-nothing)
 - **§24** ["The change log keeps growing with `CHANGE_LOG_RETENTION_DAYS` set, or the Changes
@@ -72,10 +72,16 @@ they were written — §9 ends by saying the paths continue at §10.
 - **§28** ["Support does not show the Mac app version or build"](#28-support-does-not-show-the-mac-app-version-or-build)
 - **§29** ["Codex or Claude cannot use LoonInspect"](#29-codex-or-claude-cannot-use-looninspect)
 - **§30** [Installed application patch plans](#30-installed-application-patch-plans)
+- **§31** [Change filters do not find an OS version or time window](#31-change-filters-do-not-find-an-os-version-or-time-window)
+- **§32** ["LoonSec's patch-policy data has not arrived, is old, or was
+  refused"](#32-loonsecs-patch-policy-data-has-not-arrived-is-old-or-was-refused)
+- **§33** ["A patch-policy walk is refused, or Jamf or Fleet cannot date
+  it"](#33-a-patch-policy-walk-is-refused-or-jamf-or-fleet-cannot-date-it)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
-ticket names one, this says which path it came off.
+ticket names one, this says which path it came off. After **Z** the letters run on the way
+spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never start again at **A**.
 
 | State | Path | What it names |
 | --- | --- | --- |
@@ -104,7 +110,12 @@ ticket names one, this says which path it came off.
 | **W** | §18 | *Longest exposed* is empty while *Most exposed* lists builds |
 | **X** | §20 | No phone, no recovery codes, and no other administrator to remove the second factor |
 | **Y** | §21 | A case's key and the fresh one minted in its place both refused as naming another submission |
-| **Z** | §22 | A reference replay that shipped with the build is refused after a reload |
+| **Z** | §22 | A reference replay that shipped with the build is refused after a reload, or none ships |
+| **AA** | §32 | LoonSec names no patch-policy document, or only an old one, two days running |
+| **AB** | §32 | A patch-policy document is refused by its check two exchanges running, or fails unexpectedly |
+| **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
+| **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, it leaves a held line undated, or a channel it names misses builds |
+| **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, a timeline or request it built is refused, or the page cannot read or draw it |
 
 ## 0. The four things you can read
 
@@ -422,6 +433,14 @@ directly.*
    - **400 from HEC** → usually the token's index (step 5) or the URL's path
      (`/services/collector/event`, [`splunk-setup.md`](splunk-setup.md) §3).
    - **200** → step 4.
+   Upstream response bodies are withheld from delivery errors because they can echo
+   credentials or inventory. Use the HTTP status and the stated next check. For an
+   Elastic item rejection, check index mappings and write permissions in the receiver's
+   service logs; an HTTP 200 can still contain a rejected item. A connection failure says
+   which, without copying credential-bearing URLs: *Connection refused…* (nothing
+   listening at that address and port), *The endpoint's host name did not resolve…* (the
+   name or DNS), *TLS certificate verification failed…* ([`splunk-setup.md`](splunk-setup.md)
+   §5), or *Connection failed…* for anything else.
 4. **Delivery health.** The destination row: `pendingCount`, `failedCount`, `failed24h`,
    `deadLetterOldestExpiresAt`, `lastError`.
    - `failedCount` above zero → those deliveries gave up after ten attempts; `lastError`
@@ -530,6 +549,18 @@ the run `jobID`, the token's index settings, and the search you ran.
      ([`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) §3).
    - `app` restarting or unhealthy with `db` healthy → step 2.
 2. **The app's log.** `docker compose logs app --tail 100`:
+   - *The database operation failed* in a run or request log → check database health,
+     free storage and whether startup migrations completed for the running build. The
+     error retains its type and, when supplied by the database, a five-character
+     `SQLSTATE` code. Report those with the run's `jobID` or request ID if it repeats.
+     SQL text, bound values and database server detail are withheld from these error
+     diagnostics because they can contain inventory or credentials; application stack
+     locations remain available. Bound parameters are also hidden in SQL debug logs.
+     *Application startup failed* with this diagnosis means initialization stopped;
+     fix the database health or migration problem before restarting the app.
+     *Application shutdown failed* with this diagnosis means shutdown cleanup failed;
+     check database health and the adjacent safe stack locations before restarting.
+     Startup and shutdown tracebacks follow the same value-withholding rule.
    - `password authentication failed for user "looninspect_app"` → `POSTGRES_APP_PASSWORD`
      in `.env` is not the one the database was created with; the database keeps the
      first. Put the original back ([`operations.md`](operations.md) §3 shows the role the
@@ -624,7 +655,23 @@ the run `jobID`, the token's index settings, and the search you ran.
    swapped the image back ([`operations.md`](operations.md) §5). **This is the fix:** roll
    forward to the newer image, or restore the dump taken before the upgrade. Rolled
    forward and the sentence persists → reportable **G**.
-5. Healthy and signed in, and something else is unreadable → reportable **G**.
+5. **An administrator created with `INITIAL_ADMIN_EMAIL` cannot sign in because its
+   `.local` or `.test` address is refused with 422.** Upgrade to a build containing
+   INSPECT-815, then sign in with the existing address and password. The fix accepts
+   stored account identifiers without requiring a public mail domain; it does not
+   recreate accounts or reset passwords. Keep the existing volumes and instance key.
+   Surrounding spaces and letter case are ignored just as at bootstrap. A 401 still
+   means invalid credentials or an inactive account; a 429 means wait for the lockout
+   to expire. Internationalized addresses created through the wizard or Accounts keep
+   their existing email normalization at sign-in. If both the entered spelling and
+   its normalized spelling belong to separate accounts, the entered spelling selects
+   its own account; its password, active status and MFA requirements still apply.
+   Every spelling of one normalized address shares one lockout counter, even when
+   those spellings select separate accounts. Creating a
+   new account through the wizard or Settings › Accounts keeps
+   its existing mail-address validation; that creation policy is separate from
+   authenticating an account already stored by environment bootstrap.
+6. Healthy and signed in, and something else is unreadable → reportable **G**.
 
 **F.** Startup migration failed. Report `docker compose logs app --tail 200` and the
 build (Settings › Support shows it).
@@ -780,7 +827,29 @@ and step 2 ends with how to tell that apart from a broken exchange.
      all** is not proof the pass did not run — it writes nothing when nothing moved, which
      is the ordinary hour. Do not wait on it: use *Refresh* below, which runs the same pass
      now, and judge by what the page says afterwards;
-   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now.
+   - Devices › Applications › **Catalog** › *Refresh* re-judges this organization now:
+     every app version it holds, whatever the device filter above the list says, and
+     without asking Jamf or LoonSec for anything. The button is shown only to a role that
+     may sync a catalog (`patch:catalog-sync`: Analyst and Administrator). **No button
+     there** means this account is a Viewer or an Auditor: ask an Analyst or an
+     Administrator to press it, or wait for the hourly pass. What it says when it finishes:
+     - *Re-judged N app versions of this organization.* — the pass ran and the list was
+       read again, so what the list says now is the answer;
+     - *Nothing to re-judge: this organization has no app versions in its catalog yet.* —
+       no device has been processed for this organization, so there is nothing for a
+       corpus to answer about. § 2 is the path for a sweep that reports nothing;
+     - *The catalog could not be re-judged, and this instance gave no reason …* — the press
+       did not finish, and the list still shows the last pass's answers. If the page itself
+       still loads, `docker compose logs app --since 10m | grep "/api/catalog/refresh"`
+       finds the press: a `request failed` line there carries the exception that stopped
+       the pass. The same line on a second press is reportable state **H**; include it;
+     - *Insufficient permissions* — this account's role changed after it signed in, so the
+       page still offered the button. Reload the page; the button goes with the permission.
+
+     Jamf Patch's **Sync now** is a different control: it reads Jamf's patch catalog first
+     and then re-judges only the rows that catalog or the corpus moved since they were
+     judged, so it does not stand in for this button in step 4.
+
    If an hour has passed, the log shows the pass running, and the same builds still read
    amber, that is reportable state **H**.
 4. **One app, and only that one, says *outside the corpus* after every refresh.** Look for
@@ -821,8 +890,7 @@ and step 2 ends with how to tell that apart from a broken exchange.
    answer is not the collector. The address at the end of the command is the default: an
    instance with `SHARING_ENDPOINT` set probes that value instead, whole — the
    container posts to it exactly as set and adds no path.
-   - `The collector at api.loonsec.io answered 403 Forbidden: {"message":"Missing
-     Authentication Token"}` → that name is not the collector yet: until LoonSec reclaims
+   - `The collector at api.loonsec.io answered HTTP 403` → that name is not the collector yet: until LoonSec reclaims
      it, an older account's API answers there. An image built before 2026-09-25, whose
      default was that name, or a `SHARING_ENDPOINT` set to it, reads this on every
      exchange. Set `SHARING_ENDPOINT` to `https://api.next.loonsec.io/v1/exchange` or
@@ -831,24 +899,28 @@ and step 2 ends with how to tell that apart from a broken exchange.
      same line is reportable state **M**. From any other host, a `403` or `404` means
      there is no collector at that path: check `SHARING_ENDPOINT`.
    - `Could not connect to <host>: …` → the container could not reach the host at all,
-     and the text after the colon says how. `Name or service not known` is DNS — `docker
-     compose exec app getent hosts <host>` prints nothing when the container cannot
-     resolve it. `Connection refused` is nothing listening at that address.
-     `CERTIFICATE_VERIFY_FAILED` is something between this container and the collector
-     presenting its own certificate, usually a TLS-inspecting proxy: exempt the host from
-     inspection.
+     and the text after the colon says how. `The endpoint's host name did not resolve` is
+     DNS — `docker compose exec app getent hosts <host>` prints nothing when the container
+     cannot resolve it. `Connection refused` is nothing listening at that address.
+     `TLS certificate verification failed` is something between this container and the
+     collector presenting its own certificate, usually a TLS-inspecting proxy: exempt the
+     host from inspection. `Connection failed` is none of those three: check egress to
+     that host.
    - `No answer from <host> within 10 seconds.` → an egress firewall dropping the
      connection, or the collector down; the probe above tells them apart. An air-gapped
      instance with sharing on reads this every day, and that is a supported configuration.
-   - `<host> answered 200 with a body that is not JSON …`, or `answered 302 Found,
-     redirecting to <another host>` → something other than the collector answered: a
-     proxy or a captive portal. The probe above shows who.
-   - `answered 400 Bad Request: …` or `answered 413 …` → the collector refused this
-     container's body, and the text after the colon is its reason. Reportable state **M**:
+   - `<host> answered 200 with a body that is not JSON …`, or `answered HTTP 302`
+     (*Something other than the collector answered …*) → a proxy or a captive portal.
+     The probe above shows who.
+   Response text, redirect targets and raw transport exceptions are withheld from the
+   share log, because they can echo what was sent. The probe above prints what answers
+   at that address to a body of `{}`, which carries nothing of the fleet.
+   - `answered HTTP 400` or `answered HTTP 413` (*The collector refused what this
+     container sent. Report the status to support (state M).*) → reportable state **M**:
      the container built something the collector will not take, which is ours to fix.
-   - `answered 429 …` or `answered 5…` → the collector is throttling or unwell. Nothing
-     to fix on this side; the next exchange tries again. The same line for more than a
-     day is reportable state **M**.
+   - `answered HTTP 429` or `answered HTTP 5…` (*The collector is throttling or
+     unavailable …*) → nothing to fix on this side; the next exchange tries again. The
+     same line for more than a day is reportable state **M**.
 
 7. **A build says how many findings it has, and the line beside it says *updating to
    …: not in the corpus of …*.** That line is the answer for the release **Jamf calls
@@ -957,10 +1029,38 @@ release validation is complete. All workers must use the same setting.
 - **A date stays old after sharing is turned off:** expected in this preview. The held
   release still assesses local inventory and displays its original date; no new delivery
   is implied. An older feed, missing coverage or incomplete IDs do not prove remediation.
-- **Missing selected intelligence or repeated organization-context refusal:** stop the
-  affected operation, preserve the logs, and contact support. Restore a known complete
-  database backup if reference data was removed; do not delete pointers or substitute
-  another organization's grant. No automatic pruning is enabled in this preview.
+- **“The selected intelligence is missing. Restore the database backup and contact
+  support.”** This organization's selected intelligence names a release the database
+  no longer holds. Every request that reads vulnerability answers is refused with this
+  sentence (HTTP 503): Devices, a device's page, Devices › Applications, the Catalog and
+  its Refresh, Posture › Vulnerabilities, saving a patch plan, and the Fleet migration
+  list. Devices › Applications and a device's **Update this device** show the sentence.
+  The Devices list, the Catalog and the other pages show their usual could-not-load
+  message. `docker compose logs app` carries the sentence on a line of its own once per
+  container start, and a Jamf sweep that meets it ends `failed` with the sentence as
+  the run's error. Pages that do not read vulnerability answers keep working. Neither
+  the application nor the manual cleanup below can remove a selected release, and no
+  automatic pruning is enabled in this preview. So the database was changed outside the
+  application, almost always by a restore that brought the selection back without the
+  release.
+  1. Check how the database was last restored. The restore in
+     [`operations.md` §3](operations.md#3-restore) loads a complete `pg_dump` with
+     `ON_ERROR_STOP=1`, and it cannot produce this state. These can: a data-only
+     restore, a restore with triggers disabled, a restore that carried on past an
+     error, or a dump that left out the vulnerability-corpus tables.
+  2. Restore a complete backup taken before the problem, as `operations.md` §3
+     describes, with the same `ENCRYPTION_KEY`. Do not delete the selection, point it
+     at another release by hand, or substitute another organization's grant: this
+     organization's assessments and their history name that release.
+  3. The database was never restored, or the sentence is still there after a complete
+     restore: contact support with the build (Settings › Support), when it started, and
+     the log line.
+- **“The corpus operation has no matching organization context. Retry from the intended
+  organization; if it repeats, contact support.”** It is answered the same way (HTTP 503,
+  logged once). It means a request's organization and its database session disagreed,
+  and nothing an operator configures causes that. Retry once from the intended
+  organization. If it repeats, stop the affected operation, keep the logs, and contact
+  support with the build and the page or action that showed it.
 
 Assessment-only entries in **Devices › Device history** keep the last inventory observation
 time and show a separate assessment time. They do not mean the device checked in again
@@ -1032,8 +1132,11 @@ expiry or disabling sharing does not make a tenant's releases eligible for clean
 The patch catalog is the list of titles every Applications surface is matched against. It
 is one list for the whole container — not per connection and not per organization — and
 it refreshes hourly on its own. **Devices › Applications › Jamf Patch** shows it, with a
-**Sync now** button that performs the same refresh immediately. The refresh dials a public
-Jamf server; no credential of yours is involved, so nothing here is a permissions problem.
+**Sync now** button that performs the same refresh immediately. By default the refresh dials
+a public Jamf server without your credentials. If `JAMF_PATCH_BASE_URL` names a private mirror,
+check that mirror’s authentication and access requirements as well as connectivity. The first
+probe below targets the public default, and its success does not verify a configured mirror; the
+second asks the configured address.
 
 1. **Untick *Only titles with devices*, then press Sync now and watch the table's *Synced*
    column.** The box is ticked by default and hides every title whose *Devices with app*
@@ -1073,20 +1176,33 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      default (`https://jamf-patch.jamfcloud.com/v1`) or correct it, then
      `docker compose up -d`. Nothing was written in the meantime — whatever catalog the
      container already had still answers.
+     The value itself is withheld because a private mirror address can contain credentials.
    - `The Jamf patch catalog cannot be refreshed: jamf-patch.jamfcloud.com did not answer
      (ConnectError: …)` — or `ConnectTimeout`, `ReadTimeout`, `ProxyError` in the brackets
      → this container could not reach the patch server: the name did not resolve, or a
      proxy, an egress firewall or TLS interception stood in the way, and the words in the
-     brackets are the operating system's own and say which. Ask the container itself. The
-     shipped image carries no `curl`, so ask with Python, which honours the same
-     `HTTPS_PROXY` the app does:
+     brackets are the operating system's own and say which. When `JAMF_PATCH_BASE_URL`
+     holds a username, password, query or fragment, the brackets hold the name alone, such
+     as `(ConnectError)`, so that no error's words can repeat them; the second probe below
+     prints those words in your own shell. Check `JAMF_PATCH_BASE_URL` and
+     ask the container itself. The shipped image carries no `curl`, so ask with Python,
+     which honours the same `HTTPS_PROXY` the app does:
 
      ```bash
      docker compose exec app python -c "import urllib.request as u; r = u.urlopen('https://jamf-patch.jamfcloud.com/v1/software', timeout=15); print(r.status, r.read(60))"
      ```
 
+     If `JAMF_PATCH_BASE_URL` names a mirror, ask that address instead. This probe reads it
+     from the container's own environment, so nothing in it is typed on your command line,
+     and it fetches with the app's own HTTP library:
+
+     ```bash
+     docker compose exec app uv run --frozen --no-sync --no-dev python -c "import os, httpx; r = httpx.get(os.environ['JAMF_PATCH_BASE_URL'].rstrip('/') + '/software', timeout=15); print(r.status_code, r.content[:60])"
+     ```
+
      `200 b'[{"…` is the catalog, and the next press will work; anything else is the
-     network's answer, in the same words the sentence used — fix that, not the app. The
+     network's answer, in the same words the sentence used when it carried them — fix
+     that, not the app. The
      sentence says what it leaves behind, and it is true: nothing was written, the titles
      already synced keep answering, and the hourly refresh keeps trying. (The hourly
      refresh prints the sentence rather than a traceback for the same reason the button
@@ -1103,6 +1219,13 @@ Jamf server; no credential of yours is involved, so nothing here is a permission
      not with the catalog` → something between this container and the host — a proxy or
      a captive portal — put a page where the catalog should be. The probe prints the first
      bytes of what it got; `<html` or `<!DOCTYPE` names the proxy, and the fix is on it.
+   Catalog diagnostics and patch-plan source links omit URL userinfo, query and fragment.
+   The deployment still uses its original configured URL for fetching. A link that needs
+   authentication or query routing may therefore stop at the mirror's public address;
+   check that configuration privately. An unparseable source URL is withheld entirely.
+   Older plan snapshots remain stored unchanged, while API/PDF/AI presentation applies
+   this rule. The report checksum covers the sanitized displayed body; see
+   [patch-plan report integrity](application-patch-plans.md#auditor-pdf-and-api).
    - `"message": "request failed"` with `"path": "/api/jamf-patch/sync"`, or
      `Job "hourly_jamf_patch_sync (trigger: cron…)" raised an exception`, ending in a
      traceback that is not one of the connection names above → a failure of a kind the
@@ -1425,6 +1548,26 @@ slot says why.
    - *Owed now* under *Next check*, still there a minute later → no process runs the scheduler
      (`scheduler_enabled` is `true` on a container's `starting` line), or that container's log
      says `update check could not run` and why.
+   - `update check unreachable` in the log names the provider-side failure and the
+     check retries in an hour. **Redirect or proxy port outside the supported range:**
+     correct the provider's redirect target or the port in `HTTPS_PROXY` / `ALL_PROXY`.
+     **Proxy transport unavailable:** this build does not include SOCKS support; use
+     an HTTP proxy or remove the unsupported proxy setting. **JSON nesting limit:**
+     the provider or an intervening proxy returned an excessively nested response;
+     correct its response format. **TLS trust store could not be loaded:** the file
+     `SSL_CERT_FILE` names is missing, unreadable or not a PEM bundle; correct the
+     mount or the path ([`splunk-setup.md`](splunk-setup.md) §5 builds the bundle).
+     Addresses, proxy credentials and response text are
+     withheld from these diagnostics. Recreate the container after changing its
+     environment (`docker compose up -d`); a restart does not re-read `.env`. No route
+     to the provider, or an answer that is not JSON (a captive portal's page), logs
+     this line only at `LOG_LEVEL=DEBUG`: an offline or air-gapped instance meets it
+     every hour, and *The update check got no answer it could read* above is its step-through.
+   - `update check could not run: it could not read or save its database state` → check database health
+     and connectivity. `update check could not run because of an unexpected internal failure` → report the
+     error type, the stack locations logged with it (file, line and function only), and the
+     build shown in Settings › Support. These leave the last stored answer in place;
+     provider failures above instead store `unreachable` and the next hourly retry.
    - *The provider refused the check* → the container log says which, once per attempt.
      `update check refused (429) by LoonSec's update service` is that service's limit, shared
      by every instance: the check asks again in an hour, and there is nothing to change here.
@@ -1546,7 +1689,7 @@ Report the block's four lines (build, latest release, last checked, the sentence
 
 ## 11. "The Prompt bar is missing, or it answers *AI search unavailable*"
 
-The Prompt bar is the box labelled **Prompt** above the filters on **Devices › Changes**. It
+The Prompt bar is the box labelled **Prompt** below the deterministic filters on **Devices › Changes**. It
 sends the typed question — nothing else — to the card picked in its **Model** list, which names
 every card saved on **Settings › AI** and the model it uses. The model answers with filter
 settings, and the page moves its filters to them and runs them. Two exceptions: an answer the
@@ -1586,13 +1729,17 @@ field that left, `query_text`.
      page opened. Step 1.
    - *No AI provider is saved …* or *… is not saved in Settings › AI* → the card was removed after
      the page opened. Save it again and reload.
-   - *could not reach the endpoint …* → the app could not open a connection to the saved Base URL. For
+   - *Connection refused*, *Connection failed* or *The endpoint's host name did not resolve* → the app could not
+     open a connection to the saved Base URL; *refused* is nothing listening at its port. For
      Apple's model on the same Mac, on the Mac: `curl -s http://127.0.0.1:1976/health` prints
      `fm serve is running` when it is; if not, run `fm serve` in Terminal. From the container:
      `docker compose exec -T app python -c "import urllib.request as u; print(u.urlopen('http://host.docker.internal:1976/health', timeout=5).read())"`.
-   - *HTTP 403* with *Cross-site requests are not allowed* → `fm serve` refuses a request that
+   - *HTTP 401 / 403* → check the saved key and its permissions. On the Apple card,
+     `fm serve` also refuses a request that
      names another host. Keep the Apple card's Base URL on `host.docker.internal`: the app then
      presents `127.0.0.1`, which `fm serve` accepts. Any other address is presented as typed.
+     Upstream error text is withheld because it can echo the saved key or prompt. Check
+     the provider's service logs if the status and next check do not resolve it.
    - *The Apple card uses only Apple's on-device model, system …* → the Apple card was saved
      naming another model, usually `pcc` (Private Cloud Compute, on Apple's servers), by a build
      that allowed it. Nothing was sent, and the share log has no row for the question. An admin
@@ -1629,20 +1776,20 @@ field that left, `query_text`.
    `none`).
 
    **The answer leads with *The model's answer needed a correction that widens the search, so it
-   was not applied*.** Not a failure, and nothing has run: the filters below the Prompt bar are
+   was not applied*.** Not a failure, and nothing has run: the filters above the Prompt bar are
    still the ones you had. The model did answer with filter settings, but the page had to change
    one of them in a way that would match more than the model named. One of four things happened:
-   - a name it gave for **Search** or **Filter to one thing** was dropped: it was not text, was
+   - a name it gave for **Device search** or **Named-entry search** was dropped: it was not text, was
      longer than 64 characters, or held a character a name here may not;
-   - it put a serial number in **Search** that the question never named — often one from its
+   - it put a serial number in **Device search** that the question never named — often one from its
      own instructions — which was dropped;
    - it named a section, level or change the page does not have, which was read as *any*;
    - it added a field the page does not use and put a value in it, perhaps the name.
 
    Run as it stood, an answer that lost its name would list every added app rather than the one
-   asked about, so a correction like that waits for you. A dropped **Search** does not wait when
-   the question holds one serial number in capitals, as Jamf writes it: the page fills Search
-   with it, and the answer runs. The
+   asked about, so a correction like that waits for you. A dropped **Device search** does not
+   wait when the question holds one serial number in capitals, as Jamf writes it: the page
+   fills Device search with it, and the answer runs. The
    lines under the lead are those corrections, in the page's words. If the model also said the
    filters cannot express part of the question, its sentence follows *These filters would be as
    close as these controls allow* (step 4). *Would show changes …* is what the filters would be.
@@ -1653,12 +1800,12 @@ field that left, `query_text`.
    `. _ @ ' ’ ( ) + / - & # ! , :`. One holding anything else is dropped from the answer: a
    quote, a semicolon, a percent sign, an angle bracket, a symbol such as ™, or a character
    that draws nothing (a Hangul filler, a variation selector), which would have read back as a
-   plain name and matched no row. Typed into **Filter to one thing** by hand, such a name still
+   plain name and matched no row. Typed into **Named-entry search** by hand, such a name still
    searches. The audit log records such an answer as
    `ai.changes-prompt.sent` with `outcome` `proposed`; an answer that ran says `applied`.
 
    **The answer leads with *Invalid question — the Prompt bar can't answer it, so nothing was
-   run*.** Not a failure, and nothing has run: the filters below the Prompt bar are still the
+   run*.** Not a failure, and nothing has run: the filters above the Prompt bar are still the
    ones you had. The model judged the text not a question about changes on your devices: a
    greeting or thanks, a question about the model itself, general knowledge or how to do
    something, arithmetic, a request to write text or code, a question about vulnerabilities,
@@ -1735,7 +1882,7 @@ field that left, `query_text`.
    `version` (the version a change moved *to*, by prefix, so `version=153` finds 153.0.7049.84).
    `q` also matches a Mac's UDID now, beside its name, serial and Jamf id.
 
-   They arrive three ways: a link, the Prompt bar (which reads a Search value the fleet has no
+   They arrive three ways: a link, the Prompt bar (which reads a Device search value the fleet has no
    device for as a model, an OS version, a department name or "unmanaged", and says so in its
    corrections), and a click on a row's model or on the person assigned to it, which is how the
    rest are discovered.
@@ -1766,7 +1913,7 @@ field that left, `query_text`.
 
    **Asking about a department in the Prompt bar.** "What changed on Macs in Engineering :
    Product?" works when Jamf's catalog holds that department's name. The model tends to read a
-   department as the name of a profile and put it in *Filter to one thing*, with *Section:
+   department as the name of a profile and put it in *Named-entry search*, with *Section:
    Configuration profiles* beside it; when no app, profile, group or account has that name and
    exactly one department does, the page reads it as the department instead and clears the
    section the model guessed — unless the question named that section itself ("which apps
@@ -1798,7 +1945,7 @@ field that left, `query_text`.
    while the model was answering; the page keeps the filters you set. Ask again to apply it. *Corrections to the model's answer*
    lists what the page changed or dropped from the model's reply before running it. *No changes
    match* under the bar, and *No changes match these filters* in the table, mean the change log
-   holds no row for those filters: the bar matches names the way *Filter to one thing* does, and
+   holds no row for those filters: the bar matches names the way *Named-entry search* does, and
    a Mac that already had an app when tracking began never shows it as *Added* — it appears only
    when something about it changes. The table says *No changes yet …* only with no filter set,
    when the log itself is empty; *No changes on this page …* means the page number in the address
@@ -2788,7 +2935,9 @@ that log, then repeat the act.
    *"String should have at most 64 characters"* (or 256): the row's version, or its name or its bundle
    identifier, is longer than a case takes.
 2. ***"…(HTTP 400). It said: …"***: the quoted sentence names the rule a field broke (a URL naming an IP
-   address or a `.local` host; a hidden character is caught here first, step 10). Nothing was stored there:
+   address or a `.local` host; a hidden character is caught here first, step 10). The quote never repeats a
+   case key or what was written in the URL, text or contact fields: those read *[case key withheld]* and
+   *[withheld]*. Nothing was stored there:
    send a corrected case (the dialog's fields stay locked, so close it and press the row's action again), and
    withdraw this one on the case list. The dialog's own *Use an address that starts with https://…* is
    checked before any request: Preview stays off until the URL reads so.
@@ -2855,55 +3004,128 @@ that log, then repeat the act.
 
 **Y.** Random keys do not collide twice. Report the case's `id` and its sentence (§8); nothing was stored there.
 
-## 22. "Patch policy is not in my sidebar, lists one app, or says its file was refused"
+## 22. "Patch policy is not in my sidebar, an app cannot be picked, or its file was refused"
 
 Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
-follows one Jamf patch title, replayed against public CVE records under each stop of a patch-policy
-slider. It is not this organization's exposure. It reads no inventory, sends nothing, and stores
-nothing; the replay is a file that ships inside the build, the same for every organization. The page
+runs one app, replayed against public CVE records under each stop of a patch-policy slider. It is
+not this organization's exposure. It reads no inventory, sends nothing, and stores nothing. The page
 is at `/posture/patch-policy` and needs **app:read**, which every role holds.
 
-1. **The entry is not in the sidebar.** It is listed only while the **Posture › Patch policy
-   (reference)** flag is on (Settings › Feature Flags, an administrator), and the flag is off by
-   default. The address opens either way, so a link somebody sent works while the entry is hidden.
-   A session reads the flags once, at sign-in: after turning the flag on, reload (§18 step 3).
-2. **Only Wireshark can be picked; every other app reads *No reference replay yet*.** Not a fault.
-   An app is selectable once a replay file for it ships with the build, and today one does. *No
-   reference replay yet* means nobody has replayed that app. It never means the app has no
-   vulnerabilities, and the page prints no count for it.
+The page has two modes. Once LoonSec's patch-policy data (§32) is held for this organization, it
+walks that data day by day, with a source toggle (Public, Jamf, Fleet) and a day graph: that page is
+§33. Until then it draws the **reference replays**: files that ship inside the build, the same for
+every organization, each naming the public release record its dates come from. This path is about
+the replays, and step 11 about how the page chooses between the two.
+
+1. **The entry is not in the sidebar.** It is listed under Posture, last, for every account that
+   holds **app:read**, with nothing to switch on. An administrator checks Settings › Feature Flags:
+   if it still lists **Posture › Patch policy (reference)**, the instance runs an older build that
+   lists the entry only while that flag is on, so turn it on and reload (§18 step 3), or update the
+   instance. If the flag is not listed, a missing entry means the account lacks app:read:
+   `GET /api/auth/me` lists the account's permissions. The address opens either way for an
+   account that holds it, so a link somebody sent still works.
+2. **Only a few apps can be picked; every other app reads *No reference replay yet*.** Not a fault.
+   An app is selectable once a replay file for it ships with the build. *No reference replay yet*
+   means nobody has replayed that app. It never means the app has no vulnerabilities, and the page
+   prints no count for it. Firefox and Thunderbird are replayed on their release channel only: an
+   ESR title shares its app's bundle ID, so the list shows it under that app's row, and the page
+   says *… ESR is not replayed yet*. If no app can be picked and the page says *No reference
+   replay ships with this build*, the build carries no replay file at all: that is reportable state
+   **Z**, below.
 3. **The list has only the apps with a replay, under a sentence about Jamf's patch catalog.** The
    other rows come from the Jamf Patch titles this instance has synced, and the sentence says which
    of two things happened. *…holds no titles on this instance yet…* → no catalog refresh has
-   finished: that is §6. *…could not be read… a failed read, not an empty catalog* → the list
-   request failed; `GET /api/jamf-patch/titles?pageSize=1` says with what status. A `403` is an
-   account without `app:read`; anything else is §4. The replay itself does not need the catalog and
-   is drawn either way.
+   finished. The refresh runs at the top of every hour and needs no Jamf Pro connection: that is
+   §6. *…could not be read… a failed read, not an empty catalog* → the list request failed;
+   `GET /api/jamf-patch/titles?pageSize=1` says with what status. A `403` is an account without
+   `app:read`; anything else is §4. The replay itself does not need the catalog and is drawn
+   either way.
 4. **Where the replay would be, the page says *The reference replay for … is not shown, because its
    file was refused*.** The page checks the file before drawing any of it and refuses it whole, and
    the next sentence is the reason:
    - *The file did not load, or what loaded is not a replay* → the browser could not fetch the
      file's chunk, usually a page left open across an update of the instance. Reload.
    - *Its kind is …* or *Its schema is …* → the file is another kind of document, or a version of
-     the replay this build does not read.
-   - *It lacks …* → a value the page draws is absent from the file; the sentence names it.
+     the replay this build does not read. *Its schema is 1, the earlier replay format…* is a file
+     with no `timeline` block, the part of the file this page reads to name and link where its
+     release dates come from; this build reads only replays that have one.
+   - *Its CVE clock is …* → the file places each CVE on a clock other than NVD's publication date
+     (its `cve_clock` is not `published`). The page's words state that one clock, so the file is
+     refused rather than drawn under words that would misstate it.
+   - *It lacks …* → a value the page draws is absent from the file; the sentence names it. A file
+     must name its release-date source (`timeline.name`), say what one of its dates means
+     (`timeline.clock`) and when that source was fetched (`timeline.fetched_at`), state its CVE
+     clock (`cve_clock`, defined in `clocks.published`), and say which release line the Mac is
+     held to (`branch_choice.held_at_branch`).
    - *Its own totals disagree (…)* → the file's counts do not add up, in the file's own key names:
      for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
      sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
 
-   Reload once. None of the last three can be fixed on the instance, because the file is part of the
+   Reload once. None of the last four can be fixed on the instance, because the file is part of the
    build and no setting or data of yours is read: the same sentence after a reload is reportable
    state **Z**, below.
 5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
    *Evidence*: it is the replay's own identifier, and two pages showing the same run show the same
-   numbers. A different run is a different catalog snapshot or window, both printed beside it.
-6. **A date looks a day or two off the vendor's own release notes.** Release dates on this page are
-   the dates Jamf's patch catalog reports, and the page says so; they are not a claim about when the
-   vendor published. *Definitions and clocks, in the file's own words* at the foot of the page states
-   each clock and each counting rule.
+   numbers. A different run is a different release record, a different window, or a later read of
+   NVD's records. *Evidence* prints the first two: the window, and the record's fetch time and
+   SHA-256 under *Release dates*. It does not print when NVD's records were read, so two runs whose
+   window and release record match differ by that read. Not a fault of the instance.
+6. **A date looks a day or two off the vendor's own release notes.** Every release date on this page
+   comes from the release record that *Evidence › Release dates* names and links, and the line
+   under it says, in the file's words, what one of its dates means: for example the first day a
+   build was served, or the date of a release tag. A record of that kind and a release note can
+   differ by a day or two. *Definitions and clocks, in the file's own words* at the foot of the
+   page states each clock and each counting rule.
+7. **A CVE is counted from a day before NVD said which versions it affects.** The page's CVE clock
+   is NVD's publication date, and it says so twice: in the box at the top of the replay, and under
+   *Evidence › CVE clock*. Each CVE counts from the UTC day NVD published it, even when NVD named
+   the affected versions days later, so a Mac can be counted exposed on a day NVD's record could
+   not yet have matched the CVE to it. That is the clock the page states, not a fault.
+8. **One replay ends earlier than the others** (*This replay ends on …, before the … it was asked
+   to reach*). The file cut its own window short rather than count days it could not date, and
+   *Evidence › Window* prints its reason in the file's words. Google Chrome's is the usual case:
+   its Mac installs a new major version no earlier than the day Google promotes it to stable, so
+   its window stops the day before a major whose promotion day had not been read when the file
+   was made. A later build carries a later file. Not a fault of the instance.
+9. **The newest weeks replay few CVEs, and many are excluded as *NVD has not yet listed which
+   versions are affected*.** NVD often publishes a CVE before it lists the versions the CVE
+   affects. A CVE in that state cannot be placed, so it is excluded and counted in the *Excluded*
+   table, never guessed; excluded is not safe. A later file replays it only if NVD has listed its
+   versions by then, and the list of excluded CVEs says what to expect in its *NVD status when the
+   file was made* column. *Awaiting Analysis* and *Undergoing Analysis* are records NVD has received
+   and not finished. *Deferred* is NVD's mark for a record it does not plan to prioritize for that
+   work, so it may stay excluded; in the files this build ships, most of Firefox's and
+   Thunderbird's exclusions of this kind are *Deferred*. *Analyzed* is a record NVD finished without
+   listing a version of this app. Not a fault of the instance.
+10. **A CVE's *Fix* cell lists several fixes, some dated long before the CVE.** NVD can state
+    several affected ranges for one CVE, for example one for each Firefox ESR line beside the
+    release channel's, and the replay gives each range its own fix: the first release on this
+    replay's release timeline at or past the range's end. Each fix is printed with the range it
+    closes, in NVD's bounds. The one that matters to this Mac is the range its versions fell in,
+    which the file has already judged: the *Outcome* beside it names the release that cleared the
+    CVE, where one did. Not a fault of the instance.
 
-**Z.** A reference replay that shipped with the build is refused, and reads the same after a reload.
-Report the refusal sentence as the page words it, the app that was picked, and the build from
-Settings › Support (§8). Nothing of the organization's is involved, so there is no run or log to attach.
+11. **The page opens with a sentence about LoonSec's patch-policy data, then draws a reference
+    replay.** The page asked this instance for LoonSec's data first (`GET /api/patch-policy/apps`)
+    and is drawing the replays in its place. The first sentence says which of two things happened:
+    - It is the same sentence Settings › Support › **LoonSec patch-policy data** shows, followed by
+      *…Until this instance holds LoonSec's data, this page shows the reference replays that ship
+      with this build instead…* → no copy of LoonSec's data answers for this organization: data
+      sharing is off (nothing arrives until it is turned on), nothing has arrived yet, or every copy
+      was refused. §32 walks that sentence. Once a copy is held, the page walks it on the next load
+      (§33).
+    - *The state of LoonSec's patch-policy data could not be read from this instance (…)* → the request
+      failed, which is not missing data. The bracket gives what answered: `HTTP 403` is an account
+      without **app:read**; *no answer* is a container that did not answer, which is §4; any other
+      status, with the container up, is reportable state **AE**.
+
+    Either way the replay underneath is complete and correct on its own terms. Nothing on this page
+    mixes the two: a replay is never drawn under the walk's words, or a walk under the replay's.
+
+**Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
+or the page says no reference replay ships with the build. Report the page's sentence as it is
+worded, the app that was picked, and the build from Settings › Support (§8). Nothing of the
+organization's is involved, so there is no run or log to attach.
 
 ## 23. "Out of policy is missing, a title is not judged, or the rule draft fills nothing"
 
@@ -3189,9 +3411,20 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
    database needs and the one this app is (`backend_release` in
    `Contents/Resources/build-manifest.json`): put the later version back, or restore the copy of
    `pgdata` taken before the update ([`macos-app.md`](macos-app.md#backup)).
-6. **Starting over.** The reset in [`macos/README.md`](../macos/README.md) removes the support
-   directory, the window's data and the three keychain items. It is the end of that instance's
-   data. A restorable database backup is `pgdata` copied while the app is quit plus the matching
+6. **Reinstalling still asks for the old account, or says the email/password is incorrect.**
+   Replacing or deleting the app leaves its local database and account intact. Use the account
+   created on this Mac; a different installation's password does not automatically apply here.
+   For a deliberate full reset, use the standalone **LoonInspect-Uninstall** helper in the v1.4
+   disk image or app's `Contents/Resources`, as described in
+   [`macos/README.md`](../macos/README.md#where-it-keeps-things-and-how-to-start-over).
+   Run as your normal macOS user, without `sudo`; the default/`--dry-run` lists the scope without
+   changing anything. `--uninstall` requires a backup decision and typed user-specific confirmation.
+   Follow [clean-uninstall troubleshooting](#macos-clean-uninstall-and-reinstall) for refusals or
+   partial completion. Shared app bundles owned by someone else remain: ask the Mac administrator
+   to remove those separately if needed. After **Local reset complete**, reinstall and create a
+   new local administrator. Eject old disk images and avoid opening another copy during reset.
+
+   A restorable database backup is `pgdata` copied while the app is quit plus the matching
    `ENCRYPTION_KEY`, `postgres-looninspect_app` and `postgres-looninspect` Keychain items.
    Copying a DMG to another Mac installs the software; it does not transfer that instance's data
    or its Keychain. See [`macos-app.md` › Backup](macos-app.md#backup).
@@ -3255,6 +3488,16 @@ Apple/network availability; changing Apple-ID notarization credentials does not 
     - A dimmed Find menu means the app is starting, restarting, or showing recovery. Wait for
       the page or follow the startup/recovery steps above. After recovery, retry ⌘F.
 
+
+11. **Back or Forward is dimmed, or the title bar uses the wrong theme.** These buttons use the
+    current app window's history; a new window need not have a previous page. Wait for loading
+    or recovery to finish, then try **View → Back** (⌘[) or **Forward** (⌘]). A trackpad gesture
+    also depends on the macOS trackpad settings. The title bar follows the workspace's Appearance
+    choice, even if macOS uses a different theme. Change Appearance in the app; if the page changes
+    but the native bar does not, report the app build and the chosen app/macOS themes. **Reload
+    Window** keeps the current route and query. Save important work before reloading or quitting;
+    a page's explicit confirmation sheet does not guarantee a browser unload warning.
+
 ## 26. "A promoted application is not being sent, or Promote is refused"
 
 A promotion (#793, [`data-sharing.md`](data-sharing.md#promoted-applications)) is an administrator's
@@ -3310,8 +3553,10 @@ has `sharing.promotion.added` and `sharing.promotion.removed` for each act. Noth
 
 ## 27. "The Fleet catalog tab is missing, empty, or says its last check did not get an answer"
 
-**Devices › Applications › Fleet catalog** lists the Mac apps Fleet maintains beside what this
-organization has installed ([`fleet-catalog.md`](fleet-catalog.md), #794). The list is one copy
+**Devices › Applications › Fleet catalog** opens on **Migration review**, the installed apps on the
+Macs in the device filter against Fleet's and Jamf's catalogs (step 12). Its other view, **Fleet
+titles**, lists the Mac apps Fleet maintains beside what this organization has installed
+([`fleet-catalog.md`](fleet-catalog.md), #794); steps 2 to 10 are about it. Fleet's list is one copy
 for the whole instance, read from Fleet's public repository on GitHub once a day, and only
 while the **Fleet catalog (maintained apps)** flag is on. No credential of yours is involved, so
 nothing here is a permissions problem in Jamf.
@@ -3359,9 +3604,11 @@ nothing here is a permissions problem in Jamf.
      short. Fleet has changed how it publishes the catalog. Update LoonInspect; on the latest
      release, report it (§8) with the sentence, and turn the flag off to stop the hourly retry.
 4. **The check answered and the table is empty.** Read which sentence the table shows.
-   - *Fleet lists … Mac apps, and none is on a Mac this organization has collected* → the
-     catalog is there and nothing matched. Untick **Only titles installed here** to see it. A
-     title matches an installed app by its exact bundle ID, on Macs only, so an organization
+   - *Fleet lists … Mac apps, and none is on a Mac the device filter above selects* → the
+     catalog is there and nothing matched. Widen the device filter above the table, or press
+     **Clear filter**, which selects every current Jamf Mac; then untick **Only titles installed
+     here** to see the whole catalog.
+     A title matches an installed app by its exact bundle ID, on Macs only, so an organization
      with no device sweep yet matches nothing (§1). For one title you know is installed,
      compare its bundle ID under Devices › Applications with the tab's, letter for letter:
      `com.Example.App` is not `com.example.app`.
@@ -3369,16 +3616,57 @@ nothing here is a permissions problem in Jamf.
      untick the box to search the whole catalog.
    - *Nothing to list yet: no check has been able to read Fleet's catalog* → every check so far
      failed; step 3.
-5. **A count under *Macs behind* looks wrong.** A Mac is behind when any copy of the app on it
+5. **A count under *Macs behind* or *Macs in scope* looks wrong.** A Mac is behind when any copy of the app on it
    is older than *Fleet's latest*, compared on the numbers in the version string. So a Mac with
    a second, stale copy is behind; a Mac on a build newer than Fleet lists is not; and *Fleet's
    latest* is what Fleet last recorded, which can trail the vendor by a day or more. Whether a
    finding follows from a version is not this tab's question: it judges nothing but older or
    not.
-6. **The status line ends with manifests that *could not be read … and were left as held*.**
-   The check succeeded. The named titles had a manifest this build could not read a version
-   from; they keep what they showed, or stay unlisted if they were new, until Fleet next
-   changes its catalog. Nothing to do.
+   - *Macs with app* and *Macs behind* count every Mac the organization has collected. *Macs in
+     scope* counts only the current Jamf Macs the device filter above selects, so it is never
+     more than *Macs with app*, and it can be lower even with no filter applied: departed and
+     non-Jamf Macs count only under *Macs with app*. A release and its ESR channel share a
+     bundle ID, so they count the same Macs.
+   - *Unknown* under *Macs in scope* → Fleet listed the title after the counts for the filter
+     were read. **Check now** reads them again; otherwise, reload the page.
+6. **The status line ends with manifests that *could not be read … and were left as held*, or
+   says *The held snapshot still has unread Mac titles*.** The check succeeded. The named
+   titles are ones this build could not read: a manifest or an index entry it cannot read, or
+   a title the file listing and the index disagree about. They keep what they showed, or stay
+   unlisted if they were new, until Fleet next changes its catalog, and the titles held are
+   partial ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). While Fleet changes
+   nothing, each later check's line reads
+   *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.*
+   That is the same state, not a new failure, and on its own it needs nothing. Three cases do:
+   - *unrecognized Mac manifest path* or *unrecognized Mac index entry* among the names → Fleet
+     listed a Mac title in a form this build cannot read. Update LoonInspect. On the latest
+     release, report it (§8) with the sentence.
+   - *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.* under a
+     saved patch plan's **Open review items at plan creation**, or in its PDF → the plan was
+     built while the titles held were unread or partial, so it drew no conclusion from Fleet:
+     a Fleet title it found is listed for identity review, and no Fleet version became its
+     target. A saved plan keeps the item. Once the status line shows a check that got an
+     answer and carries neither sentence, build a new plan (§30). Until then, check the app's
+     Fleet title by hand with its **Fleet source** link on this tab; a title the tab does not
+     list is not proof that Fleet has none.
+   - A plan shows that item while the status line carries no sentence → the instance was
+     upgraded to 1.3.0 after its last check, and the upgrade marks a catalog that had been
+     read as partial, once. The next scheduled check, within the hour, or **Check now**
+     clears it, reading only the manifests the instance lacks. If the line reads
+     *Fleet's catalog has not been read yet*, that is step 2; *did not get an answer* is step 3.
+
+   **Migration review** and an app's page say *Fleet’s catalog was read only in part, …* (step 12)
+   for any of three reasons, and the report they read does not say which (#942). The status line
+   on **Fleet titles** does, for two of them:
+   - *The last check, …, did not get an answer.* → a check was cut short after it had read or
+     changed some titles (its sentence ends *… were read and kept; the next check reads the
+     rest.*), or a check failed while the titles held were already partial. Its sentence is
+     step 3's. Once a check gets an answer, read the line again: it then names one of the two
+     cases below or the read is whole.
+   - *… could not be read … and were left as held: …*, or *The held snapshot still has unread Mac
+     titles.* → this step, from the top. The second form does not name the titles; only the
+     check that first skipped them did, up to five by name.
+   - Neither, under *Checked …* → the upgrade to 1.3.0, the last case above.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
    stops asking GitHub. The titles it held stay in the database and are brought up to date by
@@ -3390,7 +3678,8 @@ nothing here is a permissions problem in Jamf.
    minutes apart, the most-installed first, so *Version history: 12 of the 140 titles installed
    here read* climbs by twenty to thirty an hour at best. It reads only while the flag is on for
    some organization, only titles on a Mac in such an organization, and only after the daily
-   check has read the catalog (step 2).
+   check has read the catalog (step 2). The line counts the whole organization, whatever device
+   filter is applied above the table.
    - *Paused until …* → GitHub said 20 or fewer of this address's 60 requests an hour were
      left, and the history leaves those to the daily check, **Check now** and every other tool
      behind the address. It carries on by itself at the time given. Paused every hour means
@@ -3417,6 +3706,165 @@ nothing here is a permissions problem in Jamf.
     back shows the move this instance saw, not its first arrival. Nothing to do; **Read again**
     cannot see further than the commits do. The dates are when Fleet's catalog
     took each version, hours to a day after Homebrew and the vendor, never before.
+11. **An app's or a title's migration detail is refused, or its `impact` is null.**
+    `GET /api/fleet-catalog/migration/apps/<appHash>` and `…/titles/<slug>` answer for the Macs
+    the device filter (`deviceScope`) selects ([`fleet-catalog.md`](fleet-catalog.md), *Migration
+    detail*). By the refusal:
+    - *Fleet's catalog is not read while the Fleet catalog flag is off for this organization.*
+      (409) → step 1.
+    - *No Mac the device filter selects has this app in its inventory* (404) → the filter's
+      connection, a contact or inventory window, or another condition leaves out every Mac with
+      the app. Widen or clear `deviceScope`; **Devices › Applications › Installed** under the same
+      filter lists the app once a selected Mac has it. An app removed from every Mac answers this
+      under any filter.
+    - *Fleet's catalog, as this instance last read it, holds no Mac title …* (404) → the copy this
+      instance holds has no such slug; a title Fleet stopped listing is removed with its history.
+      **Check now** reads the catalog again (steps 2 and 3).
+    - *Fleet's version history, as this instance holds it, does not list …* (422) → `targetVersion`
+      is neither Fleet's latest nor in the title's history. Leave it out for the latest or choose a
+      listed version; **Read history** reads it again (step 8; step 10 for a version it leaves out).
+
+    With `impact: null`, `impactUnavailable` names why: `catalog_incomplete`, the snapshot is
+    partial or unread (steps 2, 3 and 6); `no_fleet_title`, no Fleet Mac title has the app's bundle
+    ID (compare them as step 4 does); `identity_review`, the app has no bundle ID, two Fleet titles
+    share it, several Jamf Patch titles match it or a match rests on an extension attribute
+    (`jamfTitles` lists the matching titles this instance has synced, so an app naming titles it has
+    not synced reads `identity_review` with `jamfTitles` empty; settle the title under
+    **Devices › Applications › Jamf Patch**); or
+    `unordered_target`, the target holds no number (choose a numeric version from the history; a
+    qualified one such as `2.0-beta` is answered, counting each Mac it cannot order as unknown).
+12. **Migration review is empty, or a sentence stands above or in place of its list.** It counts the
+    Macs the device filter above it selects, every current Jamf Mac when none is applied
+    ([`fleet-catalog.md`](fleet-catalog.md#migration-review)); **Fleet titles** reads the same report, so the sentences beside **Retry** show on both views. By the sentence:
+    - *No current Jamf Mac is on record for the filter’s Jamf connection, so there is nothing to review. Apps appear here once a device sweep collects a Mac.* → §1.
+    - *No Mac matches the device filter. Widen or clear the filter.*, or beside **Retry**
+      *The device filter is invalid. Check each condition or clear the filter and try again.*
+      → **Clear filter** in the device filter above, then §30.
+    - *The Macs in the device filter have no installed apps on record. Installed Apps, with the same filter, shows what their last sweep collected.*
+      → **Installed Apps** under the same filter. Apps there and none here is §8.
+    - *No installed app matches this search and Show choice. Clear the search or choose All installed apps.* → as it says.
+    - *The installed apps for this device filter could not be read. Check connectivity and retry; this does not mean no app needs review.*
+      → no answer came: reload the page, and if it stays, §4. *Insufficient permissions* beside
+      **Retry** instead → the account lacks `app:read` or `device:read`, which every built-in role holds.
+    - *Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why when the last check did not get an answer or left titles this build could not read. When it says neither, the upgrade to 1.3.0 marked the catalog for one more read, which the next scheduled check, within the hour, or Check now finishes (troubleshooting.md §27 step 6).*
+      → the status line on **Fleet titles**, read as the end of step 6 says. An app's page shows the
+      same sentence above **Installed builds**.
+    - *Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.*
+      → the status line on **Fleet titles**: steps 2 and 3.
+    - *Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+
+    *Unknown* beside **Outside both catalogs** is not zero: an app is outside both only once Fleet's
+    catalog is read whole and Jamf Patch titles are synced, and the sentence above says which is not.
+    In a row, *Coverage unknown* → open the app, whose page says why (step 13); *No exact comparison* → no build behind
+    Fleet's latest could be compared finding by finding (the corpus is off, a version is outside it, or a list is capped): §5.
+13. **An app's or a title's page shows a sentence where you expected its evidence.** A name on Migration review or
+    **Fleet titles** opens its page with the list's query, which reads step 11's detail for the same device filter. By the sentence:
+    - *This Fleet catalog record could not be read. Retry, or reload the Fleet catalog list; if the list fails too, the instance is not answering.*
+      → reload the list; if it fails too, step 1, then §4. *The Fleet catalog is off for this organization.* is step 1, and any other
+      sentence beside **Retry** is the server's own refusal: step 12 for the device filter's, step 11 for the rest.
+    - *No Jamf Patch title could match: the Jamf Patch catalog has not been synced. Open Devices › Applications › Jamf Patch and press Sync now.* → §6.
+    - *Jamf Patch matching has not finished for every record here. The next device sweep finishes it, or Sync now under Devices › Applications › Jamf Patch.*
+      → the next device sweep, or **Sync now**.
+    - *No Jamf Patch title this instance has synced matches these installations.* → search **Devices › Applications › Jamf Patch** for the app
+      with *Only titles with devices* unticked. No title there means Jamf publishes none for it; a title there that matches none of these Macs is §6 step 6.
+    - *Several channels or identities can fit the inventory evidence. Confirm the intended channel before planning an update.*
+      → open each title under **Fleet channels** and compare its manifest and history with the installed build.
+    - *Fleet coverage is unknown: the inventory reports no bundle identifier for this app, and Fleet titles are matched by bundle identifier.*
+      (the header reads *Bundle identifier unavailable*) → the **Application record**, for what the Mac reported.
+      *Fleet coverage is unknown: Fleet’s catalog has not been read whole, so a title for this app may be missing.* → steps 2, 3 and 6.
+    - *The Fleet catalog has no matching macOS title for this inventory identity.* → compare bundle IDs letter for letter, as in step 4.
+    - *No matching installations were observed in the selected scope.* on a title page → widen the scope on the list and open the title again.
+    - *This history has gaps, so these counts cover only the versions it could date. The read's status under this chart says why.* → step 10.
+    - *No dated version matches this search.* → clear the search; step 10 explains an undated version.
+14. **An app's or a title's page gives a verdict, findings or observed upgrades that read wrong.** The header's verdict line and
+    **Patching policy** are Migration review's words for the same app, judged against Fleet's latest version; a build's patch-rule
+    verdict is the Jamf Patch title page's (§23). How often Fleet updates the title is under **Detection and policy evidence**, what
+    the vulnerability corpus holds for each installed build under **Findings on installed builds**, and the upgrades the change log
+    recorded at the foot of **Installed builds**. By the sentence:
+    - *How often Fleet updates this title is unknown until its release history is read.* → step 8; **Read history** on the same page
+      reads it now, for `patch:catalog-sync`.
+    - *Vulnerabilities: not assessed* under **Findings on installed builds** → §5 steps 1 and 2; *Outside the corpus* → §5. The counts
+      are distinct builds on the Macs in the device filter, so a build on 500 Macs counts once where Installed Apps counts 500.
+    - *Each Mac keeps its own copy of a build’s answer, which the hourly refresh brings up to date, so for up to an hour after a corpus release or a sweep these counts can differ from the verdict above.*
+      → right after a corpus release or a device sweep, the findings can read *Outside the corpus* or count a build under *Unassessed builds*
+      while the verdict line or **Patching policy** already counts a finding, or the reverse. The two read different copies of a
+      build's answer, the findings each Mac's and the verdict the build's own; they agree after the hourly refresh, and **Sync now**
+      under Devices › Applications › Jamf Patch runs it at once (`patch:catalog-sync`). Still apart after that: §5 step 3.
+    - *0 recorded version changes on 0 Macs in the last 90 days.*, under it
+      *A 0 here can mean the change log is not recording applications (Settings › Change tracking), and a change log kept under 90 days counts only the days it keeps.*
+      → Settings › Change tracking: *High only* records no application changes; *High + normal*, the default, does. A Mac's changes
+      count from its second sweep, and only Macs the device filter selects count, so widen or clear the filter.
+      `CHANGE_LOG_RETENTION_DAYS` set between 1 and 89 leaves fewer days to count, whatever the sentence's 90 says (§24 step 1 prints the value).
+    - *No recorded upgrade on these Macs in this window could be paired with a version Fleet’s history has dated.* → the history on the
+      same page says *Not read yet* (step 8), or the versions the Macs moved to are ones it could not date (step 10). Versions that are
+      not plain dotted numbers, a short version that disagrees with the version, and a first upgrade recorded before Fleet dated the
+      version are left out on purpose ([`fleet-catalog.md`](fleet-catalog.md#observed-upgrades)).
+    - *Upgrade timing is measured only for an app matched to one Fleet title.* → the header says why, and step 13 routes it: several
+      Fleet channels or Jamf Patch titles fit (open the intended one under **Fleet channels**), Fleet's catalog was not read whole
+      (steps 3 and 6), or no Fleet title carries the bundle ID (step 4).
+    - No **Build a patch plan for these Macs** → it needs `patch:plan-write` (Admin, Analyst) and a Mac in the device filter with the
+      app. The plan opens with the page's device filter (§30).
+15. **An app's page cannot compare a target version, or a build's row reads wrong.** **Compare a target version** counts the Macs in the
+    device filter with the app (**Matched Macs**) as **Below target**, **At or above target** or **Version unknown** against Fleet's latest
+    version, or the one a **Compare** under **Fleet release history** chose (step 11's detail, asked for that version). **Vulnerability and
+    policy evidence** gives each older installed build what that version changes and its patch-rule verdict. By the sentence:
+    - *Could not compare this target.* over *No reason came back. Retry; if it fails again, the app container’s log shows the request and its error.*
+      → `docker compose logs app --since 10m | grep fleet-catalog/migration` lists each request with its `status_code`. A `500`, or a
+      `"message": "request failed"` line, carries the error: report it (§8) with those lines. No line at all: the request never reached
+      this instance, so look at a proxy, or the network between the browser and the instance.
+    - *Could not compare this target.* over *The Fleet catalog is off for this organization.* → step 1. Over any other sentence → that
+      sentence is the server's own refusal: step 11.
+    - *Device impact is unavailable: Fleet’s catalog is not completely read. It returns after the next complete check.* → steps 2, 3 and 6.
+    - *Device impact is unavailable until this app’s identity is reviewed: …*, or in a row *Identity requires review* or *Not judged until
+      this build’s identity is reviewed: …* → check each of the four causes step 11 lists. The header's sentence (step 13) singles out
+      only a missing bundle identifier, and a row can read *Identity requires review* under a header that names one Fleet title. Fleet
+      channels that share a bundle identifier are compared on no page, a channel's own included: inventory cannot tell them apart.
+    - *Device impact is unavailable: Fleet’s version … cannot be ordered against installed versions. …* → **Compare** a dotted release under
+      **Fleet release history**.
+    - *No Fleet title matches this app’s bundle identifier, so there is no target to compare against.* → compare bundle IDs as step 4 does.
+    - *No comparable older build in this scope.*, *… cannot be ordered against … left out of this table.* or *Finding IDs are capped. Only
+      the change in total can be compared.* → nothing to fix: no build is older than the target, the unordered ones' Macs count under
+      **Version unknown**, or a build has more findings than its ID list keeps.
+    - A verdict in the Jamf Patch title page's words → §23; the rule line under it (*Title-specific rule* or *Organization default rule*)
+      opens that title. A row out of policy by its releases limit shows no due date: the one sent is the days limit's, which can be ahead.
+    - *Not judged: no Jamf Patch title matches this build.* → **Devices › Applications › Jamf Patch**, and §6 if that table is empty.
+    - *Installed build outside corpus*, *Target build outside corpus*, *Corpus unavailable* or *Vulnerabilities: not assessed* → §5.
+16. **An app's page says where to start a pilot, or shows no *Plan a Fleet pilot*.** The line under the header counts the Macs in the
+    device filter with the app against Fleet's latest version, whatever target **Compare a target version** shows, as that panel's
+    **Below target** and **Version unknown** do for Fleet's latest (step 15). With no such Mac, or no device impact (the panel or the
+    evidence says why, step 15), there is no line. By the sentence:
+    - *Start the pilot with the … in-scope Macs below …* → the same Macs as **Below target** for Fleet's latest; a count that looks
+      wrong is step 15. A Mac counts as updated once Jamf's inventory reports the new build and a device sweep here has read it, so a
+      pilot install shows only after that.
+    - *No in-scope Mac is known to be below …, but … cannot be ordered against it. …* → open **Installed builds**: the versions meant
+      are those with no numeric order. They count under **Version unknown** (step 15), and nothing in this instance can order them.
+    - *Every in-scope Mac with this app is at or above …* → nothing to do until Fleet's catalog takes a newer version; step 2 says
+      when it reads.
+    - No *Plan a Fleet pilot* on an app's page → it shows only under the header's *One Fleet title matches this app’s bundle
+      identifier.* or *The Fleet catalog has no matching macOS title for this inventory identity.* Under any other sentence, step 13
+      routes it, and step 11 lists the identity causes. A title's own page always shows it.
+    - A link under *Plan a Fleet pilot* no longer opens → Fleet or the tool's maintainers moved the page. Report it (§8) with the link.
+17. **Migration review shows no *Migration briefing*, or the briefing reads wrong.** The panel sits under the list's table and sends
+    nothing until **Generate briefing** is pressed ([`ai-layer.md`](ai-layer.md#fleet-migration-briefing-v140)). *… chose these counts
+    to lead with.* means the provider picked; every line under it is the report's own count for the Macs in the device filter. By what
+    the panel shows:
+    - No panel → it needs AI features, AI-inference consent and a saved provider, the Prompt bar's switches. Settings › AI's line
+      *Changes Prompt bar: hidden — …* names the one that is off (§11 step 1), and consent is granted on Settings › AI, not on
+      Settings › Data Sharing. `curl -s -b jar "$BASE/api/fleet-catalog/briefing"` answers `available`, and a `reason` when it is false.
+    - *The migration briefing could not check its settings: …* or *The migration briefing could not be prepared: …* → the reason
+      follows the colon, and `docker compose logs app --since 10m` has the error. A reason, or a sentence in their place, that names
+      the Fleet catalog flag, AI features, consent or a provider is the server's refusal, and the fix is that switch (step 1, §11 step 1).
+    - *The AI provider did not answer, so the report’s first counts are shown (…). Settings › AI has its test box.* → the text in
+      brackets is the provider's own reason, which §11 step 2 routes; **Send** in that test box tries the same card.
+    - *… answered, but not with counts this page can use, so the report’s first counts are shown.* → **Generate briefing** again, or
+      pick another provider.
+    - *Nothing to rank: apart from their count, the Macs in the device filter show none of the six things a briefing weighs, so nothing was sent.*
+      → nothing left this instance.
+
+    Each briefing sent writes a share-log row on Settings › Data Sharing: feature `fleet_catalog_briefing`, the codes that left as its
+    fields, and the model. The audit log records `ai.fleet-catalog-briefing.sent`, and AI Activity counts the call under *Fleet
+    migration briefings*; work there falling behind or stalled is §28's
+    [*AI Activity: missing usage or work falling behind*](#ai-activity-missing-usage-or-work-falling-behind).
 
 Still wrong after these: report it (§8) with the status line's sentence, the *Fleet catalog*
 and *version history* lines of the container log, and the build.
@@ -3446,9 +3894,86 @@ In Connections → Collections add a **Recent Jamf activity** collection. Set th
 
 Open **Daily coverage** beside the daily crawl. A covered miss means the crawl first recorded a changed section with an inventory report time inside a completed, comparable poll window. Jamf can expose that inventory later than its report time. Open the poll or crawl log and the device history to investigate. Pending, failed or partial crawls have incomplete coverage. A baseline, a contact without changed inventory, and an uncovered time interval each have a separate meaning.
 
-### AI usage gaps or a growing queue
+### AI Activity: missing usage or work falling behind
 
-In Settings → AI select a UTC range that includes the first measured date. Review the reporting-call counts next to the token totals. A provider that omits usage can still return a successful answer. Compare arrivals to completed jobs and cache hits, then look for retries, high queue age, and expired jobs. If calls succeed while the counters stay empty, check the server log for “AI usage could not be saved” and verify the database migration.
+Open **Overview → AI Activity**, or **Settings → AI Activity**. Its historical range is
+UTC, inclusive, and limited to 90 days. **Live workload** always describes the current
+15-minute interval; changing the historical range does not change the live interval.
+The view requires `system:read`; it remains readable with AI disabled so retained
+history and the disabled state are available. Provider setup and inference keep their
+existing permission, feature-flag and consent checks.
+
+1. **Check freshness first.** Read the live as-of time. A failed read, or a reading this
+   browser received at least 45 seconds ago, is measurement unavailable, not a healthy
+   empty queue. Use Refresh, then check the
+   app/API connection and `docker compose logs app`. A server warning beginning
+   “AI usage could not be saved” means some metadata was lost; its parenthesis says why.
+   “the write took longer than 2 seconds” means database load or latency: check the
+   database's health and response time. Any other text there is an error type, such as
+   `ProgrammingError`: check that startup migrations completed, and if they did, report
+   the error type with the line's `stack`. No prompts or response bodies belong in that warning.
+   A recovered write preserves the gap marker. Historical periods intersecting the
+   known gap remain marked incomplete; the live verdict recovers after a complete
+   subsequent 15-minute interval. A process that dies before persisting a failure
+   marker cannot report that lost measurement later.
+2. **Check whether work can run.** Not running means AI or inference consent is off,
+   or nothing is processing inventory work: the container answering has
+   `SCHEDULER_ENABLED` off, an inventory summary has waited over two minutes, and no
+   inventory attempt has started for five. A web-only container beside one that runs the
+   scheduler shows the other verdicts while that one starts attempts. Read
+   `scheduler_enabled` on each container's `starting` line,
+   `docker compose logs app | grep scheduler_enabled`; one must say `true`. No provider configured
+   means an administrator must save and test one in Settings → AI. The panel states
+   which condition applies. Read-only operators ask an administrator to change setup.
+3. **Read the evidence behind the verdict.** Backlog growing means there is waiting
+   work and more logical arrivals than useful completions in the same complete
+   15-minute interval. Work waiting too long means the oldest waiting age exceeds
+   120 seconds. Check provider tests, worker availability and FM's shared local lane.
+   Work appears stalled means active work exceeded its declared deadline; verify the
+   worker and provider before retrying. Interactive work stays visibly stalled for a
+   120-second grace after its deadline. Restart a stopped worker and keep scheduled
+   maintenance enabled: it then expires abandoned interactive work in bounded batches,
+   records unfinished attempts as interrupted, and clears their active counts. It does
+   not retry inference. Missing dispatch/duration evidence after a crash stays unknown.
+   Inventory jobs retain their existing lease/expiry recovery. Reclaiming a lease
+   records an unfinished prior attempt as Interrupted before retrying or dropping the
+   job; recorded dispatch is preserved, while lost request durations stay unknown.
+   The initial partial interval says Collecting a baseline. A queue count alone is not evidence of overload, and no ETA is inferred.
+4. **Separate attempts from useful work.** Rate limits mean a 429 refusal; inspect
+   provider capacity/reset and inventory retries. Authentication/access refusals call
+   for checking the configured credential and provider permissions. Request timeouts
+   call for checking provider availability and response time. A waiting timeout means
+   no request was handed to the HTTP transport. Unusable replies were rejected by the
+   requesting feature. Expired inventory work needs fresh inventory; it is not silently
+   counted as completed. An answered attempt is useful only when its feature accepts it.
+5. **Read coverage before comparing totals.** A retry adds an attempt to one logical
+   job. A cache hit adds useful work but no provider dispatch. A selected fallback is
+   marked on its actual attempt; it does not manufacture an extra call. Historical
+   attempt totals/trends use the UTC day of finalization. Logical arrivals use arrival
+   time; completions, cache hits, skips and failures use their terminal time. A job
+   arriving before the range can finish inside it. Work filters include matching attempts, so a job
+   may have a successful final outcome after its selected failed attempt.
+   Tokens/provider execution time omitted by the provider are unknown, with reporting
+   counts shown; a reported zero is a measured zero. Wait, HTTP request and total times
+   are separate averages in milliseconds. Old daily records lack those boundaries and
+   useful-result/dispatch information; no latency percentile is derived from sums.
+6. **Check attribution and unmeasured work.** Current configured services are separate
+   from service names saved with historical attempts. An administrator can set a safe
+   service name/type on the compatible-provider card. Renaming/changing its endpoint
+   creates a new service identity. Unsaved test calls have a separate opaque identity
+   labeled “test endpoint,” even when testing the same address as a saved service.
+   Existing ambiguous daily rows stay legacy/unknown;
+   a model name does not prove OpenAI. Patch investigations show current source-research
+   activity separately, with partial coverage before inference. Model discovery/control
+   calls, requests refused before inference, unchanged inventory that creates no job,
+   and other clients using the provider are outside the inference totals. A process
+   running an older version can contribute daily totals without granular live facts.
+
+No calls in a readable selected period differs from no matching filters; reset filters
+or choose a range at/after the first measured date. Granular history begins when the new
+recorder first saves data. The 90-day retention applies to metadata, including when AI
+is off; the existing scheduled maintenance must be running to prune it. See
+[AI Activity](ai-activity.md) for field definitions and coverage.
 
 ### Ollama model selection
 
@@ -3549,7 +4074,9 @@ Start in **Settings → AI connections**, with the intended organization selecte
 - **A plan says “requires investigation” or has conditional matches:** inspect each
   source, its read date and the open review items. A public Jamf title or Fleet package
   does not prove that a deployment policy exists in this Jamf instance. Validate the
-  bundle, version and installer before filling in the operator review notes.
+  bundle, version and installer before filling in the operator review notes. A review item
+  *Fleet catalog is unread or incomplete; absence cannot establish lack of coverage.* is
+  §27 step 6.
 - **Installomator is unavailable or no label was found:** check outbound HTTPS to
   `api.github.com` and `raw.githubusercontent.com`, including GitHub rate limits. A missing
   name-derived label can be an alias; search the upstream project and review its script.
@@ -3606,6 +4133,691 @@ Start in **Settings → AI connections**, with the intended organization selecte
   filters follow the same draft/apply flow. Editing the scope discards an earlier proposal.
 
 See [Application patch plans](application-patch-plans.md) for the complete workflow.
+
+
+## 31. Change filters do not find an OS version or time window
+
+1. **An OS version typed into search finds nothing.** Device search finds a device's name,
+   serial, ID or UDID; Named-entry search finds applications, groups, accounts and profiles.
+   Use **Section: Operating system → Changed field: OS version → Changed to exactly: 27.2.1**,
+   or the example button. Set the observation window, then press **Apply field, time and
+   device filters**. AI is not required. The old/new values in each row are the evidence.
+2. **“Choose a section and field” or an unusable field in a shared URL.** Select a section,
+   then a scalar field from its list. A field from Applications, group criteria or another
+   section cannot be used as a scalar target. If field choices failed to load, use
+   **Retry field choices**; if this continues, report the visible error and app version.
+   A section change clears the previous field/target together. Clear also removes every
+   applied filter, including filters carried only by a shared link. Browser Back/Forward
+   restores the URL's applied filters and discards unapplied drafts, including when Back
+   cancels a filter change before its results render.
+3. **The time window is refused or selects the wrong day.** Check the timezone printed
+   below the inputs. Start is inclusive and end is exclusive; end must be later. A clock
+   time skipped at the start of daylight saving is not valid. Use absolute ISO instants
+   with `Z` or an offset when editing API/shared links; an offset also disambiguates a
+   repeated local hour. The window uses **Observed**, not collection or installation time.
+4. **The total differs from the page's row count or the number of users.** Totals cover all
+   matching pages. Multiple transitions on one Mac count as multiple changes and one
+   device. Equal IDs in different source connections count separately; groups count as
+   changes but not devices. Assigned user does not establish unique-person identity.
+5. **Adding a historical device filter removes an expected row.** These filters use the
+   attributes stamped on that observation, not Devices' current state. Missing stamps
+   remain unknown; narrower collection scopes and older observations may lack a field.
+   Remove that dimension filter and inspect the recorded change. A first observation is
+   a baseline, not evidence of a prior upgrade. Check **Settings → Change tracking** and
+   [retention (§24)](#24-the-change-log-keeps-growing-with-change_log_retention_days-set-or-the-changes-page-lost-history)
+   if the expected period has no retained change rows. “Changed to” includes downgrades.
+6. **A query fails to load.** Its error replaces the result counts, so an unavailable query
+   does not read as zero changes. Correct the field/time message or retry loading the page.
+   If valid filters still fail, report the visible error, app version and a synthetic example;
+   remove personal values from the shared query before posting it publicly.
+
+
+## Patch Plans navigation and unsaved review notes
+
+Open **Patch Plans** from the main navigation, or use **Plan application** in Installed
+Apps or Catalog. Existing saved `?plan=` links redirect to `/patch-plans?plan=...`.
+An account needs both application and device read access to open the page. Creating,
+investigating and saving still require patch-plan write access; read-only accounts can
+open saved plans and export the saved revision.
+
+If **Browser storage is unavailable** appears, the draft remains in this tab's memory
+through navigation, but closing the tab loses it. Save the review notes before closing,
+or copy them somewhere appropriate if saving fails. Do not clear browser storage to
+resolve a save failure. A draft from an older revision is shown as a conflict: compare
+it with the saved report, copy any notes you need, then choose **Discard draft** and edit
+the latest revision. Export stays disabled while notes are unsaved, so the PDF cannot
+silently omit the visible review. **View current installed apps in this scope** opens
+current inventory with the saved report's scope, without changing that report.
+
+Changing organization asks for confirmation before changing the session when this tab
+has unsaved review notes. Cancel keeps the current organization. Browser-stored drafts
+remain attached to their original organization, account and plan; copy or save any
+memory-only notes before confirming, because the switch reloads the page. A failed
+switch keeps the current page and its warning before closing or reloading.
+
+If unsaved review notes are gone after signing back in, check whether the account used
+**Sign out**: it discards every unsaved review note in the tab without asking, so the next
+person on a shared browser cannot read them or meet their prompts. Save review notes before
+signing out. A session that expired on its own keeps the draft for the same account.
+
+If **device scope is invalid** appears when building from a planning link, return to
+**Choose installed apps**, apply valid device filters and select the apps again. No plan
+is created from the invalid scope.
+
+
+## macOS clean uninstall and reinstall
+
+**Reinstall still asks for the old account:** ordinary app replacement preserves the local
+instance. Use the existing account, restore its backup, or choose a deliberate full reset with
+**LoonInspect-Uninstall** on the disk image. Reset permanently removes local accounts and
+inventory; it is not password recovery. See [Backup](macos-app.md#backup) before proceeding.
+
+1. Run the helper with `--dry-run` in Terminal. Review the exact current-user paths, Keychain
+   services and retained files. No services or files change during preview.
+2. Save a stopped database copy and its matching three Keychain secrets if recovery matters.
+   Move needed backups and exports outside all listed removal directories. The helper never
+   creates a backup or exports a secret. Run `--uninstall`, choose the backup acknowledgement,
+   and type the user-specific deletion confirmation. Cancel or a mismatched response changes
+   nothing. Do not use `sudo`, pipe confirmations or remove refusal checks.
+3. **Login Keychain locked/unavailable:** unlock it in Keychain Access and retry. The preflight
+   fails before services or data change. An access refusal during deletion can leave a partial
+   removal; allow the appropriate item deletion, preview again and retry.
+4. **Services did not stop / database live / instance locked:** quit LoonInspect and MCP clients,
+   wait for shutdown, then retry. If an orphan remains, restart this Mac or open and quit the
+   app cleanly. The helper never force-kills a PID from a database file.
+5. **Symbolic link / ownership / changed path / app signature:** inspect the exact reported path.
+   A corrupt or unrecognized app bundle is refused before data/key deletion; verify its origin
+   before removing it separately. An ad-hoc but valid development signature is accepted. Move the link
+   aside without deleting its destination, or resolve ownership through the responsible Mac
+   administrator. Generate a fresh preview. Shared app bundles are retained for their owner;
+   do not broaden deletion to another user's directory.
+6. **Removal may be partial:** read the last completed path, correct the reported access issue,
+   then preview and retry. Missing already-removed items are allowed. Unknown sibling files,
+   backups, exports outside the listed directories, other Keychain services and remote Jamf
+   data remain. A retained custom app copy may be removed separately after checking its identity.
+7. Open the newly installed signed app. It should show first-time setup, where you create a new
+   local account. Recreate connections and MCP tokens as needed. If old data reappears, verify
+   which macOS user and app installation you opened; do not delete a different user's data.
+
+## 32. "LoonSec's patch-policy data has not arrived, is old, or was refused"
+
+LoonSec's patch-policy data (#614) is one reference document for every app LoonSec references:
+NVD-derived affected ranges over each app's version list, a first-detectable day per CVE where
+LoonSec knows it, and the public release records each app's dates come from. It arrives the way
+the vulnerability corpus does (§5): a signed link riding the daily data-sharing exchange,
+downloaded only when the document changed, checked whole, and held on this instance. An
+air-gapped instance reads it from a file instead (step 8). It answers only for an organization
+whose data sharing is on, as the corpus does: it rides the exchange that organization already
+makes, and receiving it adds nothing to what that exchange sends.
+
+Where to read its state: Settings › Support › **LoonSec patch-policy data**, one sentence, for
+every account that holds **app:read**; `GET /api/patch-policy/apps`, whose `feed.state` and
+`feed.sentence` are the same words, with `feed.outcome`, `feed.host`, `feed.httpStatus` and
+`feed.detail` from the last attempt; and the container log, where every line about it begins
+`patch-policy data` (`docker compose logs app --since 48h | grep -i "patch-policy data"`). A
+copy that is held keeps answering through every failure below: a refused document is never
+stored, and nothing is deleted to make room for one.
+
+1. ***This organization does not share data with LoonSec, so it does not receive LoonSec's
+   patch-policy data.*** The tier is the gate, whichever way the document arrived. Settings ›
+   Data Sharing: choose **keys** or **reveal**. A copy the container already holds answers on the
+   next page load; if none is held, one arrives with the next exchange, and an administrator can
+   press **Send now** to run it at once. On an instance with more than one tenant, check the
+   tenant you are looking at. With `COMMUNITY_SHARING=false` nothing is sent whatever the tier
+   says, and the tier can still be chosen: that is how an air-gapped instance using step 8 opens
+   the gate.
+2. ***LoonSec's patch-policy data has not arrived on this instance yet.*** No exchange has
+   answered since this build was installed. Settings › Data Sharing shows the last exchange:
+   - none yet → the daily exchange is jittered per organization; **Send now** runs it at once.
+   - *failed* → the exchange itself did not get an answer, and §5 step 6 walks why. The document
+     rides the same request, so it waits for the same fix.
+   - *sent*, and the sentence has not moved after a reload → read the container log for
+     `patch-policy data could not be stored`: the database refused the write. Check
+     `docker compose logs db` and free volume space, then **Send now**.
+     `patch-policy data not read from PATCH_POLICY_FEED_FILE: the database session failed` is
+     the same check on an instance that reads the file.
+
+   *…has not been read from PATCH_POLICY_FEED_FILE yet* is the same state on an instance that
+   reads the file (step 8): the file is read at startup and again within five minutes of any
+   change, so this lasts only until the container has started; if it stays, the container log
+   names what was found, and `patch-policy data from PATCH_POLICY_FEED_FILE could not be stored`
+   is the database, as in the bullet above.
+3. ***LoonSec's last exchange carried no patch-policy data.*** The exchange answered and named
+   no document. Nothing on this instance is wrong, and a copy already held keeps answering
+   (the sentence then ends *Showing the copy dated …*). If it reads the same after the next
+   day's exchange, that is reportable state **AA**, below.
+4. ***This build reads patch_walk/1; LoonSec's last exchange named only …*** The exchange named
+   the document only for a newer way of reading it. Once, it is usually a passing gap at
+   LoonSec: while LoonSec publishes two ways at once, after a move, an exchange that could not
+   read one of them leaves it out for a few minutes, and the next exchange (or **Send now**)
+   names it again; nothing needs updating. If the next exchange names the same, LoonSec has moved
+   on: it keeps publishing the older way for at least 90 days after a move, so the instance has
+   stayed behind longer than that. Update LoonInspect (§10); the held copy keeps answering until
+   then.
+5. ***The patch-policy file could not be downloaded from …*** The host it names is the object
+   store the exchange's link pointed at, **not** the exchange's own host
+   (`api.next.loonsec.io`), so an egress rule that lets the exchange through can still stop
+   this. The reason after the colon says which:
+   - *…did not complete (ConnectError)* or *(ConnectTimeout)*, *(ReadTimeout)* → the container
+     could not reach that host. Allow outbound HTTPS to it, then check from the container
+     itself: `docker compose exec app curl -sSI https://<host>/` (any HTTP status is a reach).
+   - *…did not complete (HTTP 403)* or *(HTTP 404)* → the host answered and refused the link.
+     A link lives fifteen minutes and the download starts seconds after the exchange, so a
+     clock far from the right time can expire it on arrival; compare `date -u` in the container
+     with the real time. If the clock is right and the same refusal follows the next exchange,
+     that is reportable state **AC**.
+   - *…redirected somewhere this container refuses* or *the exchange named a link this container
+     refuses* → something between the container and the internet answered in the store's place
+     (a proxy or a captive portal), or the link named an address the container will not dial.
+     Fix the proxy; a refused link with no proxy in the way is reportable state **AC**.
+   - *…passed the …-byte ceiling* → far more came back than the document is; something other
+     than the store answered. Same as the line above.
+   - *…from the exchange's link: the exchange's patch_policy field is …*, *…entry is not an
+     object*, *…entry carries no sha256 signature* or *…entry carries no link* → LoonSec's
+     exchange answered with something under `patch_policy` that is not a link, so nothing was
+     dialled. Nothing on this instance is wrong; the same sentence after the next exchange is
+     reportable state **AC**.
+6. ***LoonSec's patch-policy data failed its check (…), so it was not stored.*** The document
+   arrived and was refused whole; the copy it would have replaced is still used (the sentence
+   says which). The words in brackets are the check that failed:
+   - *it is not JSON* or *it is not a gzip file* or *its gzip stream is cut short* → the bytes
+     did not survive the trip, usually a proxy that rewrote or truncated them.
+   - *its kind is …*, *its schema is …*, *its algorithm is …* → the document is not one this
+     build reads. Update LoonInspect (§10).
+   - *its doc_id … is not what its contents hash to*, *it is not the document the exchange
+     named* → the content changed after LoonSec built it, or the link served another
+     document.
+   - *it lacks …* or *its own counts disagree (…)* → the document does not add up in its own
+     key names. That is LoonSec's to fix. An app's `other_channels` (§33 step 4) is held to its
+     spelling as well as its shape (*…other_channels[N].versions spelled as an instance reads
+     them…*, *…names …, a channel a track of … walks*, *…source as the https URL its versions were
+     read from*), because a version spelled otherwise would match nothing a Jamf or Fleet timeline
+     names and be counted as unmatched without a word.
+   - *its structure could not be checked (…)*, or *an unexpected failure (…) that the container
+     log reports* → the check met a shape it has no words for, or failed for a reason that is not
+     a refusal. That it reaches you without a sentence is a gap on our side: reportable state
+     **AB**, with the log line that begins `patch-policy data` and the error type and stack
+     locations logged beneath it.
+
+   The next exchange tries again. The same sentence after the next day's exchange, with no
+   proxy in the way, is reportable state **AB**.
+7. ***Showing patch-policy data dated …, more than three days old…*** The copy held is more than
+   three days old by its own date (`feed.asOf`, the NVD state LoonSec built it from), and that
+   date alone decides it. LoonSec's publisher builds the document every night and says when it
+   last finished a build, changed or not, and the exchange passes that on (`feed.builtAt`). A
+   recent build never makes an old copy current: a publisher that runs every night while
+   LoonSec's NVD data stands still makes the same document each night, and that is what this
+   state is for. What `feed.builtAt` says is the cause, judged by this instance's clock
+   (`feed.publisherRunning`: `true` when that build is under three days old, `false` when it is
+   older), and the page names the same cause from it. The sentence goes on with it:
+   - ***…: LoonSec's publisher last ran on …, but its NVD data has not advanced since …*** → the
+     publisher is running (its last build is under three days old) and LoonSec's NVD data has
+     not moved since the copy's date, so each night's build is the copy you hold. Nothing on
+     this instance is wrong, and neither the next exchange nor **Send now** changes it. If it
+     reads the same after the next day's exchange, that is reportable state **AA**.
+   - ***…: LoonSec's publisher last ran on …, more than three days ago, …*** → no build LoonSec
+     finished since has reached this instance. Read the last exchange on Settings › Data
+     Sharing: *failed* is §5 step 6. *Sent* means LoonSec's publisher has finished no build
+     since, which is reportable state **AA** once it has lasted past the next exchange.
+   - ***…, more than three days old; the walk ends …*** → LoonSec's last build is not known
+     (`feed.builtAt` is null: an exchange from an older LoonSec, or the file of step 8), so the
+     sentence names only the copy's date. Read the last exchange the same way. On an instance
+     that reads the file (step 8), put a newer file in its place.
+8. **An instance with no network: `PATCH_POLICY_FEED_FILE`.** Put the document (the
+   `.json.gz` file LoonSec provides) on the data volume and name it in `.env`:
+   `docker compose cp patch-policy.json.gz app:/app/data/patch-policy.json.gz`, then
+   `PATCH_POLICY_FEED_FILE=/app/data/patch-policy.json.gz` in the `.env` beside
+   `docker-compose.yml`, then `docker compose up -d`. The container reads it at startup and
+   again within five minutes of any change to it, checks it exactly as it checks a download,
+   and from then on the exchange downloads no patch-policy data. The organization's tier still
+   has to be on (step 1). If the sentence reads *…could not be read from /app/data/… (Permission
+   denied)*, the file is not readable by the container's user:
+   `docker compose exec --user root app chmod a+r /app/data/patch-policy.json.gz`. *(No such file
+   or directory)* is a path that is not inside the container: the path is the container's, not
+   the host's. *…the file is larger than the …-byte ceiling this container accepts* → the path
+   names something other than the document, which is a few hundred kilobytes: check that it is
+   the `.json.gz` LoonSec provided.
+
+A container log line `patch-policy data not updated: an unexpected failure, not a refusal` (after
+an exchange) or `patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure`
+(at startup or a tick) is a defect in this build, not a fault on yours. The container keeps
+running, the held copy keeps answering, and the next exchange or change to the file tries again.
+Report it as state **AB**, with that line, the error type and stack locations logged with it, and
+the build (§8).
+
+**AA.** The exchange answers and LoonSec names no patch-policy document, or names one dated more
+than three days ago (step 7), on two consecutive days. The sentence's cause is the part that
+matters:
+- *…LoonSec's publisher last ran on …, but its NVD data has not advanced since …* → LoonSec's
+  publisher is running and its NVD data has stood still: LoonSec's to fix, and nothing an
+  instance can change.
+- *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
+  LoonSec's publisher has finished no build that reached this instance since that day.
+
+Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt` and
+`feed.publisherRunning` from `GET /api/patch-policy/apps`, and the build from Settings › Support
+(§8).
+
+**AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
+proxy between the container and the store; or the check, or the file read, fails with an
+unexpected failure rather than a refusal (step 6, step 8). Report the sentence as worded (the
+bracketed check is the part that matters), `feed.host`, any `patch-policy data` log line naming
+an unexpected failure with the stack locations beneath it, and the build (§8). Nothing is wrong
+with the copy held, which keeps answering.
+
+**AC.** The store refuses the link (`HTTP 403` or `404`), the exchange names a link this
+container refuses, or the exchange's `patch_policy` entry is not a link at all (step 5), on two
+consecutive exchanges, with the container's clock right and no proxy in the way. Report the sentence as worded, `feed.host` and `feed.httpStatus`, and the build (§8).
+The link itself is a credential that expires: do not paste it anywhere, and nothing here stores
+or logs it.
+
+## 33. "A patch-policy walk is refused, or Jamf or Fleet cannot date it"
+
+A patch-policy walk (#614) takes one app's track from LoonSec's patch-policy data (§32) and one
+timeline of release dates, and replays a Mac that installs each release a set number of days
+after it is dated, under every stop of the slider, for a window of two or three years. It is a
+reference analysis: it reads no device, and its result is neither stored nor sent anywhere. The
+timeline is one of three, the **source**:
+
+- **Public**: the release dates LoonSec publishes with its data, from the public release records
+  each timeline names (`sources.timelines`): a vendor's own feed (Google's VersionHistory,
+  Mozilla's product-details, Wireshark's tags), or Homebrew's cask history where no vendor feed
+  is read.
+- **Jamf**: this instance's copy of Jamf's public patch catalog, synced hourly with no Jamf Pro
+  connection (§6). Every title whose bundle id is the app's is read.
+- **Fleet**: this instance's copy of Fleet's history, the day Fleet's catalog first carried each
+  version, read while this organization's **Fleet catalog (maintained apps)** flag is on (§27).
+  Every Fleet view says it: these are Fleet's dates, not the vendor's, some hours after Homebrew.
+
+Where to read it: **Posture › Patch policy**, once LoonSec's data is held for this organization
+(until then the page draws the reference replays, §22 step 11). The page lists the apps the data
+references first (*In LoonSec's data*) and every other Jamf Patch title after them (*No reference
+yet*, never a count of zero), then a track, the source toggle (**Public**, **Jamf**, **Fleet**;
+Public by default), the window (2 or 3 years) and *Compare sources on the days they all cover*
+(`align=common`). A source that cannot date the track is drawn disabled, and its sentence is printed
+under the toggle in the page's language, with the instance's own English sentence beneath it as
+*This instance's words: …*: that second sentence is the one to report. A walk the instance refuses is
+printed the same way where the walk would be, and Evidence marks each sentence it prints from the
+instance (the timeline's note, each cut of the window, a source left out, the check's detail) the
+same way. So does the list of excluded CVEs, for the one detail the walk words itself (a branch
+ambiguity, which LoonSec's data never excludes for); every other detail there is LoonSec's own
+words, in English in every language, and the German column heading says so (*Detail (Wortlaut von
+LoonSec, englisch)*). Under the slider the day graph draws the CVEs open
+on each day at the selected stop, with the days CVEs opened and the days an install resolved them
+marked in a strip beneath; *The days the count moved, as a table* lists every one of those days.
+
+The same answers, read directly: `GET /api/patch-policy/apps` (**app:read**) lists, for each app, each source and
+each track, `available`, a `state` word and, when it is not available, the sentence that says why;
+`GET /api/patch-policy/walk?app=…&track=…&source=public|jamf|fleet&years=2|3` answers the walk,
+or a `409` whose `detail` is the sentence, `reason` the word, `source` the timeline it concerns
+and `facts` what belongs beside it (the unmatched versions, the versions set aside as a channel
+LoonSec's data does not walk, the totals that disagreed). The words
+below are those reasons. Nothing a walk reads is written, so no container log line accompanies a
+refusal: the sentence is the whole report.
+
+1. **A sentence from §32** (*…does not share data with LoonSec…*, *…has not arrived…*, a refused
+   copy with none held). The walk needs the copy §32 is about; follow that path first.
+2. ***No reference yet for …*** (`app_unknown`) or ***… has no … track in LoonSec's patch-policy
+   data yet; it has …*** (`track_unknown`). Not a fault and not a count of zero: LoonSec's data
+   does not reference that app, or that track of it, yet. The tracks it does have are named.
+3. **The Public source.** `no_public_dates`: ***LoonSec holds no public release dates for … yet…***
+   LoonSec lists the track's versions without dates. It reads two ways:
+   - ***…, so it has none of its own to walk.*** Only this track is undated; another track or
+     window of the app matched LoonSec's totals, so Jamf and Fleet can still date this one, and
+     their view says it is shown because that other walk matched (step 7). Choose Jamf or Fleet.
+   - ***…, so no walk of … can be checked against the totals LoonSec publishes, and no view of it
+     is shown from any source, Jamf and Fleet included…*** No track of the app has public dates,
+     so nothing of it can be held to LoonSec's totals (step 7), and every source of the app reads
+     this sentence, here and in `GET /api/patch-policy/apps`. Nothing on this instance is wrong
+     and nothing here changes it; the app is shown once LoonSec publishes dates for it.
+4. **The Jamf source.**
+   - `never_synced`: ***This instance has not finished a sync of Jamf's public patch catalog
+     yet…*** The catalog is empty: §6 (**Sync now** on Devices › Applications › Jamf Patch runs the
+     sync at once).
+   - `no_title`: ***This instance's copy of Jamf's public patch catalog has no title for …*** No
+     title names the app's bundle id (the sentence gives it). Search Devices › Applications ›
+     Jamf Patch for the bundle id; a title Jamf does not publish cannot be walked. Choose another
+     source.
+   - `no_versions`: ***This instance's copy of Jamf's public patch catalog names no … version …***
+     The titles found list no versions at all. Sync now (§6); if it reads the same, choose another
+     source.
+   - `channel_empty`: ***… lists no … release on the … channel …: none of the versions it names is
+     this track's alone. It names …*** The titles carry another track or channel of the app and
+     nothing only this track lists. The sentence names each kind it found: versions on another
+     track's list, numbers this track shares with another list (named), versions LoonSec's data
+     does not list, and builds of a channel LoonSec's data does not walk yet. Only Jamf's "Mozilla
+     Firefox ESR" title is held for the release track, say, which names the numbers both channels
+     share (140.0, 153.0), ESR builds, and ESR builds older than the channel's list. Choose that
+     track, or another source.
+   - Not a refusal: versions set aside as a channel LoonSec's data does not walk yet. Beside an
+     app's tracks, LoonSec's data names channels it does not walk yet (`other_channels`: Firefox
+     ESR beside Firefox's release track, Thunderbird ESR beside Thunderbird's). Jamf's "Mozilla
+     Firefox ESR" title shares Firefox's bundle id, and Thunderbird's one title lists both
+     channels, so the release track's Jamf view names ESR builds; a version on a channel's list
+     and on no track's is set aside before the walk, neither walked nor counted as unmatched. The
+     walk's `inputs.timeline.other_channel` counts them, `other_channels` lists them per channel
+     (its label, the public record LoonSec read the versions from, and the versions),
+     `definitions.other_channel` states the rule beside the walk's own `join`,
+     `GET /api/patch-policy/apps` gives each track's `otherChannel`, and a `409`'s
+     `facts.other_channels` says the same beside the refusal. The instance counts them and leaves
+     the words to the page, so the view's `note` stays the source's own: the page says it once per
+     channel in the reader's language, under Evidence › Versions joined, and beside a refusal's
+     unmatched versions. A version a track lists is that track's even when a channel lists it too:
+     ESR 153.0 shares its number with release 153.0 and is walked as the release. LoonSec's data
+     lists a channel's versions without Mozilla's `esr` suffix; a source that spells one with it
+     (`128.5.1esr`) is matched by its spelling as given, then without the suffix, and a track that
+     lists either spelling still takes it first (`153.0esr` is the release's 153.0). Nothing to do:
+     the view walks the track's own channel.
+   - `too_many_unmatched` (the walk's own refusal): ***N of the M versions the timeline from …
+     dates from … to …, the days a device in this view could install them, match no version
+     LoonSec's patch-policy data lists…*** A version LoonSec's data does not list is never
+     installed, so above 5% of those in reach the walk would mislead and is refused; the versions
+     are in `facts.in_reach.unmatched`. The channels LoonSec's data names are set aside before this
+     count (the bullet above; `facts.other_channels` lists them), so what is left is a build of a
+     channel it names nowhere, or a spelling it does not list. Choose Public. If they are plainly
+     releases of the track, that is reportable state **AE**; if they are plainly builds of a
+     channel LoonSec's data names under `other_channels` (Firefox ESR, say), that is **AD**.
+   - `no_matched_versions` (the walk's): ***None of the N versions in the timeline from … is a
+     version LoonSec's patch-policy data lists for …*** The titles read are not this track's.
+     Choose another source; if the titles named are plainly the app's own, reportable state **AE**.
+5. **The Fleet source.**
+   - `flag_off`: ***Fleet's catalog is not read while the Fleet catalog flag is off for this
+     organization…*** An administrator turns the flag on (§27 step 1).
+   - `catalog_unread`: ***Fleet's catalog has not been read on this instance yet…*** No check has
+     stored titles; when the sentence goes on to say the last check did not get an answer, that
+     is §27 step 3. Otherwise **Check now** on the Fleet catalog tab reads it (§27 step 2).
+   - `not_held`: ***Fleet's catalog, as this instance last read it, holds no Mac title for …***
+     The last check read Fleet's whole catalog, and no Mac title carries the app's bundle id:
+     Fleet does not maintain the app. Choose another source.
+   - `catalog_partial`: ***Fleet's catalog, as this instance holds it, has no Mac title for …, but
+     this instance has read that catalog only in part…*** (the page's own words: *Fleet's catalog
+     has been read only in part on this instance, and the part read holds no Mac title for …*).
+     The titles held are partial or unread
+     ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). A title missing from a catalog
+     read only in part is not proof that Fleet has none, so the source does not say `not_held`.
+     The sentence goes on with the cause, as the Fleet catalog tab's status line has it:
+     - *The last check did not get an answer: …* → a check was cut short after it had read or
+       changed some titles. The rest is that check's own sentence, walked in §27 step 3; the
+       next check that gets an answer reads the rest.
+     - *The last check said: …* → the last check skipped titles this build could not read (§27
+       step 6). They stay unread until Fleet next changes its catalog, and *unrecognized Mac
+       manifest path* or *unrecognized Mac index entry* among them means updating LoonInspect.
+     - *The last check left no words for it…* → the 1.3.0 upgrade marked a catalog already read
+       as partial, once, and left its status line as it was (§27 step 6, last case). The next
+       check, within the hour, or **Check now** clears it.
+
+     Once a check reads the whole catalog the source dates the track or reads `not_held`. Until
+     then, choose another source.
+   - `history_unread`: ***Fleet's version history for … has not been read on this instance
+     yet.*** The background reads the titles installed on this organization's Macs, two minutes
+     apart (§27 step 8). An administrator holding **patch:catalog-sync** reads it at once with the
+     title's **Read history**; a title no Mac here has is read only that way. Fleet can hold more
+     than one title under an app's bundle id (`firefox` and `firefox@esr`). While one is unread,
+     a view walks the titles that are read and its `note` names the one left out; when what was
+     read cannot date the track at all (the ESR track with only `firefox` read), the sentence goes
+     on ***…, and the history read so far (…) dates nothing this track can walk*** and names the
+     unread title instead.
+   - `history_failed`: ***Fleet's version history for … has not been read on this instance, and the
+     last history read did not get an answer…*** §27 step 9; the sentence after the colon is that
+     read's own.
+   - `no_versions`: ***This instance's Fleet history names no … version …*** The history read
+     dated no version of the title. The title's history on the Fleet catalog tab says why a version
+     is left out (§27 step 10); if **Read again** reads the same, choose another source.
+   - `esr_missing`: ***This instance's Fleet history (…) names no … ESR release…*** Only a track on
+     the ESR channel reads this, and only when every Fleet title read for the app names another
+     track's or channel's builds and no ESR build of the track's own: `firefox` read alone, say.
+     Fleet's catalog does hold Firefox's ESR title, `firefox@esr` ("Mozilla Firefox ESR", under
+     Firefox's bundle id): while its history is unread the sentence is `history_unread` instead,
+     naming it, and once **Read history** has read it (§27) its builds date the ESR track. If the
+     sentence still reads this with `firefox@esr` among the titles it names, none of the versions
+     Fleet's history gives that title is on the ESR track's list; choose another source.
+   - Versions the release track's view sets aside (`other_channel`): as for Jamf above. Once
+     `firefox@esr`'s history is read, Firefox's release-track view names its ESR builds, and they
+     are set aside because LoonSec's data names the ESR channel under `other_channels`.
+   - `line_not_followed`: ***This instance's Fleet history (…) dates no … release, so the …
+     device has no line to hold…*** Fleet's catalog carries only an app's newest line (Wireshark's,
+     for one), so a track held on an older line has nothing to install, whichever lines LoonSec's
+     data lists on that track: which line a version is on is LoonSec's `line`, read, not compared.
+     Choose the newest-line track or another source. Jamf reads the same way when no title held
+     here dates a release on the held line. The walk's own `ceiling_line_undated` (***The timeline
+     from … dates no … release, so the … device has no line to hold…***) is the same finding where
+     no source above caught it first: on Public it means LoonSec's data names a held line it does
+     not date, reportable state **AD**.
+   - `channel_empty`: as for Jamf above.
+   - `too_many_unmatched` and `no_matched_versions` (the walk's own): as for Jamf above, with the
+     versions Fleet's history dates (`facts.in_reach.unmatched`). Every Fleet title with the app's
+     bundle id is read, and the builds of the channels LoonSec's data names under
+     `other_channels` are set aside first (`facts.other_channels`): Fleet's `firefox@esr` shares
+     Firefox's bundle id, and once its history is read its ESR builds are set aside for the
+     release track, not counted here. What is left is a channel the data names nowhere. Choose
+     Public. If the versions named are plainly releases of the track, reportable state **AE**; if
+     they are plainly builds of a channel the data names under `other_channels`, **AD**.
+   - Not a refusal: a Fleet view's `note` says *Fleet's catalog was read only in part…*, or
+     carries *Fleet's version history for …:* and a title's own history sentence. While the
+     catalog is partial, no daily check confirms a title's history past the day it was read, so
+     the view ends the day before that read (`window.shortened_by`: `timeline_as_of`), and with
+     `align=common` every aligned view ends there too; a check that reads the whole catalog
+     carries it to that check's day. The note says so only when a complete check would have
+     carried the view further. A title's history sentence (§27 step 10) names what its read left
+     undated: those versions are not in the view, and a fix one of them carried is dated by the
+     next version the history dates (step 12), so that CVE counts open longer than Fleet's
+     catalog alone would show. A state concluded from the titles that were read (`esr_missing`,
+     `channel_empty`, `no_versions`, `line_not_followed`) ends, while the catalog is partial, with
+     ***This instance has read Fleet's catalog only in part, so another Fleet title under this
+     bundle id may be among those not read…***: the title that would date the track may be one of
+     them. Read the status line as in `catalog_partial` above.
+6. **The window.** A window that was shortened is not a refusal: `window.shortened_by` names each
+   reason, with its sentence (the first detectable day LoonSec records, the timeline's first
+   release, a held line's first release, a channel's start, the data's date, the day the
+   timeline was read, a promotion table that is behind, and with `align=common` the days the
+   sources share). `window_empty`: ***You asked for N years ending …; nothing is left to walk,
+   because the view would start … and end …: …*** Those reasons left no day; a Fleet history that
+   began recently is the usual one. Choose a longer window or another source.
+   `nothing_to_install`: ***The timeline from … dates no … release the … device could install…***
+   Every version it dates is undated, above the held line, or above the promotion table.
+7. **The totals do not hold up.** Every view of an app is held to the totals LoonSec published
+   with its data: the walk of LoonSec's own dates for a window must match them before any source
+   of that app is shown.
+   - `parity`: ***The walk of LoonSec's published dates for … over N years does not match the
+     totals LoonSec published with the data (…), so no view of … is shown.*** One window of the
+     app disagrees, and every source and window of that app is refused with it, so a definition
+     that moved on one side can never be read as a finding. `facts` holds the stop, the total and
+     both values; `GET /api/patch-policy/apps` gives every source of the app the same state and
+     sentence. Nothing on this instance can fix it: reportable state **AD** if it reads the same
+     after the next day's exchange.
+   - `unchecked`: ***LoonSec has published no totals this build could match for any window of …***
+     No window of the app has published totals, or none walked (`facts.windows` gives each
+     window's reason). An app with no public dates at all reads as `no_public_dates` instead
+     (step 3). Reportable state **AD** if it reads the same after the next day's exchange.
+   - Not a refusal: `check.state: unchecked_window` with ***LoonSec has no check for a N-year
+     window of …; it is shown because the M-year walk matched.*** The window asked for has no
+     published totals, and another window of the app matched them.
+   - Which view was checked: LoonSec publishes totals only for its own dates over a whole window,
+     so the check is the Public walk of the window asked for, without `align=common`, and every
+     source and aligned window of the track is shown under that one check. Evidence › Check on
+     that Public view says *Matches the totals LoonSec published for this window*. On a Jamf,
+     Fleet or aligned view it says *Not checked itself: …*, and the instance's `check.detail`
+     (***The walk of LoonSec's published dates for … over N years matches the totals LoonSec
+     published with the data.***) names the walk that was. Not a fault: no published total
+     exists for a Jamf, Fleet or aligned view to be held to. On an unchecked window (above), a
+     Jamf, Fleet or aligned view's `check.detail` ends ***…, and its own numbers are not
+     checked.*** for the same reason.
+   - `document_invalid`: ***LoonSec's patch-policy data for … failed this build's check (…)…***
+     The data does not hold together for this app in a way the copy's own check (§32 step 6)
+     does not test. Reportable state **AD**.
+8. **A defect on our side.** `invariant` (***…was refused because its own totals disagree…***),
+   `timeline_invalid` (***The release timeline given to the walk cannot be read…***) and
+   `request_invalid` (***A window is 2 or 3 years…*** or ***The stops asked for are…***, for a
+   request the page built) are LoonInspect's own and say so. Reportable state **AE**.
+9. **Two sources give different numbers.** They should: their dates differ, and so do the days
+   each covers. Compare them only with `align=common`, which cuts every view to the days all the
+   sources that can date the track share (`window.aligned` names them, and any left out with its
+   sentence), and read each view's own counts. `input_id` names a walk's inputs and `run_id` its
+   result; the same pair is the same numbers.
+10. **The page says the walk could not be read, or cannot be drawn.**
+    - *The walk could not be read from this instance (…)* → the request failed, which is not a
+      refusal: a refusal always prints its own sentence. The bracket gives what answered. *no answer*
+      is a container that did not answer (§4); `HTTP 403` is an account without **app:read**;
+      `HTTP 422` is a request the page built and the route did not accept, as is any other status with
+      the container up: reportable state **AE**.
+    - *This instance answered with a walk this page cannot draw (…)* → the answer arrived and is not
+      the shape this page reads; the bracket names the part. A page left open across an update of the
+      instance does this: reload. If it reads the same after a reload, it is reportable state **AE**.
+    - *Nothing is walked over … for this track: the reason is under the toggle above* → the address
+      names a source the instance reported it cannot date for this track (a link from another
+      organization, say). The sentence under the toggle is that source's step above; choose another.
+    - *LoonSec's patch-policy data does not walk … ESR yet; it walks …* → Jamf's catalog has an ESR
+      title that shares the app's bundle ID, so the list shows it under the app's row; the walk is of
+      the release channel only. Whether the ESR builds a Jamf or Fleet view reads are set aside
+      depends on the copy held: one that names the ESR channel under `other_channels` sets them
+      aside (step 4); one that does not counts them as unmatched, and the view can be refused as
+      `too_many_unmatched` (step 4, step 5 on Fleet; choose Public). `feed.docId` from
+      `GET /api/patch-policy/apps` names the copy. Not a fault.
+    - *Page P is past the end of this list: it holds N CVEs on M pages…* → the address names a page
+      of the CVE list (`page=`) that the walk does not have, because the list is shorter now than
+      when the link was saved: each new copy of LoonSec's data can change how many CVEs a window
+      lists. The route answers such a page with no rows and `cves_page.page` above
+      `cves_page.pages`. **Show page M** opens the last page. Not a fault.
+11. **The never stop's never-seen count, and what it does not show.** A device kept to the never
+    stop never leaves the first version the window starts it on (the walk's
+    `policies.never.initial_version`), so under that stop's count the page splits it by why, in
+    place of the other stops' *… never seen were never in range…*: *A device that never updates
+    stays on … Of the N never seen, F were already fixed in …, so the device never ran a version
+    they affect. The other O fall outside every range NVD names…* The two kinds read differently:
+    - **Already fixed** (`fix_installed_first`; the stop's `never_seen` less
+      `never_seen_outside_affected_range`): the version the device keeps carries the CVE's fix on
+      its line, so it never ran a version the CVE affects. An old CVE whose clock day falls in the
+      window, years after its fix shipped, reads this way. These are a real never seen.
+    - **Outside every range NVD names** (`never_seen_outside_affected_range`): no affected range NVD
+      gives the CVE holds that version. Either the CVE affects only other versions, or NVD names no
+      range for that version's line: NVD's ranges often stop naming a line once it reaches end of
+      life, so a device left on an old line reads never seen for CVEs that may well affect it.
+      These do not show the device was safe.
+
+    How the count splits depends on the version the never device keeps, so it differs by app,
+    track and window, and it moves whenever a new copy of LoonSec's data moves the window: the
+    page prints both numbers for the view on screen. That version is the newest release available
+    by the window's first day (`definitions.steady_state`): the never stop is a device that stops
+    updating that day, not one already behind, so for the window's first 59 days it can run a
+    newer release than the 60-day stop, which opens the window on the newest release it would
+    already have installed. Where most were already fixed, the never stop can count fewer never
+    seen than the 30-day stop, because the CVEs fixed before the version the device keeps are ones
+    it never ran. Read the second kind as "NVD names no range here", not as "this device was never
+    exposed"; the stops that install are the comparison that means something. The reference
+    replays that ship with the build (§22 step 11) split their never stop the same way, in the
+    same words, from the replay file's own `policies.never`. Not a fault.
+
+12. **A CVE's fix is dated by a later version, or by none.** Not a refusal. A timeline often does
+    not date the exact build LoonSec's data names as a CVE's fix: Fleet's history holds only the
+    builds Fleet's catalog carried, from the day it began. Such a CVE is not left out. As ruled on
+    2026-11-25, the walk counts the next dated version at or above the fix on the
+    fix's line that the CVE's affected range does not cover (a version the CVE still affects never
+    stands in for its fix; one held affected only by rule 5 can), and that version's day is the
+    fix's day for every rule, the one that keeps an older-dated build of another release train
+    affected included (a build of the fix's own train, or of the train of the version that dated
+    it, is spared). Each CVE row says which version dated each fix in `fix_dated_by`: one entry for
+    each fix LoonSec's data lists for the CVE on a line the path visits (the line of any version a
+    device under any stop runs during the window), in the data's order. LoonSec's data can list
+    several fixes at one version (the fix itself, then each of NVD's bounds that lands there), and
+    each is its own entry, counted on its own:
+    - `fix` is the fix LoonSec's data names, and `named` is NVD's own fix version where the version
+      LoonSec points at is not that exact one (null otherwise): the next listed version above it,
+      or, where that one is still in the CVE's range, the first listed version above the range.
+      NVD can name a build the Mac never got: for Chrome's Linux and Windows build 142.0.7444.59,
+      LoonSec points at the Mac's 142.0.7444.60 of the same day, and `named` reads 142.0.7444.59;
+    - for Chrome, NVD's build can be another platform's that Google numbered above the Mac's build
+      of the same release. LoonSec keeps NVD's bound, and the fix counts from the first Mac build
+      at or above it, which is a release late where NVD named such a build. As ruled on
+      2026-11-25, three releases are corrected, and only for the CVEs that release's own Chrome
+      Releases post names as fixed by it: a CVE on the post whose range NVD ends at the release's
+      build counts from the Mac's own build read from that post, and `named` keeps NVD's build
+      (106.0.5249.61 for NVD's 106.0.5249.62, 135.0.7049.41/.42 for 135.0.7049.52, and
+      136.0.7103.48/.49 for 136.0.7103.59). Any other CVE NVD ends at one of those builds keeps
+      NVD's range. One does: CVE-2025-3066, which NVD ends at 135.0.7049.52, is not on the
+      2025-04-01 post that 135.0.7049.41/.42 shipped with; Google's 2025-04-08 post names it fixed
+      in 135.0.7049.84/.85, and NVD's own description says "prior to 135.0.7049.84". Its `fix`
+      135.0.7049.84 beside `named` 135.0.7049.52 is the build that fixed it, not a fault. NVD's
+      114.0.5735.110 and 144.0.7559.99 keep NVD's bound too: LoonSec has not read which Mac build
+      carries those fixes, so they can count a release late. A copy built before the ruling counts
+      all three releases from the first Mac build at or above NVD's. That is LoonSec's data, the
+      same on every source, not a fault;
+    - `dated_as` and `on` are the version whose date the walk used, and that date. Dating a fix is
+      not clearing it: a device clears the CVE when it installs a version outside the CVE's
+      affected range that rule 5 does not keep affected. A fix the timeline dates itself is its own
+      `dated_as`, since LoonSec's data is the authority on its own fixes, and a later version
+      standing in for an undated fix is always outside the range. LoonSec's data never points a
+      fix inside its own CVE's affected range: an entry whose `fix` the row's `affected_text`
+      covers is walked as given, though installing that fix clears nothing, and is reportable
+      state **AD**, with the CVE row;
+    - `how` is `fix` when the timeline dates the fix itself, `next_dated` when it dates a later
+      version outside the range instead, and `undated` when it dates nothing at or above the fix on
+      that line outside the range, or LoonSec's data names no fix version there. An `undated` line
+      has no fix a device could install, so the CVE stays open on it until the device moves past
+      its affected range.
+
+    `counts.fix_dating` totals the entries over the rows the walk lists. A Jamf or Fleet view reads
+    `next_dated` far more often than Public. Open the same CVE on the Public view and compare `on`
+    with the fix's day there:
+    - `on` weeks or months later is the timeline's gap, not a defect: Public shows the vendor's own
+      dates, and a fix older than the first version a timeline dates is dated by that version.
+    - `on` earlier means the next dated version is a build of a later release train that the vendor
+      shipped before the fix, which a line holding several trains allows. It stands in for the fix,
+      so rule 5 spares it, where Public, dating the fix itself, keeps that build affected. The two
+      views differ there; neither is a defect.
+
+    On Public, `next_dated` appears only where LoonSec lists a version without a date.
+    `how: next_dated` or `fix` with no `dated_as`, or a `next_dated` entry whose `dated_as` the
+    CVE's affected range covers, is reportable state **AE**.
+
+    On the page, the list of CVEs gives each row's `fix_dated_by` on a line beneath the row, *Fixes
+    of CVE-…, as this source dates them:*, one list item per entry (two entries at one version are
+    two items: the fix, then NVD's bound that lands there, with `named`): a `fix` entry is the fix
+    and the date the source gives it, with nothing more; a `next_dated` entry reads *…: not dated by this source, so counted from …,
+    the first version at or above the fix that it dates outside the CVE's affected range, on …*
+    (a version the source dates inside the range is passed over, so this can be later than the
+    next version the source dates); an `undated` one reads *…: this source dates no version at or
+    above it on the … line outside the CVE's affected range, so this CVE is walked by its affected
+    ranges there* (*No fix version on the … line in LoonSec's data…* where the data names none). NVD's own
+    version follows in brackets where `named` differs. Where the fix is an earlier build of the
+    release NVD names (the same major.minor.build, a lower last number: the Mac-build correction
+    above, the only place LoonSec's data lists a fix below NVD's version), the brackets say why:
+    *(NVD names …, another platform's build of the same release; the vendor's release post gives
+    the Mac's build …)*. A `fix` above NVD's build, as CVE-2025-3066's is, keeps the plain
+    *(NVD names …)*. Where the version that dated a fix is dated on
+    the timeline's first day (`inputs.timeline.first`), the line goes on *Fleet's history begins
+    here* (or Jamf's): the fix is older than anything the source holds, and its `on` is where that
+    history starts, not a day the fix shipped. Evidence › *Fixes dated* gives `counts.fix_dating`,
+    over the lines a device under any stop runs in the window.
+    A copy of LoonSec's data from before 2026-11-25 still lists `fixed_version_not_in_timeline`
+    among the exclusion reasons; the walk counts it 0, and the page's exclusion table says it is no
+    longer a reason. Since the same day LoonSec's data no longer excludes a CVE as
+    `fixed_version_not_in_catalog` either: it lists a fix the track's version list does not hold
+    at the next version at or above it, with `named`. A copy built since counts that reason 0, and
+    the table says it is no longer a reason; an older copy can still count some. Not a fault.
+
+**AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
+LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
+has totals this build matched (`unchecked`), the data fails the walk's check
+(`document_invalid`), it names a held line it does not date (`ceiling_line_undated` on
+Public), or a Jamf or Fleet timeline is refused over builds of a channel the data names under
+`other_channels` and does not list in full (`too_many_unmatched`, with Firefox ESR builds among
+`facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the
+sentence as worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf`
+from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8). A walk that was
+shown is reportable state **AD** too when a CVE row's `fix_dated_by` names a `fix` the row's own
+`affected_text` covers (§33 step 12): report that CVE row with the same.
+
+**AE.** A patch-policy walk is refused as a defect in LoonInspect: its own totals disagree
+(`invariant`), the timeline or the request it built is refused (`timeline_invalid`,
+`request_invalid`), or a Jamf or Fleet timeline is refused over versions that are plainly the
+track's own (`too_many_unmatched`, `no_matched_versions`); or, with the container up and the
+account holding **app:read**, the page cannot read LoonSec's data's state or a walk (§22 step 11,
+step 10), or cannot draw a walk it read, after a reload; or a walk that was shown says it dated a
+fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated` and no
+`dated_as`, step 12), or dated an undated fix by a version the CVE's `affected_text` still covers
+(`how: next_dated`, step 12). Report the sentence as worded (or the CVE row), the refusal's
+`facts`, the app, track, source and window asked for (the page's address carries all four), and
+the build (§8).
 
 ## Snowflake delivery is queued, rejected, or has no rows
 

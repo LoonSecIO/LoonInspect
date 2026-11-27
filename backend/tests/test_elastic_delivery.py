@@ -234,8 +234,8 @@ async def test_bulk_200_with_item_errors_is_a_delivery_failure() -> None:
 
     assert ok is False
     assert error is not None
-    assert "mapper_parsing_exception" in error
-    assert "failed to parse field" in error
+    assert "status 400" in error and "Response body withheld" in error
+    assert "mapper_parsing_exception" not in error and "failed to parse field" not in error
     assert "400" in error
 
 

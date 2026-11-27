@@ -69,6 +69,36 @@
               }
             ],
             "title": "Reasoningeffort"
+          },
+          "serviceKind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "openai",
+                  "ollama",
+                  "compatible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicekind"
+          },
+          "serviceLabel": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicelabel"
           }
         },
         "required": [
@@ -125,6 +155,39 @@
               }
             ],
             "title": "Reasoningeffort"
+          },
+          "serviceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceid"
+          },
+          "serviceKind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicekind"
+          },
+          "serviceLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Servicelabel"
           },
           "updatedAt": {
             "anyOf": [
@@ -1256,6 +1319,95 @@
           "version"
         ],
         "title": "AuthStatusOut",
+        "type": "object"
+      },
+      "BriefingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "BriefingIn",
+        "type": "object"
+      },
+      "BriefingOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/Highlight"
+            },
+            "title": "Highlights",
+            "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "outcome": {
+            "enum": [
+              "selected",
+              "fallback"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Provider"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "nothing_to_rank",
+                  "unusable",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "highlights",
+          "outcome"
+        ],
+        "title": "BriefingOut",
         "type": "object"
       },
       "BuildPlan": {
@@ -3617,6 +3769,10 @@
       },
       "DeviceChangeListResponse": {
         "properties": {
+          "devicesTotal": {
+            "title": "Devicestotal",
+            "type": "integer"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/DeviceChangeOut"
@@ -3648,6 +3804,7 @@
           }
         },
         "required": [
+          "devicesTotal",
           "items",
           "page",
           "pageSize",
@@ -4824,6 +4981,430 @@
         "title": "FindingDetectedOut",
         "type": "object"
       },
+      "FleetAssessmentOut": {
+        "properties": {
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "behindBuilds": {
+            "default": 0,
+            "title": "Behindbuilds",
+            "type": "integer"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/FleetBuildAssessmentOut"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "corpusAsOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpusasof"
+          },
+          "exactBuilds": {
+            "default": 0,
+            "title": "Exactbuilds",
+            "type": "integer"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "management": {
+            "default": "observe",
+            "enum": [
+              "recurring",
+              "one_time",
+              "observe"
+            ],
+            "title": "Management",
+            "type": "string"
+          },
+          "netOnlyBuilds": {
+            "default": 0,
+            "title": "Netonlybuilds",
+            "type": "integer"
+          },
+          "oldestGapDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldestgapdays"
+          },
+          "outOfPolicyBuilds": {
+            "default": 0,
+            "title": "Outofpolicybuilds",
+            "type": "integer"
+          },
+          "policyExemptBuilds": {
+            "default": 0,
+            "title": "Policyexemptbuilds",
+            "type": "integer"
+          },
+          "policyUnassessedBuilds": {
+            "default": 0,
+            "title": "Policyunassessedbuilds",
+            "type": "integer"
+          },
+          "priority": {
+            "default": "monitor",
+            "enum": [
+              "review_now",
+              "plan_update",
+              "review_identity",
+              "monitor"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "priorityReason": {
+            "default": "none_behind",
+            "enum": [
+              "none_behind",
+              "unordered",
+              "identity",
+              "out_of_policy",
+              "kev",
+              "comparable"
+            ],
+            "title": "Priorityreason",
+            "type": "string"
+          },
+          "recentVersions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recentversions"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          },
+          "unorderedBuilds": {
+            "default": 0,
+            "title": "Unorderedbuilds",
+            "type": "integer"
+          },
+          "withinPolicyBuilds": {
+            "default": 0,
+            "title": "Withinpolicybuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "targetVersion"
+        ],
+        "title": "FleetAssessmentOut",
+        "type": "object"
+      },
+      "FleetBuildAssessmentOut": {
+        "properties": {
+          "addressedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressedids"
+          },
+          "addresses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addresses"
+          },
+          "comparison": {
+            "enum": [
+              "exact",
+              "net_only",
+              "off",
+              "unknown_source",
+              "unknown_target",
+              "ambiguous"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "deviceCount": {
+            "title": "Devicecount",
+            "type": "integer"
+          },
+          "installedKev": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installedkev"
+          },
+          "introducedIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introducedids"
+          },
+          "introduces": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Introduces"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "policyDueAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policydueat"
+          },
+          "policyRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PatchRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policySource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "override"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policysource"
+          },
+          "policyState": {
+            "default": "unassessed",
+            "enum": [
+              "within",
+              "out",
+              "exempt",
+              "unassessed"
+            ],
+            "title": "Policystate",
+            "type": "string"
+          },
+          "policyTitleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policytitleid"
+          },
+          "policyUnassessed": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identity",
+                  "no_jamf_title",
+                  "no_rule",
+                  "not_judged"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policyunassessed"
+          },
+          "policyVerdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyVersionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remainingIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainingids"
+          },
+          "remains": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remains"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comparison",
+          "deviceCount",
+          "name",
+          "version"
+        ],
+        "title": "FleetBuildAssessmentOut",
+        "type": "object"
+      },
+      "FleetCandidate": {
+        "properties": {
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "latestVersion": {
+            "title": "Latestversion",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundleId",
+          "latestVersion",
+          "name",
+          "slug"
+        ],
+        "title": "FleetCandidate",
+        "type": "object"
+      },
       "FleetCatalogOut": {
         "properties": {
           "enabled": {
@@ -5339,6 +5920,33 @@
         "title": "HeldEvents",
         "type": "object"
       },
+      "Highlight": {
+        "properties": {
+          "code": {
+            "enum": [
+              "apps_overdue",
+              "apps_with_kev",
+              "ambiguous_apps",
+              "incomplete_comparisons",
+              "recurring_review",
+              "exact_candidates",
+              "scoped_macs"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "count"
+        ],
+        "title": "Highlight",
+        "type": "object"
+      },
       "HostDetectionOut": {
         "properties": {
           "alias": {
@@ -5669,6 +6277,122 @@
           "versionHash"
         ],
         "title": "InstalledAppOut",
+        "type": "object"
+      },
+      "InstalledBuild": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "shortVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortversion"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "versionHash": {
+            "title": "Versionhash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appHash",
+          "macs",
+          "shortVersion",
+          "version",
+          "versionHash"
+        ],
+        "title": "InstalledBuild",
+        "type": "object"
+      },
+      "InstalledEvidence": {
+        "description": "One app's builds on the selected Macs, each read through the answer it already stores (#896).\n\nA build is one version, however many Macs carry it. Installed Apps counts device/build pairs, so a build\non 500 Macs reads 500 there and 1 here. The three finding counts count builds, never findings summed\nacross builds, and are null, never 0, under `off` and `unknown_app`, where nobody looked.",
+        "properties": {
+          "affectedBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affectedbuilds"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "assessedBuilds": {
+            "default": 0,
+            "title": "Assessedbuilds",
+            "type": "integer"
+          },
+          "assessment": {
+            "enum": [
+              "off",
+              "unknown_app",
+              "partial",
+              "covered"
+            ],
+            "title": "Assessment",
+            "type": "string"
+          },
+          "highOrCriticalBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highorcriticalbuilds"
+          },
+          "kevBuilds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kevbuilds"
+          },
+          "unknownBuilds": {
+            "default": 0,
+            "title": "Unknownbuilds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "assessment"
+        ],
+        "title": "InstalledEvidence",
         "type": "object"
       },
       "JamfPatchCoverageOut": {
@@ -6061,6 +6785,24 @@
         "title": "JamfPatchTitleOut",
         "type": "object"
       },
+      "JamfTitle": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "JamfTitle",
+        "type": "object"
+      },
       "KnownDepartment": {
         "description": "A department id and the name Jamf's catalog gives it. One row per distinct pair: two\nconnections that both have a department 5 with different names send both, and the page\nlabels an id only when its name is unambiguous.",
         "properties": {
@@ -6130,10 +6872,73 @@
         "title": "KnownGroup",
         "type": "object"
       },
+      "LocalApp": {
+        "properties": {
+          "appHash": {
+            "title": "Apphash",
+            "type": "string"
+          },
+          "bundleId": {
+            "title": "Bundleid",
+            "type": "string"
+          },
+          "fleetCandidates": {
+            "items": {
+              "$ref": "#/components/schemas/FleetCandidate"
+            },
+            "title": "Fleetcandidates",
+            "type": "array"
+          },
+          "hasJamfMatch": {
+            "title": "Hasjamfmatch",
+            "type": "boolean"
+          },
+          "jamfEvaluated": {
+            "title": "Jamfevaluated",
+            "type": "boolean"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "match": {
+            "enum": [
+              "exact",
+              "ambiguous",
+              "none",
+              "unknown"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versionCount": {
+            "title": "Versioncount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appHash",
+          "bundleId",
+          "fleetCandidates",
+          "hasJamfMatch",
+          "jamfEvaluated",
+          "macs",
+          "match",
+          "name",
+          "versionCount"
+        ],
+        "title": "LocalApp",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
-            "format": "email",
+            "maxLength": 320,
+            "minLength": 1,
             "title": "Email",
             "type": "string"
           },
@@ -7151,6 +7956,308 @@
         "title": "MfaStatusOut",
         "type": "object"
       },
+      "MigrationDetail": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "assessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Assessments",
+            "type": "object"
+          },
+          "builds": {
+            "items": {
+              "$ref": "#/components/schemas/InstalledBuild"
+            },
+            "title": "Builds",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionImpact"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "impactUnavailable": {
+            "anyOf": [
+              {
+                "enum": [
+                  "catalog_incomplete",
+                  "no_fleet_title",
+                  "identity_review",
+                  "unordered_target"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impactunavailable"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalApp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "jamfTitles": {
+            "items": {
+              "$ref": "#/components/schemas/JamfTitle"
+            },
+            "title": "Jamftitles",
+            "type": "array"
+          },
+          "observedChanges": {
+            "$ref": "#/components/schemas/ObservedChanges"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "builds",
+          "installedMacs",
+          "items",
+          "jamfTitles",
+          "observedChanges",
+          "scope"
+        ],
+        "title": "MigrationDetail",
+        "type": "object"
+      },
+      "MigrationReport": {
+        "properties": {
+          "appAssessments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FleetAssessmentOut"
+            },
+            "title": "Appassessments",
+            "type": "object"
+          },
+          "asOf": {
+            "format": "date-time",
+            "title": "Asof",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fleetCatalogReadiness": {
+            "default": "unread",
+            "enum": [
+              "unread",
+              "partial",
+              "complete"
+            ],
+            "title": "Fleetcatalogreadiness",
+            "type": "string"
+          },
+          "fleetCatalogReady": {
+            "default": false,
+            "title": "Fleetcatalogready",
+            "type": "boolean"
+          },
+          "fleetDeviceCounts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Fleetdevicecounts",
+            "type": "object"
+          },
+          "installedEvidence": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InstalledEvidence"
+            },
+            "title": "Installedevidence",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LocalApp"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jamfCatalogReady": {
+            "default": false,
+            "title": "Jamfcatalogready",
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MigrationScope"
+          }
+        },
+        "required": [
+          "asOf",
+          "scope"
+        ],
+        "title": "MigrationReport",
+        "type": "object"
+      },
+      "MigrationScope": {
+        "properties": {
+          "eligibleMacs": {
+            "default": 0,
+            "title": "Eligiblemacs",
+            "type": "integer"
+          },
+          "selectedMacs": {
+            "default": 0,
+            "title": "Selectedmacs",
+            "type": "integer"
+          },
+          "unknownContactMacs": {
+            "default": 0,
+            "title": "Unknowncontactmacs",
+            "type": "integer"
+          },
+          "unknownInventoryMacs": {
+            "default": 0,
+            "title": "Unknowninventorymacs",
+            "type": "integer"
+          }
+        },
+        "title": "MigrationScope",
+        "type": "object"
+      },
+      "ObservedChanges": {
+        "description": "Version moves of the detail's identities on the selected Macs over the last `windowDays` (#900). Both adoption\nfields are null when timing was not measured (no one `exact` Fleet title); measured, nothing paired reads 0 and null.",
+        "properties": {
+          "adoptionSamples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adoptionsamples"
+          },
+          "lastAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastat"
+          },
+          "macs": {
+            "title": "Macs",
+            "type": "integer"
+          },
+          "medianDaysAfterFleetPublication": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mediandaysafterfleetpublication"
+          },
+          "versionChanges": {
+            "title": "Versionchanges",
+            "type": "integer"
+          },
+          "windowDays": {
+            "title": "Windowdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adoptionSamples",
+          "lastAt",
+          "macs",
+          "medianDaysAfterFleetPublication",
+          "versionChanges",
+          "windowDays"
+        ],
+        "title": "ObservedChanges",
+        "type": "object"
+      },
       "ObservedEntryOut": {
         "properties": {
           "body": {
@@ -7505,6 +8612,814 @@
         ],
         "title": "PatchManagementProvider",
         "type": "string"
+      },
+      "PatchPolicyAppOut": {
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "bundleIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bundleids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/PatchPolicySourcesOut"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PatchPolicyTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "app",
+          "bundleIds",
+          "name",
+          "sources",
+          "tracks"
+        ],
+        "title": "PatchPolicyAppOut",
+        "type": "object"
+      },
+      "PatchPolicyAppsOut": {
+        "properties": {
+          "apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PatchPolicyAppOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Apps"
+          },
+          "feed": {
+            "$ref": "#/components/schemas/PatchPolicyFeedOut"
+          }
+        },
+        "required": [
+          "apps",
+          "feed"
+        ],
+        "title": "PatchPolicyAppsOut",
+        "type": "object"
+      },
+      "PatchPolicyClockCountsOut": {
+        "properties": {
+          "detectableAt": {
+            "title": "Detectableat",
+            "type": "integer"
+          },
+          "published": {
+            "title": "Published",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "detectableAt",
+          "published"
+        ],
+        "title": "PatchPolicyClockCountsOut",
+        "type": "object"
+      },
+      "PatchPolicyFeedOut": {
+        "description": "LoonSec's patch-policy data on this instance, as this organization reads it (#614).",
+        "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "attemptedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attemptedat"
+          },
+          "builtAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builtat"
+          },
+          "coverageSince": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coveragesince"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "docId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docid"
+          },
+          "fetchedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetchedat"
+          },
+          "fromFile": {
+            "default": false,
+            "title": "Fromfile",
+            "type": "boolean"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "httpStatus": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Httpstatus"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "stored",
+                  "unchanged",
+                  "not_published",
+                  "algorithm_unknown",
+                  "download_failed",
+                  "invalid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "publisherRunning": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publisherrunning"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "exchange",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "state": {
+            "enum": [
+              "tier_off",
+              "never",
+              "current",
+              "stale",
+              "not_published",
+              "algorithm_unknown",
+              "download_failed",
+              "invalid"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "algorithm",
+          "sentence",
+          "state"
+        ],
+        "title": "PatchPolicyFeedOut",
+        "type": "object"
+      },
+      "PatchPolicyRefusalOut": {
+        "description": "A walk that is not shown: `detail` is the sentence (what failed, why, what to check;\ndocs/troubleshooting.md \u00a733), `reason` its word, `source` the timeline it concerns when it\nconcerns one, and `facts` what a page may list beside it (the unmatched versions, the totals\nthat disagreed, the window).",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "facts": {
+            "additionalProperties": true,
+            "title": "Facts",
+            "type": "object"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "detail",
+          "reason"
+        ],
+        "title": "PatchPolicyRefusalOut",
+        "type": "object"
+      },
+      "PatchPolicySourceOut": {
+        "description": "One timeline source for an app, over all its tracks: whether any track can be walked on\nit, its first and last dated day, the sentence when it cannot (the default track's), how many\ndistinct versions it matched, the day it was read, a note shown with every view of it, its\nown ids (the public timeline's id, Jamf title ids, Fleet slugs), and each track's answer.",
+        "properties": {
+          "asOf": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asof"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PatchPolicySourceTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "first",
+          "ids",
+          "last",
+          "sentence",
+          "state"
+        ],
+        "title": "PatchPolicySourceOut",
+        "type": "object"
+      },
+      "PatchPolicySourceTrackOut": {
+        "description": "One source against one track: whether a walk of it can be shown at the default two-year\nwindow, and if not, why (`state` and `sentence`, docs/troubleshooting.md \u00a733).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "first": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First"
+          },
+          "last": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "otherChannel": {
+            "default": 0,
+            "title": "Otherchannel",
+            "type": "integer"
+          },
+          "otherTrack": {
+            "title": "Othertrack",
+            "type": "integer"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          },
+          "unmatched": {
+            "title": "Unmatched",
+            "type": "integer"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "available",
+          "first",
+          "last",
+          "matched",
+          "otherTrack",
+          "sentence",
+          "since",
+          "state",
+          "track",
+          "unmatched",
+          "until"
+        ],
+        "title": "PatchPolicySourceTrackOut",
+        "type": "object"
+      },
+      "PatchPolicySourcesOut": {
+        "properties": {
+          "fleet": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          },
+          "jamf": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          },
+          "public": {
+            "$ref": "#/components/schemas/PatchPolicySourceOut"
+          }
+        },
+        "required": [
+          "fleet",
+          "jamf",
+          "public"
+        ],
+        "title": "PatchPolicySourcesOut",
+        "type": "object"
+      },
+      "PatchPolicyTrackOut": {
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "clock": {
+            "$ref": "#/components/schemas/PatchPolicyClockCountsOut"
+          },
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "edition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edition"
+          },
+          "excluded": {
+            "title": "Excluded",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "listed": {
+            "title": "Listed",
+            "type": "integer"
+          },
+          "notDetectable": {
+            "title": "Notdetectable",
+            "type": "integer"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          },
+          "versions": {
+            "title": "Versions",
+            "type": "integer"
+          },
+          "versionsDated": {
+            "title": "Versionsdated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidates",
+          "channel",
+          "clock",
+          "default",
+          "edition",
+          "excluded",
+          "label",
+          "listed",
+          "notDetectable",
+          "timeline",
+          "track",
+          "versions",
+          "versionsDated"
+        ],
+        "title": "PatchPolicyTrackOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkCheckOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "matched",
+              "unchecked_window"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "state"
+        ],
+        "title": "PatchPolicyWalkCheckOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkOut": {
+        "description": "One app track walked day by day over one timeline (#614), as `app.core.patch_policy_walk`\nreturns it, trimmed for the wire: every total and every stop's per-day series whole, `cves`\npaged (`cves_page`), and each CVE's day intervals only under the stop asked for\n(`intervals_for`). `run_id` names the walk as computed, before trimming; `input_id` names its\ninputs. `definitions` and `clocks` state every counting rule in words.",
+        "properties": {
+          "algorithm": {
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "check": {
+            "$ref": "#/components/schemas/PatchPolicyWalkCheckOut"
+          },
+          "clocks": {
+            "additionalProperties": true,
+            "title": "Clocks",
+            "type": "object"
+          },
+          "counts": {
+            "additionalProperties": true,
+            "title": "Counts",
+            "type": "object"
+          },
+          "cves": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Cves",
+            "type": "array"
+          },
+          "cves_page": {
+            "$ref": "#/components/schemas/PatchPolicyWalkPageOut"
+          },
+          "definitions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Definitions",
+            "type": "object"
+          },
+          "definitions_version": {
+            "title": "Definitions Version",
+            "type": "string"
+          },
+          "document_definitions": {
+            "additionalProperties": true,
+            "title": "Document Definitions",
+            "type": "object"
+          },
+          "exclusions": {
+            "additionalProperties": true,
+            "title": "Exclusions",
+            "type": "object"
+          },
+          "input_id": {
+            "title": "Input Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "intervals_for": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervals For"
+          },
+          "kind": {
+            "const": "patch_policy_walk",
+            "title": "Kind",
+            "type": "string"
+          },
+          "policies": {
+            "additionalProperties": true,
+            "title": "Policies",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema": {
+            "title": "Schema",
+            "type": "integer"
+          },
+          "window": {
+            "additionalProperties": true,
+            "title": "Window",
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm",
+          "check",
+          "clocks",
+          "counts",
+          "cves",
+          "cves_page",
+          "definitions",
+          "definitions_version",
+          "document_definitions",
+          "exclusions",
+          "input_id",
+          "inputs",
+          "intervals_for",
+          "kind",
+          "policies",
+          "run_id",
+          "schema",
+          "window"
+        ],
+        "title": "PatchPolicyWalkOut",
+        "type": "object"
+      },
+      "PatchPolicyWalkPageOut": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "page_size",
+          "pages",
+          "total"
+        ],
+        "title": "PatchPolicyWalkPageOut",
+        "type": "object"
       },
       "PatchRule": {
         "description": "The organization's rule: the closed vocabulary of `app.mdm.patch.policy`. Both limits\nnull is how the rule is cleared \u2014 nothing is judged, which is every tenant's start.",
@@ -7992,6 +9907,10 @@
             "title": "Overridden",
             "type": "boolean"
           },
+          "scalar": {
+            "title": "Scalar",
+            "type": "boolean"
+          },
           "why": {
             "title": "Why",
             "type": "string"
@@ -8005,6 +9924,7 @@
           "label",
           "level",
           "overridden",
+          "scalar",
           "why"
         ],
         "title": "PolicyFieldOut",
@@ -11279,6 +13199,39 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VersionImpact": {
+        "properties": {
+          "atOrAboveMacs": {
+            "title": "Atorabovemacs",
+            "type": "integer"
+          },
+          "installedMacs": {
+            "title": "Installedmacs",
+            "type": "integer"
+          },
+          "olderMacs": {
+            "title": "Oldermacs",
+            "type": "integer"
+          },
+          "targetVersion": {
+            "title": "Targetversion",
+            "type": "string"
+          },
+          "unknownMacs": {
+            "title": "Unknownmacs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "atOrAboveMacs",
+          "installedMacs",
+          "olderMacs",
+          "targetVersion",
+          "unknownMacs"
+        ],
+        "title": "VersionImpact",
+        "type": "object"
+      },
       "VersionOperator": {
         "enum": [
           "eq",
@@ -13648,7 +15601,7 @@
     },
     "/api/changes": {
       "get": {
-        "description": "The change feed, newest first.\n\nTwo searches, because an investigation runs in two directions. `q` names the\n*device* \u2014 its name, serial, or Jamf id. `artifact` names the *thing that changed*\n\u2014 an application name or bundle id, a local account's username, or the label the\ncontract carries for a group, a profile, or an extension attribute.\n\nThey are separate parameters rather than one widened `q` for two reasons. Widening\n`q` would silently change what every existing caller gets back, the frontend and\nany bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`\nwith `artifact=Wireshark` is \"did this laptop family get Wireshark\", which a single\nOR-ed needle can only answer as \"either\".\n\nNot searchable here, deliberately: `path` (an `artifact=/Applications` that matches\nthe whole fleet is a worse answer than none), and old values \u2014 searching the value a\nchange moved *from* is a different query surface, not a filter. A certificate is\nidentified only by its SHA-1 fingerprint and carries no label, so it is reachable by\n`section=certificates`, not by name.\n\n**What is filterable is wider than what the table shows** (#447). Three keys come off the\nrow itself \u2014 `trigger`, the observation the change was found in (`spanId`), and the version\nit moved to (`version`) \u2014 and seven read the dimensions stamped on the row when it was\nderived: `model`, `osVersion`, `fileVault`, `site`, `department`, `managed`, `user`. They are\nthe Mac as *that observation* saw it, not as it is today, which is the whole reason they are\nstamped rather than joined (app.changes.derive.device_dimensions).\n\nTwo bounds a caller has to know, because a filter that silently drops rows is the failure\nthis feed exists to avoid:\n\n* a row derived before the stamp existed carries none, so it matches no dimension filter.\n  The page says so beneath an empty table rather than letting an older change read as \"not\n  a MacBook Air\";\n* a section outside the aperture of the observation stamps nothing, so a webhook's narrow\n  read can leave a row with a model and no department.\n\nThe page has controls for none of the ten. They arrive from a link, from a click on a row,\nor from the Prompt bar, and every one of them shows as a chip while it is applied.\n\n`user` takes two shapes (#446): typed text matches any of the three names, a `u_\u2026` token\nmatches `userToken` exactly, and `userFilter` echoes what it resolved to \u2014 a name for the\nchip, and for text naming one person, the token to rewrite the URL with. The wire is\nunchanged (#188).",
+        "description": "The change feed, newest first.\n\nTwo searches, because an investigation runs in two directions. `q` names the\n*device* \u2014 its name, serial, or Jamf id. `artifact` names the *thing that changed*\n\u2014 an application name or bundle id, a local account's username, or the label the\ncontract carries for a group, a profile, or an extension attribute.\n\n`field` selects a scalar field within `section`, as listed by the change policy.\n`changedTo` matches that field's new value exactly, so OS version 27.2.1 does not\nmatch 27.2.10 or an application version. `since` (inclusive) and `until` (exclusive)\nbound observation time, with timezone offsets required. These are reported inventory\ntimes, not exact installation times. `devicesTotal` counts distinct computers by\nconnection and subject ID across the full filtered result, independently of pagination.\n\nThey are separate parameters rather than one widened `q` for two reasons. Widening\n`q` would silently change what every existing caller gets back, the frontend and\nany bookmarked feed URL included. And one string cannot mean both: `q=MacBook Air`\nwith `artifact=Wireshark` is \"did this laptop family get Wireshark\", which a single\nOR-ed needle can only answer as \"either\".\n\nNot searchable here, deliberately: `path` (an `artifact=/Applications` that matches\nthe whole fleet is a worse answer than none), and old values \u2014 searching the value a\nchange moved *from* is a different query surface, not a filter. A certificate is\nidentified only by its SHA-1 fingerprint and carries no label, so it is reachable by\n`section=certificates`, not by name.\n\n**What is filterable is wider than what the table shows** (#447). Three keys come off the\nrow itself \u2014 `trigger`, the observation the change was found in (`spanId`), and the version\nit moved to (`version`) \u2014 and seven read the dimensions stamped on the row when it was\nderived: `model`, `osVersion`, `fileVault`, `site`, `department`, `managed`, `user`. They are\nthe Mac as *that observation* saw it, not as it is today, which is the whole reason they are\nstamped rather than joined (app.changes.derive.device_dimensions).\n\nTwo bounds a caller has to know, because a filter that silently drops rows is the failure\nthis feed exists to avoid:\n\n* a row derived before the stamp existed carries none, so it matches no dimension filter.\n  The page says so beneath an empty table rather than letting an older change read as \"not\n  a MacBook Air\";\n* a section outside the aperture of the observation stamps nothing, so a webhook's narrow\n  read can leave a row with a model and no department.\n\nThe page exposes historical device filters. Link-only filters remain visible as chips.\n\n`user` takes two shapes (#446): typed text matches any of the three names, a `u_\u2026` token\nmatches `userToken` exactly, and `userFilter` echoes what it resolved to \u2014 a name for the\nchip, and for text naming one person, the token to rewrite the URL with. The wire is\nunchanged (#188).",
         "operationId": "list_changes_api_changes_get",
         "parameters": [
           {
@@ -13713,6 +15666,40 @@
                 }
               ],
               "title": "Section"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field"
+            }
+          },
+          {
+            "in": "query",
+            "name": "changedTo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Changedto"
             }
           },
           {
@@ -13810,6 +15797,23 @@
                 }
               ],
               "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
             }
           },
           {
@@ -15405,6 +17409,296 @@
         ]
       }
     },
+    "/api/fleet-catalog/briefing": {
+      "get": {
+        "description": "Whether a briefing can be asked for: the Fleet catalog flag, then the AI switches as every AI surface reads them.",
+        "operationId": "briefing_status_api_fleet_catalog_briefing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Briefing Status",
+        "tags": [
+          "fleet-catalog"
+        ]
+      },
+      "post": {
+        "description": "Which of the report's counts for the Macs `deviceScope` selects lead, as a saved provider ranks them.",
+        "operationId": "briefing_api_fleet_catalog_briefing_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Briefing",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration": {
+      "get": {
+        "description": "Each app on the Macs `deviceScope` selects, with the Fleet titles that carry its bundle identifier.",
+        "operationId": "migration_report_api_fleet_catalog_migration_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Migration Report",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/apps/{app_hash}": {
+      "get": {
+        "description": "One installed app on the Macs `deviceScope` selects: its builds, Jamf Patch titles and a Fleet target's impact.",
+        "operationId": "read_app_api_fleet_catalog_migration_apps__app_hash__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "app_hash",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Hash",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read App",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
+    "/api/fleet-catalog/migration/titles/{slug}": {
+      "get": {
+        "description": "One Fleet title and every app with its bundle ID, as `/apps` answers one. Finding IDs need `vuln:read` on both.",
+        "operationId": "read_title_api_fleet_catalog_migration_titles__slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$",
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetVersion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Targetversion"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Devicescope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Title",
+        "tags": [
+          "fleet-catalog"
+        ]
+      }
+    },
     "/api/fleet-catalog/refresh": {
       "post": {
         "description": "Check Fleet's catalogue now: the daily check, with a person waiting.\n\nUnchanged, it is one request to GitHub and returns at once. The first check reads every\nMac manifest and takes about fifteen seconds. A refusal is a 409 whose `detail` is the\nsentence to read (docs/diagnosability.md rule 3): the flag is off, a check is already\nrunning, or GitHub could not be read, in which case the same sentence is stored as the\ncatalogue's state and stays on the page until a later check answers.",
@@ -16822,6 +19116,192 @@
         ]
       }
     },
+    "/api/patch-policy/apps": {
+      "get": {
+        "description": "The feed's state, with its sentence, and every app the held copy references.\n\n**The tier gate first.** An organization whose data-sharing tier is `off` reads `tier_off`\nand no document, even while the container holds one, because the document is received in\nexchange for sharing (docs/data-sharing.md, \"The corpus channel\"). Then: `never` before any\ncopy arrived, the last attempt's failure when it failed (`not_published`,\n`algorithm_unknown`, `download_failed`, `invalid`, each still naming the copy that answers),\n`stale` for a copy dated (`asOf`) more than three days ago, whatever LoonSec's last build\n(`builtAt`) says, which names only the cause (`publisherRunning`, judged by this instance's\nclock), and `current`. Every state's sentence says what it means and what to check\n(docs/troubleshooting.md \u00a732).\n\n`apps` is null, never empty, when no copy answers for this organization. Each app carries its\ntracks with the counts the document states, and `sources`: for `public`, `jamf` and `fleet`,\nwhether a walk of it can be shown, each track's answer with the default two-year window it\nwould cover, and otherwise the state word and sentence that say why not\n(docs/troubleshooting.md \u00a733). Jamf and Fleet are read from this instance's own copies.",
+        "operationId": "patch_policy_apps_api_patch_policy_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyAppsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Patch Policy Apps",
+        "tags": [
+          "patch-policy"
+        ]
+      }
+    },
+    "/api/patch-policy/walk": {
+      "get": {
+        "description": "One app track walked day by day over one timeline, under every stop of the patch-policy\nslider, for a window of two or three years: what a Mac that installed each release that many\ndays after it was dated would have run, and which CVEs it ran affected, from the first day\neach was detectable. A reference analysis: it reads no device, and its result is neither stored\nnor sent anywhere.\n\n`source` picks the dates releases install on: `public` (LoonSec's published release dates),\n`jamf` (this instance's copy of Jamf's public patch catalog) or `fleet` (this instance's copy of\nFleet's history, while this organization's Fleet catalog flag is on). The walk is held to\nLoonSec's published totals for the app: a window whose own walk disagrees refuses every source\nof the app, and a window LoonSec published no totals for is shown as `check.state:\nunchecked_window` only when another window of the app matched.\n\nMemoised by the walk's `input_id`, so the slider and the toggle re-ask cheaply. The answer\nkeeps every total and every stop's per-day series whole, pages `cves` (`cves_page`), and keeps\neach CVE's day intervals only under `stop`. Anything that cannot be walked is a 409 whose\n`detail` is the sentence that says why (docs/troubleshooting.md \u00a733), with `reason`, `source`\nand `facts` beside it; the feed's own states (\u00a732) come back the same way.",
+        "operationId": "patch_policy_walk_api_patch_policy_walk_get",
+        "parameters": [
+          {
+            "description": "The app's id in LoonSec's data, as `/apps` lists it.",
+            "in": "query",
+            "name": "app",
+            "required": true,
+            "schema": {
+              "description": "The app's id in LoonSec's data, as `/apps` lists it.",
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "App",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of the app's tracks; its default when absent.",
+            "in": "query",
+            "name": "track",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One of the app's tracks; its default when absent.",
+              "title": "Track"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "public",
+              "enum": [
+                "public",
+                "jamf",
+                "fleet"
+              ],
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The window asked for, in years ending the day before the data's date.",
+            "in": "query",
+            "name": "years",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "description": "The window asked for, in years ending the day before the data's date.",
+              "maximum": 3,
+              "minimum": 2,
+              "title": "Years",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`common` cuts the window to the days every source that can date the track covers.",
+            "in": "query",
+            "name": "align",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "common",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`common` cuts the window to the days every source that can date the track covers.",
+              "title": "Align"
+            }
+          },
+          {
+            "description": "The stop whose day intervals each CVE row carries; none when absent.",
+            "in": "query",
+            "name": "stop",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "1d",
+                    "7d",
+                    "14d",
+                    "30d",
+                    "60d",
+                    "never"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The stop whose day intervals each CVE row carries; none when absent.",
+              "title": "Stop"
+            }
+          },
+          {
+            "description": "The page of `cves`, 200 rows each.",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "The page of `cves`, 200 rows each.",
+              "maximum": 10000,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyWalkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchPolicyRefusalOut"
+                }
+              }
+            },
+            "description": "The walk is not shown; `detail` says why."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Policy Walk",
+        "tags": [
+          "patch-policy"
+        ]
+      }
+    },
     "/api/posture": {
       "get": {
         "description": "The tape, newest capture first: one row is one metric, one capture, one population.\n\n**The default capture is chosen by the tape and never by `keys`** \u2014 the newest `captured_at`\nfor the population, then the key filter over its rows; picking the newest capture that\n*carries* the key would report an empty queue as yesterday's pending age. The rest is\ndocs/posture-snapshot.md, \"The reader\".",
@@ -17841,6 +20321,177 @@
         "summary": "Withdraw Case",
         "tags": [
           "submissions"
+        ]
+      }
+    },
+    "/api/system/ai/activity": {
+      "get": {
+        "description": "Read metadata-only activity, including retained history while AI is disabled.",
+        "operationId": "ai_activity_api_system_ai_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Purpose"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Activity",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/system/ai/activity/live": {
+      "get": {
+        "description": "Current measured workload, independent of historical filters and provider configuration writes.",
+        "operationId": "ai_activity_live_api_system_ai_activity_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ai Activity Live",
+        "tags": [
+          "ai"
         ]
       }
     },

@@ -279,19 +279,29 @@ async def test_two_macs_can_first_report_the_same_build_together(db, connection,
 
 
 @pytest.mark.parametrize("sqlstate", ["23505", "40P01"])
-async def test_shared_write_contention_is_retryable(db, connection, jamf, monkeypatch, sqlstate):
+async def test_shared_write_contention_is_retryable(db, connection, jamf, monkeypatch, sqlstate, caplog):
     from sqlalchemy.exc import DBAPIError
 
+    from app.core.logging import ConsoleFormatter, JsonFormatter
+    from tests.test_webhook_runs_db import _events, _log
+
+    marker = "synthetic-private-contention-value-7da41e"
+
     async def conflict(*args, **kwargs):
-        cause = Exception("database write contention")
+        cause = Exception(f"database write contention: {marker}")
         cause.sqlstate = sqlstate
-        raise DBAPIError(None, None, cause)
+        raise DBAPIError("SELECT :private_value", {"private_value": marker}, cause)
 
     monkeypatch.setattr(service, "ingest_computer", conflict)
     response = await _post(connection.id, jamf.real["id"])
     assert response.status_code == 503 and response.headers["Retry-After"] == "1"
     (run,) = await _runs(db, connection.id)
     assert run.status == "failed" and "overlapped" in run.error
+    assert "Retry shortly" in run.error and marker not in run.error and marker not in response.text
+    assert marker not in str(await _log(db, run.id))
+    assert "run.failed" not in await _events(db, run.id)
+    for formatter in (JsonFormatter(), ConsoleFormatter()):
+        assert all(marker not in formatter.format(record) for record in caplog.records)
 
 
 async def test_enrollment_followed_by_inventory_waits_for_the_first_write(db, connection, jamf, monkeypatch):

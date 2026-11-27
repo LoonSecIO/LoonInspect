@@ -15,6 +15,11 @@ published vulnerability corpus, and `run_exchange` hands that pointer to
 `app.core.vuln_library`, which downloads and verifies an epoch only when its signature
 has moved. That is where the reciprocity in the paragraph above stops being a claim —
 the feed and the sharing are literally one request.
+
+A third rides beside it (#614): the response may also point at LoonSec's patch-policy
+reference document under `patch_policy`, keyed by algorithm, and `run_exchange` hands that to
+`app.core.patch_policy_feed` after the corpus, on the same terms — downloaded only when its
+signature moves, checked whole, and held for the organizations whose tier earns it.
 """
 
 from __future__ import annotations
@@ -32,10 +37,11 @@ from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.service import rejudge_every_tenant
-from app.core import participation
+from app.core import participation, patch_policy_feed
 from app.core.config import settings as app_settings
 from app.core.content_keys import hw_key, os_key
 from app.core.feature_flags import APP_PROMOTION_FLAG
+from app.core.outbound_errors import http_failure, transport_failure
 from app.core.tenancy import get_tenant_id
 from app.core.user_agent import build_user_agent
 from app.core.version import get_app_version
@@ -487,41 +493,47 @@ def _failure_sentence(exc: Exception) -> str:
     """A failed attempt's `error`, in the operator's words: who failed, and the detail
     that says why (docs/troubleshooting.md §5, step 6 maps each shape to the next check).
 
-    It used to be `str(exc)` — httpx's vocabulary, read only by someone who downloaded the
-    NDJSON. Send now (#408) puts it on the page, so it is written for the page: the host
-    rather than the whole URL, the collector's own reason where it gave one, and how many
-    times the run tried, since every shape below is the *last* attempt's.
+    Upstream text can echo the submitted payload or credentials. Keep the configured host,
+    status and next check, never response bodies, redirect targets or exception strings.
     """
-    host = urlsplit(app_settings.sharing_endpoint).hostname or app_settings.sharing_endpoint
+    try:
+        host = urlsplit(app_settings.sharing_endpoint).hostname or "the configured host"
+    except ValueError:
+        host = "the configured host"
     tried = f" Tried {len(_RETRY_DELAYS) + 1} times."
     if isinstance(exc, httpx.HTTPStatusError):
-        response = exc.response
-        said = f"The collector at {host} answered {response.status_code} {response.reason_phrase}"
-        if response.has_redirect_location:
-            # Where to, by host only: a captive portal's redirect can carry a session in
-            # its query string, and the host is the part that names who is answering.
-            said += f", redirecting to {urlsplit(response.headers['location']).hostname or 'another address'}"
-        else:
-            # The collector's reason where it gave one (the Support collector answers a 400
-            # with {"error": …}), collapsed to one line and bounded: this is untrusted text
-            # from the far end, stored and shown as text, never as markup.
-            reason = " ".join(response.text.split())[:200]
-            if reason:
-                said += f": {reason}"
-        return said + "." + tried
+        status = exc.response.status_code
+        return f"The collector at {host} answered {http_failure(status, _collector_hint(status))}" + tried
     if isinstance(exc, httpx.TimeoutException):
         return f"No answer from {host} within {_TIMEOUT_SECONDS:g} seconds." + tried
     if isinstance(exc, httpx.ConnectError):
-        # DNS, a refused connection and a TLS failure all arrive here; httpx's text names
-        # which (`Name or service not known`, `CERTIFICATE_VERIFY_FAILED`, …).
-        return f"Could not connect to {host}: {exc}." + tried
+        return f"Could not connect to {host}: {transport_failure(exc)}" + tried
     if isinstance(exc, ValueError):
         # post_exchange's undecodable-200 case (#82).
         return (
             f"{host} answered 200 with a body that is not JSON, so something other than the collector "
             "answered — usually a proxy or a captive portal." + tried
         )
-    return f"The exchange to {host} failed: {type(exc).__name__}: {exc}." + tried
+    detail = transport_failure(exc) if isinstance(exc, httpx.HTTPError) else "Check the collector and server logs."
+    return f"The exchange to {host} failed. {detail}" + tried
+
+
+def _collector_hint(status: int) -> str:
+    """The next check for a refused exchange, in this path's words (troubleshooting.md §5, step 6).
+
+    The generic hints name a key and a batch size; the exchange sends neither, and the
+    collector's service logs are LoonSec's, not the operator's.
+    """
+    if 300 <= status < 400:
+        return (
+            "Something other than the collector answered, usually a proxy or captive portal; redirects are not followed. "
+            "Check who answers at SHARING_ENDPOINT."
+        )
+    if status in (401, 403, 404):
+        return "No collector takes the exchange at that address. Check SHARING_ENDPOINT."
+    if status == 429 or status >= 500:
+        return "The collector is throttling or unavailable. Nothing to fix here; the next exchange tries again."
+    return "The collector refused what this container sent. Report the status to support (state M)."
 
 
 def _jitter_minute_of_day(settings_row: DataSharingSettings) -> int:
@@ -609,6 +621,9 @@ async def run_exchange(
     participation.opt_in(settings_row, request_body)
 
     pointer: CorpusPointer | None = None
+    # The patch-policy half (#614): what the response said about LoonSec's patch-policy document.
+    # None on a failed exchange and on a revoke, which bring nothing.
+    patch_offer: patch_policy_feed.Offer | None = None
     log = ShareLog(
         occurred_at=now,
         tier=settings_row.tier,
@@ -632,8 +647,8 @@ async def run_exchange(
         # unlogged attempt is also an unconsumed day, so `exchange_due` would say
         # yes again on the next tick and a persistently bad upstream would become a
         # crash loop instead of one logged failure a day.
-        logger.debug("exchange failed: %s", exc)
         log.error = _failure_sentence(exc)[:2000]
+        logger.debug("exchange failed: %s", log.error)
     else:
         response = result.response
         log.outcome = "sent"
@@ -643,6 +658,8 @@ async def run_exchange(
         log.promotions_shed = result.promotions_shed
         log.reveal_requests = response.get("reveal_requests") if isinstance(response, dict) else None
         pointer = apply_response(settings_row, response if isinstance(response, dict) else {})
+        if isinstance(response, dict) and response.get("revoke") is not True:
+            patch_offer = patch_policy_feed.read_offer(response.get("patch_policy"))
         asked = request_body.get("participation_receipt") is True
         if asked or (settings_row.tier == "off" and settings_row.participation_receipt is not None):
             # Before the day's commit, so the receipt and the row that earned it land together.
@@ -669,6 +686,22 @@ async def run_exchange(
         missed = "upload_failed" if log.outcome == "failed" else "no_corpus"
     # A receipt can fetch what the exchange did not bring, without another upload (#622).
     await participation.after_delivery(db, missed)
+
+    # LoonSec's patch-policy document (#614), after the corpus and in its own transaction for
+    # the corpus's reasons: a download and a refusal must not touch the record of what left the
+    # box. Downloaded only when its signature moved; a refusal is a state row and a logged
+    # sentence, the copy already held keeps answering, and it never raises into the exchange.
+    if patch_offer is not None:
+        try:
+            await patch_policy_feed.deliver_from_exchange(db, patch_offer, transport=transport)
+        except Exception:
+            # A defect, not a refusal: every refusal is caught and worded inside. The day's row is
+            # already durable, so Send now still answers with it.
+            await db.rollback()
+            logger.exception(
+                "patch-policy data not updated: an unexpected failure, not a refusal; the copy already held keeps "
+                "answering. Report this line (docs/troubleshooting.md §32)"
+            )
     return log
 
 

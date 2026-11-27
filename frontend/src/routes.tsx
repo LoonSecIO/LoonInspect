@@ -13,6 +13,7 @@ import { DevicesPage } from "@/features/devices/DevicesPage";
 import { OsPosturePage } from "@/features/osPosture/OsPosturePage";
 import { DevicePage } from "@/features/devices/DevicePage";
 import { ApplicationsPage } from "@/features/devices/ApplicationsPage";
+import { PatchPlansPage } from "@/features/catalog/PatchPlansPage";
 import { ApplicationsOverviewPage } from "@/features/devices/ApplicationsOverviewPage";
 import { ApplicationRecordPage } from "@/features/devices/ApplicationRecordPage";
 import { SmartGroupCostPage } from "@/features/smartGroups/SmartGroupCostPage";
@@ -22,13 +23,15 @@ import { ConnectionsPage } from "@/features/mdm/ConnectionsPage";
 import { FeatureFlagsPage } from "@/features/settings/FeatureFlagsPage";
 import { DataSharingPage } from "@/features/system/DataSharingPage";
 import { IntelligenceAccessPage } from "@/features/system/IntelligenceAccessPage";
+import { AIActivityPage } from "@/features/ai/AIActivityPage";
 import { AISettingsPage } from "@/features/ai/AISettingsPage";
 import { ApiTokensPage } from "@/features/tokens/ApiTokensPage";
 import { McpSettingsPage } from "@/features/mcp/McpSettingsPage";
 import { DestinationsPage } from "@/features/destinations/DestinationsPage";
 import { JamfPatchPage } from "@/features/jamfPatch/JamfPatchPage";
 import { JamfPatchDetailPage } from "@/features/jamfPatch/JamfPatchDetailPage";
-import { FleetCatalogPage } from "@/features/fleetCatalog/FleetCatalogPage";
+import { FleetCatalogHome } from "@/features/fleetCatalog/FleetCatalogHome";
+import { FleetAppPage } from "@/features/fleetCatalog/FleetAppPage";
 import { CatalogPage } from "@/features/catalog/CatalogPage";
 import { VulnerabilitiesPage } from "@/features/vulnerabilities/VulnerabilitiesPage";
 import { VulnerabilityLookupPage } from "@/features/vulnerabilities/VulnerabilityLookupPage";
@@ -50,6 +53,11 @@ export function AppRoutes() {
         <Route path="/" element={<App />}>
         <Route index element={<OverviewPage />} />
         <Route path="devices" element={<DevicesPage />} />
+        <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+          <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+            <Route path="patch-plans" element={<PatchPlansPage />} />
+          </Route>
+        </Route>
         <Route path="devices/applications" element={<ApplicationsPage />}>
           <Route index element={<ApplicationsOverviewPage />} />
           <Route path="catalog" element={<CatalogPage />} />
@@ -59,7 +67,15 @@ export function AppRoutes() {
               listed-only flags the guard is real: with the flag off the API answers no
               titles, so the route says the area is off instead of drawing an empty table. */}
           <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
-            <Route path="fleet-catalog" element={<FleetCatalogPage />} />
+            <Route path="fleet-catalog" element={<FleetCatalogHome />} />
+          </Route>
+          <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
+            <Route element={<RequirePermission permission={PERMISSIONS.DEVICE_READ} />}>
+              <Route element={<RequireFlag flag="fleet_maintained_apps" />}>
+                <Route path="fleet-catalog/apps/:appHash" element={<FleetAppPage />} />
+                <Route path="fleet-catalog/titles/:slug" element={<FleetAppPage />} />
+              </Route>
+            </Route>
           </Route>
           {/* After the static children on purpose, so static-over-dynamic ranking
               is visible to a reader and not merely true to the router (#299). The key
@@ -100,6 +116,8 @@ export function AppRoutes() {
         {/* SYSTEM_READ to match the backend's GET gate and the sidebar item — the
             page itself hides its write controls without SYSTEM_WRITE. */}
         <Route element={<RequirePermission permission={PERMISSIONS.SYSTEM_READ} />}>
+          {/* History remains readable with inference disabled; the live panel explains that state. */}
+          <Route path="settings/ai/activity" element={<AIActivityPage />} />
           <Route path="settings/data-sharing" element={<DataSharingPage />} />
           <Route path="settings/intelligence-access" element={<IntelligenceAccessPage />} />
         </Route>
@@ -193,8 +211,8 @@ export function AppRoutes() {
         {/* The first slice of the Patch Policy Lab (#614): a reference replay of a hypothetical Mac,
             drawn from a file that ships with the build. APP_READ because the picker reads Jamf's
             patch catalog, which is gated app:read; every role holds it, and the row still shows a
-            gate (#301). No RequireFlag, as with Vulnerabilities above: the `patch_policy` flag
-            decides what is LISTED, and the address opens either way. */}
+            gate (#301). No flag: the `patch_policy` switch that once decided whether it was listed
+            was promoted and removed on 2026-11-24, and the address never needed it. */}
         <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
           <Route path="posture/patch-policy" element={<PatchPolicyPage />} />
         </Route>

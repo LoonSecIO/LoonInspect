@@ -18,6 +18,24 @@ final class PageFindController: NSObject, NSSearchFieldDelegate, WKScriptMessage
     private var generation = 0
     private var page: String?
     private var hasResult = false
+    private var resultVersion: ContentVersion?
+
+    private struct ContentVersion: Equatable {
+        let page: String
+        let document: String
+        let revision: Int
+
+        init?(_ value: Any) {
+            guard let context = value as? [String: Any], let page = context["page"] as? String,
+                  let document = context["document"] as? String, let revision = context["revision"] as? Int else { return nil }
+            self.page = page; self.document = document; self.revision = revision
+        }
+
+        static func read(_ result: Result<Any, Error>) -> ContentVersion? {
+            guard case .success(let value) = result else { return nil }
+            return ContentVersion(value)
+        }
+    }
 
     init(webView: WKWebView) {
         self.webView = webView
@@ -218,17 +236,41 @@ final class PageFindController: NSObject, NSSearchFieldDelegate, WKScriptMessage
         guard let webView, isVisible, !query.stringValue.isEmpty else { resetStatus(); return }
         previous.isEnabled = true
         next.isEnabled = true
+        hasResult = false
+        let text = query.stringValue
         let configuration = WKFindConfiguration()
         configuration.caseSensitive = matchCase.state == .on
         configuration.backwards = backwards
         configuration.wraps = true
-        // WebKit finds rendered text, including text split across inline elements, and scrolls the match into view.
-        webView.find(query.stringValue, configuration: configuration) { [weak self] result in
+        // Record the DOM before finding, not when its delayed mutation notification happens to arrive.
+        bridge("window.loonPageFind?.context() || {}") { [weak self] context in
             guard let self, self.isVisible, self.generation == request else { return }
-            self.hasResult = true
-            self.say(result.matchFound ? "Match found. Return: next · Shift-Return: previous."
-                                      : "No matches on this page. Other results may be available through page search.")
+            let searchedVersion = ContentVersion.read(context)
+            // WebKit finds rendered text, including text split across inline elements, and scrolls the match into view.
+            webView.find(text, configuration: configuration) { [weak self] result in
+                guard let self, self.isVisible, self.generation == request else { return }
+                self.bridge("window.loonPageFind?.context() || {}") { [weak self] current in
+                    guard let self, self.isVisible, self.generation == request else { return }
+                    let currentVersion = ContentVersion.read(current)
+                    if searchedVersion != currentVersion {
+                        self.invalidateResult()
+                        return
+                    }
+                    // Missing bridge context still permits native Find; any later change invalidates that unversioned result.
+                    self.resultVersion = searchedVersion
+                    self.hasResult = true
+                    self.say(result.matchFound ? "Match found. Return: next · Shift-Return: previous."
+                                              : "No matches on this page. Other results may be available through page search.")
+                }
+            }
         }
+    }
+
+    private func invalidateResult() {
+        generation += 1
+        hasResult = false
+        resultVersion = nil
+        say("Page content changed. Press Return to find in the updated page.")
     }
 
     private func say(_ message: String) {
@@ -251,6 +293,9 @@ final class PageFindController: NSObject, NSSearchFieldDelegate, WKScriptMessage
         refreshContext(changed: true)
     }
 
+    /// SPA history can move without a DOM mutation or document load; keep visible Find tied to that route.
+    func navigationChanged() { if isVisible { refreshContext(changed: true) } }
+
     private func refreshContext(changed: Bool) {
         bridge("window.loonPageFind?.context() || {}") { [weak self] result in
             guard let self, self.isVisible else { return }
@@ -264,10 +309,9 @@ final class PageFindController: NSObject, NSSearchFieldDelegate, WKScriptMessage
                 self.page = nextPage
                 if navigated {
                     self.scheduleSearch()
-                } else if changed && self.hasResult {
-                    self.generation += 1
-                    self.hasResult = false
-                    self.say("Page content changed. Press Return to find in the updated page.")
+                } else if changed && self.hasResult &&
+                            (self.resultVersion == nil || self.resultVersion != ContentVersion(context)) {
+                    self.invalidateResult()
                 }
             case .failure:
                 self.pageSearch.isHidden = true

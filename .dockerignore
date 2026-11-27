@@ -11,12 +11,21 @@ frontend/dist
 **/__pycache__
 **/*.py[cod]
 
+# Test fixtures and developer-only tools never enter the production build context.
+backend/tests
+backend/scripts
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage
+**/.coverage.*
+**/htmlcov
+
 # Local state and secrets
 # `**/`, not bare: a bare pattern here is anchored at the context root, so `.env`
-# would exclude only /.env — while the Dockerfile's `COPY backend/ ./` and
-# backend/README.md's `cp .env.example .env` together produce backend/.env, which
-# would then be baked into the image and live-read by config.py's env_file at
-# /app/.env. Reads like .gitignore, where a bare pattern DOES match at any depth;
+# would exclude only /.env. backend/README.md's `cp .env.example .env` produces
+# backend/.env; a broad backend COPY would bake it into the image, where config.py
+# would live-read it at /app/.env. Reads like .gitignore, where a bare pattern DOES match at any depth;
 # that mismatch is what hid this (INSPECT-0175).
 **/.env
 **/.env.*

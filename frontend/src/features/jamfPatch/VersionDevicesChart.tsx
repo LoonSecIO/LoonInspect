@@ -47,7 +47,7 @@ export function VersionDevicesChart({
     maxDaysBehindSevere: number | null;
   } | null;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const copy = t.jamfPatch.detail;
   const rules = t.jamfPatch.rules;
   const max = rows.reduce((most, row) => Math.max(most, row.devices), 0);
@@ -115,10 +115,10 @@ export function VersionDevicesChart({
               {copy.chartTooltip(
                 row.version,
                 row.devices,
-                row.releaseDate ? new Date(row.releaseDate).toLocaleDateString() : null,
+                row.releaseDate ? new Date(row.releaseDate).toLocaleDateString(locale) : null,
                 row.listed
               )}
-              {policy && verdicts[index] ? ` · ${policySentence(verdicts[index], policy, t)}` : ""}
+              {policy && verdicts[index] ? ` · ${policySentence(verdicts[index], policy, t, locale)}` : ""}
             </div>
           </div>
         </div>

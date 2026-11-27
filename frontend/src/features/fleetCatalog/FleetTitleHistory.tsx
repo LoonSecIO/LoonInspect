@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
+import { ExternalLink } from "@/components/ui/external-link";
 import { ApiError } from "@/config/api";
 import { getTitleHistory, readTitleHistory } from "@/features/fleetCatalog/api";
+import { manifestUrl } from "@/features/fleetCatalog/catalogView";
+import { FleetHistoryActivity } from "@/features/fleetCatalog/FleetHistoryActivity";
 import type { FleetTitleHistory as History } from "@/features/fleetCatalog/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 const COMMIT_URL = "https://github.com/fleetdm/fleet/commit/";
-
-function day(value: string | null): string {
-  return value === null ? "" : new Date(value).toLocaleDateString();
-}
 
 /**
  * One title's version history, opened from its row on the Fleet catalog tab (#838): each version
@@ -19,18 +18,28 @@ function day(value: string | null): string {
  * control that does, for an account that may sync a catalog: the whole history, now, for any
  * title, installed here or not. A refusal shows the server's sentence: the reserve, a read
  * already running, or what GitHub did.
+ *
+ * The tab passes neither `detail` nor `onSelectVersion` (#901), so its panel is drawn as before them.
  */
 export function FleetTitleHistory({
   slug,
   canRead,
-  onRead
+  onRead,
+  detail = false,
+  onSelectVersion
 }: {
   slug: string;
   canRead: boolean;
   /** After a read that landed, so the page reads its list again: the row's date and the progress line moved. */
   onRead?: () => void;
+  /** An app's own page: the cadence chart on top, the page's width, a version search and each row's manifest. */
+  detail?: boolean;
+  /** A Compare button on each row, handing the caller that row's version. */
+  onSelectVersion?: (version: string) => void;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const day = (value: string | null) => (value === null ? "" : new Date(value).toLocaleDateString(locale));
+  const [query, setQuery] = useState("");
   const [history, setHistory] = useState<History | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -73,11 +82,19 @@ export function FleetTitleHistory({
   if (history === null) return <p className="text-sm text-muted-foreground">{t.fleetCatalog.loading}</p>;
 
   const read = history.historyReadAt !== null;
+  const needle = query.trim().toLowerCase();
+  const matches = history.versions.filter((version) => version.version.toLowerCase().includes(needle));
+  // In the detail layout the panel is a section of its own page and takes the page's width, and
+  // its table, up to five columns, scrolls inside it instead of widening the page. `relative`
+  // keeps the sr-only headers and names in the scroll box: positioned against the page, one in
+  // a column scrolled out of view widened the page on a phone.
+  const wrap = (table: ReactElement) => (detail ? <div className="relative overflow-x-auto">{table}</div> : table);
   // Status, then the button under it, at most max-w-2xl wide: the panel is as wide as the
   // catalog table, which scrolls sideways in a narrow window, and a button at the panel's right
   // edge sat in the part scrolled out of view.
   return (
-    <div className="max-w-2xl space-y-3 text-sm" data-testid={`fleet-history-${slug}`}>
+    <div className={detail ? "space-y-3 text-sm" : "max-w-2xl space-y-3 text-sm"} data-testid={`fleet-history-${slug}`}>
+      {detail && <FleetHistoryActivity history={history} />}
       <div className="space-y-1" aria-live="polite">
         <p>
           {!read
@@ -102,17 +119,41 @@ export function FleetTitleHistory({
         </p>
       )}
       {read && history.versions.length === 0 && <p className="text-muted-foreground">{t.fleetCatalog.historyNoVersions}</p>}
-      {history.versions.length > 0 && (
-        <table className="w-full max-w-xl">
+      {detail && history.versions.length > 0 && (
+        <label className="block font-medium">
+          {t.fleetCatalog.historySearch}
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="mt-1 block w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 font-normal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </label>
+      )}
+      {history.versions.length > 0 && matches.length === 0 && (
+        <p role="status" className="text-muted-foreground">{t.fleetCatalog.historySearchNone}</p>
+      )}
+      {matches.length > 0 && wrap(
+        <table className={detail ? "w-full" : "w-full max-w-xl"}>
           <thead className="text-left text-muted-foreground">
             <tr>
               <th className="py-1 pr-4 font-medium">{t.fleetCatalog.historyVersion}</th>
               <th className="py-1 pr-4 font-medium">{t.fleetCatalog.historyInCatalog}</th>
               <th className="py-1 font-medium">{t.fleetCatalog.historyReplaced}</th>
+              {detail && (
+                <th className="py-1 pl-4 font-medium">
+                  <span className="sr-only">{t.fleetCatalog.historyManifest}</span>
+                </th>
+              )}
+              {onSelectVersion && (
+                <th className="py-1 pl-4 font-medium">
+                  <span className="sr-only">{t.fleetCatalog.historyTargetColumn}</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
-            {history.versions.map((version) => (
+            {matches.map((version) => (
               <tr key={version.version}>
                 <td className="py-1 pr-4 tabular-nums">{version.version}</td>
                 <td className="py-1 pr-4">
@@ -129,6 +170,21 @@ export function FleetTitleHistory({
                 <td className="py-1 tabular-nums text-muted-foreground">
                   {version.previousVersion ?? t.fleetCatalog.historyReplacedNone}
                 </td>
+                {detail && (
+                  <td className="whitespace-nowrap py-1 pl-4">
+                    <ExternalLink href={manifestUrl(slug, version.commitSha)}>
+                      <span aria-hidden="true">{t.fleetCatalog.historyManifest}</span>
+                      <span className="sr-only">{t.fleetCatalog.historyManifestLabel(version.version)}</span>
+                    </ExternalLink>
+                  </td>
+                )}
+                {onSelectVersion && (
+                  <td className="py-1 pl-4">
+                    <Button size="sm" variant="outline" onClick={() => onSelectVersion(version.version)}>
+                      {t.fleetCatalog.historyCompare(version.version)}
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -5,7 +5,8 @@ enum PageFindBridge {
     static let install = #"""
     (() => {
       if (window.loonPageFind) return;
-      let active = false, timer;
+      let active = false, timer, revision = 0;
+      const documentID = String(Date.now()) + ':' + Math.random();
       const visible = element => element && !element.disabled &&
         element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
       const first = selector => Array.from(document.querySelectorAll(selector)).find(visible);
@@ -21,7 +22,7 @@ enum PageFindBridge {
       };
       window.loonPageFind = {
         activate(value) { active = value; },
-        context() { return {page: location.href, search: !!search(), ai: !!(ai() || toggle())}; },
+        context() { return {page: location.href, document: documentID, revision, search: !!search(), ai: !!(ai() || toggle())}; },
         focus(kind) {
           if (kind === 'search') return focus(search());
           if (focus(ai())) return true;
@@ -35,6 +36,7 @@ enum PageFindBridge {
         selection() { return window.getSelection()?.toString().slice(0, 1024) || ''; }
       };
       new MutationObserver(() => {
+        revision++;
         if (!active) return;
         clearTimeout(timer);
         timer = setTimeout(() => window.webkit.messageHandlers.pageFind.postMessage('changed'), 180);

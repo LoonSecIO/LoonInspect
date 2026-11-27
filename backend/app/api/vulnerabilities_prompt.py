@@ -48,7 +48,7 @@ from app.api.ai import judged_endpoint
 from app.api.catalog import list_catalog
 from app.api.changes_prompt import EMPTY_QUESTION, ONLY_REMOVED, QUESTION_TOO_LONG, UNPARSEABLE, chosen_config, prompt_status
 from app.core.ai import AIRefused, require_ai
-from app.core.ai_usage import recorder
+from app.core.ai_usage import accepted, recorder
 from app.core.audit import AuditAction, audit
 from app.core.auth import require
 from app.core.database import get_db
@@ -167,26 +167,27 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> VulnProm
     provider, model, api_key = Provider(config.provider), config.model, config.api_key_encrypted
     reach = HostReach(config.host_reach) if config.host_reach else None
     wire, base_url, destination, host_header = await judged_endpoint(provider, reach, config.base_url, carries_key=bool(api_key))
-    model = selected(
-        await select_model(
-            db,
-            provider=provider,
-            pinned=config.model,
-            policy=config.ollama_policy,
-            base=base_url,
-            destination=destination,
-            host=host_header,
-            key=config.api_key_encrypted,
-            transport=transport_override,
-        )
+    selection = await select_model(
+        db,
+        provider=provider,
+        pinned=config.model,
+        policy=config.ollama_policy,
+        base=base_url,
+        destination=destination,
+        host=host_header,
+        key=config.api_key_encrypted,
+        transport=transport_override,
     )
+    model = selected(selection)
     try:
         await require_ai(db, feature=FEATURE, destination=destination, fields=DISCLOSED_FIELDS, model=model)
     except AIRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     request = CompletionRequest(
-        record_usage=recorder(db, FEATURE, provider.value, model),
+        record_usage=recorder(
+            db, FEATURE, provider.value, model, config=config, fallback="fallback" in selection.get("reason", "")
+        ),
         serial=provider is Provider.apple_fm,
         base_url=base_url, model=model, prompt=question, system=SYSTEM_INSTRUCTION, api_key=api_key,
         # Never for Apple, whatever the row holds: `fm serve` answers 400 to any effort on its
@@ -209,12 +210,14 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> VulnProm
 
     reading = interpret(result.content) if result.outcome == OUTCOME_ANSWERED else None
     if reading is None or not reading.parsed:
+        await accepted(result, "unusable")
         kind = result.outcome if reading is None else "malformed"
         _audited("unparseable", provider, destination, latency_ms, error_kind=kind)
         error = AIErrorOut(kind=kind, message=UNPARSEABLE, status=None)
         return _answer("unparseable", provider, model, destination, latency_ms, error=error)
 
     if reading.invalid:
+        await accepted(result, "unsupported")
         # No filters and no count: there is nothing to count for, and nothing will run.
         _audited("invalid", provider, destination, latency_ms, reason=reading.invalid)
         error = AIErrorOut(kind=NOT_ABOUT_VULNERABILITIES, message=NOT_A_VULN_QUESTION, status=None)
@@ -230,6 +233,7 @@ async def ask(payload: PromptIn, db: AsyncSession = Depends(get_db)) -> VulnProm
         vuln=filters["vuln"], band=filters["band"], order=filters["order"], page=1, page_size=1,
     )  # fmt: skip
     repairs = [str(repair) for repair in reading.repairs]
+    await accepted(result)
     _audited(outcome, provider, destination, latency_ms, repairs=len(repairs))
     return _answer(
         outcome, provider, model, destination, latency_ms,
