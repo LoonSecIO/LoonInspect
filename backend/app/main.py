@@ -32,6 +32,7 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.routing import Route
 
 from app.alerts.service import purge_closed_alerts
@@ -62,6 +63,7 @@ from app.api.mcp import router as mcp_router
 from app.api.mfa import router as mfa_router
 from app.api.os_posture import router as os_posture_router
 from app.api.outbox import router as outbox_router
+from app.api.patch_policy import router as patch_policy_router
 from app.api.patch_policy_rules import router as patch_policy_rules_router
 from app.api.posture import router as posture_router
 from app.api.promotions import router as promotions_router
@@ -91,6 +93,7 @@ from app.core.fleet_history import run_worker as fleet_history_worker
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware, SecurityHeadersMiddleware, content_security_policy_mode
 from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_pending, outbox_tick_lock, purge_delivered_events
+from app.core.patch_policy_feed import load_feed_file as load_patch_policy_feed_file
 from app.core.rekey import rekey_stored_values
 from app.core.runs import AcquisitionBusy, purge_runs
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
@@ -222,6 +225,20 @@ async def hourly_jamf_patch_sync() -> None:
         reset_actor(actor_token)
 
 
+async def read_patch_policy_feed_file(db: AsyncSession) -> None:
+    """`PATCH_POLICY_FEED_FILE`, at startup and from the exchange tick (#614), never raising.
+
+    `load_feed_file` words every refusal and records it, so this catches only a defect: the
+    container still starts, and the tick still runs the exchanges after it."""
+    try:
+        await load_patch_policy_feed_file(db)
+    except Exception:
+        logger.exception(
+            "patch-policy data not read from PATCH_POLICY_FEED_FILE: an unexpected failure, not a refusal; the copy "
+            "already held keeps answering. Report this line (docs/troubleshooting.md §32)"
+        )
+
+
 async def sharing_exchange_tick() -> None:
     """Community data-sharing exchange (docs/data-sharing.md). Runs every five
     minutes but sends at most once per tenant per day, at a minute-of-day derived
@@ -230,7 +247,20 @@ async def sharing_exchange_tick() -> None:
 
     It shares a per-tenant lock with Send now (#408) and never waits on it: a tenant whose
     lock is held is skipped, because the send in flight writes the row that decides
-    whether today's slot is still owed, and the next tick reads it."""
+    whether today's slot is still owed, and the next tick reads it.
+
+    First, once per tick and for no tenant: `PATCH_POLICY_FEED_FILE`, the air-gapped stand-in
+    for the exchange's patch-policy link (#614), read only when the file has changed since this
+    process last read it, so an unset or unchanged file costs nothing."""
+    try:
+        async with unscoped_session() as db:
+            await read_patch_policy_feed_file(db)
+    except Exception:
+        # The session itself failed, opening or closing: the database, not the file.
+        logger.exception(
+            "patch-policy data not read from PATCH_POLICY_FEED_FILE: the database session failed; check database "
+            "availability, and the next tick tries again (docs/troubleshooting.md §32)"
+        )
     for tenant_id in await operational_tenant_ids():
         lock = exchange_lock(tenant_id)
         if lock.locked():
@@ -621,6 +651,11 @@ async def _application_lifespan(app: FastAPI):
                     "titles": len(library.titles),
                 },
             )
+        # LoonSec's patch-policy document from PATCH_POLICY_FEED_FILE, when an air-gapped
+        # instance sets it (#614): at startup, so a web-only process reads it too, and again by
+        # the exchange tick whenever the file changes. Unset, this reads nothing. A file that
+        # cannot be read or checked is a logged sentence, never a container that will not start.
+        await read_patch_policy_feed_file(db)
 
     # A rotation under way (#144): every stored value opens under ENCRYPTION_KEY or
     # ENCRYPTION_KEY_PREVIOUS, and this rewrites the ones still under the previous key so the
@@ -928,6 +963,7 @@ app.include_router(evidence_router)
 app.include_router(vulnerabilities_prompt_router)
 app.include_router(exclusion_ranking_router)
 app.include_router(patch_policy_rules_router)
+app.include_router(patch_policy_router)
 app.include_router(intelligence_router)
 app.include_router(submissions_router)
 app.include_router(vulnerabilities_router)

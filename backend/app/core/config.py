@@ -192,6 +192,13 @@ class Settings(BaseSettings):
     # Dormant v2 serving path; enable only for development until #621 is complete.
     vuln_tenant_selection: bool = False
 
+    # LoonSec's patch-policy reference document (#614), read from a file instead of from the
+    # daily exchange: the air-gapped path. Empty (the default) is the exchange's link. A path
+    # here is read at startup and again whenever the file changes, and the exchange then
+    # downloads no patch-policy data at all. The same checks apply either way, and so does the
+    # per-organization tier gate (app.core.patch_policy_feed; docs/troubleshooting.md §32).
+    patch_policy_feed_file: str = ""
+
     # Daily check of this build against the latest published release, so the UI can say
     # when one is available (#407). UPDATE_CHECK=false turns the outbound call off
     # entirely (see issue #43), and Settings > Support then says so.

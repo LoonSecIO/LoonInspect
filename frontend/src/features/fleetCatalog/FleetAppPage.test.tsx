@@ -163,7 +163,8 @@ it("reads a title's verdict from its own assessment, plans each identity a selec
     impact: { targetVersion: "2.0", installedMacs: 0, olderMacs: 0, atOrAboveMacs: 0, unknownMacs: 0 } }); // #899's answer with no installs: zeros, no reason
   expect(await said(words.catalogFirst, "0 of 6 in-scope Macs report this app.")).toBeTruthy();
   expect([...shown(en.fleetPlanning.reasons.none_behind, words.installedFindings, words.observedTitle, words.planLink, words.installedScope, words.findings,
-    words.monitorCurrent("2.0"), "Not judged"), screen.getByText(words.cadenceUnread).textContent]).toEqual([false, false, false, false, false, false, false, true, words.cadenceUnread]); // no management word or pilot line either
+    words.monitorCurrent("2.0"), "Not judged", words.guidance), screen.getByText(words.cadenceUnread).textContent])
+    .toEqual([false, false, false, false, false, false, false, true, true, words.cadenceUnread]); // no management word or pilot line either, but the guide
 });
 
 it("counts each identity's builds in the reader's numbers, never a null as 0, on the day the corpus is dated", async () => {
@@ -389,5 +390,19 @@ describe("Plan a Fleet pilot", () => {
       open(`/apps/${local.appHash}`, { item, items: [item] });
       expect([await said(item.match === "unknown" ? words.catalogUnknown(false) : words.ambiguous), ...shown(words.guidance)]).toEqual([expect.anything(), false]);
     }
+  });
+
+  it("starts the guide over on the other list when a history read re-reads an exact app as one Fleet has no title for", async () => {
+    held.permissions = ["patch:catalog-sync"];
+    const unmatched: MigrationItem = { ...local, match: "none", fleetCandidates: [] };
+    open(`/apps/${local.appHash}`);
+    expect(await intents()).toEqual(["patch", "self", "missing"]);
+    pick("self");
+    api.readTitleHistory.mockResolvedValue(history);
+    api.getFleetDetail.mockResolvedValue({ ...detail, item: unmatched, items: [unmatched] });
+    fireEvent.click(await screen.findByRole("button", { name: en.fleetCatalog.historyReadAgain }));
+    expect(await said(words.noMatch)).toBeTruthy();
+    expect([await intents(), screen.getByLabelText<HTMLSelectElement>(words.workflow).value, ...shown(words.intents.custom.text, words.intents.self.text)])
+      .toEqual([["custom", "contribute", "installomator", "munki", "appStore"], "custom", true, false]);
   });
 });

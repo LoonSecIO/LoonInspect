@@ -108,16 +108,16 @@ export const navigationItems: NavItem[] = [
         permission: PERMISSIONS.AUDIT_READ
       },
       { labelKey: "osPosture", icon: ShieldHalf, to: "/posture/macos", end: true, permission: PERMISSIONS.DEVICE_READ },
-      // Flag-gated and off by default (#614, first slice): a reference replay of a hypothetical Mac,
-      // not this organization's posture, so it is not listed beside the two entries that are until
-      // someone asks for it. `app:read` is the route's own gate (#301).
+      // No flag (#614, first slice; the `patch_policy` switch was promoted and removed on
+      // 2026-11-24): a reference replay of a hypothetical Mac, listed for every reader of it. The
+      // page says at its top that it is not this organization's posture, so the listing does not
+      // have to. `app:read` is the route's own gate (#301).
       {
         labelKey: "patchPolicy",
         icon: SlidersHorizontal,
         to: "/posture/patch-policy",
         end: false,
-        permission: PERMISSIONS.APP_READ,
-        flag: "patch_policy"
+        permission: PERMISSIONS.APP_READ
       }
     ]
   },

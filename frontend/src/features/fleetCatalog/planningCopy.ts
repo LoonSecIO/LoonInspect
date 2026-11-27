@@ -76,7 +76,10 @@ export const fleetPlanningEnglish = {
   zero: "No addressed findings in evaluated builds",
   missing: "No exact comparison",
   loadFailed: "The installed apps for this device filter could not be read. Check connectivity and retry; this does not mean no app needs review.",
-  partialCatalog: "Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why.",
+  // Three things leave the catalog read in part, and the report carries only that it is (#942), so this names what the
+  // Fleet catalog's status line shows for each: a check with no answer, titles a check could not read, or neither, which
+  // is the 1.3.0 upgrade's one more read. troubleshooting.md §27 step 6 walks all three.
+  partialCatalog: "Fleet’s catalog was read only in part, so a title or release channel may be missing. The Fleet catalog’s status line says why when the last check did not get an answer or left titles this build could not read. When it says neither, the upgrade to 1.3.0 marked the catalog for one more read, which the next scheduled check, within the hour, or Check now finishes (troubleshooting.md §27 step 6).",
   notRead: "Fleet coverage is unknown: Fleet’s catalog has not been read yet. The Fleet catalog’s status line says why.",
   noJamf: "Jamf Patch coverage is unknown: no Jamf Patch titles are synced yet, so no app is counted as outside both catalogs. Open Devices › Applications › Jamf Patch and press Sync now.",
   outsideNote: "Both catalogs are fully read, and neither lists these apps’ bundle IDs.",
@@ -166,7 +169,7 @@ export const fleetPlanningGerman: FleetPlanningCopy = {
   zero: "Keine behobenen Funde in den bewerteten Builds",
   missing: "Kein exakter Vergleich",
   loadFailed: "Die installierten Apps für diesen Gerätefilter konnten nicht gelesen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut; das bedeutet nicht, dass keine App geprüft werden muss.",
-  partialCatalog: "Fleets Katalog wurde nur teilweise gelesen, daher können Titel oder Kanäle fehlen. Die Statuszeile des Fleet-Katalogs nennt den Grund.",
+  partialCatalog: "Fleets Katalog wurde nur teilweise gelesen, daher können Titel oder Kanäle fehlen. Die Statuszeile des Fleet-Katalogs nennt den Grund, wenn die letzte Prüfung keine Antwort erhalten hat oder Titel zurückließ, die dieser Build nicht lesen konnte. Nennt sie keinen von beiden, hat das Upgrade auf 1.3.0 den Katalog für einen weiteren Lesevorgang markiert, den die nächste geplante Prüfung innerhalb einer Stunde oder „Jetzt prüfen“ abschließt (troubleshooting.md §27 Schritt 6).",
   notRead: "Die Fleet-Abdeckung ist unbekannt: Fleets Katalog wurde noch nicht gelesen. Die Statuszeile des Fleet-Katalogs nennt den Grund.",
   noJamf: "Die Jamf-Patch-Abdeckung ist unbekannt: Es sind noch keine Jamf-Patch-Titel synchronisiert, daher zählt keine App als „In keinem der Kataloge“. Öffnen Sie Geräte › Anwendungen › Jamf Patch und klicken Sie auf Jetzt synchronisieren.",
   outsideNote: "Beide Kataloge sind vollständig gelesen, und keiner führt die Bundle-IDs dieser Apps.",

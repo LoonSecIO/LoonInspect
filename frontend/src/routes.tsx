@@ -211,8 +211,8 @@ export function AppRoutes() {
         {/* The first slice of the Patch Policy Lab (#614): a reference replay of a hypothetical Mac,
             drawn from a file that ships with the build. APP_READ because the picker reads Jamf's
             patch catalog, which is gated app:read; every role holds it, and the row still shows a
-            gate (#301). No RequireFlag, as with Vulnerabilities above: the `patch_policy` flag
-            decides what is LISTED, and the address opens either way. */}
+            gate (#301). No flag: the `patch_policy` switch that once decided whether it was listed
+            was promoted and removed on 2026-11-24, and the address never needed it. */}
         <Route element={<RequirePermission permission={PERMISSIONS.APP_READ} />}>
           <Route path="posture/patch-policy" element={<PatchPolicyPage />} />
         </Route>

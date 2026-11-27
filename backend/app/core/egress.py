@@ -446,7 +446,7 @@ def destination_for_log(url: str) -> str:
 MAX_CORPUS_URL_LENGTH = 2048
 
 
-def validate_corpus_url(value: str) -> str:
+def validate_corpus_url(value: str, *, name: str = "the corpus link") -> str:
     """The corpus link as it may be dialled, or `BlockedCorpusUrl` naming what is wrong.
 
     `https` only, with **no plaintext opt-in**: unlike a lab SIEM, the far end of this one
@@ -458,27 +458,31 @@ def validate_corpus_url(value: str) -> str:
     Syntax and literal addresses only, like its two siblings: a hostname is judged when it
     resolves. The refusals it shares with them are the point — loopback would name this
     container's own network namespace, and link-local is the cloud metadata endpoint.
+
+    `name` is what the sentences call the link. The exchange's second signed link, LoonSec's
+    patch-policy document (#614, `app.core.patch_policy_feed`), is held to the same rules and
+    named as itself; the corpus's sentences are unchanged.
     """
     url = value.strip()
     if not url:
-        raise BlockedCorpusUrl("the corpus link is empty")
+        raise BlockedCorpusUrl(f"{name} is empty")
     if len(url) > MAX_CORPUS_URL_LENGTH:
-        raise BlockedCorpusUrl(f"the corpus link is longer than {MAX_CORPUS_URL_LENGTH} characters")
+        raise BlockedCorpusUrl(f"{name} is longer than {MAX_CORPUS_URL_LENGTH} characters")
     try:
         parsed = urlsplit(url)
         _ = parsed.port
     except ValueError as exc:
-        raise BlockedCorpusUrl(f"the corpus link is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
+        raise BlockedCorpusUrl(f"{name} is not a URL this server can parse: {UNPARSEABLE_URL}") from exc
     if parsed.scheme != "https":
-        raise BlockedCorpusUrl(f"the corpus link must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
+        raise BlockedCorpusUrl(f"{name} must be an absolute https:// URL, not {parsed.scheme or 'a bare hostname'!r}")
     if parsed.username or parsed.password:
-        raise BlockedCorpusUrl("the corpus link must not carry credentials in the URL (user:password@host)")
+        raise BlockedCorpusUrl(f"{name} must not carry credentials in the URL (user:password@host)")
     if parsed.fragment:
-        raise BlockedCorpusUrl("the corpus link must not carry a fragment: it would be dropped before the request")
+        raise BlockedCorpusUrl(f"{name} must not carry a fragment: it would be dropped before the request")
     host = parsed.hostname
     if not host:
-        raise BlockedCorpusUrl("the corpus link must name a host")
-    _refuse_blocked_host(host, field="the corpus link", refusal=BlockedCorpusUrl)
+        raise BlockedCorpusUrl(f"{name} must name a host")
+    _refuse_blocked_host(host, field=name, refusal=BlockedCorpusUrl)
     return url
 
 
