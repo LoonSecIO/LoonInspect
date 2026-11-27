@@ -3,7 +3,7 @@
 Status: **verdicts ruled 2026-09-26 (#652) and 2026-09-27 (#692), with the #692 row's kill
 condition per Kyle's instruction of 2026-09-27; the v1.1.0 gate ruled 2026-11-15 (#797); the
 v1.2.0 gate ruled 2026-11-19 (#813); v1.3.0 gate recorded 2026-11-23 (#867); `patch_policy`
-promoted and removed between gates, 2026-11-24**.
+promoted and removed between gates, 2026-11-24; the v1.4.0 gate ruled 2026-11-27 (#946)**.
 Every release runs a flag
 gate: each switch below gets one of three verdicts, **promote** (the default flips on and
 the flag is scheduled for removal), **keep** (with the reason and the release it is expected
@@ -141,6 +141,29 @@ from the registry and from Settings › Feature Flags, and a row an organization
 ignored, as every key outside the registry is. The register holds twenty-one, five of them
 registry keys, and the next gate's inventory starts there.
 
+## The v1.4.0 gate
+
+Ruled 2026-11-27 for the requested release (#946): Kyle carried every v1.3.0 verdict forward
+("Carry all forward"). The inventory is twenty-one: thirteen boolean environment settings,
+`DATABASE_MODE`, five registry keys, `INSTANCE_KIND` and the Mac app's update preference. No
+switch was added since v1.3.0, and `patch_policy` left between gates (above).
+`PATCH_POLICY_FEED_FILE` (#614), added since v1.3.0, is a path, not a switch: it names the file an
+air-gapped instance reads LoonSec's patch-policy data from, so it is configuration, as `TLS_MODE`
+is. No default flips and no control is deleted. `fleet_maintained_apps` now also decides Migration
+review, the migration detail pages and the migration briefing (the change log, 2026-11-24 and
+2026-11-25), so they ship off with it.
+
+| Switch | v1.4.0 verdict and reason | Retirement |
+| --- | --- | --- |
+| `INTELLIGENCE_ACCESS`, `CONTRIBUTION_RECEIPTS`, `VULN_TENANT_SELECTION`, `VULN_RELEASE_RETENTION` | **keep off**; v2 promotion remains gated by the previously recorded checks | v2.1, after promotion |
+| `INTELLIGENCE_SUBMISSIONS` | **keep off**; submission-through-publication validation is still required before promotion | one release after promotion |
+| `COMMUNITY_SHARING`, `UPDATE_CHECK`, `SCHEDULER_ENABLED`, `DEBUG`, `SECURE_COOKIES`, `SECURITY_HEADERS`, `ALLOW_INSECURE_MDM_BASE_URL`, `DATABASE_MODE`, `ai_features` | **keep**; permanent operator, deployment, security or AI master controls | never |
+| `ALLOW_INSECURE_DESTINATION_URL` | **keep off**; older destinations can still inherit its choice | v2.1 candidate after migration of inherited choices |
+| `jamf_patch`, `vulnerabilities` | **keep off**; lab/demo listing overrides still have a purpose | reconsider at v2.1 |
+| `app_promotion` | **keep off**; no new end-to-end coverage evidence changes the previous condition | promote or delete after a title is walked to coverage |
+| `fleet_maintained_apps` | **keep off**; operator opt-in to the catalog source and its licence remains required, and it now also lists Migration review (#893) | verdict at v2.0.0 |
+| `INSTANCE_KIND`, **Check for Updates Daily** | **keep**; shell identity and the Mac user's update preference remain necessary | never |
+
 ## How a gate runs
 
 1. Before the release is tagged, list every switch (`grep -n ': bool = ' backend/app/core/config.py`
@@ -174,3 +197,4 @@ registry keys, and the next gate's inventory starts there.
 | 2026-11-24 | `fleet_maintained_apps` also decides the Fleet catalog's migration report, `GET /api/fleet-catalog/migration` (#895): off, it answers `enabled: false` and counts nothing. It is read-only and asks GitHub and Jamf nothing, so no new switch. Its verdict at v1.3.0 (keep off) stands. |
 | 2026-11-25 | `fleet_maintained_apps` also decides the migration detail routes, `GET /api/fleet-catalog/migration/apps/{appHash}` and `…/titles/{slug}` (#899), and the observed upgrades they carry from the change log (#900): off, each answers `409` with the flag's sentence before it reads inventory or the change log. Read-only, so no new switch. Its verdict at v1.3.0 (keep off) stands. |
 | 2026-11-25 | `fleet_maintained_apps` also gates the migration report's AI briefing, `GET` and `POST /api/fleet-catalog/briefing` (#910): off, both answer `409` with the flag's sentence and nothing is sent. On, the briefing also needs `ai_features`, inference consent and a saved provider, sends only aggregate counts and is logged in the share log as `fleet_catalog_briefing`, so no new switch. Its verdict at v1.3.0 (keep off) stands. |
+| 2026-11-27 | The v1.4.0 gate as ruled (#946, "Carry all forward"): every v1.3.0 verdict stands for the twenty-one switches. No switch was added since v1.3.0, and `PATCH_POLICY_FEED_FILE` is a path, not a switch. No default flipped. |

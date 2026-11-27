@@ -254,8 +254,8 @@ release's tag, so the compose files are the ones that go with its images, and na
 too:
 
 ```bash
-git fetch --tags && git checkout v1.3.0
-printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.3.0\n' >> .env
+git fetch --tags && git checkout v1.4.0
+printf '\nCOMPOSE_FILE=docker-compose.yml:docker-compose.pull.yml\nLOONINSPECT_VERSION=v1.4.0\n' >> .env
 docker compose pull
 docker compose up -d
 ```

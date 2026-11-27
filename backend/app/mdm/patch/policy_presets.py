@@ -67,6 +67,10 @@ class Preset:
 # answers with the first.
 # Re-read 2026-11-23 for v1.3.0 (#867): control 3, pages 17-18, is unchanged.
 # The 14-day rule and the English/German requires/maps/differs copy still match.
+# Re-read 2026-11-27 for v1.4.0 (#946): control 3, pages 17-18, is unchanged, and NCSC's
+# Cyber Essentials resources page still links `url` as the current version, effective
+# 27 April 2026, with no later version announced. The 14-day rule and the English/German
+# requires/maps/differs copy still match.
 CYBER_ESSENTIALS_3_3 = Preset(
     id="cyber-essentials-3.3",
     framework="Cyber Essentials",
@@ -74,7 +78,7 @@ CYBER_ESSENTIALS_3_3 = Preset(
     published="April 2026",
     section="Security update management",
     url="https://www.ncsc.gov.uk/sites/default/files/2026-11/Cyber-Essentials-Requirements-for-IT-Infrastructure-v3-3.pdf",
-    verified_on=date(2026, 11, 23),
+    verified_on=date(2026, 11, 27),
     rule=Rule(max_days_behind=14),
 )
 
