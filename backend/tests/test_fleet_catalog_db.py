@@ -337,6 +337,7 @@ async def test_a_check_cut_short_keeps_what_it_read_and_the_next_one_reads_the_r
 
     assert cut.outcome == fc.OUTCOME_REFUSED
     assert cut.detail is not None and "3 of the 4 manifests that had changed were read and kept" in cut.detail
+    assert cut.detail.endswith("Unread Mac titles: zeta")
     assert "Nothing was changed" not in cut.detail  # something was, and the sentence does not say otherwise
     assert cut.tree_sha is None and cut.snapshot_status == "partial"
     titles = await _titles(db)
@@ -359,16 +360,64 @@ async def test_a_manifest_that_cannot_be_read_is_skipped_by_name_and_the_rest_la
 
     assert state.outcome == fc.OUTCOME_OK and state.app_count == 2
     assert state.detail is not None and state.detail.startswith("1 of Fleet's Mac manifests could not be read")
-    assert "left as held: beta." in state.detail
+    assert state.detail.endswith("Unread Mac titles: beta")
     assert sorted(await _titles(db)) == ["alpha", "gamma"]
     assert state.snapshot_status == "partial"
     github.requests.clear()
     repeat = await fc.check(db, transport=github.transport)
-    assert repeat.outcome == fc.OUTCOME_UNCHANGED and repeat.snapshot_status == "partial" and repeat.detail
+    assert repeat.outcome == fc.OUTCOME_UNCHANGED and repeat.snapshot_status == "partial"
+    assert repeat.detail is not None and "beta" in repeat.detail
     assert len(github.requests) == 1
     # A later failure updates the last-check outcome, not the held rows' completeness.
     github.broken["contents"] = rate_limited
     assert (await fc.check(db, transport=github.transport)).snapshot_status == "partial"
+
+
+async def test_unread_names_remain_on_the_status_after_later_checks(db, github) -> None:
+    from app.core import fleet_catalog as fc
+
+    slugs = ("beta", "delta-one", "delta-two", "delta-three", "delta-four", "delta-five")
+    for slug in slugs:
+        github.put(slug, slug.title(), f"com.example.{slug}", "1.0")
+        github.broken[slug] = lambda: httpx.Response(200, json={"versions": []})
+    # The malformed slug appears in both Fleet listings. Both markers sort after the old five-name preview.
+    github.put("invalid slug", "Invalid", "com.example.invalid", "1.0")
+    names = (*slugs, "unrecognized Mac manifest path", "unrecognized Mac index entry")
+    partial = await fc.check(db, transport=github.transport)
+    assert (partial.outcome, partial.snapshot_status) == (fc.OUTCOME_OK, "partial")
+    first_detail = partial.detail
+
+    async def check_again(outcome):
+        db.expunge_all()  # each scheduled check loads the persisted state
+        github.requests.clear()
+        state = await fc.check(db, transport=github.transport)
+        assert (state.outcome, state.snapshot_status) == (outcome, "partial")
+        assert len(github.requests) == 1
+        assert state.detail is not None
+        assert [name for name in names if name not in state.detail] == []
+        return state.detail
+
+    await check_again(fc.OUTCOME_UNCHANGED)
+    github.broken["contents"] = lambda: httpx.Response(502)
+    assert "answered 502" in await check_again(fc.OUTCOME_UNREACHABLE)
+    del github.broken["contents"]
+    await check_again(fc.OUTCOME_UNCHANGED)
+    assert first_detail is not None and all(name in first_detail for name in names)
+
+    # A fresh listing replaces yesterday's unread set, even when today's snapshot is still partial.
+    github.drop("invalid slug")
+    github.broken.clear()
+    github.put("alpha", "Alpha", ALPHA, "3.0")
+    github.broken["alpha"] = lambda: httpx.Response(200, json={"versions": []})
+    updated = await fc.check(db, transport=github.transport)
+    assert (updated.outcome, updated.snapshot_status) == (fc.OUTCOME_OK, "partial")
+    assert updated.detail is not None and "alpha" in updated.detail
+    assert [name for name in names if name in updated.detail] == []
+
+    del github.broken["alpha"]
+    github.put("alpha", "Alpha", ALPHA, "3.1")
+    complete = await fc.check(db, transport=github.transport)
+    assert (complete.outcome, complete.snapshot_status, complete.detail) == (fc.OUTCOME_OK, "complete", None)
 
 
 async def test_an_upstream_revert_cannot_leave_partially_applied_titles_in_a_complete_snapshot(db, github) -> None:
@@ -422,7 +471,7 @@ async def test_a_slug_the_index_lists_twice_with_different_names_is_left_as_held
     state = await fc.check(db, transport=github.transport)
 
     assert (state.outcome, state.snapshot_status, state.app_count) == (fc.OUTCOME_OK, "partial", 3)
-    assert state.detail is not None and "were left as held: beta, delta." in state.detail
+    assert state.detail is not None and state.detail.endswith("Unread Mac titles: beta, delta")
     titles = await _titles(db)
     assert sorted(titles) == ["alpha", "beta", "gamma"]  # the new title stays unlisted
     beta = titles["beta"]
@@ -438,6 +487,45 @@ async def test_a_slug_the_index_lists_twice_with_different_names_is_left_as_held
     titles = await _titles(db)
     assert (titles["beta"].name, titles["beta"].latest_version) == ("Beta", "1.1")
     assert (titles["delta"].name, titles["delta"].latest_version) == ("Delta", "0.9")
+
+
+@pytest.mark.parametrize(
+    ("outcome", "legacy_detail"),
+    [
+        (
+            "ok",
+            "6 of Fleet's Mac manifests could not be read as a title with a current version and were left as held: "
+            "app-0, app-1, app-2, app-3, app-4 and 1 more. They are read again when Fleet next changes its catalog.",
+        ),
+        (
+            "unchanged",
+            "The catalog tree is unchanged. The held snapshot still has unread Mac titles. "
+            "They are checked again when Fleet changes its catalog.",
+        ),
+    ],
+)
+async def test_a_legacy_partial_snapshot_recovers_its_names_from_the_unchanged_tree(db, github, outcome, legacy_detail) -> None:
+    from app.core import fleet_catalog as fc
+
+    slugs = [f"app-{n}" for n in range(6)]
+    for slug in slugs:
+        github.put(slug, slug, f"com.example.{slug}", "1.0")
+        github.broken[slug] = lambda: httpx.Response(200, json={"versions": []})
+    old = await fc.check(db, transport=github.transport)
+    assert old.snapshot_status == "partial" and old.tree_sha == github.tree_sha
+    old.outcome, old.detail = outcome, legacy_detail
+    await db.commit()
+    db.expunge_all()
+    github.requests.clear()
+
+    recovered = await fc.check(db, transport=github.transport)
+    assert github.manifests_read() == slugs
+    assert recovered.snapshot_status == "partial" and recovered.detail.endswith("Unread Mac titles: " + ", ".join(slugs))
+
+    github.requests.clear()
+    repeated = await fc.check(db, transport=github.transport)
+    assert len(github.requests) == 1
+    assert repeated.outcome == fc.OUTCOME_UNCHANGED and repeated.detail.endswith("Unread Mac titles: " + ", ".join(slugs))
 
 
 async def test_tree_invalidation_reconciles_legacy_cache_without_reloading_manifests(db, github):

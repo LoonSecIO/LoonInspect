@@ -391,16 +391,28 @@ async def _read_manifests(
     return versions, (stopped[0] if stopped else None)
 
 
+# A separate paragraph describes the held snapshot. Replace the last check's reason on
+# each attempt while carrying this paragraph until another listing reconciles the titles.
+_UNREAD_TITLES = "\n\nUnread Mac titles: "
+
+
+def _unread_paragraph(slugs: Collection[str]) -> str:
+    return _UNREAD_TITLES + ", ".join(sorted(slugs))
+
+
+def _held_unread(detail: str | None) -> str:
+    _, marker, names = (detail or "").rpartition(_UNREAD_TITLES)
+    return marker + names if marker else ""
+
+
 def _skipped_sentence(skipped: Collection[str]) -> str | None:
     if not skipped:
         return None
-    named = ", ".join(sorted(skipped)[:5])
-    more = f" and {len(skipped) - 5} more" if len(skipped) > 5 else ""
     count = "1 of Fleet's Mac manifests" if len(skipped) == 1 else f"{len(skipped)} of Fleet's Mac manifests"
     return (
         f"{count} could not be read as a title with a current version and "
-        f"{'was' if len(skipped) == 1 else 'were'} left as held: {named}{more}. "
-        "They are read again when Fleet next changes its catalog."
+        f"{'was' if len(skipped) == 1 else 'were'} left as held. "
+        "They are read again when Fleet next changes its catalog." + _unread_paragraph(skipped)
     )
 
 
@@ -452,6 +464,9 @@ async def check(db: AsyncSession, *, transport: httpx.AsyncBaseTransport | None 
         failed = _not_the_catalogue(f"it answered 404 for {missing}")
         outcome, detail = failed.outcome, failed.detail
 
+    if outcome in FAILED and state.snapshot_status == "partial" and not _held_unread(detail):
+        # A failure before any changes leaves the held snapshot, including its names, intact.
+        detail += _held_unread(state.detail)
     state.checked_at = now
     state.outcome = outcome
     state.detail = detail
@@ -491,15 +506,15 @@ async def _read(
         await _get(client, CONTENTS_URL, ceiling=_MAX_LISTING_BYTES, what=f"the folder {FOLDER}", tally=tally)
     )
     if tree_sha == state.tree_sha:
-        detail = (
-            None
-            if state.snapshot_status == "complete"
-            else (
+        if state.snapshot_status == "complete":
+            return OUTCOME_UNCHANGED, None
+        if unread := _held_unread(state.detail):
+            return OUTCOME_UNCHANGED, (
                 "The catalog tree is unchanged. The held snapshot still has unread Mac titles. "
-                "They are checked again when Fleet changes its catalog."
+                "They are checked again when Fleet changes its catalog." + unread
             )
-        )
-        return OUTCOME_UNCHANGED, detail
+        # An older partial row may have retained only a count or a truncated preview.
+        # Reconcile the listing once to recover its names, reusing held manifest hashes.
 
     manifests = parse_tree(
         await _get(
@@ -574,6 +589,7 @@ async def _read(
         return stopped.outcome, (
             f"{stopped.detail.replace(_KEPT + ' ', '')} {tally.read} of the {len(wanted)} manifests that had changed "
             "were read and kept; the next check reads the rest."
+            + _unread_paragraph(tally.skipped | (set(wanted) - versions.keys()))
         )
 
     gone = held.keys() - manifests.keys() - index.keys() - tally.skipped

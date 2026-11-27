@@ -209,12 +209,14 @@ def test_a_check_is_due_once_a_day_and_within_the_hour_after_a_failure(state, ex
     assert fc.due(state, datetime(2026, 11, 15, 12, 0, tzinfo=UTC)) is expected
 
 
-def test_skipped_manifests_are_named_five_at_most() -> None:
+def test_skipped_manifests_are_all_named_in_slug_order() -> None:
     assert fc._skipped_sentence([]) is None
     one = fc._skipped_sentence(["zoom"])
-    assert one is not None and one.startswith("1 of Fleet's Mac manifests") and "was left as held: zoom." in one
-    many = fc._skipped_sentence([f"app-{n}" for n in range(8)])
-    assert many is not None and "were left as held: app-0, app-1, app-2, app-3, app-4 and 3 more." in many
+    assert one is not None and one.startswith("1 of Fleet's Mac manifests") and one.endswith("Unread Mac titles: zoom")
+    names = [f"app-{n}" for n in range(8)]
+    many = fc._skipped_sentence(list(reversed(names)))
+    assert many is not None and many.startswith("8 of Fleet's Mac manifests")
+    assert many.endswith("Unread Mac titles: " + ", ".join(names))
 
 
 # --- the one GET ---------------------------------------------------------------------------
