@@ -67,6 +67,11 @@ Every PR must pass the same gates `main` enforces:
   caches stay out of its build context. To run tests using the image's `uv`, bind-mount the
   checkout and use a separate environment as described in `backend/tests/conftest.py`.
   The tests run from that checkout, so they do not need to be packaged in the image.
+  The job ends by running the browser smoke tests on the image it built
+  (`python3 tests/browser/run.py --app-image looninspect:ci`; README "Browser smoke tests").
+  They are not a gate yet: a failure leaves the job green and puts a warning on the run's
+  summary. `backend/tests/test_browser_smoke_pins.py` holds their two Playwright pins, the npm
+  package and the image, to one release.
 
 Lockfiles are part of the contract: `uv.lock` and `package-lock.json` must match
 their manifests (`--frozen` / `npm ci` enforce this).

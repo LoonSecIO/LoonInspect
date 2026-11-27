@@ -373,3 +373,31 @@ jobs:
       # wrong password, then against a role that could bypass row-level security.
       - name: Check the managed-database init
         run: .github/scripts/check-db-init.sh looninspect-db:ci smoke-db smoke-net looninspect
+
+      # The Chromium smoke tests (tests/browser/, README "Browser smoke tests") on the image built
+      # above: each top-level page opens from the sidebar with no console error, and one seeded
+      # application is followed from Devices to the Catalog. The runner starts its own Compose
+      # project on an internal network, with generated credentials and no published port, so it
+      # never meets the containers above; its app starts with UPDATE_CHECK=false, which
+      # check_test_stacks.py holds tests/browser/compose.yml to (#821).
+      #
+      # Not a gate yet. `continue-on-error` keeps a failure here from failing the required
+      # `Docker image` check until the step's first ten runs on main have been read for time and
+      # for flakes; the step after it says so on the run's summary when it fails. Last in the job,
+      # so it cannot hide what the checks above would have found.
+      #
+      # `BUILDX_BUILDER: default` builds the Playwright image where Docker runs it. The builder
+      # setup-buildx-action selected lives in a container, and would have to export the whole
+      # image back to Docker before the tests could start.
+      - name: Browser smoke tests
+        id: browser
+        timeout-minutes: 15
+        continue-on-error: true
+        env:
+          BUILDX_BUILDER: default
+        run: python3 tests/browser/run.py --app-image looninspect:ci
+
+      - name: Say that the browser smoke tests failed
+        if: steps.browser.outcome == 'failure'
+        run: |
+          echo "::warning title=Browser smoke tests failed::The Chromium smoke tests failed or timed out. This job passed anyway: they are not a gate yet. Open the 'Browser smoke tests' step for the test that failed, and reproduce it from a checkout with: python3 tests/browser/run.py"
