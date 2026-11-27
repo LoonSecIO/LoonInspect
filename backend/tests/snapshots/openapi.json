@@ -3310,7 +3310,8 @@
                   "bearer",
                   "header",
                   "splunk_hec",
-                  "elastic_api_key"
+                  "elastic_api_key",
+                  "snowflake_jwt"
                 ],
                 "type": "string"
               },
@@ -3344,6 +3345,16 @@
             "title": "Name",
             "type": "string"
           },
+          "snowflakeConfig": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnowflakeConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "subscribedEvents": {
             "anyOf": [
               {
@@ -3364,7 +3375,8 @@
               "generic_webhook",
               "splunk_hec",
               "elastic",
-              "runreveal"
+              "runreveal",
+              "snowflake"
             ],
             "title": "Type",
             "type": "string"
@@ -3506,6 +3518,16 @@
             "title": "Pendingcount",
             "type": "integer"
           },
+          "snowflakeConfig": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnowflakeConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "subscribedEvents": {
             "anyOf": [
               {
@@ -3578,6 +3600,22 @@
             "title": "Ok",
             "type": "boolean"
           },
+          "pending": {
+            "default": false,
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "sourceEventKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceeventkey"
+          },
           "statusCode": {
             "anyOf": [
               {
@@ -3641,7 +3679,8 @@
                   "bearer",
                   "header",
                   "splunk_hec",
-                  "elastic_api_key"
+                  "elastic_api_key",
+                  "snowflake_jwt"
                 ],
                 "type": "string"
               },
@@ -3686,6 +3725,16 @@
               }
             ],
             "title": "Name"
+          },
+          "snowflakeConfig": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnowflakeConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "subscribedEvents": {
             "anyOf": [
@@ -12201,6 +12250,57 @@
           "value"
         ],
         "title": "SmartGroupCriterionOut",
+        "type": "object"
+      },
+      "SnowflakeConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Account",
+            "type": "string"
+          },
+          "database": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "pipe": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Pipe",
+            "type": "string"
+          },
+          "role": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          },
+          "schema": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Schema",
+            "type": "string"
+          },
+          "user": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "User",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "database",
+          "pipe",
+          "role",
+          "schema",
+          "user"
+        ],
+        "title": "SnowflakeConfig",
         "type": "object"
       },
       "StorageOut": {

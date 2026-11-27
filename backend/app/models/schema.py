@@ -1477,18 +1477,11 @@ class ApiToken(Base):
 
 
 class Destination(Base):
-    """Where processed events get delivered — a SIEM, a customer-run webhook receiver,
-    or an ingestion endpoint in front of a warehouse like Snowflake. Deliberately one
-    flexible type rather than a menu of named vendor integrations: from here it is
-    always an HTTPS POST — enforced since #131 by app.core.egress at the write and at
-    delivery, with plain http an explicit opt-in for a lab SIEM — and vendor differences
-    live almost entirely in the auth header, which `auth_type` covers. Splunk gets its
-    own `type` because HEC has a
-    fixed envelope shape, and Elastic because the bulk API has a fixed body shape
-    (NDJSON) and its own failure mode — not because their transport is different.
-    "runreveal" is a preset over the generic-webhook delivery path: same bare-JSON
-    POST, bearer auth, existing so the UI can prefill their ingest URL shape instead
-    of making the admin reverse-engineer it.
+    """Configured event destinations: SIEM/webhook transports and native Snowflake.
+
+    Webhook, HEC and Elastic adapters retain their shipped formats. Snowflake uses
+    Named Channel ingestion with encrypted key-pair auth and durable row accounting.
+    Every transport applies the deployment's outbound URL and DNS policy.
     """
 
     __tablename__ = "destinations"
@@ -1496,7 +1489,7 @@ class Destination(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
     name: Mapped[str] = mapped_column(String(255))
-    # "generic_webhook" | "splunk_hec" | "elastic" | "runreveal"
+    # "generic_webhook" | "splunk_hec" | "elastic" | "runreveal" | "snowflake"
     type: Mapped[str] = mapped_column(String(32), default="generic_webhook")
     url: Mapped[str] = mapped_column(String(1024))
     # Null preserves the deployment default; an explicit choice wins on every worker.
@@ -1513,6 +1506,7 @@ class Destination(Base):
     # data-stream-friendly default in app/core/outbox.py — a name, not a URL segment
     # the admin has to remember to append.
     elastic_index: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    snowflake_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -1568,6 +1562,11 @@ class EventOutbox(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    # A persisted UUID survives replay but new events after a backup restore cannot
+    # reuse warehouse identities merely because the local integer sequence rewound.
+    export_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
@@ -1614,7 +1613,38 @@ class OutboxDelivery(Base):
     last_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snowflake_single_row: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SnowflakeSource(Base):
+    """Stable export namespace for this tenant's database lineage, shared by destinations."""
+
+    __tablename__ = "snowflake_sources"
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4, nullable=False)
+
+
+class SnowflakeBatch(Base):
+    """The one unresolved immutable row batch on a destination's Named Channel.
+
+    Membership and bytes commit before network I/O. Baseline counters commit before
+    append, so a restart can distinguish a committed batch from an ambiguous response.
+    The row is removed only with the delivery accounting transaction. It contains no
+    credentials or continuation tokens. Backups must retain this table and sources.
+    """
+
+    __tablename__ = "snowflake_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    destination_id: Mapped[int] = mapped_column(ForeignKey("destinations.id", ondelete="CASCADE"), unique=True)
+    delivery_ids: Mapped[list] = mapped_column(JSONB)
+    source_keys: Mapped[list] = mapped_column(JSONB)
+    body: Mapped[str] = mapped_column(Text)
+    baseline: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

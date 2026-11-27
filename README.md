@@ -6,6 +6,8 @@ Computers only — mobile devices are not collected. See [docs/mobile-devices.md
 
 LoonInspect reads inventory from Jamf Pro, works out what actually changed since the last read, and streams those changes as structured events into Splunk, Elastic, RunReveal, or any webhook endpoint. It is agentless: nothing is installed on managed devices.
 
+Native Snowflake setup, scoped writer/analyst SQL, and its outstanding live acceptance gate are documented in [Snowflake setup](docs/snowflake-setup.md).
+
 ---
 
 Site and Field Notes: [loonsec.io](https://staging.loonsec.io) (staging until launch). The notes hold the setup guides, including [Apple's on-device model with Docker Desktop](https://staging.loonsec.io/notes/apple-foundation-models-with-docker-desktop/).

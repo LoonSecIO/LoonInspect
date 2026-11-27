@@ -422,6 +422,15 @@ export const en = {
     support: "Support"
   },
   destinations: {
+    snowflake: {
+      setupHint: "Create the table, pipe and service user in Snowflake first. Then enter Account details and the writer key here.",
+      setupGuide: "Snowflake setup guide and SQL",
+      fields: { account: "Organization-account identifier", user: "Service user", database: "Database", schema: "Schema", pipe: "Pipe", role: "Writer role" },
+      fixedTarget: "Target settings are fixed for reliable retries. To change the target, create another destination and re-emit inventory.",
+      privateKey: "RSA private key (PEM)", keyHint: "Stored encrypted and never returned. Paste the unencrypted PEM here; keep keys out of chat and support reports. Leave blank when editing to keep the current key.",
+      subscriptions: "Events to deliver", allEvents: "All event types", chooseEvents: "Choose at least one event type, or select All event types.",
+      testKey: "Test source event key"
+    },
     title: "Destinations",
     description:
       "Where inventory events get delivered — a SIEM, a warehouse ingestion endpoint, or any HTTPS webhook. Every enabled destination gets a copy of every event it's subscribed to, delivered with automatic retry.",

@@ -1,5 +1,14 @@
-export type DestinationType = "generic_webhook" | "splunk_hec" | "elastic" | "runreveal";
-export type AuthType = "none" | "bearer" | "header" | "splunk_hec" | "elastic_api_key";
+export interface SnowflakeConfig {
+  account: string;
+  user: string;
+  database: string;
+  schema: string;
+  pipe: string;
+  role: string;
+}
+
+export type DestinationType = "generic_webhook" | "splunk_hec" | "elastic" | "runreveal" | "snowflake";
+export type AuthType = "none" | "bearer" | "header" | "splunk_hec" | "elastic_api_key" | "snowflake_jwt";
 
 export interface Destination {
   id: number;
@@ -12,6 +21,7 @@ export interface Destination {
   /** Elastic only: the index (or data stream) the bulk POST targets. Null means the
    *  backend's data-stream-friendly default. */
   elasticIndex: string | null;
+  snowflakeConfig?: SnowflakeConfig | null;
   /** Whether a secret is stored — never the secret itself. There is no read path for
    *  it; the admin who set it typed it, so there's nothing to show back. */
   hasSecret: boolean;
@@ -48,6 +58,8 @@ export interface CreateDestinationInput {
   authHeaderName?: string | null;
   authSecret?: string | null;
   elasticIndex?: string | null;
+  snowflakeConfig?: SnowflakeConfig | null;
+  subscribedEvents?: string[] | null;
   enabled: boolean;
 }
 
@@ -59,6 +71,8 @@ export interface UpdateDestinationInput {
   authHeaderName?: string | null;
   authSecret?: string | null;
   elasticIndex?: string | null;
+  snowflakeConfig?: SnowflakeConfig | null;
+  subscribedEvents?: string[] | null;
   enabled?: boolean;
 }
 

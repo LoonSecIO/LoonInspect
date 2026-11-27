@@ -566,3 +566,14 @@ inventory-derived integer `matched_devices`, `unusable` adds integer `latency_ms
 model response, device identifiers or generated filter. The AI disclosure log records
 feature `device_scope_proposal` with fields `query_text`, `current_device_scope`,
 `connection_names`, `group_names_and_ids`, `extension_attribute_names_and_ids`.
+
+### Snowflake transport envelope (#848)
+
+The native Snowflake destination adds warehouse columns around each existing public
+outbox event: `SOURCE_ID`, `TENANT_ID`, `SOURCE_EVENT_KEY`, `EVENT_TYPE`, `OCCURRED_AT`
+`QUEUED_AT` and `PAYLOAD`. `PAYLOAD` preserves the whole public event, including whole inventory
+arrays, while excluding the internal `_envelope` transport hints. Existing SIEM and
+webhook event shapes and `deviceMeta` are unchanged. The source key hashes a persisted
+source namespace, tenant and per-event UUID; sibling changes sharing a device pull's
+`deviceMeta.eventID` remain distinct. The warehouse view exposes its independent
+commit time as `LOADED_AT`. See [Snowflake setup](snowflake-setup.md).

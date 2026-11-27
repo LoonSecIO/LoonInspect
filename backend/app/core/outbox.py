@@ -831,7 +831,10 @@ async def deliver_pending(db: AsyncSession) -> None:
     # `outbox_tick_lock` around the whole tick instead.
     result = await db.execute(
         select(OutboxDelivery)
-        .where(OutboxDelivery.status == "pending", OutboxDelivery.next_attempt_at <= now)
+        .where(
+            OutboxDelivery.status == "pending",
+            OutboxDelivery.next_attempt_at <= now,
+        )
         .order_by(OutboxDelivery.next_attempt_at, OutboxDelivery.id)
         .limit(_TICK_LIMIT)
     )
@@ -855,11 +858,28 @@ async def deliver_pending(db: AsyncSession) -> None:
         d.id: d for d in (await db.execute(select(Destination).where(Destination.id.in_(destination_ids)))).scalars().all()
     }
 
+    snowflake_ids = list(
+        dict.fromkeys(
+            row.destination_id
+            for row in due
+            if destinations.get(row.destination_id) is not None and destinations[row.destination_id].type == "snowflake"
+        )
+    )
+    if snowflake_ids:
+        from app.core.snowflake_delivery import MAX_DESTINATIONS_PER_TICK, drain_destination
+
+        for destination_id in snowflake_ids[:MAX_DESTINATIONS_PER_TICK]:
+            destination = destinations[destination_id]
+            if destination.enabled:
+                await drain_destination(db, destination, [row.id for row in due if row.destination_id == destination_id])
+
     # One resolver pass per destination per tick, not per delivery: a sweep of forty
     # thousand devices is forty thousand deliveries to the same handful of URLs, and the
     # answer for a destination cannot change between two rows of the same tick.
     blocked: dict[int, str] = {}
     for destination in destinations.values():
+        if destination.type == "snowflake":
+            continue
         reason = await blocked_delivery_reason(destination)
         if reason is not None:
             blocked[destination.id] = reason
@@ -875,6 +895,9 @@ async def deliver_pending(db: AsyncSession) -> None:
                 delivery.status = "failed"
                 delivery.last_error = "destination or event no longer exists"
                 await db.commit()
+                continue
+
+            if destination.type == "snowflake":
                 continue
 
             if not destination.enabled:

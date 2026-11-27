@@ -16,7 +16,7 @@ import {
 } from "@/features/destinations/api";
 import type { DestinationTestResult } from "@/features/destinations/api";
 import { deadLetterDaysLeft, heldExpiresAt } from "@/features/destinations/queueDepth";
-import type { AuthType, Destination, DestinationType, OutboxDepth } from "@/features/destinations/types";
+import type { AuthType, Destination, DestinationType, OutboxDepth, SnowflakeConfig } from "@/features/destinations/types";
 import { useLocale } from "@/i18n/LocaleContext";
 
 function focusEditor(node: HTMLFormElement | null) {
@@ -37,6 +37,8 @@ interface FormState {
   authHeaderName: string;
   authSecret: string;
   elasticIndex: string;
+  snowflakeConfig: SnowflakeConfig;
+  subscribedEvents: string[] | null;
   enabled: boolean;
 }
 
@@ -49,6 +51,8 @@ const EMPTY_FORM: FormState = {
   authHeaderName: "",
   authSecret: "",
   elasticIndex: "",
+  snowflakeConfig: { account: "", user: "LOON_WRITER", database: "LOONINSPECT", schema: "PUBLIC", pipe: "LOON_EVENTS_PIPE", role: "LOON_WRITER" },
+  subscribedEvents: null,
   enabled: true
 };
 
@@ -57,7 +61,8 @@ const EMPTY_FORM: FormState = {
 const FIXED_AUTH: Partial<Record<DestinationType, AuthType>> = {
   splunk_hec: "splunk_hec",
   elastic: "elastic_api_key",
-  runreveal: "bearer"
+  runreveal: "bearer",
+  snowflake: "snowflake_jwt"
 };
 
 /** What the generic-webhook auth selector actually offers. */
@@ -75,8 +80,12 @@ const URL_PLACEHOLDERS: Record<DestinationType, string> = {
   splunk_hec: "https://splunk.example.com:8088/services/collector",
   elastic: "https://your-cluster.es.example.com:9243",
   // The shape RunReveal's Structured Webhook source hands out under Source Details.
-  runreveal: "https://api.runreveal.com/sources/hook/<webhookId>"
+  runreveal: "https://api.runreveal.com/sources/hook/<webhookId>",
+  snowflake: "https://organization-account.snowflakecomputing.com"
 };
+
+const EVENT_TYPES = ["device.inventory", "device.inventory.changed", "device.inventory.summary", "device.change", "run.completed", "run.failed", "subject.departure", "subject.returned"];
+const SNOWFLAKE_FIELDS = ["account", "user", "database", "schema", "pipe", "role"] as const;
 
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "—";
@@ -104,13 +113,14 @@ function TestResultLine({ result }: { result: DestinationTestResult | undefined 
   const { t } = useLocale();
   if (!result) return null;
   const status =
-    typeof result.statusCode === "number" ? t.destinations.testStatus(result.statusCode) : t.destinations.testNoStatus;
+    result.sourceEventKey ? result.detail : typeof result.statusCode === "number" ? t.destinations.testStatus(result.statusCode) : t.destinations.testNoStatus;
   return (
     <p
-      className={`mt-1 text-[11px] ${result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
+      className={`mt-1 text-[11px] ${result.pending ? "text-amber-700 dark:text-amber-400" : result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
       title={status}
     >
-      {result.ok ? t.destinations.testDelivered : t.destinations.testRefused(result.detail)}
+      {result.pending ? result.detail : result.ok ? t.destinations.testDelivered : t.destinations.testRefused(result.detail)}
+      {result.sourceEventKey && <span className="mt-1 block break-all">{t.destinations.snowflake.testKey}: <code>{result.sourceEventKey}</code></span>}
     </p>
   );
 }
@@ -151,6 +161,8 @@ export function DestinationsPage() {
         return t.destinations.typeElastic;
       case "runreveal":
         return t.destinations.typeRunReveal;
+      case "snowflake":
+        return "Snowflake";
       default:
         return t.destinations.typeGenericWebhook;
     }
@@ -260,6 +272,8 @@ export function DestinationsPage() {
       authHeaderName: destination.authHeaderName ?? "",
       authSecret: "",
       elasticIndex: destination.elasticIndex ?? "",
+      snowflakeConfig: destination.snowflakeConfig ?? EMPTY_FORM.snowflakeConfig,
+      subscribedEvents: destination.subscribedEvents ?? null,
       enabled: destination.enabled
     });
     setFormMode(destination.id);
@@ -269,6 +283,7 @@ export function DestinationsPage() {
     setForm((current) => ({
       ...current,
       type,
+      ...(type === "snowflake" ? { allowInsecureHttp: false, url: current.snowflakeConfig.account ? `https://${current.snowflakeConfig.account.toLowerCase().replaceAll("_", "-")}.snowflakecomputing.com` : "" } : {}),
       // A preset always authenticates the same way; switching back to a generic
       // webhook keeps a transferable auth type and resets a preset-only one.
       authType: FIXED_AUTH[type] ?? (GENERIC_AUTH_TYPES.includes(current.authType) ? current.authType : "none")
@@ -281,6 +296,10 @@ export function DestinationsPage() {
     setError(null);
 
     try {
+      if (form.subscribedEvents?.length === 0) {
+        setError(t.destinations.snowflake.chooseEvents);
+        return;
+      }
       const payload = {
         name: form.name,
         type: form.type,
@@ -292,7 +311,9 @@ export function DestinationsPage() {
         // Blank means the backend's default index; null states that explicitly so an
         // edit can also clear a previously configured one.
         elasticIndex: form.type === "elastic" ? form.elasticIndex.trim() || null : null,
-        enabled: form.enabled
+        enabled: form.enabled,
+        snowflakeConfig: form.type === "snowflake" ? form.snowflakeConfig : undefined,
+        subscribedEvents: form.subscribedEvents
       };
 
       if (formMode === "create") {
@@ -428,9 +449,31 @@ export function DestinationsPage() {
                 <option value="splunk_hec">{t.destinations.typeSplunkHec}</option>
                 <option value="elastic">{t.destinations.typeElastic}</option>
                 <option value="runreveal">{t.destinations.typeRunReveal}</option>
+                <option value="snowflake">Snowflake</option>
               </select>
             </div>
           </div>
+
+          {form.type === "snowflake" && (
+            <fieldset className="space-y-3 rounded-md border p-4">
+              <legend className="px-1 text-sm font-medium">Snowflake</legend>
+              <p className="text-sm text-muted-foreground">{t.destinations.snowflake.setupHint} <a className="underline" href="https://github.com/LoonSecIO/LoonInspect/blob/main/docs/snowflake-setup.md" target="_blank" rel="noreferrer">{t.destinations.snowflake.setupGuide}</a></p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {SNOWFLAKE_FIELDS.map((field) => (
+                  <div key={field} className="space-y-1">
+                    <label htmlFor={`snowflake-${field}`} className="text-sm font-medium">{t.destinations.snowflake.fields[field]}</label>
+                    <Input id={`snowflake-${field}`} required value={form.snowflakeConfig[field]} readOnly={formMode !== "create"}
+                      placeholder={field === "account" ? "organization-account" : undefined}
+                      onChange={(event) => setForm((current) => ({ ...current,
+                        snowflakeConfig: { ...current.snowflakeConfig, [field]: event.target.value },
+                        ...(field === "account" ? { url: `https://${event.target.value.toLowerCase().replaceAll("_", "-")}.snowflakecomputing.com` } : {})
+                      }))} />
+                  </div>
+                ))}
+              </div>
+              {formMode !== "create" && <p className="text-xs text-muted-foreground">{t.destinations.snowflake.fixedTarget}</p>}
+            </fieldset>
+          )}
 
           <div className="space-y-2">
             <label htmlFor="destUrl" className="text-sm font-medium">
@@ -439,6 +482,7 @@ export function DestinationsPage() {
             <div className="relative">
               <Input
                 id="destUrl"
+                readOnly={form.type === "snowflake"}
                 className={isHttp ? "border-amber-500/60 bg-amber-500/10 pr-10" : undefined}
                 aria-describedby={isHttp && showHttpInfo ? "destHttpInfo" : undefined}
                 type="url"
@@ -476,6 +520,7 @@ export function DestinationsPage() {
             </label>
             <select
               id="destTransport"
+              disabled={form.type === "snowflake"}
               value={form.allowInsecureHttp === null ? "inherit" : String(form.allowInsecureHttp)}
               onChange={(event) =>
                 setForm((current) => ({
@@ -553,7 +598,7 @@ export function DestinationsPage() {
           {form.authType !== "none" && (
             <div className="space-y-2">
               <label htmlFor="destAuthSecret" className="text-sm font-medium">
-                {form.type === "elastic"
+                {form.type === "snowflake" ? t.destinations.snowflake.privateKey : form.type === "elastic"
                   ? formMode === "create"
                     ? t.destinations.elasticApiKey
                     : t.destinations.elasticApiKeyRotate
@@ -561,7 +606,13 @@ export function DestinationsPage() {
                     ? t.destinations.authSecret
                     : t.destinations.authSecretRotate}
               </label>
-              <Input
+              {form.type === "snowflake" ? <textarea
+                id="destAuthSecret" rows={4} autoComplete="off" spellCheck={false}
+                className="w-full rounded-md border border-input bg-background p-3 font-mono text-xs"
+                required={formMode === "create"} value={form.authSecret}
+                placeholder={formMode === "create" ? "-----BEGIN PRIVATE KEY-----" : t.destinations.authSecretPlaceholder}
+                onChange={(event) => setForm((current) => ({ ...current, authSecret: event.target.value }))}
+              /> : <Input
                 id="destAuthSecret"
                 type="password"
                 autoComplete="off"
@@ -569,12 +620,23 @@ export function DestinationsPage() {
                 placeholder={formMode === "create" ? undefined : t.destinations.authSecretPlaceholder}
                 value={form.authSecret}
                 onChange={(event) => setForm((current) => ({ ...current, authSecret: event.target.value }))}
-              />
+              />}
+              {form.type === "snowflake" && <p className="text-xs text-muted-foreground">{t.destinations.snowflake.keyHint}</p>}
               {form.type === "elastic" && (
                 <p className="text-xs text-muted-foreground">{t.destinations.elasticApiKeyHint}</p>
               )}
             </div>
           )}
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{t.destinations.snowflake.subscriptions}</legend>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.subscribedEvents === null}
+              onChange={(event) => setForm((current) => ({ ...current, subscribedEvents: event.target.checked ? null : ["device.inventory", "device.change"] }))} />{t.destinations.snowflake.allEvents}</label>
+            {form.subscribedEvents !== null && <div className="grid gap-2 sm:grid-cols-2">{EVENT_TYPES.map((eventType) => (
+              <label key={eventType} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.subscribedEvents?.includes(eventType) ?? false}
+                onChange={(event) => setForm((current) => ({ ...current, subscribedEvents: event.target.checked ? [...(current.subscribedEvents ?? []), eventType] : (current.subscribedEvents ?? []).filter((value) => value !== eventType) }))} /><code>{eventType}</code></label>
+            ))}</div>}
+          </fieldset>
 
           <label className="flex items-center gap-2 text-sm">
             <input

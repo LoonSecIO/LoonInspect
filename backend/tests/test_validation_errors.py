@@ -265,7 +265,7 @@ async def test_a_model_rule_still_says_what_it_refused() -> None:
         pytest.param(
             DestinationCreate,
             {"name": "SIEM", "url": "https://siem.example.com/hook", "type": "syslog", "authSecret": SECRET},
-            {"expected": "'generic_webhook', 'splunk_hec', 'elastic' or 'runreveal'"},
+            {"expected": "'generic_webhook', 'splunk_hec', 'elastic', 'runreveal' or 'snowflake'"},
             id="the-allowed-values",
         ),
     ],

@@ -970,12 +970,12 @@ async def test_an_emission_pass_over_a_mass_deletion_binds_its_ids_in_batches(db
         # census's single transaction still, but written in one statement per batch. Three, not 2,500 —
         # measured rather than asserted, because the number is SQLAlchemy's to choose: `add_all` plus one
         # flush becomes insertmanyvalues, which pages at `insertmanyvalues_page_size` (1,000 on asyncpg,
-        # and 6 bound parameters a row leaves that page the binding constraint, not the 32767 cap). A
+        # and 7 bound parameters a row leaves that page the binding constraint, not the 32767 cap). A
         # release that repages would land here as 2 or 5, not as a silent return to a round trip per Mac.
         assert len(events) == 2500
         inserts = _outbox_inserts(sent)
         assert len(inserts) == 3, f"2,500 events is three multi-row INSERTs, not {len(inserts)}"
-        assert max(inserts) == _EMIT_BATCH * 6, "a full page binds six parameters per row"
+        assert max(inserts) == _EMIT_BATCH * 7, "a full page binds seven parameters per row, including the export event UUID"
 
         # The boundary itself, from both sides: exactly one batch, and one id past it.
         for count, expected in ((_EMIT_BATCH, 1), (_EMIT_BATCH + 1, 2)):

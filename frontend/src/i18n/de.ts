@@ -385,6 +385,15 @@ export const de: Translations = {
     support: "Support"
   },
   destinations: {
+    snowflake: {
+      setupHint: "Zuerst Tabelle, Pipe und Dienstbenutzer in Snowflake anlegen. Danach Kontodaten und Schreibschlüssel hier eingeben.",
+      setupGuide: "Snowflake-Einrichtung und SQL",
+      fields: { account: "Organisation-Konto-Kennung", user: "Dienstbenutzer", database: "Datenbank", schema: "Schema", pipe: "Pipe", role: "Schreibrolle" },
+      fixedTarget: "Zieleinstellungen bleiben für zuverlässige Wiederholungen fest. Für ein anderes Ziel ein neues Ziel anlegen und Inventar erneut senden.",
+      privateKey: "Privater RSA-Schlüssel (PEM)", keyHint: "Verschlüsselt gespeichert und nie zurückgegeben. Unverschlüsselten PEM-Schlüssel hier einfügen; nicht in Chats oder Supportberichte kopieren. Beim Bearbeiten leer lassen, um den Schlüssel zu behalten.",
+      subscriptions: "Zu sendende Ereignisse", allEvents: "Alle Ereignistypen", chooseEvents: "Mindestens einen Ereignistyp oder Alle Ereignistypen wählen.",
+      testKey: "Quellereignisschlüssel des Tests"
+    },
     title: "Ziele",
     description:
       "Wohin Inventar-Ereignisse zugestellt werden – ein SIEM, ein Ingestion-Endpunkt für ein Data Warehouse oder ein beliebiger HTTPS-Webhook. Jedes aktivierte Ziel erhält eine Kopie jedes Ereignisses, das es abonniert hat, mit automatischer Wiederholung bei Fehlern.",
