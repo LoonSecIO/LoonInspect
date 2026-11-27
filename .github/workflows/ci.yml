@@ -373,3 +373,18 @@ jobs:
       # wrong password, then against a role that could bypass row-level security.
       - name: Check the managed-database init
         run: .github/scripts/check-db-init.sh looninspect-db:ci smoke-db smoke-net looninspect
+
+      - name: Build the Playwright runner
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        timeout-minutes: 15
+        with:
+          context: tests/browser
+          push: false
+          load: true
+          tags: looninspect-browser:ci
+          cache-from: type=gha,scope=playwright
+          cache-to: type=gha,scope=playwright,mode=min
+
+      - name: Run the Playwright smoke tests against looninspect:ci
+        timeout-minutes: 15
+        run: python3 tests/browser/run.py --ci-images
