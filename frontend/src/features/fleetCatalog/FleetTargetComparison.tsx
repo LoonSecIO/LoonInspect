@@ -39,7 +39,7 @@ function PolicyCell({ build }: { build: FleetBuildAssessment }) {
   const { t, locale } = useLocale();
   const words = t.fleetDetail, rules = t.jamfPatch.rules, { policyVerdict: verdict, policyRule: rule, policyTitleId: title } = build;
   const unjudged = { identity: words.policyIdentity, no_jamf_title: words.policyNoTitle, no_rule: rules.titleNone, not_judged: rules.verdictNotJudged };
-  return <><p>{verdict && rule ? policySentence(verdict, rule, t) : build.policyState === "exempt" ? rules.titleExempt : unjudged[build.policyUnassessed ?? "not_judged"]}</p>
+  return <><p>{verdict && rule ? policySentence(verdict, rule, t, locale) : build.policyState === "exempt" ? rules.titleExempt : unjudged[build.policyUnassessed ?? "not_judged"]}</p>
     {build.policySource && title && <Link className={`block text-xs ${link}`} to={`${installedAppsPath}/jamf-patch/${encodeURIComponent(title)}`}>
       {build.policySource === "override" ? words.overrideRule : words.defaultRule}</Link>}
     {build.policyDueAt && verdict?.reason !== "releases" && <small className="block">{words.due(new Date(build.policyDueAt).toLocaleDateString(locale))}</small>}</>;

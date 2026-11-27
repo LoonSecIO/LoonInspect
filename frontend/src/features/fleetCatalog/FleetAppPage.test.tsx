@@ -233,8 +233,8 @@ describe("Compare a target version", () => {
     expect([words.installedScope, words.older, words.atOrAbove, words.unknown].map(name => screen.getByText(name).nextElementSibling?.textContent)).toEqual(["1,234", "2", "1", "0"]);
     expect([api.getFleetDetail.mock.calls.length, ...shown("1 fewer finding in total", "Known exploited on installed build: 1", words.noOlder, words.chooseFromHistory),
       href(words.overrideRule)]).toEqual([1, true, true, false, true, "/devices/applications/jamf-patch/0AB"]); // no pinning note for Fleet's latest
-    expect(column(words.findings, 3)).toEqual([policySentence(verdict("out", "days"), rule, en) + words.overrideRule + "Due 11/10/2026",
-      policySentence(verdict("out", "releases"), rule, en) + words.defaultRule]); // out by releases: no date, though one is sent
+    expect(column(words.findings, 3)).toEqual([policySentence(verdict("out", "days"), rule, en, "en") + words.overrideRule + "Due 11/10/2026",
+      policySentence(verdict("out", "releases"), rule, en, "en") + words.defaultRule]); // out by releases: no date, though one is sent
     fireEvent.click(screen.getByText(words.proof));
     expect([href("CVE-2025-10001"), href("LoonVD-2025-000101")]).toEqual(["/posture/vulnerabilities/CVE-2025-10001", "/posture/vulnerabilities/LoonVD-2025-000101"]);
     fireEvent.click(await screen.findByRole("button", { name: en.fleetCatalog.historyCompare("1.9") }));
@@ -255,7 +255,7 @@ describe("Compare a target version", () => {
       unjudged("1.3", "not_judged", { comparison: "unknown_target", policySource: "default" }), unjudged("1.4", "identity", { comparison: "ambiguous" }), unjudged("1.5", "no_jamf_title", { addresses: 1234 })],
       { policyExemptBuilds: 1234 }));
     expect(await screen.findByText("Insgesamt 1 Fund mehr")).toBeTruthy();
-    expect(column(t.findings, 3)).toEqual([policySentence(verdict("within"), rule, de) + t.defaultRule + "Fällig am 5.12.2026", rules.titleExempt + t.overrideRule, rules.titleNone,
+    expect(column(t.findings, 3)).toEqual([policySentence(verdict("within"), rule, de, "de") + t.defaultRule + "Fällig am 5.12.2026", rules.titleExempt + t.overrideRule, rules.titleNone,
       rules.verdictNotJudged + t.defaultRule, t.policyIdentity, t.policyNoTitle]);
     expect([column(t.findings, 2), column(t.findings, 1)[0]]).toEqual([["Insgesamt 1 Fund mehr" + t.capped, t.off, t.unknown_source, t.unknown_target, t.ambiguousBuild,
       "1.234 behoben · 1 neu · 1 verbleibend"], "1.234"]);
@@ -263,6 +263,14 @@ describe("Compare a target version", () => {
     expect(screen.getByText(`${de.vulnerabilities.corpusHeading("20.11.2026")} · ${t.findingScope}`)).toBeTruthy(); // 2026-11-20, read west of UTC
     expect([words.policyIdentity, words.policyNoTitle, en.jamfPatch.rules.titleExempt, en.jamfPatch.rules.verdictWithin, "The confirmed title rule expired."]
       .filter(text => document.body.textContent?.includes(text))).toEqual([]);
+  });
+
+  it("dates a build out by its days limit in German, as its due date beside it is", async () => {
+    locale.current = "de";
+    open(`/apps/${local.appHash}`, compared([row("1.0")]));
+    const sentence = "Außerhalb der Richtlinie seit 10.11.2026: eine neuere Version ist seit 42 Tagen geführt (Grenze 30)";
+    expect(await screen.findByText(sentence)).toBeTruthy();
+    expect(column(de.fleetDetail.findings, 3)).toEqual([sentence + de.fleetDetail.defaultRule + "Fällig am 10.11.2026"]);
   });
 
   it("says once why there is no device impact, from #899's code, and counts the builds a target cannot order", async () => {

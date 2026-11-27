@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { draftOf, judges, policySentence, ruleOf, sameRule } from "@/features/jamfPatch/policyRules";
+import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
 describe("ruleOf", () => {
@@ -75,17 +76,25 @@ describe("policySentence", () => {
     const sentence = policySentence(
       { ...verdict, state: "out", reason: "days", since: "2026-08-15T12:00:00Z", daysBehind: 63, releasesBehind: 4, limitDays: 14 },
       limits,
-      en
+      en,
+      "en"
     );
-    expect(sentence).toContain("63 days (limit 14)");
-    expect(sentence).toContain(new Date("2026-08-15T12:00:00Z").toLocaleDateString());
+    expect(sentence).toBe("Out of policy since 8/15/2026: a newer release has been listed for 63 days (limit 14)");
+  });
+
+  it("dates the days rule in the page's language, not the browser's", () => {
+    const out = { ...verdict, state: "out" as const, reason: "days" as const, since: "2026-08-15T12:00:00Z", daysBehind: 63, releasesBehind: 4, limitDays: 14 };
+    expect(policySentence(out, limits, de, "de")).toBe(
+      "Außerhalb der Richtlinie seit 15.8.2026: eine neuere Version ist seit 63 Tagen geführt (Grenze 14)"
+    );
   });
 
   it("names the severe limit when that is the one that judged the build", () => {
     const sentence = policySentence(
       { ...verdict, state: "out", reason: "days", since: "2026-08-15T12:00:00Z", daysBehind: 30, releasesBehind: 1, limitDays: 14, severe: true },
       { maxReleasesBehind: null, maxDaysBehindSevere: 14 },
-      en
+      en,
+      "en"
     );
     expect(sentence).toContain("(limit 14, this build carries a critical or high finding)");
   });
@@ -93,21 +102,21 @@ describe("policySentence", () => {
   it("says when a behind build was judged by the ordinary limit because nobody assessed it", () => {
     const split = { maxReleasesBehind: null, maxDaysBehindSevere: 14 };
     const behind = { ...verdict, state: "within" as const, daysBehind: 30, releasesBehind: 1, limitDays: 60 };
-    expect(policySentence(behind, split, en)).toContain("has not assessed this build");
+    expect(policySentence(behind, split, en, "en")).toContain("has not assessed this build");
     // Not said of a build that was assessed, of one on the latest, or under a rule with no severe limit.
-    expect(policySentence({ ...behind, severe: false }, split, en)).toBe("Within policy");
-    expect(policySentence({ ...behind, releasesBehind: 0 }, split, en)).toBe("Within policy");
-    expect(policySentence(behind, limits, en)).toBe("Within policy");
+    expect(policySentence({ ...behind, severe: false }, split, en, "en")).toBe("Within policy");
+    expect(policySentence({ ...behind, releasesBehind: 0 }, split, en, "en")).toBe("Within policy");
+    expect(policySentence(behind, limits, en, "en")).toBe("Within policy");
   });
 
   it("counts releases for the releases rule, and never prints a date it does not have", () => {
-    const sentence = policySentence({ ...verdict, state: "out", reason: "releases", releasesBehind: 3 }, limits, en);
+    const sentence = policySentence({ ...verdict, state: "out", reason: "releases", releasesBehind: 3 }, limits, en, "en");
     expect(sentence).toBe("Out of policy: 3 newer releases listed (limit 1)");
   });
 
   it("keeps within, not judged and a bare out apart", () => {
-    expect(policySentence({ ...verdict, state: "within" }, limits, en)).toBe("Within policy");
-    expect(policySentence({ ...verdict, state: "not_judged" }, limits, en)).toContain("Not judged");
-    expect(policySentence({ ...verdict, state: "out" }, limits, en)).toBe("Out of policy");
+    expect(policySentence({ ...verdict, state: "within" }, limits, en, "en")).toBe("Within policy");
+    expect(policySentence({ ...verdict, state: "not_judged" }, limits, en, "en")).toContain("Not judged");
+    expect(policySentence({ ...verdict, state: "out" }, limits, en, "en")).toBe("Out of policy");
   });
 });

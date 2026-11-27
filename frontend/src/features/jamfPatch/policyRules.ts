@@ -8,6 +8,7 @@
  */
 import type { PatchRule, PolicyVersion } from "@/features/jamfPatch/types";
 import type { Translations } from "@/i18n/en";
+import type { Locale } from "@/i18n/LocaleContext";
 
 /** The API's own bounds; past them a number is a typo, and the route refuses it too. */
 export const MAX_DAYS = 3650;
@@ -74,11 +75,13 @@ export function judges(rule: PatchRule | null): boolean {
 
 /** One version's verdict as the sentence the table and the tooltip both print. The days
  *  limit named is the one that judged this version (`limitDays`), and a version judged by
- *  the ordinary limit because the corpus has not assessed it says so. */
+ *  the ordinary limit because the corpus has not assessed it says so. Its date is in the
+ *  page's language (`locale`), never the browser's, so it reads like the dates beside it. */
 export function policySentence(
   verdict: PolicyVersion,
   limits: { maxReleasesBehind: number | null; maxDaysBehindSevere: number | null },
-  t: Translations
+  t: Translations,
+  locale: Locale
 ): string {
   const copy = t.jamfPatch.rules;
   if (verdict.state === "not_judged") return copy.verdictNotJudged;
@@ -90,7 +93,7 @@ export function policySentence(
       : "";
   if (verdict.state === "within") return copy.verdictWithin + unassessed;
   if (verdict.reason === "days" && verdict.since !== null && verdict.daysBehind !== null && verdict.limitDays !== null) {
-    const since = new Date(verdict.since).toLocaleDateString();
+    const since = new Date(verdict.since).toLocaleDateString(locale);
     return copy.verdictOutDays(since, verdict.daysBehind, verdict.limitDays, verdict.severe === true) + unassessed;
   }
   if (verdict.reason === "releases" && verdict.releasesBehind !== null && limits.maxReleasesBehind !== null) {
