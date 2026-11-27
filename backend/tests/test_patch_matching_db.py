@@ -370,3 +370,52 @@ async def test_sweep_fills_the_catalog_and_the_counts(db, jamf: FakeJamf, connec
     }
     # Xcode matches one title, so it is its own reference and has no sentence.
     assert xcode.reference_title_id == "0C3" and xcode.sentence_title_id is None
+
+
+async def test_refresh_copies_a_jamf_answer_rejudged_on_another_mac(db, jamf: FakeJamf, connection, catalog_rows) -> None:
+    """The first Mac checks in after Xcode gains a release. The other Mac stays offline through the hourly refresh."""
+    from datetime import timedelta
+
+    from app.catalog.service import record_device_apps, refresh_tenant
+    from app.mdm.collections import run_enabled_collections
+    from app.mdm.patch.matching import reset_catalog_cache
+    from app.models.schema import AppCatalogEntry, Device, InstalledApp, JamfPatchTitle
+
+    xcode = next(app for app in jamf.real["applications"] if app["name"] == "Xcode.app")
+    for computer in jamf.computers:
+        computer["applications"] = [xcode.copy()]
+    await _forget_fixture_apps(db, jamf)
+    result = await run_enabled_collections(db, connection, trigger=TRIGGER_SWEEP)
+    assert result.ok and result.device_count == 2, result
+    first, quiet = (await db.scalars(select(Device).where(Device.mdm_connection_id == connection.id).order_by(Device.id))).all()
+    answer = select(InstalledApp.patch_state, InstalledApp.is_compliant).where(InstalledApp.name == xcode["name"])
+    for mac in (first, quiet):
+        assert (await db.execute(answer.where(InstalledApp.device_id == mac.id))).one() == ("latest", True)
+
+    title = await db.get(JamfPatchTitle, "0C3")
+    original = title.current_version, title.patches, title.synced_at
+    try:
+        newest_sync = await db.scalar(select(func.max(JamfPatchTitle.synced_at)))
+        title.current_version = "26.7"
+        title.patches = [{"releaseDate": "2026-10-06T00:00:00Z", "version": "26.7"}, *title.patches]
+        title.synced_at = newest_sync + timedelta(seconds=1)
+        await db.commit()
+        reset_catalog_cache()
+
+        assert await record_device_apps(db, first) == 1
+        await db.commit()
+        version_hash = await db.scalar(select(InstalledApp.version_hash).where(InstalledApp.device_id == first.id))
+        catalog_answer = select(AppCatalogEntry.patch_state, AppCatalogEntry.is_latest).where(
+            AppCatalogEntry.platform == "macos", AppCatalogEntry.version_hash == version_hash
+        )
+        assert (await db.execute(catalog_answer)).one() == ("behind", False)
+        assert (await db.execute(answer.where(InstalledApp.device_id == first.id))).one() == ("behind", False)
+
+        await refresh_tenant(db)
+        assert (await db.execute(answer.where(InstalledApp.device_id == quiet.id))).one() == ("behind", False)
+    finally:
+        await db.rollback()
+        title = await db.get(JamfPatchTitle, "0C3")
+        title.current_version, title.patches, title.synced_at = original
+        await db.commit()
+        reset_catalog_cache()

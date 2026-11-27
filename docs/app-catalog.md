@@ -112,12 +112,14 @@ exactly those rows once.
    rebuild `app_catalog_versions` and call `refresh_tenant` (every operational tenant for the
    hourly job, the caller's tenant for the endpoint): rows judged against an older catalog are
    re-judged and their copies on `installed_apps` refreshed. A sync that changed no title leaves
-   the signature alone and costs nothing. `POST /api/catalog/refresh` forces a full re-judge.
+   the signature alone. `POST /api/catalog/refresh` forces a full re-judge.
    The same pass is where a moved **corpus epoch** is caught: rows whose only stale half is
    `vuln_signature` are re-joined by one `UPDATE … FROM` and their copies by one more, without
    re-running a title match whose answer did not change (#381). That copy statement runs on
-   every pass, re-join or not: it is the only writer that reaches a Mac nobody has swept since
-   the build it carries was judged, and it writes nothing when the copies already agree.
+   every pass. It compares the installed Jamf fields and corpus epoch with the catalog row
+   for the same platform and build. A Mac can therefore stay offline while another Mac
+   judges its build and still receive the new answer on refresh. Matching copies incur no
+   write. A copy locked by a concurrent device pass remains eligible on the next refresh.
 3. Rows outlive devices by design — an app nobody carries any more keeps its first/last seen —
    and `last_seen_at` only moves when a device reports the app again.
 

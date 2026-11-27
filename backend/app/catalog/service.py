@@ -54,7 +54,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, case, delete, null, select, update
+from sqlalchemy import and_, case, delete, null, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -335,12 +335,8 @@ async def copy_vuln_answers(db: AsyncSession) -> int:
     """Every catalog row's vulnerability answer onto the device rows carrying that build —
     one `UPDATE … FROM` for the whole tenant.
 
-    The bulk half of `copy_answer`, and it exists for the two cases `copy_answer` cannot
-    reach. One: an epoch moved, so thousands of catalog rows were re-judged by one statement
-    and the copies have to follow without a loop per row or a pass per device. Two, and the
-    reason `refresh_tenant` runs this whether or not it re-judged anything: a build judged by
-    one Mac's sweep leaves every other Mac carrying it with a stale copy that no per-device
-    pass will write, because the catalog row is already current when those Macs sync.
+    Used when a corpus import or selection re-judges vulnerability answers independently
+    of a Jamf refresh. The hourly refresh reconciles both answers in one pass instead.
 
     Platform-scoped like every other copy here (#236): the same `version_hash` on two
     platforms is two catalog rows. Restricted to rows whose copy actually differs, so a
@@ -432,11 +428,12 @@ async def title_names(db: AsyncSession, title_ids: Iterable[str]) -> dict[str, s
     return {title_id: name for title_id, name in rows if name}
 
 
-def answer_columns(entry: AppCatalogEntry) -> dict[str, object]:
+def answer_columns(entry: AppCatalogEntry | type[AppCatalogEntry]) -> dict[str, object]:
     """The catalog row's answer as `installed_apps` column values — the ONE definition of what
     "the answer" is, in column terms.
 
-    It exists because there are two paths that copy it and they used to spell the list twice:
+    A row supplies values for a device copy. The model class supplies columns for the tenant-wide repair.
+    The two original copy paths used to spell the list twice:
     `copy_answer` below (per row, at device process) and `refresh_tenant`'s bulk UPDATE (per
     catalog row, after a catalog sync). #311 added `ea_assumed` to one of them and the other
     silently kept writing nine columns — the answer was correct on a freshly judged build and
@@ -475,6 +472,41 @@ def copy_answer(entry: AppCatalogEntry, app: InstalledApp, *, now: datetime) -> 
     for column, value in answer_columns(entry).items():
         setattr(app, column, value)
     app.last_patch_check_at = now
+
+
+async def _repair_answer_copies(db: AsyncSession, *, now: datetime) -> int:
+    """Repair installed copies of builds another pass already judged, including offline Macs."""
+    app = aliased(InstalledApp)
+    answer = answer_columns(AppCatalogEntry)
+    # A new Jamf release can change the target build's vulnerability answer within the
+    # same corpus epoch. Copy both answers together whenever the Jamf columns differ.
+    jamf_changed = or_(
+        *(getattr(app, name).is_distinct_from(value) for name, value in answer.items() if name not in VULN_ANSWER_COLUMNS)
+    )
+    stale = (
+        select(
+            app.id,
+            *(value.label(name) for name, value in answer.items()),
+            case((jamf_changed, now), else_=app.last_patch_check_at).label("checked_at"),
+        )
+        .select_from(app)
+        .join(Device, Device.id == app.device_id)
+        .join(
+            AppCatalogEntry, and_(AppCatalogEntry.platform == Device.platform, AppCatalogEntry.version_hash == app.version_hash)
+        )
+        .where(jamf_changed | app.vuln_signature.is_distinct_from(AppCatalogEntry.vuln_signature))
+        # A device writer can already own an app row while waiting for the catalog row
+        # this refresh judged. Leave that copy eligible for the next pass.
+        .with_for_update(of=app, skip_locked=True)
+        .subquery()
+    )
+    stmt = (
+        update(InstalledApp)
+        .where(InstalledApp.id == stale.c.id)
+        .values(**{name: stale.c[name] for name in answer}, last_patch_check_at=stale.c.checked_at)
+        .execution_options(synchronize_session=False)
+    )
+    return int((await db.execute(stmt)).rowcount)
 
 
 async def record_device_apps(db: AsyncSession, device: Device, *, now: datetime | None = None) -> int:
@@ -614,17 +646,9 @@ async def refresh_tenant(db: AsyncSession, *, force: bool = False, now: datetime
     # above are current already, having just been judged. Two statements for the whole
     # tenant, and both are no-ops when the epoch has not moved.
     rejudged = await judge_vuln(db, None, now=now)
-    # Unconditional, and NOT `if rejudged`: the copy is not this statement's follow-up, it is
-    # the only pass that reaches every device. A sweep that judges a build before this pass
-    # does leaves every OTHER Mac carrying that build with no copy — `record_device_apps`
-    # copies onto the device whose own pass judged, and by the time the next Mac syncs the
-    # catalog row already names the current epoch, so neither copier writes. Gating this on
-    # `rejudged` made that a permanent false negative: the device page and the
-    # `loon:jamf:mac:app` event read `unknown_app` for a build the corpus assessed, on every
-    # Mac but the first, until somebody pressed *Refresh*. `copy_vuln_answers`'s own
-    # `is_distinct_from` predicate writes nothing when the copies already agree, so a quiet
-    # tenant pays one no-op UPDATE an hour for the bounds §4f states.
-    copied = await copy_vuln_answers(db)
+    # A device pass can make the catalog row current on either clock before this pass
+    # selects it. The other devices still need its answer, even when both judge counts are zero.
+    copied = await _repair_answer_copies(db, now=now)
     if rejudged or copied:
         logger.info("vulnerability answers refreshed", extra={"builds": rejudged, "apps": copied})
     if judged:
