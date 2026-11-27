@@ -1,0 +1,7 @@
+{
+  "name": "looninspect-browser-smoke",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}

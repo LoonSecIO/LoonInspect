@@ -30,8 +30,10 @@ def test_the_tree_starts_nothing_that_would_be_counted():
     seen = stacks.check(ROOT, TRACKED.stdout.split("\0"))
     assert [f"{s.path}:{s.line}: {s.why}" for s in seen if s.why] == []
     app = [s.env.get("UPDATE_CHECK") for s in seen if s.path == ".github/workflows/ci.yml" and s.image == "looninspect:ci"]
-    assert app == ["false"] * 6  # CI's image job starts the app six times, each with the check off; the rest are not the app
-    assert Counter(s.passed for s in seen) == {"the setting": 6, "not the app": 4, "the comment": 2}
+    assert app == ["false"] * 6  # CI's image job starts the app six times.
+    browser_stack = [s.env.get("UPDATE_CHECK") for s in seen if s.path == "tests/browser/compose.yml"]
+    assert browser_stack == ["false", "false"]  # The app and its Chromium runner share the disposable stack.
+    assert Counter(s.passed for s in seen) == {"the setting": 8, "not the app": 4, "the comment": 2}
 
 
 def test_the_smoke_instance_without_the_setting_fails_on_its_own_line(tmp_path):
