@@ -258,8 +258,8 @@ on the tab's status line and, for a failed check, in the container log.
 
 | Outcome | Means | The titles held |
 | --- | --- | --- |
-| `ok` | The catalog had changed and was read. A sentence follows only if some titles were skipped: a manifest or an index entry this build could not read, or a title the index and the file listing disagree about. They are named (a name this build cannot read as *unrecognized Mac manifest path* or *unrecognized Mac index entry*), left as they were, and read again when Fleet next changes its catalog. | What Fleet publishes, except the titles the sentence names: each keeps the copy held before, or stays unlisted if it is new. |
-| `unchanged` | GitHub answered and nothing had moved. While the titles held are [partial](#complete-or-partial), it says so: *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.* | As they were. |
+| `ok` | The check read the catalog listing. If it skipped any titles, *Unread Mac titles* lists each one. | Each skipped title keeps its previous copy, or stays unlisted if it is new. |
+| `unchanged` | GitHub answered and nothing had moved. If the held snapshot is [partial](#complete-or-partial), *Unread Mac titles* repeats the full list. | As they were. |
 | `refused` | GitHub's rate limit answered (a 403 or 429 carrying its limit headers). | As they were. |
 | `unreachable` | No answer, an answer GitHub does not give (a proxy's 403, a 502), or a name that resolved to an address this instance will not dial. | As they were. |
 | `unexpected` | An answer that was not Fleet's catalog: a page that is not JSON, a redirect, a folder that is gone, a listing GitHub cut short, an index with no Mac app. | As they were. |
@@ -289,12 +289,19 @@ listing (#859). The record describes the titles held, not the last check, and ha
   read (below).
 - **`complete`**: a check finished the listing and skipped nothing.
 
-A check that fails before it changes a title leaves the value as it was. The tab never shows
-the value itself, and of the API only the migration report carries it, as `fleetCatalogReadiness`
-([below](#the-api)), which **Migration review** words. **Fleet titles** shows the check's sentence instead: an
-`ok` check names the titles it skipped, and an `unchanged` check says unread Mac titles remain.
-After the 1.3.0 upgrade (below) it has no sentence for the partial record until the next check, so
-**Migration review**'s sentence names that case itself (#942, [troubleshooting §27 step 6](troubleshooting.md#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer)).
+A check that fails before it changes a title preserves the snapshot's status. **Migration review**
+describes the migration report's `fleetCatalogReadiness` value ([below](#the-api)). The status line on **Fleet titles** and
+`state.detail` in `GET /api/fleet-catalog` show the full list under *Unread Mac titles*. When Fleet uses a name this build cannot read,
+the list includes *unrecognized Mac manifest path* or *unrecognized Mac index entry*.
+An unchanged check repeats it. A failed check that leaves the held snapshot intact keeps the
+list alongside the reason for the failure. A check cut short after updating titles also names
+the manifests awaiting retry. A completed listing replaces the list, clearing it when every
+title was read.
+
+An older partial snapshot may lack a full list. The next check that
+finishes the listing recovers the names, reusing held manifests whose hashes still match.
+For the one-time partial state after the 1.3.0 upgrade, see below and
+[troubleshooting §27 step 6](troubleshooting.md#27-the-fleet-catalog-tab-is-missing-empty-or-says-its-last-check-did-not-get-an-answer).
 
 **Besides the check and its schedule, a saved application patch plan reads it**
 ([Installed application patch plans](application-patch-plans.md)). A plan looks up the Fleet
@@ -359,8 +366,8 @@ when the version last moved with the version before it.
   Apps with the same `deviceScope`, searched by the title's bundle identifier.
 - **The status line** says when GitHub was last asked and what it answered. After a failed
   check it shows the sentence and says the titles below are as read on the earlier date.
-  While the titles held are [partial](#complete-or-partial), an unchanged check's line says
-  unread Mac titles remain. Under it, how many of the titles installed here have their
+  While the titles held are [partial](#complete-or-partial), an unchanged check lists the
+  unread Mac titles. Under it, how many of the titles installed here have their
   version history read, and the sentence when the last history read held back or failed.
 - **When the version moved** is the version history's date when it has one: the day Fleet's
   catalog took the latest version, and the version it replaced. Without one, it is the move

@@ -3629,15 +3629,18 @@ nothing here is a permissions problem in Jamf.
      bundle ID, so they count the same Macs.
    - *Unknown* under *Macs in scope* → Fleet listed the title after the counts for the filter
      were read. **Check now** reads them again; otherwise, reload the page.
-6. **The status line ends with manifests that *could not be read … and were left as held*, or
-   says *The held snapshot still has unread Mac titles*.** The check succeeded. The named
-   titles are ones this build could not read: a manifest or an index entry it cannot read, or
-   a title the file listing and the index disagree about. They keep what they showed, or stay
-   unlisted if they were new, until Fleet next changes its catalog, and the titles held are
-   partial ([`fleet-catalog.md`](fleet-catalog.md#complete-or-partial)). While Fleet changes
-   nothing, each later check's line reads
-   *The catalog tree is unchanged. The held snapshot still has unread Mac titles. They are checked again when Fleet changes its catalog.*
-   That is the same state, not a new failure, and on its own it needs nothing. Three cases do:
+6. **The status line lists *Unread Mac titles*.** Read the full list on **Fleet titles**, or
+   in `state.detail` from `GET /api/fleet-catalog`. An unchanged check repeats every name.
+   If a check failed, its sentence explains why (step 3). A failure that leaves the titles
+   as held keeps the previous list. A check cut short after updating titles also names the
+   manifests waiting for the next check.
+
+   A completed check can skip a manifest or an index entry this build cannot read, or a
+   title the file listing and the index disagree about. Each skipped title keeps its
+   previous copy, or stays unlisted if it is new, until Fleet changes its catalog. If an
+   older build left a partial snapshot with an incomplete list, **Check now** or the next
+   scheduled check recovers the names when it finishes the listing.
+
    - *unrecognized Mac manifest path* or *unrecognized Mac index entry* among the names → Fleet
      listed a Mac title in a form this build cannot read. Update LoonInspect. On the latest
      release, report it (§8) with the sentence.
@@ -3645,8 +3648,8 @@ nothing here is a permissions problem in Jamf.
      saved patch plan's **Open review items at plan creation**, or in its PDF → the plan was
      built while the titles held were unread or partial, so it drew no conclusion from Fleet:
      a Fleet title it found is listed for identity review, and no Fleet version became its
-     target. A saved plan keeps the item. Once the status line shows a check that got an
-     answer and carries neither sentence, build a new plan (§30). Until then, check the app's
+     target. A saved plan keeps the item. Once a check finishes with a complete
+     catalog and the list clears, build a new plan (§30). Until then, check the app's
      Fleet title by hand with its **Fleet source** link on this tab; a title the tab does not
      list is not proof that Fleet has none.
    - A plan shows that item while the status line carries no sentence → the instance was
@@ -3658,14 +3661,10 @@ nothing here is a permissions problem in Jamf.
    **Migration review** and an app's page say *Fleet’s catalog was read only in part, …* (step 12)
    for any of three reasons, and the report they read does not say which (#942). The status line
    on **Fleet titles** does, for two of them:
-   - *The last check, …, did not get an answer.* → a check was cut short after it had read or
-     changed some titles (its sentence ends *… were read and kept; the next check reads the
-     rest.*), or a check failed while the titles held were already partial. Its sentence is
-     step 3's. Once a check gets an answer, read the line again: it then names one of the two
-     cases below or the read is whole.
-   - *… could not be read … and were left as held: …*, or *The held snapshot still has unread Mac
-     titles.* → this step, from the top. The second form does not name the titles; only the
-     check that first skipped them did, up to five by name.
+   - *The last check, …, did not get an answer.* → a check stopped after reading some titles,
+     or failed while the held titles were already partial. Follow the failure's sentence in
+     step 3 and read the names under *Unread Mac titles*.
+   - *Unread Mac titles* under a check that got an answer → this step, from the top.
    - Neither, under *Checked …* → the upgrade to 1.3.0, the last case above.
 7. **Turning it off.** With the flag off for an organization, its tab is gone and the API
    answers it no titles. Once no organization on the instance has the flag on, the instance
