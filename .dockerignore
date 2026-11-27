@@ -13,6 +13,7 @@ frontend/dist
 
 # Test fixtures and developer-only tools never enter the production build context.
 backend/tests
+tests/browser
 backend/scripts
 **/.pytest_cache
 **/.ruff_cache

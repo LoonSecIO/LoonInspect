@@ -739,6 +739,15 @@ rather than waiting for them to expire. There is no email delivery, so new accou
 an initial password set by an administrator, and an administrator can reset a forgotten
 one from the same page.
 
+## Browser smoke tests
+
+From the checkout, run `python3 tests/browser/run.py` with Docker Compose 2.24.4 or later.
+The first run downloads Chromium and builds the app and database. The runner creates
+a fresh Compose project with its own internal network, generated credentials and volumes.
+It signs in through the API, opens each top-level page, checks for browser errors and
+follows one synthetic Mac application through **Devices → Applications → Catalog**.
+The command prints the Playwright results and removes the project when it finishes.
+
 ## 🆘 Support
 
 Two places to ask, and one thing that goes to neither of them.

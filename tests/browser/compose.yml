@@ -1,0 +1,32 @@
+services:
+  app:
+    ports: !reset []
+    extra_hosts: !reset []
+    networks:
+      default:
+        # Chromium requires HTTPS for .app, including Compose's single-label "app".
+        aliases: [looninspect.test]
+    environment:
+      SECURE_COOKIES: "false"
+      SCHEDULER_ENABLED: "false"
+      UPDATE_CHECK: "false"
+      COMMUNITY_SHARING: "false"
+
+  browser:
+    environment:
+      UPDATE_CHECK: "false"
+    build:
+      context: ./tests/browser
+      dockerfile_inline: |
+        FROM mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
+        WORKDIR /smoke
+        COPY package.json package-lock.json ./
+        RUN npm ci --no-audit --no-fund
+        COPY smoke.spec.js playwright.config.js ./
+    init: true
+    shm_size: 1gb
+    command: ["./node_modules/.bin/playwright", "test"]
+
+networks:
+  default:
+    internal: true
