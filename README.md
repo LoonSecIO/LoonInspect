@@ -748,6 +748,9 @@ It signs in through the API, opens each top-level page, checks for browser error
 follows one synthetic Mac application through **Devices → Applications → Catalog**.
 The command prints the Playwright results and removes the project when it finishes.
 
+The **Docker image** CI job runs the same suite with `--ci-images`. It tests the
+`looninspect:ci` and `looninspect-db:ci` images built earlier in that job with its cached Chromium runner.
+
 ## 🆘 Support
 
 Two places to ask, and one thing that goes to neither of them.
