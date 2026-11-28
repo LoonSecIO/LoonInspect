@@ -187,7 +187,7 @@ to Admin and Analyst. Viewer and Auditor may read and export saved plans.
 | POST `/{id}/research` | Start bounded background investigation |
 | GET `/{id}/pdf?revision=N` | PDF of exactly revision N, or 409 |
 
-The installed list and catalog accept the same `deviceScope`; old callers omitting it
+The installed list, the catalog and the device list accept the same `deviceScope`; old callers omitting it
 retain their existing behavior. Plan create/review/export/investigation actions are audited.
 
 Measurement: `posture_snapshot: none`. Counts belong to each saved report's exact scope;

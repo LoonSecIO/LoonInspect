@@ -16588,13 +16588,13 @@
             }
           },
           {
-            "description": "Also list Macs that left the fleet \u2014 absent from every clean census for seven days.",
+            "description": "Also list Macs that left the fleet \u2014 absent from every clean census for seven days. Has no effect with `deviceScope`, which lists current Macs only.",
             "in": "query",
             "name": "includeDeparted",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Also list Macs that left the fleet \u2014 absent from every clean census for seven days.",
+              "description": "Also list Macs that left the fleet \u2014 absent from every clean census for seven days. Has no effect with `deviceScope`, which lists current Macs only.",
               "title": "Includedeparted",
               "type": "boolean"
             }
@@ -16620,6 +16620,25 @@
               "minimum": 1,
               "title": "Pagesize",
               "type": "integer"
+            }
+          },
+          {
+            "description": "JSON device scope to intersect with the list filters. A scope lists current Jamf Macs only, whatever `includeDeparted` says.",
+            "in": "query",
+            "name": "deviceScope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "JSON device scope to intersect with the list filters. A scope lists current Jamf Macs only, whatever `includeDeparted` says.",
+              "title": "Devicescope"
             }
           }
         ],
