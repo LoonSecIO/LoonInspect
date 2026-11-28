@@ -48,18 +48,24 @@ from typing import Any
 KIND = "patch_policy_walk"
 SCHEMA = 1
 REFERENCE_KIND = "patch_policy_reference"
-ALGORITHM = "patch_walk/1"
-DEFINITIONS_VERSION = "2"
+# A walk that counts differently is a new algorithm, because LoonSec publishes each track's check
+# from its pinned copy of this module. `patch_walk/2` is the walk of the eight stops below, whose
+# labels are the days waited (ruled 2026-11-27); `patch_walk/1`, the six stops counted the old way,
+# is never published (ruled 2026-11-27, "Start at 2").
+ALGORITHM = "patch_walk/2"
+ALGORITHM_FAMILY = "patch_walk"
+DEFINITIONS_VERSION = "3"
 
-# The slider's stops, in order. A day stop of D days installs each release D - 1 days after the
-# day it became available: the day the timeline dates a release is day one (ruled 2026-10-02).
-STOPS = ("1d", "7d", "14d", "30d", "60d", "never")
+# The slider's stops, in order. A day stop's label is the days it waits: a stop of D days installs
+# each release D days after the day it became available, so the 0-day stop installs it on that day
+# itself (ruled 2026-11-27, "0 = same day"). It replaces the 2026-10-02 rule, under which a stop of
+# D days waited D - 1 days.
+STOPS = ("0d", "1d", "3d", "7d", "14d", "30d", "60d", "never")
 NEVER = "never"
-DAY_STOPS = {"1d": 1, "7d": 7, "14d": 14, "30d": 30, "60d": 60}
-REPORT_DAY_IS_DAY = 1
+DAY_STOPS = {"0d": 0, "1d": 1, "3d": 3, "7d": 7, "14d": 14, "30d": 30, "60d": 60}
 # The longest a day stop waits: the window must hold this many days of a timeline before its
 # first day, or the slowest device would open the window with nothing installed.
-LONGEST_WAIT = max(DAY_STOPS.values()) - REPORT_DAY_IS_DAY
+LONGEST_WAIT = max(DAY_STOPS.values())
 
 WINDOW_YEARS = (2, 3)
 DEFAULT_YEARS = 2
@@ -157,7 +163,7 @@ DEFINITIONS = {
     "the track does not list but another track of the app does is the other track's "
     "(`other_track`). A version no track lists is unmatched and never installed (`unmatched`). "
     "The versions in reach are those a device in this view could install: the timeline dates "
-    "them from 59 days before the window's first day to its last day. A matched version in "
+    "them from 60 days before the window's first day to its last day. A matched version in "
     "reach is counted once, by its place in the version list, and only when the track's path "
     "installs it; every unmatched version in reach is counted, because an unmatched version "
     "cannot be placed on a line. When more than 5% of the versions in reach are unmatched, "
@@ -171,12 +177,13 @@ DEFINITIONS = {
     "has a promotion table, a release of a promoted major is available on that date or the "
     "major's promotion day, whichever is later, and a release above the table's newest row is "
     "never available.",
-    "install": "A stop of D days installs each available release D - 1 days after it became "
-    "available, so the 1-day stop installs it on the day itself. The installed version only "
-    "rises: a release ranked below the installed one is never an event.",
+    "install": "A stop's label is the days it waits (ruled 2026-11-27: 0 is the same day): a stop "
+    "of D days installs each available release D days after the day it became available, so "
+    "the 0-day stop installs it on that day itself and the 1-day stop the day after. The "
+    "installed version only rises: a release ranked below the installed one is never an event.",
     "steady_state": "A day stop opens the window on the newest release whose install day had "
     "already passed. `never` opens it on the newest release available by the window's first "
-    "day and installs nothing after it, so for the window's first 59 days `never` can run a "
+    "day and installs nothing after it, so for the window's first 60 days `never` can run a "
     "newer release than the 60-day stop.",
     "affected": "A version is affected by a CVE when its rank is inside one of the CVE's "
     "affected runs, as LoonVD compiled them. Rule 5 (ruled 2026-10-02): a version at or above "
@@ -213,9 +220,9 @@ DEFINITIONS = {
     "`counts.replayed_by_clock` says how many of each.",
     "window": "The window runs from `since` to `until`, both days included. It is asked for as "
     "2 or 3 years ending on `until`, which defaults to the day before the document's date. It "
-    "starts no earlier than the day after the detectable-day record begins, 59 days after the "
-    "first release this timeline makes available on the track's path, 59 days after the first "
-    "release on a held track's ceiling line, and 59 days after a channel's start; it ends no "
+    "starts no earlier than the day after the detectable-day record begins, 60 days after the "
+    "first release this timeline makes available on the track's path, 60 days after the first "
+    "release on a held track's ceiling line, and 60 days after a channel's start; it ends no "
     "later than the day before the document's date, the day before the timeline was read, and "
     "the day before the timeline dates a release above the promotion table. Each binding term "
     "is in `window.shortened_by`.",
@@ -239,7 +246,7 @@ DEFINITIONS = {
     "open[d] = open[d - 1] + new[d] - resolved[d].",
     "exclusions": "A CVE the document excludes keeps the document's reason. The walk adds one, "
     "judged on the lines the path visits (the line of any version a device under any of the "
-    "six stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
+    "eight stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
     "ambiguous on such a line. A fix this timeline does not date excludes nothing; it is dated "
     "as `fix_dating` says.",
     "input_id": "The digest of the document's id, the app and track, the timeline's source, name, "
@@ -252,7 +259,9 @@ COMPAT_V1_DEFINITIONS = {
     "a CVE is replayed only when published inside the window, the window is the requested "
     "years before `until` with no start term, a held device's line is the line of the newest "
     "release dated by the window's first day, and exposure stops the day before `until`, as "
-    "LoonVD's replay files count it.",
+    "LoonVD's replay files count it. A stop of D days waits D days, as `install` says: the count "
+    "of LoonVD's schema-3 replay files, each of whose day rows states it (`install_delay_days`). "
+    "A schema-2 file counted D - 1 and is not conformed to.",
 }
 
 _DAY = dt.timedelta(days=1)
@@ -308,6 +317,22 @@ def years_before(day: dt.date, years: int) -> dt.date:
 
 def _iso(day: dt.date | None) -> str | None:
     return day.isoformat() if day else None
+
+
+def algorithm_number(name: Any) -> int | None:
+    """N of a `patch_walk/N` name, or None for any other name: what tells an older way of reading
+    LoonSec's data from a newer one, so a refusal can say whether updating LoonInspect helps."""
+    if not isinstance(name, str):
+        return None
+    family, slash, number = name.partition("/")
+    return int(number) if family == ALGORITHM_FAMILY and slash and number.isascii() and number.isdigit() else None
+
+
+def is_older_algorithm(name: Any) -> bool:
+    """Whether `name` is a `patch_walk` older than this build's: data only older builds read, which
+    updating this build cannot make readable (ruled 2026-11-27: `patch_walk/1` is never published)."""
+    number, ours = algorithm_number(name), algorithm_number(ALGORITHM)
+    return number is not None and ours is not None and number < ours
 
 
 # --- The inputs, read and checked ------------------------------------------------------------
@@ -428,10 +453,18 @@ def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any],
             "nothing was walked. Settings › Support shows the last data-sharing exchange.",
         )
     if document.get("algorithm") != ALGORITHM:
+        found = document.get("algorithm")
+        # Only a copy an older build stored can be older: this build's own check refuses one before
+        # it is stored. Updating cannot help it, and LoonSec's data for this build replaces it.
         raise WalkRefused(
             REFUSED_ALGORITHM,
-            f"This build reads {ALGORITHM}; the patch-policy data on this instance is {document.get('algorithm')!r}. "
-            "Update LoonInspect.",
+            f"This build reads {ALGORITHM}; the patch-policy data on this instance is {found!r}"
+            + (
+                ", which older builds read, so nothing was walked. Nothing on this instance needs updating: LoonSec's "
+                f"data for {ALGORITHM} replaces it when it arrives."
+                if is_older_algorithm(found)
+                else ". Update LoonInspect."
+            ),
         )
     _check_document(document)
     apps = document["apps"]
@@ -1072,8 +1105,8 @@ def _promotion_runs(prepared: _Prepared) -> list[tuple[int, int, dt.date]]:
 def _reach(prepared: _Prepared, since: dt.date, until: dt.date) -> dict[str, Any]:
     """The versions a device in this view could install, and how many of them the document lists.
 
-    A device installs a release at most 59 days after it becomes available, so every release a
-    stop installs inside [since, until] became available in [since - 59, until]. (The release a
+    A device installs a release at most 60 days after it becomes available, so every release a
+    stop installs inside [since, until] became available in [since - 60, until]. (The release a
     slow device opens the window on can be older, and counts only when it falls in that span.) A
     matched version counts once (by its place in the list), only on the track's path, on the day
     it becomes available; an unmatched one counts on the earliest day the timeline gives it, and
@@ -1134,7 +1167,7 @@ def _steps(stop: str, available: list[tuple[int, dt.date]], since: dt.date, unti
     """The installed version as steps `(from this day, this rank)`, the first at `since`."""
     if stop == NEVER:
         return [(since, max((index for index, day in available if day <= since), default=None))]
-    delay = dt.timedelta(days=DAY_STOPS[stop] - REPORT_DAY_IS_DAY)
+    delay = dt.timedelta(days=DAY_STOPS[stop])
     installs = [(index, day + delay) for index, day in available]
     current = max((index for index, day in installs if day <= since), default=None)
     steps: list[tuple[dt.date, int | None]] = [(since, current)]
@@ -1534,7 +1567,7 @@ def _run_stop(
     installs = [{"date": day.isoformat(), "version": name(index)} for day, index in steps[1:]]
     return {
         "stop": stop,
-        "install_delay_days": DAY_STOPS[stop] - REPORT_DAY_IS_DAY if stop in DAY_STOPS else None,
+        "install_delay_days": DAY_STOPS.get(stop),
         "never_seen": totals[NEVER_SEEN],
         "never_seen_outside_affected_range": totals[OUTSIDE_RANGE],
         "exposed": totals[EXPOSED],
@@ -1748,7 +1781,10 @@ def invariant_failures(result: Mapping[str, Any]) -> list[str]:
         series = policy["series"]
         open_, new, resolved = series["open"], series["new"], series["resolved"]
         expect(len(open_) == result["window"]["days"], f"{prefix}.series covers {len(open_)} days, not the window's")
-        expect(bool(open_) and open_[0] == series["opening"] + new[0] - resolved[0], f"{prefix}.series: day one does not open")
+        expect(
+            bool(open_) and open_[0] == series["opening"] + new[0] - resolved[0],
+            f"{prefix}.series: the window's first day does not open",
+        )
         for at in range(1, len(open_)):
             if open_[at] != open_[at - 1] + new[at] - resolved[at]:
                 failures.append(f"{prefix}.series: open[{at}] != open[{at - 1}] + new - resolved")

@@ -82,7 +82,7 @@ def _serving(payload: bytes) -> httpx.MockTransport:
 
 
 def _offer(doc: dict, **extra) -> feed.Offer:
-    return feed.read_offer({"patch_walk/1": {"signature": doc["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}})
+    return feed.read_offer({"patch_walk/2": {"signature": doc["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}})
 
 
 async def _hold(db, doc: dict, **extra) -> None:
@@ -246,7 +246,7 @@ async def _walk(client, expect: int = 200, **query) -> dict:
 
 async def test_a_public_walk_is_served_whole_in_its_totals_and_paged_in_its_rows(held, viewer) -> None:  # noqa: F811
     body = await _walk(viewer, app="wireshark")
-    assert (body["kind"], body["schema"], body["algorithm"]) == ("patch_policy_walk", 1, "patch_walk/1")
+    assert (body["kind"], body["schema"], body["algorithm"]) == ("patch_policy_walk", 1, "patch_walk/2")
     assert body["inputs"]["track"] == "wireshark/4.4"  # the default track
     assert body["inputs"]["doc_id"] == held["doc_id"]
     assert body["inputs"]["timeline"]["source"] == "public" and body["inputs"]["timeline"]["ids"] == ["wireshark-tags"]
@@ -266,8 +266,10 @@ async def test_a_public_walk_is_served_whole_in_its_totals_and_paged_in_its_rows
     exposed = [row["outcomes"]["never"] for row in with_days["cves"] if row["outcomes"]["never"]["outcome"] == "exposed"]
     assert exposed and all("intervals" in outcome for outcome in exposed)
 
+    # Three years reach back past the 4.4 line's first release (4.4.0, 2024-08-28): the window starts
+    # the 60 days the 60-day stop waits after it.
     three = await _walk(viewer, app="wireshark", years=3)
-    assert three["check"]["state"] == "matched" and three["window"]["since"] == "2024-10-26"
+    assert three["check"]["state"] == "matched" and three["window"]["since"] == "2024-10-27"
 
 
 async def test_a_window_with_no_published_totals_is_shown_only_because_another_matched(held, viewer) -> None:  # noqa: F811
@@ -315,10 +317,10 @@ async def test_jamf_dates_walk_the_track_and_the_other_lines_versions_are_set_as
     # The check is the public walk's, so its sentence names that walk and never says this view matched.
     assert body["check"]["detail"].startswith("The walk of LoonSec's published dates for Wireshark 4.4 over 2 years matches")
     assert body["clocks"]["release_date"] == timelines.JAMF_CLOCK
-    # Jamf dated 4.4.3 a day after the tag, so the 1-day stop installs it a day later than on Public.
+    # Jamf dated 4.4.3 a day after the tag, so the 0-day stop installs it a day later than on Public.
     public = await _walk(viewer, app="wireshark", track="wireshark/4.4")
-    installs = {row["version"]: row["date"] for row in body["policies"]["1d"]["installs"]}
-    public_installs = {row["version"]: row["date"] for row in public["policies"]["1d"]["installs"]}
+    installs = {row["version"]: row["date"] for row in body["policies"]["0d"]["installs"]}
+    public_installs = {row["version"]: row["date"] for row in public["policies"]["0d"]["installs"]}
     assert date.fromisoformat(installs["4.4.3"]) - date.fromisoformat(public_installs["4.4.3"]) == timedelta(days=1)
 
     newest = await _walk(viewer, app="wireshark", track="wireshark/newest", source="jamf")
@@ -392,8 +394,8 @@ async def test_fleet_is_read_only_while_the_flag_is_on_and_follows_only_the_newe
     )
     body = await _walk(viewer, app="wireshark", track="wireshark/newest", source="fleet")
     assert body["inputs"]["timeline"]["ids"] == [FLEET_SLUG] and body["inputs"]["timeline"]["note"] == timelines.FLEET_CLOCK
-    # Fleet carried 4.6.0 from 2025-10-09: the 60-day stop needs 59 days of it.
-    assert body["window"]["since"] == "2025-12-07"
+    # Fleet carried 4.6.0 from 2025-10-09: the 60-day stop needs 60 days of it.
+    assert body["window"]["since"] == "2025-12-08"
     assert [row["reason"] for row in body["window"]["shortened_by"]] == ["timeline_coverage"]
 
 
@@ -413,8 +415,9 @@ async def test_align_common_cuts_every_view_to_the_days_all_the_sources_share(db
     body = await _walk(viewer, app="wireshark", track="wireshark/newest", align="common")
     aligned = body["window"]["aligned"]
     assert aligned["sources"] == ["public", "jamf", "fleet"] and aligned["left_out"] == []
-    assert (aligned["since"], aligned["until"]) == ("2025-12-07", "2026-11-22")
-    assert (body["window"]["since"], body["window"]["until"]) == ("2025-12-07", "2026-11-22")
+    # Fleet carried 4.6.0 from 2025-10-09, and the 60-day stop waits 60 days.
+    assert (aligned["since"], aligned["until"]) == ("2025-12-08", "2026-11-22")
+    assert (body["window"]["since"], body["window"]["until"]) == ("2025-12-08", "2026-11-22")
     assert "common_window" in [row["reason"] for row in body["window"]["shortened_by"]]
 
     await _flag(db, False)

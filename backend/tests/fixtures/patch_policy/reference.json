@@ -1,9 +1,9 @@
 {
   "kind": "patch_policy_reference",
   "schema": 1,
-  "doc_id": "9735c0674cf152f22194e6ce9302592bd2a49f313939d2b4958c275280da6698",
+  "doc_id": "f3f70ef41fe954f92db6ecf3eb14789d0560d10ed2a870d19b6453bdd82507a7",
   "as_of": "2026-11-23T20:00:00Z",
-  "algorithm": "patch_walk/1",
+  "algorithm": "patch_walk/2",
   "definitions_version": "2",
   "engine": {
     "parser_version": "fixture",

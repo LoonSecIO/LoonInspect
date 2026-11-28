@@ -8,9 +8,22 @@ as ruling R10 asked; where a term's reach is not verified, this document says so
 ## What the page is
 
 Posture › Patch policy is a **reference analysis**: one hypothetical Mac that runs one app, walked
-day by day under each stop of a patch-policy slider (install each release 1, 7, 14, 30 or 60 days
-after it is dated, or never), against public CVE records. It is not this organization's exposure.
-It reads no inventory, and nothing it computes is stored, queued or sent anywhere.
+day by day under each stop of a patch-policy slider (install each release 0, 1, 3, 7, 14, 30 or 60
+days after it is dated, or never), against public CVE records. It is not this organization's
+exposure. It reads no inventory, and nothing it computes is stored, queued or sent anywhere.
+
+**A stop's label is the days it waits** (ruled 2026-11-27, "0 = same day"): the 0-day stop installs
+a release on the day its source dates it, the 1-day stop the day after, the 3-day stop three days
+after. The slider opens on its first stop, 0 days, and an address that names a stop (`?policy=7d`)
+keeps naming it, so a link saved before the ruling opens the same stop, now seven days waited.
+The rule replaced the 2026-10-02 one, under which a stop of D days waited D − 1 days: 0 days is the
+device the 1-day stop was then, and every other stop installs a day later than its label did.
+
+The walk that counts this way is `patch_walk/2`, and LoonSec publishes its data, and the totals each
+instance holds its own walk to, under that name; `patch_walk/1`, the six stops on the old count, is
+never published (ruled 2026-11-27). An instance the exchange offers only another way of reading the
+data says so, in a sentence that says whether updating helps, and draws the reference replays below
+([troubleshooting.md](troubleshooting.md) §32 step 4).
 
 It has two modes:
 
@@ -25,7 +38,11 @@ It has two modes:
   release record and counting each CVE from NVD publication
   ([`frontend/src/features/patchPolicy/replays/README.md`](../frontend/src/features/patchPolicy/replays/README.md)).
   They stay as this fallback until LoonSec's data is live in production, so the page is never blank
-  between a release and the data reaching an instance (ruled 2026-11-24).
+  between a release and the data reaching an instance (ruled 2026-11-24). The page reads replays of
+  schema 3, which count the days waited and state each day row's wait (`install_delay_days`). A
+  schema-2 replay counts the old way, its N-day row being N − 1 days waited, so it is refused whole,
+  in words, rather than drawn a day early or relabelled here: LoonSec writes the replays, and the
+  page computes nothing in them ([troubleshooting.md](troubleshooting.md) §22 step 4).
 
 ## The three sources of release dates
 

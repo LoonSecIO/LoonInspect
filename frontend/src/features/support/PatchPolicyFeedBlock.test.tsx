@@ -12,7 +12,7 @@ vi.mock("@/features/support/patchPolicyFeed", async (actual) => ({ ...(await act
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const base = {
-  algorithm: "patch_walk/1",
+  algorithm: "patch_walk/2",
   coverageSince: null,
   until: null,
   outcome: null,

@@ -72,10 +72,16 @@ describe("the three answers", () => {
     expect(unreadable(walk)).toBeNull();
     expect(unreadable([])).toBe("not an object");
     expect(unreadable({ ...walk, kind: "patch_policy_reference" })).toBe('kind "patch_policy_reference"');
-    expect(unreadable({ ...walk, window: { ...walk.window, days: 11 } })).toBe("policies.1d.series.open");
-    const five: Partial<typeof walk.policies> = { ...walk.policies };
-    delete five.never;
-    expect(unreadable({ ...walk, policies: five })).toBe("policies.never.series");
+    expect(unreadable({ ...walk, window: { ...walk.window, days: 11 } })).toBe("policies.0d.series.open");
+    const seven: Partial<typeof walk.policies> = { ...walk.policies };
+    delete seven.never;
+    expect(unreadable({ ...walk, policies: seven })).toBe("policies.never.series");
+    // An instance still on the six stops (patch_walk/1) has no 0-day or 3-day stop: an answer this
+    // page cannot draw, said as such, never drawn with two stops missing.
+    const six: Partial<typeof walk.policies> = { ...walk.policies };
+    delete six["0d"];
+    delete six["3d"];
+    expect(unreadable({ ...walk, policies: six })).toBe("policies.0d.series");
     expect(unreadable({ ...walk, cves: null })).toBe("cves");
   });
 });

@@ -3009,7 +3009,10 @@ that log, then repeat the act.
 Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
 runs one app, replayed against public CVE records under each stop of a patch-policy slider. It is
 not this organization's exposure. It reads no inventory, sends nothing, and stores nothing. The page
-is at `/posture/patch-policy` and needs **app:read**, which every role holds.
+is at `/posture/patch-policy` and needs **app:read**, which every role holds. The slider has eight
+stops: 0, 1, 3, 7, 14, 30 and 60 days, and Never. A stop's label is the days it waits (ruled
+2026-11-27, "0 = same day"): the 0-day stop installs each release on the date its release record
+gives it, the 1-day stop the day after, and so on; the sentence under the slider says the same.
 
 The page has two modes. Once LoonSec's patch-policy data (§32) is held for this organization, it
 walks that data day by day, with a source toggle (Public, Jamf, Fleet) and a day graph: that page is
@@ -3049,6 +3052,18 @@ the replays, and step 11 about how the page chooses between the two.
      the replay this build does not read. *Its schema is 1, the earlier replay format…* is a file
      with no `timeline` block, the part of the file this page reads to name and link where its
      release dates come from; this build reads only replays that have one.
+   - *Its schema is 2, the replay that counts the old way…* → the file was written before the
+     2026-11-27 ruling that a stop's label is the days it waits. Its N-day row is N − 1 days waited
+     (its own `definitions.install` says the install date is the release date + (D − 1) days), so
+     drawn under this page's stops every number would sit a day early. The page refuses it whole and
+     relabels nothing, because the file is LoonSec's and the page computes nothing in it; this build
+     reads schema 3, which counts the days waited. `replays/README.md` beside the files lists the
+     replays a build ships and says which, if any, are still on the old count.
+   - *Its 7d row does not state the days it waits…* or *Its 7d row states install_delay_days …, but
+     its label means … days waited…* → a schema-3 file whose day row does not state, as
+     `install_delay_days`, the days its stop's label names. The page reads each row's count from the
+     row, never from its label, so a row that waits otherwise, or does not say, is not drawn under
+     that label, and neither is the rest of the file.
    - *Its CVE clock is …* → the file places each CVE on a clock other than NVD's publication date
      (its `cve_clock` is not `published`). The page's words state that one clock, so the file is
      refused rather than drawn under words that would misstate it.
@@ -3061,7 +3076,7 @@ the replays, and step 11 about how the page chooses between the two.
      for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
      sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
 
-   Reload once. None of the last four can be fixed on the instance, because the file is part of the
+   Reload once. None but the first can be fixed on the instance, because the file is part of the
    build and no setting or data of yours is read: the same sentence after a reload is reportable
    state **Z**, below.
 5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
@@ -3121,6 +3136,9 @@ the replays, and step 11 about how the page chooses between the two.
 
     Either way the replay underneath is complete and correct on its own terms. Nothing on this page
     mixes the two: a replay is never drawn under the walk's words, or a walk under the replay's.
+    Where the replay underneath is one the page refuses (step 4: a schema-2 file on the old count,
+    say), the refusal stands in its place under the same first sentence, in words, and no number of
+    it is drawn.
 
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
 or the page says no reference replay ships with the build. Report the page's sentence as it is
@@ -4286,14 +4304,26 @@ stored, and nothing is deleted to make room for one.
    no document. Nothing on this instance is wrong, and a copy already held keeps answering
    (the sentence then ends *Showing the copy dated …*). If it reads the same after the next
    day's exchange, that is reportable state **AA**, below.
-4. ***This build reads patch_walk/1; LoonSec's last exchange named only …*** The exchange named
-   the document only for a newer way of reading it. Once, it is usually a passing gap at
-   LoonSec: while LoonSec publishes two ways at once, after a move, an exchange that could not
-   read one of them leaves it out for a few minutes, and the next exchange (or **Send now**)
-   names it again; nothing needs updating. If the next exchange names the same, LoonSec has moved
-   on: it keeps publishing the older way for at least 90 days after a move, so the instance has
-   stayed behind longer than that. Update LoonInspect (§10); the held copy keeps answering until
-   then.
+4. ***This build reads patch_walk/2; LoonSec's last exchange named only …*** The exchange named
+   the document only for another way of reading it than this build's, so nothing was downloaded.
+   This build reads `patch_walk/2`, the walk of Posture › Patch policy's eight stops (0, 1, 3, 7,
+   14, 30 and 60 days, and Never), each labelled by the days it waits (ruled 2026-11-27);
+   `patch_walk/1`, the six stops on the old count, is never published, and only an older build
+   reads it. A copy already held keeps answering either way (the sentence then ends *Showing the
+   copy dated …*); with none, Posture › Patch policy draws the reference replays that ship with the
+   build, under this sentence (§22 step 11). The sentence goes on in one of two ways:
+   - ***…, which older builds read. Nothing on this instance needs updating…*** → the exchange
+     named only an older way, so updating changes nothing. Once, it is usually a passing gap at
+     LoonSec: while LoonSec publishes two ways at once, an exchange that could not read one of them
+     leaves it out for a few minutes, and the next exchange (or **Send now**) names it again. If the
+     next day's exchange names the same, LoonSec is not publishing its data for this build:
+     reportable state **AA**, below. The container log says the same, beginning
+     `patch-policy data not updated: this build reads patch_walk/2 and LoonSec's exchange named only`.
+   - ***… If the next exchange names the same, update LoonInspect.*** → the exchange named the
+     document only for a newer way of reading it. Once, it is the same passing gap, and nothing
+     needs updating. If the next exchange names the same, LoonSec has moved on: it keeps publishing
+     the older way for at least 90 days after a move, so the instance has stayed behind longer than
+     that. Update LoonInspect (§10); the held copy keeps answering until then.
 5. ***The patch-policy file could not be downloaded from …*** The host it names is the object
    store the exchange's link pointed at, **not** the exchange's own host
    (`api.next.loonsec.io`), so an egress rule that lets the exchange through can still stop
@@ -4323,7 +4353,11 @@ stored, and nothing is deleted to make room for one.
    - *it is not JSON* or *it is not a gzip file* or *its gzip stream is cut short* → the bytes
      did not survive the trip, usually a proxy that rewrote or truncated them.
    - *its kind is …*, *its schema is …*, *its algorithm is …* → the document is not one this
-     build reads. Update LoonInspect (§10).
+     build reads. Update LoonInspect (§10). Except an algorithm older than this build's: *its
+     algorithm is "patch_walk/1"; this build reads patch_walk/2* is a document only older builds
+     read, which LoonSec never publishes (step 4), so updating changes nothing. On an instance that
+     reads the file (step 8), put the file LoonSec provides for this build in its place; from the
+     exchange, it is reportable state **AB**.
    - *its doc_id … is not what its contents hash to*, *it is not the document the exchange
      named* → the content changed after LoonSec built it, or the link served another
      document.
@@ -4385,18 +4419,20 @@ running, the held copy keeps answering, and the next exchange or change to the f
 Report it as state **AB**, with that line, the error type and stack locations logged with it, and
 the build (§8).
 
-**AA.** The exchange answers and LoonSec names no patch-policy document, or names one dated more
-than three days ago (step 7), on two consecutive days. The sentence's cause is the part that
-matters:
+**AA.** The exchange answers and LoonSec names no patch-policy document, names it only for a way
+of reading it older than this build's (step 4), or names one dated more than three days ago (step
+7), on two consecutive days. The sentence's cause is the part that matters:
 - *…LoonSec's publisher last ran on …, but its NVD data has not advanced since …* → LoonSec's
   publisher is running and its NVD data has stood still: LoonSec's to fix, and nothing an
   instance can change.
 - *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
   LoonSec's publisher has finished no build that reached this instance since that day.
+- *…, which older builds read. Nothing on this instance needs updating…* → LoonSec is not
+  publishing its data for the way this build reads it: LoonSec's to fix.
 
-Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt` and
-`feed.publisherRunning` from `GET /api/patch-policy/apps`, and the build from Settings › Support
-(§8).
+Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt`,
+`feed.publisherRunning`, `feed.algorithm` and `feed.detail` from `GET /api/patch-policy/apps`, and
+the build from Settings › Support (§8).
 
 **AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
 proxy between the container and the store; or the check, or the file read, fails with an
@@ -4415,9 +4451,12 @@ or logs it.
 
 A patch-policy walk (#614) takes one app's track from LoonSec's patch-policy data (§32) and one
 timeline of release dates, and replays a Mac that installs each release a set number of days
-after it is dated, under every stop of the slider, for a window of two or three years. It is a
-reference analysis: it reads no device, and its result is neither stored nor sent anywhere. The
-timeline is one of three, the **source**:
+after it is dated, under every stop of the slider, for a window of two or three years. The eight
+stops are 0, 1, 3, 7, 14, 30 and 60 days, and Never, and a stop's label is the days it waits
+(ruled 2026-11-27, "0 = same day"): the 0-day stop installs a release on the day the timeline dates
+it, the 1-day stop the day after. Each stop's `install_delay_days` in the walk is its label's number,
+and `definitions.install` states the rule. It is a reference analysis: it reads no device, and its
+result is neither stored nor sent anywhere. The timeline is one of three, the **source**:
 
 - **Public**: the release dates LoonSec publishes with its data, from the public release records
   each timeline names (`sources.timelines`): a vendor's own feed (Google's VersionHistory,
@@ -4456,7 +4495,17 @@ below are those reasons. Nothing a walk reads is written, so no container log li
 refusal: the sentence is the whole report.
 
 1. **A sentence from §32** (*…does not share data with LoonSec…*, *…has not arrived…*, a refused
-   copy with none held). The walk needs the copy §32 is about; follow that path first.
+   copy with none held). The walk needs the copy §32 is about; follow that path first. The walk's
+   own `algorithm_unknown` is the one case of a copy held that this build cannot walk:
+   ***This build reads patch_walk/2; the patch-policy data on this instance is …*** This build stores
+   only a copy it reads, so the copy held was stored by a build that reads it another way, before
+   this one replaced it, and it is walked for no app.
+   - ***…, which older builds read, so nothing was walked. Nothing on this instance needs
+     updating…*** → the copy is older (`patch_walk/1`, the six stops on the old count). The next
+     exchange that brings LoonSec's data for this build replaces it (§32 step 4 if it brings none;
+     on an instance that reads the file, §32 step 8: the file LoonSec provides for this build).
+   - ***… Update LoonInspect.*** → the copy is newer, stored by a later build before this one was
+     put back: update LoonInspect (§10) to walk it.
 2. ***No reference yet for …*** (`app_unknown`) or ***… has no … track in LoonSec's patch-policy
    data yet; it has …*** (`track_unknown`). Not a fault and not a count of zero: LoonSec's data
    does not reference that app, or that track of it, yet. The tracks it does have are named.
@@ -4698,9 +4747,9 @@ refusal: the sentence is the whole report.
     track and window, and it moves whenever a new copy of LoonSec's data moves the window: the
     page prints both numbers for the view on screen. That version is the newest release available
     by the window's first day (`definitions.steady_state`): the never stop is a device that stops
-    updating that day, not one already behind, so for the window's first 59 days it can run a
+    updating that day, not one already behind, so for the window's first 60 days it can run a
     newer release than the 60-day stop, which opens the window on the newest release it would
-    already have installed. Where most were already fixed, the never stop can count fewer never
+    already have installed. The 0-day stop opens the window on the release the never stop keeps. Where most were already fixed, the never stop can count fewer never
     seen than the 30-day stop, because the CVEs fixed before the version the device keeps are ones
     it never ran. Read the second kind as "NVD names no range here", not as "this device was never
     exposed"; the stops that install are the comparison that means something. The reference
