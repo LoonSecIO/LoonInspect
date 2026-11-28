@@ -55,6 +55,7 @@ def two_tenants(monkeypatch: pytest.MonkeyPatch) -> None:
         # this process's to run; the refusal path is `test_outbox_tick_lock_db.py`.
         yield True
 
+    monkeypatch.setattr(main, "_purge_sensitive_text", _counts([]))
     monkeypatch.setattr(main, "operational_tenant_ids", tenant_ids)
     monkeypatch.setattr(main, "tenant_job", tenant_job)
     monkeypatch.setattr(main, "outbox_tick_lock", outbox_tick_lock)

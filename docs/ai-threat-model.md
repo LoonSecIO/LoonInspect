@@ -234,6 +234,11 @@ it got before, the closest filters; one that talks it into refusing gets nothing
 reaches a row the filters could not.
 
 
+2026-11-28, sensitive fleet text (#976). Store the body encrypted under the instance key.
+Splunk, data sharing, exports, and MCP clients cannot receive it. Only a provider verified
+to run on the host may receive it for inference. A model on another organisation-owned
+machine is hosted for this purpose.
+
 ## Exclusion ranking boundary (#409, 2026-09-20)
 
 This slot sends inventory labels to a local model. Its builder applies the existing model

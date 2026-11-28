@@ -2090,6 +2090,11 @@ shows, what the page says word for word, the output of
 `curl -sk -o /dev/null -w '%{http_code}\n' <address>/api/system/ai/providers` run with your
 session's cookies, and `docker compose logs app --since 30m`.
 
+If a sensitive text body is withheld, check the selected provider and model. An unsupported
+provider, an off-host model, or an endpoint outside host loopback and the container host
+alias cannot receive it. Verify the saved endpoint and its DNS answers on the LoonInspect
+host. A model on another machine on the same LAN is outside the allowed boundary.
+
 ## 14. "Settings › AI has no Apple Foundation Models card"
 
 That card is offered where its default can work: LoonInspect under **Docker Desktop on
@@ -3237,6 +3242,10 @@ complaints are the same check run in opposite directions.
    holds the evidence those rows were derived from, but the Changes page does not re-derive, and
    the artifact search reads only the rows that remain. A dump from before the purge is the way
    back ([`operations.md`](operations.md) §3); set the value you meant before restoring it.
+
+If the API container log says *Unreferenced sensitive text could not be removed*, check database
+health with `docker compose ps db` and verify free space on its volume. Cleanup retries
+the next night. A digest held by an older definition legitimately keeps its body.
 
 ## 25. "LoonInspect.app will not open, or opens and says it could not start"
 

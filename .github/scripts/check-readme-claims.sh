@@ -232,6 +232,8 @@ RETENTION_NOT_A_CLOCK=(
   # LoonSec's patch-policy document past the last two copies (#614): by count when a newer one
   # is stored, never by age, so a stopped publisher leaves the held copy answering.
   backend/app/core/patch_policy_feed.py:PatchPolicyDoc
+  # A sensitive body is retained for as long as a definition references its digest (#976).
+  backend/app/core/sensitive_text.py:SensitiveText
 )
 
 # `comm` wants one line per item and an empty set as an empty stream, not a blank line.
