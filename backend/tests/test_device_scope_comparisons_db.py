@@ -131,3 +131,40 @@ async def test_regex_timeout_respects_stricter_limit_and_does_not_leak(db):
     assert exc.value.status_code == 408
     await db.rollback()
     assert await db.scalar(text("SHOW statement_timeout")) != "10ms"
+
+
+async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(db, inventory, admin):  # noqa: F811
+    source, _, _ = inventory
+    devices = await macs(db, source)
+    for device, site in zip(devices, ["North", "South", "East", "North"], strict=True):
+        device.hostname = "shared-name"
+        device.site = site
+    await db.commit()
+    scope = json.dumps(
+        {
+            "connectionId": source,
+            "rules": [{"match": "any", "rules": [{"field": "site", "value": "North"}, {"field": "site", "value": "South"}]}],
+        }
+    )
+
+    async def listed(**params):
+        response = await admin.get("/api/devices", params={"scope": scope, **params})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    expected = sorted([devices[0].id, devices[1].id])
+    whole = await listed()
+    assert [row["id"] for row in whole["items"]] == expected
+    for number, identifier in enumerate(expected, start=1):
+        page = await listed(page=number, pageSize=1)
+        assert page["total"] == 2
+        assert [row["id"] for row in page["items"]] == [identifier]
+    assert (await listed(page=3, pageSize=1))["items"] == []
+    flat = await listed(site="South", includeDeparted="true")
+    assert flat["total"] == 1 and flat["items"][0]["id"] == devices[1].id
+
+
+async def test_device_list_refuses_invalid_scope(admin):  # noqa: F811
+    response = await admin.get("/api/devices", params={"scope": '{"rules":[{"field":"unsupported"}]}'})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The device filter is invalid. Check each condition or clear the filter and try again."

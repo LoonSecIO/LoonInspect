@@ -16621,6 +16621,25 @@
               "title": "Pagesize",
               "type": "integer"
             }
+          },
+          {
+            "description": "JSON device scope to intersect with the list filters.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 12000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "JSON device scope to intersect with the list filters.",
+              "title": "Scope"
+            }
           }
         ],
         "responses": {

@@ -153,7 +153,7 @@ async def test_operator_review_is_versioned_and_conflicts_do_not_lose_notes(db, 
     await db.commit()
 
 
-async def test_group_filters_require_observed_membership_and_connection(db, inventory):  # noqa: F811
+async def test_group_filters_require_observed_membership_and_connection(db, inventory, admin):  # noqa: F811
     from app.models.schema import ObservationEntry, ObservationSection, ObservationSpan
 
     source, _, _ = inventory
@@ -195,6 +195,10 @@ async def test_group_filters_require_observed_membership_and_connection(db, inve
 
     assert await matches("is") == {"1"}
     assert await matches("is_not") == {"2"}  # No-contact Mac has no observed group section, not an empty one.
+    rule = {"field": "group", "key": str(source), "value": "41", "operator": "is_not"}
+    response = await admin.get("/api/devices", params={"scope": json.dumps({"rules": [rule]})})
+    assert response.status_code == 200, response.text
+    assert [row["externalId"] for row in response.json()["items"]] == ["2"]
     await db.execute(delete(ObservationSpan).where(ObservationSpan.mdm_connection_id == source))
     await db.execute(delete(ObservationSection).where(ObservationSection.digest.in_([member_digest, empty_digest])))
     await db.execute(delete(ObservationEntry).where(ObservationEntry.digest == entry_digest))

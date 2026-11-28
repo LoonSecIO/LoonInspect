@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Literal, TypeVar
+from typing import Annotated, Literal, TypeVar
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +15,8 @@ from app.catalog.service import title_names
 from app.core.audit import AuditAction, audit
 from app.core.auth import Principal, current_principal, require
 from app.core.database import get_db, get_vuln_read_db
+from app.core.device_scope import parse_scope, scoped_devices
+from app.core.device_scope_queries import get_scope_vuln_read_db, prepare_scope
 from app.core.egress import BlockedBaseUrl, validate_mdm_base_url
 from app.core.permissions import Permission
 from app.core.vuln import VulnCorpus
@@ -204,7 +206,7 @@ def _version_matches(device_version: str | None, operator: VersionOperator, valu
 
 @router.get("", response_model=DeviceListResponse)
 async def list_devices(
-    db: AsyncSession = Depends(get_vuln_read_db),
+    db: AsyncSession = Depends(get_scope_vuln_read_db),
     q: str | None = Query(default=None),
     os_version: str | None = Query(default=None, alias="osVersion"),
     os_version_operator: VersionOperator = Query(default=VersionOperator.eq, alias="osVersionOperator"),
@@ -232,9 +234,17 @@ async def list_devices(
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
+    scope: Annotated[
+        str | None, Query(max_length=12000, description="JSON device scope to intersect with the list filters.")
+    ] = None,
 ) -> DeviceListResponse:
     stmt = select(Device)
-    if not include_departed:
+    if scope is not None:
+        device_scope = parse_scope(scope)
+        await prepare_scope(db, device_scope)
+        population = scoped_devices(device_scope)
+        stmt = stmt.where(Device.id.in_(select(population.c.id)))
+    elif not include_departed:
         # The default answer is the current fleet (#183), pushed into the WHERE clause rather
         # than filtered after paging, so `total` and page 2 are about the same population.
         stmt = stmt.where(~gone_for_good(Device.mdm_connection_id, Device.external_id, at=datetime.now(UTC)))
@@ -324,8 +334,9 @@ async def list_devices(
     # pass to matter. The eq case (the default) stays a normal indexed SQL filter.
     needs_python_version_filter = bool(os_version) and os_version_operator != VersionOperator.eq
 
+    ordering = (Device.hostname, Device.id) if scope is not None else (Device.hostname,)
     if needs_python_version_filter:
-        result = await db.execute(stmt.order_by(Device.hostname))
+        result = await db.execute(stmt.order_by(*ordering))
         matching = [
             device for device in result.scalars().all() if _version_matches(device.os_version, os_version_operator, os_version)
         ]
@@ -336,7 +347,7 @@ async def list_devices(
         count_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
         total = count_result.scalar_one()
 
-        stmt = stmt.order_by(Device.hostname).offset((page - 1) * page_size).limit(page_size)
+        stmt = stmt.order_by(*ordering).offset((page - 1) * page_size).limit(page_size)
         result = await db.execute(stmt)
         devices = result.scalars().all()
 
