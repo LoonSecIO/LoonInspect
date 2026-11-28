@@ -111,7 +111,9 @@ async def test_invalid_regex_fails_before_even_an_empty_inventory_query(admin, f
         "connectionId": 2147483647,
         "rules": [{"field": "ea", "key": "19", "operator": "does_not_match_regex", "value": "["}],
     }
-    for route in ["/api/applications", "/api/catalog", "/api/application-patch-plans/scope-options"]:
+    # The device list is one of them (#961). Without the pre-check this empty inventory never
+    # runs the regex and answers 200; without the guard the database's error has no sentence.
+    for route in ["/api/applications", "/api/catalog", "/api/application-patch-plans/scope-options", "/api/devices"]:
         response = await admin.get(route, params={"deviceScope": json.dumps(scope)})
         assert response.status_code == 422, response.text
         assert "regular expression is invalid" in response.json()["detail"]
@@ -131,3 +133,48 @@ async def test_regex_timeout_respects_stricter_limit_and_does_not_leak(db):
     assert exc.value.status_code == 408
     await db.rollback()
     assert await db.scalar(text("SHOW statement_timeout")) != "10ms"
+
+
+async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(db, inventory, admin):  # noqa: F811
+    source, _, _ = inventory
+    devices = await macs(db, source)
+    sites = ["North", "South", "East", "North"]
+    assert len(devices) == len(sites)
+    # The higher id is rewritten first, each in its own commit, so the two matching rows do
+    # not sit in id order on disk. One name for all four then leaves only the tie-break on
+    # id to keep page 1 and page 2 from trading rows.
+    for index in (1, 0, 2, 3):
+        devices[index].hostname = "shared-name"
+        devices[index].site = sites[index]
+        await db.commit()
+    scope = json.dumps(
+        {
+            "connectionId": source,
+            "rules": [{"match": "any", "rules": [{"field": "site", "value": "North"}, {"field": "site", "value": "South"}]}],
+        }
+    )
+
+    async def listed(**params):
+        response = await admin.get("/api/devices", params={"deviceScope": scope, **params})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    expected = sorted([devices[0].id, devices[1].id])
+    whole = await listed()
+    assert [row["id"] for row in whole["items"]] == expected
+    for number, identifier in enumerate(expected, start=1):
+        page = await listed(page=number, pageSize=1)
+        assert page["total"] == 2
+        assert [row["id"] for row in page["items"]] == [identifier]
+    assert (await listed(page=3, pageSize=1))["items"] == []
+    # Both halves have to hold for one row to come back. Without the scope, `site=North`
+    # with departed Macs included is two rows: the fourth Mac is in North and has left the
+    # fleet. A scope lists current Macs only, so `includeDeparted` cannot bring it back.
+    flat = await listed(site="North", includeDeparted="true")
+    assert flat["total"] == 1 and [row["id"] for row in flat["items"]] == [devices[0].id]
+
+
+async def test_device_list_refuses_invalid_scope(admin):  # noqa: F811
+    response = await admin.get("/api/devices", params={"deviceScope": '{"rules":[{"field":"unsupported"}]}'})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "The device filter is invalid. Check each condition or clear the filter and try again."
