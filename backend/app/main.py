@@ -96,6 +96,7 @@ from app.core.outbox import PURGE_HOUR, PURGE_MINUTE, deliver_pending, fan_out_p
 from app.core.patch_policy_feed import load_feed_file as load_patch_policy_feed_file
 from app.core.rekey import rekey_stored_values
 from app.core.runs import AcquisitionBusy, purge_runs
+from app.core.sensitive_text import purge_unreferenced_text
 from app.core.sharing import deliver_corpus, exchange_due, exchange_lock, run_exchange
 from app.core.submissions import forget_closed
 from app.core.tenancy import OPERATIONAL_TENANT_ID
@@ -476,6 +477,7 @@ async def run_cleanup() -> None:
     ever, as it always was. A step of its own as well, for the same reason.
     """
     for tenant_id in await operational_tenant_ids():
+        await _purge_sensitive_text(tenant_id)
         await _forget_closed_cases(tenant_id)
         await _purge_change_log(tenant_id)
         async with tenant_job(tenant_id) as db:
@@ -500,6 +502,19 @@ async def run_cleanup() -> None:
                 "purged closed alerts",
                 extra={"tenant_id": str(tenant_id), "count": closed_alerts},
             )
+
+
+async def _purge_sensitive_text(tenant_id: uuid.UUID) -> None:
+    try:
+        async with tenant_job(tenant_id) as db:
+            await purge_unreferenced_text(db)
+            await db.commit()
+    except Exception:
+        logger.exception(
+            "Unreferenced sensitive text could not be removed. "
+            "Check database health and free space before the next nightly cleanup.",
+            extra={"tenant_id": str(tenant_id)},
+        )
 
 
 async def _purge_change_log(tenant_id: uuid.UUID) -> None:

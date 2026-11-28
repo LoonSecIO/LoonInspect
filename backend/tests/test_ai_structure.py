@@ -120,6 +120,24 @@ def test_s1_the_ai_layer_imports_neither_the_wire_nor_the_database() -> None:
     )
 
 
+def test_sensitive_text_reader_and_model_do_not_enter_the_wire_or_exports() -> None:
+    # Register each authorised consumer here. A new export, MCP tool, data-sharing
+    # path or wire builder is fenced by default wherever its author puts the file.
+    store = "app.core.sensitive_text"
+    model = "app.models.schema.SensitiveText"
+    for path in _python_files(_APP):
+        module = _module_name(path)
+        if module in {store, "app.models.schema"}:
+            continue
+        names = _imports(path)
+        permitted = {store, f"{store}.purge_unreferenced_text"} if module == "app.main" else set()
+        assert set(_within(names, store)) <= permitted, _rel(path)
+        assert model not in names, _rel(path)
+        assert not any(isinstance(node, ast.Attribute) and node.attr == "SensitiveText" for node in ast.walk(_parse(path))), _rel(
+            path
+        )
+
+
 # --- S2. One door ------------------------------------------------------------------------------
 
 # A client, or one of httpx's one-shot helpers, which build a client inside.

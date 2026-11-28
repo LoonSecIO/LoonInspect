@@ -1787,6 +1787,16 @@ class ObservationSpan(Base):
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class SensitiveText(Base):
+    """Only app.core.sensitive_text reads plaintext. EncryptedString registers body for key rotation."""
+
+    __tablename__ = "sensitive_text"
+
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    body: Mapped[str] = mapped_column(EncryptedString())
+
+
 class ObservationSection(Base):
     """The content behind one section digest. Scalar sections store the canonical
     document; list sections store the sorted array of entry digests, which is exactly

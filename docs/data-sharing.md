@@ -766,3 +766,20 @@ reads only this page.
   (Settings › Intelligence Access) is separate and needs no sharing, and either route keeps
   update eligibility on its own (`backend/tests/test_v2_release_gate_db.py`). Not anonymity:
   the receipt is linkable to this instance's submission UUID.
+
+## Sensitive fleet text
+
+Extension attribute scripts and other sensitive text have a dedicated, tenant-isolated
+store. Bodies are encrypted with the instance key and take part in its ordinary rotation.
+Only the digest belongs in a collecting record. Bodies are excluded from Splunk, the
+sharing exchange, exports and MCP tools.
+
+An inference caller checks the saved provider and uses the approved connection address.
+A local Apple on-device model or a verified host-local OpenAI-compatible endpoint may
+receive a body. Neither a hosted model nor a second machine on a private network qualifies.
+
+The first reference reserved for a collector is `scriptDigest` on an observation's
+`definition` section. Store the body and its reference in one transaction, including
+when reusing a digest. Nightly cleanup keeps every referenced version and removes a body
+after its last reference disappears. A new kind of reference must join this lookup when
+its collector is added.
