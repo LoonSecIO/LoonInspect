@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
 import { changeOwnPassword } from "@/features/accounts/api";
+import { Passkeys } from "@/features/accounts/Passkeys";
 import { TwoStepSignIn } from "@/features/accounts/TwoStepSignIn";
 import { useAuthStore } from "@/features/auth/store";
 import { useBuildVersion } from "@/features/system/useBuildVersion";
@@ -149,6 +150,7 @@ export function MyAccountPage() {
       {/* Held by the policy (#653): only set-up answers, so the password form waits and the gate's sentence leads. */}
       {held && <p role="alert" className="max-w-md rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">{t.myAccount.held}</p>}
       <TwoStepSignIn />
+      <Passkeys />
     </section>
   );
 }

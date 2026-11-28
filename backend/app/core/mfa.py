@@ -2,7 +2,8 @@
 
 A second factor is a second `auth_identities` row, provider `totp`: the secret encrypted at
 rest, recovery codes as argon2id hashes, when a code confirmed it, the last accepted step.
-The tenant's `Policy` says whose sign-in must end in one.
+The tenant's `Policy` says whose sign-in must end in one. A passkey sign-in ends in one by
+itself (#955, default 1): user verification proves the device and the person together.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import pyotp
 from argon2 import PasswordHasher
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import passkeys
 from app.core.crypto import get_encryption_key
 from app.core.permissions import Role
 from app.core.security import verify_password
@@ -60,9 +62,20 @@ async def policy_asks(db: AsyncSession, roles: Collection[str], tenant_id: uuid.
     return policy == "everyone" or (policy == "admins" and Role.admin.value in roles)
 
 
-async def enrolment_required(db: AsyncSession, account: Account, roles: Collection[str], tenant_id: uuid.UUID) -> bool:
-    """The gate's question: the policy asks and nothing confirmed answers. Break-glass is the way back in, so exempt."""
-    if account.is_break_glass or confirmed(account) is not None:
+def passkey_answers(account: Account, auth_method: str | None) -> bool:
+    """Whether this session's sign-in is the policy's answer through a passkey (#955, default 1): a passkey signed
+    it in, or it added one, whose user verification proved the device and the person just then, and the account
+    still holds a passkey. A password sign-in of an account that merely holds one is not: the policy is about
+    how the session signed in, and holding a passkey nobody used proves nothing about this one."""
+    return auth_method in passkeys.SESSION_METHODS and any(row.provider == passkeys.PROVIDER for row in account.identities)
+
+
+async def enrolment_required(
+    db: AsyncSession, account: Account, roles: Collection[str], tenant_id: uuid.UUID, auth_method: str | None = None
+) -> bool:
+    """The gate's question: the policy asks and nothing confirmed answers, neither a code nor, for a session a
+    passkey signed in (`auth_method`), the passkey. Break-glass is the way back in, so exempt."""
+    if account.is_break_glass or confirmed(account) is not None or passkey_answers(account, auth_method):
         return False
     return await policy_asks(db, roles, tenant_id)
 

@@ -279,6 +279,23 @@ export const de: Translations = {
     useRecoveryCode: "Stattdessen einen Wiederherstellungscode verwenden",
     useAuthenticatorCode: "Stattdessen die Authenticator-App verwenden",
     startOver: "Von vorn beginnen",
+    passkeys: {
+      or: "oder",
+      signIn: "Mit einem Passkey anmelden",
+      waiting: "Warten auf Ihren Passkey…",
+      cancelledSignIn:
+        "Die Passkey-Anfrage wurde abgebrochen oder ist abgelaufen, oder dieser Browser hat keinen Passkey für diese Adresse. Wählen Sie „Mit einem Passkey anmelden“, um es erneut zu versuchen, oder verwenden Sie Ihr Passwort.",
+      cancelledAdd: "Es wurde kein Passkey erstellt: Die Anfrage wurde abgebrochen oder ist abgelaufen. Wählen Sie „Passkey hinzufügen“, um es erneut zu versuchen.",
+      alreadyOnDevice:
+        "Dieses Gerät oder dieser Passwortmanager hat für dieses Konto an dieser Adresse bereits einen Passkey. Verwenden Sie diesen, oder fügen Sie einen Passkey von einem anderen Gerät hinzu.",
+      refusedHere: (origin: string) =>
+        `Dieser Browser hat einen Passkey unter ${origin} abgelehnt. Bei HTTPS ist die übliche Ursache ein Zertifikat, dem dieser Browser nicht vertraut, etwa das von TLS_MODE=self-signed erzeugte: Öffnen Sie LoonInspect unter einer Adresse, deren Zertifikat er vertraut.`,
+      unsupported: "Dieser Browser hat hier keinen Passkey und keinen Sicherheitsschlüssel, den er verwenden kann. Verwenden Sie Ihr Passwort oder einen aktuellen Browser.",
+      browserFailed:
+        "Die Passkey-Anfrage ist in diesem Browser fehlgeschlagen, bevor LoonInspect eine Antwort erhielt. Laden Sie die Seite neu und versuchen Sie es erneut, oder verwenden Sie Ihr Passwort.",
+      lockedOut: "Zu viele Fehlversuche. Warten Sie einige Minuten und versuchen Sie es erneut.",
+      unreachable: "Die Antwort von LoonInspect kam nicht an oder war nicht lesbar. Laden Sie die Seite neu und versuchen Sie es erneut."
+    },
     setupTitle: "LoonInspect einrichten",
     setupDescription: "Erstellen Sie das erste Administratorkonto für diese Instanz.",
     claimToken: "Freischaltcode",
@@ -514,9 +531,13 @@ export const de: Translations = {
     errorResetting: "Das Passwort konnte nicht zurückgesetzt werden.",
     removeFactor: "Zweiten Faktor entfernen", errorRemovingFactor: "Der zweite Faktor konnte nicht entfernt werden.",
     removeFactorConfirm: (email: string) => `Den zweiten Faktor von ${email} entfernen? Jede Sitzung dieses Kontos wird abgemeldet.`,
+    removePasskeys: (count: number) => (count === 1 ? "Passkey entfernen" : `${count} Passkeys entfernen`),
+    errorRemovingPasskeys: "Die Passkeys konnten nicht entfernt werden.",
+    removePasskeysConfirm: (email: string) =>
+      `Alle Passkeys von ${email} entfernen? Jede Sitzung dieses Kontos wird abgemeldet, und es meldet sich mit seinem Passwort an.`,
     mfaPolicy: {
       title: "Richtlinie für die Anmeldung in zwei Schritten", loading: "Richtlinie wird gelesen…", failed: "Die Richtlinie konnte nicht geändert werden.",
-      description: "Wer nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App eingeben muss. Notfallzugänge werden nie gefragt.",
+      description: "Wer sich mit einem Passkey anmelden oder nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App eingeben muss. Notfallzugänge werden nie gefragt.",
       unreadable: "Die Richtlinie konnte nicht gelesen werden – und unbekannt ist nicht dasselbe wie aus. Laden Sie die Seite neu.",
       names: { off: "Aus", admins: "Administratoren", everyone: "Alle" },
       confirm: {
@@ -528,7 +549,7 @@ export const de: Translations = {
   },
   myAccount: {
     title: "Mein Konto",
-    description: "Ihr Profil, Ihr Passwort und die Anmeldung in zwei Schritten.",
+    description: "Ihr Profil, Ihr Passwort, die Anmeldung in zwei Schritten und Ihre Passkeys.",
     name: "Name",
     email: "E-Mail",
     roles: "Rollen",
@@ -565,6 +586,37 @@ export const de: Translations = {
       copyRefused: "Dieser Browser hat das Kopieren verweigert. Markieren Sie die Codes oben und kopieren Sie sie selbst.",
       renew: "Neue Wiederherstellungscodes", renewSubmit: "Meine Codes ersetzen",
       renewLabel: "Zehn neue Codes ersetzen alle bisherigen, benutzt oder nicht. Geben Sie den sechsstelligen Code ein, den Ihre Authenticator-App gerade anzeigt"
+    },
+    passkeys: {
+      title: "Passkeys",
+      description:
+        "Ein Passkey meldet Sie allein an, mit Ihrem Fingerabdruck, Ihrem Gesicht oder dem Gerätepasswort, wo Sie sonst das Passwort eingeben. Er funktioniert nur an dem Host, an dem er hinzugefügt wurde. Ihr Passwort funktioniert weiter.",
+      loading: "Ihre Passkeys werden gelesen…",
+      unreadable: "Ihre Passkeys konnten nicht gelesen werden – und unbekannt ist nicht dasselbe wie keine. Laden Sie die Seite neu.",
+      none: "Noch keine Passkeys.",
+      worksAt: (host: string) => `Funktioniert unter ${host}`,
+      notHere: (host: string) => `An dieser Adresse nicht angeboten: Er funktioniert nur unter ${host}.`,
+      added: (date: string) => `Hinzugefügt am ${date}`,
+      lastUsed: (date: string) => `Zuletzt angemeldet am ${date}`,
+      neverUsed: "Noch nicht zur Anmeldung verwendet",
+      add: "Passkey hinzufügen",
+      adding: "Warten auf Ihr Gerät…",
+      cancel: "Abbrechen",
+      nameLabel: "Name",
+      nameHelp: "Damit Sie sie unterscheiden können, etwa das Gerät oder den Passwortmanager, in dem er liegt.",
+      passwordLabel: "Aktuelles Passwort",
+      addedNotice: (name: string) => `${name} ist hinzugefügt. Wählen Sie ihn beim nächsten Mal auf der Anmeldeseite.`,
+      remove: "Entfernen",
+      removeConfirm: (name: string) =>
+        `${name} entfernen? Jede Sitzung, die er angemeldet hat, endet, diese eingeschlossen, wenn er sie angemeldet hat. Ihr Passwort funktioniert weiter.`,
+      ipAddress: (origin: string, localhost: string) =>
+        `Unter ${origin} lässt sich kein Passkey hinzufügen oder verwenden: Das ist eine IP-Adresse, und ein Passkey ist an einen Hostnamen gebunden. Öffnen Sie LoonInspect unter seinem Hostnamen über HTTPS, mit einem Zertifikat, dem dieser Browser vertraut, oder unter ${localhost} auf dem Rechner, auf dem es läuft.`,
+      plainHttp: (origin: string, localhost: string) =>
+        `Unter ${origin} lässt sich kein Passkey hinzufügen oder verwenden: Browser bieten Passkeys nur über HTTPS an, oder über einfaches HTTP unter localhost. Stellen Sie LoonInspect unter diesem Hostnamen über HTTPS bereit, mit einem Zertifikat, dem dieser Browser vertraut, oder öffnen Sie ${localhost} auf dem Rechner, auf dem es läuft.`,
+      browser:
+        "Dieser Browser bietet hier keine Passkeys an: Er antwortet, dass er keinen eigenen hat und keinen verwenden kann, oder er ist älter als Safari 18.4, Chrome 129 oder Firefox 119. Ihr Passwort funktioniert weiter; um einen Passkey hinzuzufügen, verwenden Sie einen aktuellen Browser.",
+      held: "Ein Passkey erfüllt das auch: Fügen Sie hier einen hinzu, oder melden Sie sich ab und mit einem früher hinzugefügten an.",
+      failed: "Die Antwort von LoonInspect kam nicht an oder war nicht lesbar. Laden Sie die Seite neu, um Ihre Passkeys zu sehen, und versuchen Sie es dann erneut."
     }
   },
   support: {

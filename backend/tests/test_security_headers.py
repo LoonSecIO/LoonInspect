@@ -126,6 +126,14 @@ class TestFourHeadersAlwaysPresent:
             response = client.get("/api/health")
         assert "clipboard-write" not in response.headers["permissions-policy"]
 
+    def test_passkeys_are_deliberately_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Unnamed, both default to the page's own origin, which is where a passkey is made and used (#955, trap
+        5). `publickey-credentials-get=()` or `publickey-credentials-create=()` for tidiness turns the sign-in
+        page's passkey and My Account's Add a passkey off, with nothing in the page to say why."""
+        with _client(monkeypatch) as client:
+            response = client.get("/login")
+        assert "publickey-credentials" not in response.headers["permissions-policy"]
+
 
 class TestHSTSIsARelayNotADefault:
     def test_absent_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:

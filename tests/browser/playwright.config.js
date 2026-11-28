@@ -1,7 +1,8 @@
 const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
-  testMatch: "smoke.spec.js",
+  // passkey.spec.js sets its own addresses (#955): localhost, where a passkey can work, and the two where it cannot.
+  testMatch: ["smoke.spec.js", "passkey.spec.js"],
   workers: 1,
   reporter: "list",
   use: {

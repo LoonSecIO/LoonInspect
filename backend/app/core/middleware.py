@@ -134,7 +134,9 @@ class RequestContextMiddleware:
 # navigator.clipboard.writeText to hand the operator a freshly minted API token, and
 # Permissions-Policy binds the document's own origin — a tidy-looking
 # `clipboard-write=()` would break our own feature on the one screen where the value is
-# unrecoverable if not copied. See #186 / #133.
+# unrecoverable if not copied. See #186 / #133. `publickey-credentials-get` and
+# `publickey-credentials-create` are absent for the same reason: unnamed, both default to
+# the page's own origin, which is where a passkey is made and used (#955, trap 5).
 _PERMISSIONS_POLICY = (
     "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), "
     "magnetometer=(), microphone=(), midi=(), payment=(), usb=()"

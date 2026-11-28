@@ -1,5 +1,13 @@
 import { apiRequest } from "@/config/api";
-import type { Account, CreateAccountInput, MfaConfirmation, MfaEnrolment, MfaStatus, UpdateAccountInput } from "@/features/accounts/types";
+import type {
+  Account,
+  CreateAccountInput,
+  MfaConfirmation,
+  MfaEnrolment,
+  MfaStatus,
+  Passkey,
+  UpdateAccountInput
+} from "@/features/accounts/types";
 
 export function listAccounts(): Promise<Account[]> {
   return apiRequest<Account[]>("/accounts");
@@ -52,4 +60,33 @@ export function regenerateRecoveryCodes(code: string): Promise<MfaConfirmation> 
 /** The lost-phone path, never one's own: every session of the account ends, and it signs in with the password. */
 export function removeSecondFactor(id: string): Promise<void> {
   return apiRequest<void>(`/accounts/${encodeURIComponent(id)}/mfa`, { method: "DELETE" });
+}
+
+/** The caller's passkeys (#955), oldest first. */
+export function listPasskeys(): Promise<Passkey[]> {
+  return apiRequest<Passkey[]>("/auth/passkeys");
+}
+
+/** A registration challenge, for the current password: `publicKey` is what
+ *  `PublicKeyCredential.parseCreationOptionsFromJSON()` reads. A browser session only. */
+export function passkeyRegistrationOptions(currentPassword: string): Promise<{ publicKey: PublicKeyCredentialCreationOptionsJSON }> {
+  return apiRequest<{ publicKey: PublicKeyCredentialCreationOptionsJSON }>("/auth/passkeys/options", {
+    method: "POST",
+    json: { currentPassword }
+  });
+}
+
+/** The browser's answer to that challenge, and the name: the passkey is added. */
+export function savePasskey(name: string, credential: RegistrationResponseJSON): Promise<Passkey> {
+  return apiRequest<Passkey>("/auth/passkeys", { method: "POST", json: { name, credential } });
+}
+
+/** Removes one of the caller's passkeys; every session it signed in ends, this one included if it did. */
+export function removePasskey(id: string): Promise<void> {
+  return apiRequest<void>(`/auth/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** An administrator's: every passkey of another account, and every session it has. Never one's own. */
+export function removeAccountPasskeys(id: string): Promise<void> {
+  return apiRequest<void>(`/accounts/${encodeURIComponent(id)}/passkeys`, { method: "DELETE" });
 }

@@ -304,6 +304,25 @@ export const en = {
     useRecoveryCode: "Use a recovery code instead",
     useAuthenticatorCode: "Use the authenticator app instead",
     startOver: "Start over",
+    // Passkeys (#955), on the sign-in page and My Account. A refusal the server words is shown as it came; these are
+    // the page's own, for what the browser ends before an answer reaches LoonInspect (docs/troubleshooting.md §34).
+    passkeys: {
+      or: "or",
+      signIn: "Sign in with a passkey",
+      waiting: "Waiting for your passkey…",
+      cancelledSignIn:
+        "The passkey request was cancelled or timed out, or this browser holds no passkey for this address. Choose Sign in with a passkey to try again, or use your password.",
+      cancelledAdd: "No passkey was made: the request was cancelled or timed out. Choose Add a passkey to try again.",
+      alreadyOnDevice:
+        "This device or password manager already holds a passkey for this account at this address. Use that one, or add a passkey from another device.",
+      refusedHere: (origin: string) =>
+        `This browser refused a passkey at ${origin}. Over HTTPS, the usual cause is a certificate this browser does not trust, such as the one TLS_MODE=self-signed makes: open LoonInspect at an address whose certificate it trusts.`,
+      unsupported: "This browser has no passkey or security key it can use here. Use your password, or a current browser.",
+      browserFailed:
+        "The passkey request failed in this browser before LoonInspect saw an answer. Reload the page and try again, or use your password.",
+      lockedOut: "Too many failed attempts. Wait a few minutes and try again.",
+      unreachable: "LoonInspect's answer did not arrive or could not be read. Reload the page and try again."
+    },
     setupTitle: "Set up LoonInspect",
     setupDescription: "Create the first administrator account for this instance.",
     claimToken: "Claim token",
@@ -560,9 +579,14 @@ export const en = {
     errorResetting: "Could not reset the password.",
     removeFactor: "Remove second factor", errorRemovingFactor: "Could not remove the second factor.",
     removeFactorConfirm: (email: string) => `Remove the second factor of ${email}? Every session of that account is signed out.`,
+    // Every passkey of another account at once (#955), the way its second factor goes.
+    removePasskeys: (count: number) => (count === 1 ? "Remove passkey" : `Remove ${count} passkeys`),
+    errorRemovingPasskeys: "Could not remove the passkeys.",
+    removePasskeysConfirm: (email: string) =>
+      `Remove every passkey of ${email}? Every session of that account is signed out, and it signs in with its password.`,
     mfaPolicy: {
       title: "Two-step sign-in policy", loading: "Reading the policy…", failed: "Could not change the policy.",
-      description: "Who must type a six-digit code from an authenticator app after the password. Break-glass accounts are never asked.",
+      description: "Who must sign in with a passkey, or type a six-digit code from an authenticator app after the password. Break-glass accounts are never asked.",
       unreadable: "The policy could not be read, which is not the same as off. Reload the page.",
       names: { off: "Off", admins: "Administrators", everyone: "Everyone" },
       confirm: {
@@ -574,7 +598,7 @@ export const en = {
   },
   myAccount: {
     title: "My Account",
-    description: "Your profile, password and two-step sign-in.",
+    description: "Your profile, password, two-step sign-in and passkeys.",
     name: "Name",
     email: "Email",
     roles: "Roles",
@@ -613,6 +637,38 @@ export const en = {
       copyRefused: "This browser refused to copy. Select the codes above and copy them yourself.",
       renew: "New recovery codes", renewSubmit: "Replace my codes",
       renewLabel: "Ten new codes replace every earlier one, used or not. Type the six-digit code your authenticator app shows now"
+    },
+    // Passkeys (#955). A refusal the server words is shown as it came; the browser's own endings are auth.passkeys'.
+    passkeys: {
+      title: "Passkeys",
+      description:
+        "A passkey signs you in by itself, with your fingerprint, face or device password, where you would type the password. It works only at the host it was made at. Your password keeps working.",
+      loading: "Reading your passkeys…",
+      unreadable: "Your passkeys could not be read, which is not the same as having none. Reload the page.",
+      none: "No passkeys yet.",
+      worksAt: (host: string) => `Works at ${host}`,
+      notHere: (host: string) => `Not offered at this address: it works only at ${host}.`,
+      added: (date: string) => `Added ${date}`,
+      lastUsed: (date: string) => `Last signed in ${date}`,
+      neverUsed: "Not used to sign in yet",
+      add: "Add a passkey",
+      adding: "Waiting for your device…",
+      cancel: "Cancel",
+      nameLabel: "Name",
+      nameHelp: "For you to tell them apart, such as the device or password manager that holds it.",
+      passwordLabel: "Current password",
+      addedNotice: (name: string) => `${name} is added. Next time, choose it on the sign-in page.`,
+      remove: "Remove",
+      removeConfirm: (name: string) =>
+        `Remove ${name}? Every session it signed in ends, this one included if it did. Your password keeps working.`,
+      ipAddress: (origin: string, localhost: string) =>
+        `No passkey can be added or used at ${origin}: it is an IP address, and a passkey is bound to a host name. Open LoonInspect at its host name over HTTPS, with a certificate this browser trusts, or at ${localhost} on the machine it runs on.`,
+      plainHttp: (origin: string, localhost: string) =>
+        `No passkey can be added or used at ${origin}: browsers offer passkeys only over HTTPS, or over plain HTTP at localhost. Serve LoonInspect over HTTPS at this host name, with a certificate this browser trusts, or open ${localhost} on the machine it runs on.`,
+      browser:
+        "This browser offers no passkeys here: it answers that it has none of its own and no way to use one, or it is older than Safari 18.4, Chrome 129 or Firefox 119. Your password keeps working; to add a passkey, use a current browser.",
+      held: "A passkey answers this too: add one here, or sign out and sign in with one you added before.",
+      failed: "LoonInspect's answer did not arrive or could not be read. Reload the page to see your passkeys, then try again."
     }
   },
   support: {

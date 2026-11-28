@@ -1294,13 +1294,20 @@ class Account(Base):
 class AuthIdentity(Base):
     """One way an account can authenticate.
 
-    Only `local` rows exist today. An OIDC row joins the same account later with no
-    change to Account itself — keyed on (provider, subject) rather than email, because
-    IdPs rewrite emails and matching on one is an account-takeover path.
+    Three providers: `local` (the password), `totp` (#653) and `webauthn`, a passkey (#955),
+    several to an account. An OIDC row joins the same account later with no change to
+    Account itself — keyed on (provider, subject) rather than email, because IdPs rewrite
+    emails and matching on one is an account-takeover path.
     """
 
     __tablename__ = "auth_identities"
-    __table_args__ = (UniqueConstraint("tenant_id", "provider", "subject", name="uq_auth_identity_provider_subject"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "provider", "subject", name="uq_auth_identity_provider_subject"),
+        # The most WebAuthn allows (#955, trap 3). A longer id is refused with a sentence before it gets here.
+        CheckConstraint(
+            "credential_id IS NULL OR octet_length(credential_id) <= 1023", name="ck_auth_identities_credential_id_length"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
@@ -1324,6 +1331,20 @@ class AuthIdentity(Base):
     recovery_codes: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_otp_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    # Passkeys (#955, app.core.passkeys). `subject` is the SHA-256 of the credential id, because
+    # an id may run to 1,023 bytes and `subject` holds 255 characters; the id itself is here,
+    # whole. Then the COSE public key; the signature counter, which a synced passkey leaves at
+    # zero for good; the transports the browser reported; the backup flags (may sync, has
+    # synced); the host it was made at, the one host it works at; and the name its owner gave it.
+    credential_id: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    public_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    sign_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    transports: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    backup_eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    backed_up: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rp_id: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     account: Mapped[Account] = relationship(back_populates="identities")
 
@@ -1636,6 +1657,35 @@ class LoginAttempt(Base):
     failure_count: Mapped[int] = mapped_column(Integer, default=0)
     last_failure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PasskeyChallenge(Base):
+    """A passkey challenge, until the one answer it accepts spends it (#955, trap 4).
+
+    A synced passkey reports a signature counter of zero for good, so the counter cannot stop
+    a replayed answer the way `last_otp_step` stops a reused code: the challenge itself is
+    accepted once. A row rather than a signed token or a set in process memory, because the
+    first answer deletes it in one statement, and that holds across workers, restarts and every
+    container on the database. Keyed by the challenge's SHA-256, which the browser's answer
+    carries back in its client data, so an answer names its own row. Five minutes to live;
+    issuing the next challenge of the same purpose deletes the ones nobody answered
+    (app.core.passkeys).
+    """
+
+    __tablename__ = "passkey_challenges"
+
+    challenge_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[uuid.UUID] = tenant_id_column(index=True)
+    # sign-in | register
+    purpose: Mapped[str] = mapped_column(String(16))
+    # A registration's asker: the account and the session it asked from. Empty on a sign-in, which names nobody.
+    account_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # The host (relying-party id) and the origin the page was reached at when the challenge was handed out.
+    rp_id: Mapped[str] = mapped_column(String(253))
+    origin: Mapped[str] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 # --- The observation ledger ---------------------------------------------------------

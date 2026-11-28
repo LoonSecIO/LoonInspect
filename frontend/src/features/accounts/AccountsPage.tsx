@@ -3,7 +3,14 @@ import { KeyRound, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
-import { createAccount, listAccounts, removeSecondFactor, resetPassword, updateAccount } from "@/features/accounts/api";
+import {
+  createAccount,
+  listAccounts,
+  removeAccountPasskeys,
+  removeSecondFactor,
+  resetPassword,
+  updateAccount
+} from "@/features/accounts/api";
 import { MfaPolicyControl } from "@/features/accounts/MfaPolicyControl";
 import { sentence } from "@/features/accounts/twoStep";
 import { ROLES, type Account } from "@/features/accounts/types";
@@ -36,6 +43,7 @@ export function AccountsPage() {
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState("");
   const [removeFor, setRemoveFor] = useState<string | null>(null);
+  const [passkeysFor, setPasskeysFor] = useState<string | null>(null);
 
   /** The one read of the list, as a promise chain rather than `await`: the first read is
    *  started by the effect below, and an effect body is the one place React asks callers
@@ -172,6 +180,21 @@ export function AccountsPage() {
       await refresh();
     } catch (caught) {
       setError(sentence(caught, t.accounts.errorRemovingFactor));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** Every passkey of another account (#955), the way its second factor goes: its sessions end too. */
+  async function handleRemovePasskeys(account: Account) {
+    setBusyId(account.id);
+    setError(null);
+    try {
+      await removeAccountPasskeys(account.id);
+      setPasskeysFor(null);
+      await refresh();
+    } catch (caught) {
+      setError(sentence(caught, t.accounts.errorRemovingPasskeys));
     } finally {
       setBusyId(null);
     }
@@ -384,6 +407,11 @@ export function AccountsPage() {
                               {t.accounts.removeFactor}
                             </Button>
                           )}
+                          {account.passkeys > 0 && !isSelf && (
+                            <Button variant="outline" size="sm" disabled={busyId === account.id} onClick={() => setPasskeysFor(passkeysFor === account.id ? null : account.id)}>
+                              {t.accounts.removePasskeys(account.passkeys)}
+                            </Button>
+                          )}
                           <Button
                             variant={account.status === "active" ? "destructive" : "outline"}
                             size="sm"
@@ -399,6 +427,14 @@ export function AccountsPage() {
                           <div className="flex max-w-md items-center justify-end gap-2">
                             <span className="text-xs text-muted-foreground">{t.accounts.removeFactorConfirm(account.email)}</span>
                             <Button variant="destructive" size="sm" disabled={busyId === account.id} onClick={() => handleRemoveFactor(account)}>
+                              {t.accounts.confirm}
+                            </Button>
+                          </div>
+                        )}
+                        {passkeysFor === account.id && (
+                          <div className="flex max-w-md items-center justify-end gap-2">
+                            <span className="text-xs text-muted-foreground">{t.accounts.removePasskeysConfirm(account.email)}</span>
+                            <Button variant="destructive" size="sm" disabled={busyId === account.id} onClick={() => handleRemovePasskeys(account)}>
                               {t.accounts.confirm}
                             </Button>
                           </div>

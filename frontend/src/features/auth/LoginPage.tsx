@@ -1,10 +1,12 @@
-import { useEffect, useReducer, useState, type FormEvent } from "react";
+import { useEffect, useReducer, useRef, useState, type FormEvent } from "react";
+import { KeyRound } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { BrandIdentity } from "@/components/layout/BrandIdentity";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/config/api";
+import { passkeySupport, type PasskeySupport } from "@/features/auth/passkeys";
 import { SecondStepForm } from "@/features/auth/SecondStepForm";
 import { secondStep, secondStepError } from "@/features/auth/secondStep";
 import { useAuthStore } from "@/features/auth/store";
@@ -20,6 +22,7 @@ export function LoginPage() {
   const bootstrap = useAuthStore((state) => state.bootstrap);
   const login = useAuthStore((state) => state.login);
   const loginMfa = useAuthStore((state) => state.loginMfa);
+  const signInWithPasskey = useAuthStore((state) => state.signInWithPasskey);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,9 +31,43 @@ export function LoginPage() {
   // null on the password step; after it, the challenge the password earned (#653).
   const [second, dispatch] = useReducer(secondStep, null);
 
+  // Passkeys (#955): what this page can offer, null until the browser answers; the open conditional request, so the
+  // password manager offers a passkey where it offers the password; and the button's own request.
+  const [passkeys, setPasskeys] = useState<PasskeySupport | null>(null);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [armed, setArmed] = useState(0);
+  const conditional = useRef<AbortController | null>(null);
+  const modal = useRef<AbortController | null>(null);
+
   useEffect(() => {
     if (status === "unknown") void bootstrap();
   }, [status, bootstrap]);
+
+  useEffect(() => {
+    let live = true;
+    passkeySupport().then((found) => live && setPasskeys(found));
+    return () => {
+      live = false;
+      modal.current?.abort();
+    };
+  }, []);
+
+  // Open while the password step shows and the browser has the conditional form; aborted when the person signs in
+  // another way or leaves the page (the cleanup), and opened again after anything that ended it short of a session.
+  const offersConditional = second === null && passkeys?.state === "available" && passkeys.conditional;
+  const copy = t.auth.passkeys;
+  useEffect(() => {
+    if (!offersConditional) return;
+    const controller = new AbortController();
+    conditional.current = controller;
+    signInWithPasskey("conditional", controller.signal, copy).then((outcome) => {
+      if (outcome.kind !== "refused") return;
+      setPasskeyError(outcome.error);
+      setArmed((count) => count + 1);
+    });
+    return () => controller.abort();
+  }, [offersConditional, armed, signInWithPasskey, copy]);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/";
 
@@ -39,8 +76,11 @@ export function LoginPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Signing in with the password is signing in another way: the passkey request the field offered ends.
+    conditional.current?.abort();
     setSubmitting(true);
     setError(null);
+    setPasskeyError(null);
 
     try {
       const challenge = await login(email, password);
@@ -52,6 +92,7 @@ export function LoginPage() {
         dispatch({ type: "challenged", challenge });
       }
     } catch (caught) {
+      setArmed((count) => count + 1);
       if (caught instanceof ApiError && caught.status === 429) {
         setError(t.auth.lockedOut);
       } else if (caught instanceof ApiError && caught.status === 401) {
@@ -64,6 +105,23 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** Sign in with a passkey: the modal request, for a security key and a browser without the conditional form. */
+  function handlePasskey() {
+    conditional.current?.abort();
+    const controller = new AbortController();
+    modal.current = controller;
+    setPasskeyBusy(true);
+    setPasskeyError(null);
+    setError(null);
+    void signInWithPasskey("modal", controller.signal, copy).then((outcome) => {
+      // Signed in: the page follows the session to where it was headed.
+      if (outcome.kind === "signed-in" || controller.signal.aborted) return;
+      setPasskeyBusy(false);
+      if (outcome.kind !== "aborted") setPasskeyError(outcome.error);
+      setArmed((count) => count + 1);
+    });
   }
 
   async function handleCode(event: FormEvent) {
@@ -108,7 +166,9 @@ export function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                autoComplete="username"
+                // `webauthn` puts a saved passkey in the autofill menu beside a saved password, while the page holds
+                // a conditional request open (#955).
+                autoComplete="username webauthn"
                 required
                 autoFocus={email === ""}
                 value={email}
@@ -142,6 +202,27 @@ export function LoginPage() {
               {submitting ? t.auth.signingIn : t.auth.signIn}
             </Button>
           </form>}
+
+          {/* Only where a passkey can work (#955): never at an IP address, over plain HTTP off localhost, or in a
+              browser that answers false to both availability calls. My Account says which, and why. */}
+          {!second && passkeys?.state === "available" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                {copy.or}
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <Button type="button" variant="outline" className="w-full" disabled={passkeyBusy || submitting} onClick={handlePasskey}>
+                <KeyRound className="mr-2 h-4 w-4" />
+                {passkeyBusy ? copy.waiting : copy.signIn}
+              </Button>
+              {passkeyError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {passkeyError}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* The locked-out half of #301. Settings › Support sits behind DEVICE_READ
               like every other settings route, so a person with no session cannot reach

@@ -10,7 +10,7 @@ It orchestrates the hybrid sync architecture (webhook ingestion plus scheduled *
 * **Dependency Management:** [uv](https://github.com/astral-sh/uv) (Blazing fast Rust-based package manager)
 * **Database ORM:** [SQLAlchemy](https://www.sqlalchemy.org/) 2.0 (with async support)
 * **Task Scheduling:** [APScheduler](https://apscheduler.readthedocs.io/) (the minute tick that runs due *collections*, the outbox worker, and cleanup jobs)
-* **Auth:** Email + password + server-side sessions (`app/core/auth.py`), passwords hashed with Argon2 (`app/core/security.py`). Passwordless sign-in and directory provisioning are not implemented — see [../docs/auth-design.md](../docs/auth-design.md) for what's shipped versus deferred.
+* **Auth:** Email + password + server-side sessions (`app/core/auth.py`), passwords hashed with Argon2 (`app/core/security.py`), an optional TOTP second step (`app/core/mfa.py`), and passkeys, which sign in without the password (`app/core/passkeys.py`, WebAuthn through `fido2`). Federated sign-in and directory provisioning are not implemented — see [../docs/auth-design.md](../docs/auth-design.md) for what's shipped versus deferred.
 
 ---
 

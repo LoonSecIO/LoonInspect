@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import mfa
+from app.core import mfa, passkeys
 from app.core.audit import AuditAction, audit
 from app.core.auth import (
     Principal,
@@ -54,6 +54,7 @@ def _to_out(account: Account) -> AccountSummaryOut:
         created_at=account.created_at,
         last_login_at=account.last_login_at,
         mfa_enrolled=mfa.confirmed(account) is not None,
+        passkeys=len(passkeys.passkeys_of(account)),
     )
 
 
@@ -302,3 +303,38 @@ async def remove_second_factor(
     await db.commit()
     audit(AuditAction.MFA_REMOVED, target_type="account", target_id=account.id, email=account.email)
     logger.warning("second factor removed by an administrator", extra={"account_id": account.id, "by": principal.account.id})
+
+
+@router.delete("/{account_id}/passkeys", status_code=204, dependencies=[Depends(require(Permission.ACCOUNT_WRITE))])
+async def remove_passkeys(
+    account_id: str,
+    principal: Principal = Depends(current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """A lost or stolen device's path (#955), the way the second factor goes: every passkey on the account, and every
+    session it has, end together; the next sign-in is the password. Never one's own here: My Account removes those,
+    one at a time."""
+    account = await _get_or_404(db, account_id)
+    if account.id == principal.account.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot remove your own passkeys here. Remove them under My Account › Passkeys.",
+        )
+    found = passkeys.passkeys_of(account)
+    if not found:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That account has no passkeys to remove.")
+    await revoke_all_sessions(db, account.id)
+    await passkeys.remove(db, found, end_their_sessions=False)
+    await db.commit()
+    audit(
+        AuditAction.PASSKEY_REMOVED,
+        target_type="account",
+        target_id=account.id,
+        email=account.email,
+        removed=len(found),
+        by_administrator=True,
+    )
+    logger.warning(
+        "passkeys removed by an administrator",
+        extra={"account_id": account.id, "by": principal.account.id, "count": len(found)},
+    )

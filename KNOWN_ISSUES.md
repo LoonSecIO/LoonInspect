@@ -22,8 +22,8 @@ lines after 30 (`run_retention_days`), the closed alert latches that ride that s
 setting, the audit log by daily file rotation keeping `audit_retention_days` files, the
 share log of what left the box after 90 days, terminal inventory summary jobs and cached
 prose after 8 days (including while summaries are disabled), summary metric counters (25 hours), AI usage aggregates and lifecycle metadata (90 UTC days), the URL, text and
-contact written on a coverage request or match report 90 days after its case closes, and expired or revoked sessions a day after
-they die. The change log is not one of them by default: nothing deletes a
+contact written on a coverage request or match report 90 days after its case closes, expired or revoked sessions a day after
+they die, and the passkey challenges nobody answered once their five minutes are up, as the next is handed out. The change log is not one of them by default: nothing deletes a
 `device_changes` row while `CHANGE_LOG_RETENTION_DAYS` is `0`, which it is unless you set
 it. Set to a number of days (#785), rows observed longer ago than that are deleted
 nightly at 02:50, in batches of 10,000, and the table holds a steady window from then on.

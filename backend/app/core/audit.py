@@ -47,6 +47,11 @@ class AuditAction(StrEnum):
     MFA_RECOVERY_CODES_REGENERATED = "auth.mfa.recovery-codes.regenerated"
     # The actor is the administrator; the target, the account whose second factor went (#653).
     MFA_REMOVED = "auth.mfa.removed"
+    # Passkeys (#955): one added; one removed by its owner, or every one by an administrator, who is
+    # then the actor and the account the target; and a passkey sign-in refused, with the refusal's reason.
+    PASSKEY_ADDED = "auth.passkey.added"
+    PASSKEY_REMOVED = "auth.passkey.removed"
+    PASSKEY_REFUSED = "auth.passkey.refused"
     # A switch lands in two trails, the tenant left and the tenant entered (#36).
     TENANT_SWITCHED = "auth.tenant.switched"
     SETUP_COMPLETED = "auth.setup.completed"

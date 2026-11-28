@@ -19,6 +19,10 @@ services:
     pull_policy: never
     init: true
     shm_size: 1gb
+    # The app's own network namespace (#955). A passkey works only in a secure context, and over plain HTTP that
+    # is a loopback host alone, so http://localhost:8001 is the app itself here; looninspect.test, which the smoke
+    # tests use, still resolves through the same namespace. Nothing reaches further: the network stays internal.
+    network_mode: "service:app"
     command: ["./node_modules/.bin/playwright", "test"]
 
 networks:

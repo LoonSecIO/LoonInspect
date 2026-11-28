@@ -64,8 +64,8 @@ reads *Not assessed* for every app. When a page says that and you expected other
 
 No EPSS, no CVSS, and no scanner. Nothing is installed on a Mac, and LoonInspect scores
 nothing of its own: it reports what the published corpus carries for the build Jamf
-reported. No SCIM and no SSO; MFA is TOTP on local accounts, nothing federated
-(#653). The vulnerability answer is the summary block described above
+reported. No SCIM and no SSO; MFA is TOTP on local accounts, and a passkey signs a person in at the host
+it was added at (#653, #955): nothing federated. The vulnerability answer is the summary block described above
 and nothing else — no per-finding lifecycle events, no fleet-wide coverage tile, and
 nothing at all against a Jamf Patch title's version row, which carries no build to answer
 at. The corpus is compiled outside this repository and delivered over the data-sharing
@@ -109,7 +109,8 @@ rotation), the share log of what left the box for community sharing or AI (90 da
 pruned on write), terminal inventory summary jobs and cached prose (8 days, including
 while summaries are disabled), summary metric counters (25 hours), AI usage aggregates and lifecycle metadata (90 UTC days), the URL, text and
 contact written on a coverage request or match report (90 days after its case closes, as
-the service's copy), and expired or revoked sessions (hourly, a day after they die). See
+the service's copy), expired or revoked sessions (hourly, a day after they die), and the
+passkey challenges nobody answered (five minutes, swept as the next one is handed out). See
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for what that means at scale.
 
 ---
@@ -336,7 +337,7 @@ walks through both halves, the timeouts, rotating the secret, and how to see it 
 
 ### 7. Back it up before you need to
 
-**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty-eight ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, will not let you pick an app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing, a LoonInspect.app that will not open or says it could not start, a change log that keeps growing with its clock set or a Changes page that lost history, a promoted application that is not being sent or a Promote that is refused, a Fleet catalog tab that is missing, empty or says its last check did not get an answer, LoonSec's patch-policy data that has not arrived, is old or was refused, a patch-policy walk that is refused or that Jamf or Fleet cannot date — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
+**[docs/troubleshooting.md](docs/troubleshooting.md)** is where to start when something is not working: twenty-nine ordered paths — a green test and an empty sweep, a run with zero devices, events not reaching Splunk, a stack that will not start, applications reading *not assessed*, a Jamf Patch table that is empty or has stopped refreshing, Jamf Pro webhooks that never arrive, an update notice that never appears or names a release you do not have, a Changes Prompt bar that is missing or answers *AI search unavailable*, one connection whose every sweep fails because what is stored against it is not a credential, a Settings › AI that is missing or says AI features are off, Settings › AI with no Apple Foundation Models card, a deleted smart group the Changes page says nothing about, a Mac you deleted in Jamf that is still listed or one that vanished from the list, an evidence report that is empty or reads *not reported* throughout, a Posture section missing from the sidebar or a Vulnerabilities page listing nothing, a sign-in that asks for a six-digit code or refuses the one you typed, a Request coverage or Report an incorrect match that is refused or a case that never shows a status, a Patch policy page that is missing from the sidebar, will not let you pick an app or says its file was refused, an Out of policy column that is missing, a title that is not judged or a rule draft that fills nothing, a LoonInspect.app that will not open or says it could not start, a change log that keeps growing with its clock set or a Changes page that lost history, a promoted application that is not being sent or a Promote that is refused, a Fleet catalog tab that is missing, empty or says its last check did not get an answer, LoonSec's patch-policy data that has not arrived, is old or was refused, a patch-policy walk that is refused or that Jamf or Fleet cannot date, a passkey that is not offered or is refused — each ending in a fix or a named state to report. **[docs/operations.md](docs/operations.md)** is the operator runbook: what to back up
 (the database *and* `ENCRYPTION_KEY` — a dump without the key restores an instance whose
 every MDM connection is permanently unreadable), the `pg_dump` and `psql` commands to do
 it, what a restore does to in-flight outbox rows and the run mutex, how upgrades and
@@ -739,6 +740,17 @@ rather than waiting for them to expire. There is no email delivery, so new accou
 an initial password set by an administrator, and an administrator can reset a forgotten
 one from the same page.
 
+**Passkeys.** Anyone can add a passkey under **Settings → My Account**, for their current
+password, and sign in with it alone: from the email field's autofill menu, where the
+password manager offers it beside the saved password, or with **Sign in with a passkey**.
+User verification is asked for every time, so a passkey sign-in satisfies the two-step
+policy. A passkey works only at the host it was added at, over HTTPS or at `localhost`:
+an instance reached at an IP address, or over plain HTTP at any other name, offers none,
+and My Account says why. The password keeps working on every account, and an
+administrator removes another account's passkeys from **Accounts**, which signs out
+every session it has ([docs/auth-design.md](docs/auth-design.md) §4.10,
+[docs/troubleshooting.md](docs/troubleshooting.md) §34).
+
 ## Browser smoke tests
 
 From the checkout, run `python3 tests/browser/run.py` with Docker Compose 2.24.4 or later.
@@ -746,6 +758,11 @@ The first run downloads Chromium and builds the app and database. The runner cre
 a fresh Compose project with its own internal network, generated credentials and volumes.
 It signs in through the API, opens each top-level page, checks for browser errors and
 follows one synthetic Mac application through **Devices → Applications → Catalog**.
+It also adds a passkey on My Account with Chromium's virtual authenticator and signs in
+with it alone, at `http://localhost:8001`: a browser offers passkeys only to a secure
+context, which over plain HTTP is localhost, so the runner shares the app container's
+network namespace. It checks that `http://looninspect.test:8001`, where the other tests
+run, and `http://127.0.0.1:8001` offer no passkey and say why.
 The command prints the Playwright results and removes the project when it finishes.
 
 The **Docker image** CI job runs the same suite with `--ci-images`. It tests the

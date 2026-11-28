@@ -18,6 +18,9 @@ dependencies = [
     # Read at request time by the evidence report, which loads docs/baseline-rules.yml (#472).
     "pyyaml>=6.0.3",
     "pyotp>=2.9",
+    # Passkeys (#955): the WebAuthn checks on a registration and a sign-in. Yubico's; its one
+    # dependency is cryptography, already above (docs/auth-design.md §9).
+    "fido2>=2.2.1",
     "reportlab>=4.4",
     "mcp==2.3.0",
 ]
