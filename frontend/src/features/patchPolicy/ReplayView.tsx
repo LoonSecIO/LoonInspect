@@ -1,10 +1,11 @@
 import { Fragment, useState } from "react";
 import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
 import { KeepDates } from "@/features/patchPolicy/KeepDates";
+import { isDefinitionId } from "@/features/patchPolicy/definitions";
 import { PolicySlider } from "@/features/patchPolicy/PolicySlider";
 import {
   SLIDER_STOPS,
-  TABLED_POLICY,
+  SUPERSEDED_POLICY,
   affectedBounds,
   heldFixes,
   replayedRows,
@@ -98,7 +99,7 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
     [copy.updateEvents, policy.update_events, copy.updateEventsHint],
     [copy.openAtEnd, policy.open_at_window_end, copy.openAtEndHint]
   ];
-  const tabled = replay.definitions[TABLED_POLICY];
+  const superseded = replay.definitions[SUPERSEDED_POLICY];
 
   return (
     <div className="min-w-0 space-y-4">
@@ -312,7 +313,9 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
               <h3 className={heading}>{label}</h3>
               <dl className="space-y-1">
                 {Object.entries(entries)
-                  .filter(([key]) => key !== TABLED_POLICY)
+                  // Neither the superseded row's definition, shown apart below, nor one of a row keyed by a
+                  // built-in definition's id: the page quotes none of those rows (ruled 2026-11-28).
+                  .filter(([key]) => key !== SUPERSEDED_POLICY && !isDefinitionId(key))
                   .map(([key, text]) => (
                     <Fragment key={key}>
                       <dt className="font-mono text-xs text-muted-foreground">{key}</dt>
@@ -323,12 +326,13 @@ export function ReplayView({ replay, appName, stop, onStop, copy }: ReplayViewPr
               </dl>
             </div>
           ))}
-          {/* Apart from the slider and from every table, and without a number: tabled, 2026-10-02. */}
-          {tabled && (
+          {/* Apart from the slider and from every table, and without a number: superseded by the built-in
+              policy definitions, 2026-11-28, which LoonSec's next files replace it with. */}
+          {superseded && (
             <div className="space-y-1 rounded-lg border border-dashed p-3">
-              <h3 className={heading}>{copy.tabledHeading}</h3>
-              <p className="text-muted-foreground">{copy.tabledSaid}</p>
-              <p><KeepDates text={tabled} /></p>
+              <h3 className={heading}>{copy.supersededHeading}</h3>
+              <p className="text-muted-foreground"><KeepDates text={copy.supersededSaid} /></p>
+              <p><KeepDates text={superseded} /></p>
             </div>
           )}
         </div>

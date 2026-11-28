@@ -126,7 +126,7 @@ def mozilla_document(
         "schema": 1,
         "doc_id": f"doc-{app}",
         "as_of": "2026-11-23T20:00:00Z",
-        "algorithm": "patch_walk/1",
+        "algorithm": walk.ALGORITHM,
         "definitions_version": "2",
         "definitions": {},
         "clocks": {},
@@ -218,8 +218,8 @@ def test_firefox_and_firefox_esr_share_a_bundle_id_and_the_release_track_keeps_o
     assert result["inputs"]["timeline"]["digest"] == timeline.digest
     joined = result["inputs"]["timeline"]
     assert (joined["matched"], joined["unmatched"], joined["other_track"]) == (len(RELEASES), [], 0)
-    # Jamf dates the release a day after the vendor, and the walk installs on Jamf's day.
-    first_install = result["policies"]["1d"]["installs"][0]
+    # Jamf dates the release a day after the vendor, and the 0-day stop installs on Jamf's day.
+    first_install = result["policies"]["0d"]["installs"][0]
     assert first_install["date"] == (dict(RELEASES)[first_install["version"]] + dt.timedelta(days=1)).isoformat()
 
 
@@ -352,8 +352,9 @@ def test_fleet_with_the_flag_on_dates_the_track_by_the_day_fleet_first_carried_e
     assert timeline.as_of == day("2026-11-20")  # the history was read then, and no later check confirmed it
 
     result = walk.walk(doc, app="firefox", track="firefox/release", timeline=timeline.walk_input())
-    # Fleet's history starts at 140.0 (2025-06-10): the window starts 59 days after, not two years back.
-    assert result["window"]["since"] == "2025-08-08"
+    # Fleet's history starts at 140.0 (2025-06-10): the window starts 60 days after, the 60-day stop's
+    # wait, not two years back.
+    assert result["window"]["since"] == "2025-08-09"
     assert "timeline_coverage" in [row["reason"] for row in result["window"]["shortened_by"]]
     assert result["clocks"]["release_date"] == timelines.FLEET_CLOCK
 
@@ -983,14 +984,15 @@ def test_every_state_has_its_step_in_the_runbook() -> None:
 
 def test_every_refusal_the_walk_route_can_answer_has_its_step_in_the_runbook() -> None:
     """Each `reason` a 409 from `GET /api/patch-policy/walk` can carry is walked in §33, the feed's
-    own states aside (§32 walks those). Three of the walk's cannot reach the route: the copy's own
-    check refuses a document of another kind or algorithm before it is stored, and the public
-    timeline's absence is answered as `no_public_dates`."""
+    own states aside (§32 walks those). Two of the walk's cannot reach the route: the copy's own
+    check refuses a document of another kind before it is stored, and the public timeline's absence
+    is answered as `no_public_dates`. A copy of another algorithm can, though this build refuses to
+    store one: a copy an older build stored before the update that moved the algorithm (#953)."""
     from pathlib import Path
 
     runbook = (Path(__file__).resolve().parents[2] / "docs" / "troubleshooting.md").read_text()
     section = runbook.split('\n## 33. "', 1)[1].split("\n## ", 1)[0]
-    unreachable = {walk.REFUSED_DOCUMENT_KIND, walk.REFUSED_ALGORITHM, walk.REFUSED_NO_PUBLIC_TIMELINE}
+    unreachable = {walk.REFUSED_DOCUMENT_KIND, walk.REFUSED_NO_PUBLIC_TIMELINE}
     reasons = {getattr(walk, name) for name in dir(walk) if name.startswith("REFUSED_")} - unreachable
     for reason in sorted(reasons | {views.REFUSED_UNCHECKED, walk.REFUSED_PARITY}):
         assert f"`{reason}`" in section, f"§33 does not walk {reason}"
@@ -1009,7 +1011,7 @@ def _with_checks(doc: dict[str, Any], years: tuple[int, ...] = (2,)) -> dict[str
         track["check"] = {}
         for span in years:
             result = walk.walk(done, app=app["app"], track=track["track"], timeline=timeline.walk_input(), years=span)
-            track["check"][f"{span}y"] = {stop: walk.check_totals(result, stop) for stop in walk.STOPS}
+            track["check"][f"{span}y"] = {stop: walk.check_totals(result, stop) for stop in walk.POLICIES}
     return done
 
 
@@ -1162,13 +1164,15 @@ async def test_a_served_walk_keeps_every_total_and_series_and_trims_intervals_to
     assert first["cves_page"] == {"page": 1, "page_size": 1, "pages": 2, "total": 2}
     assert [row["cve_id"] for row in first["cves"]] == ["CVE-2025-0001"]
     outcomes = first["cves"][0]["outcomes"]
-    assert set(outcomes) == set(walk.STOPS)
-    assert "intervals" in outcomes["60d"] and all("intervals" not in outcomes[s] for s in walk.STOPS if s != "60d")
+    # Every stop and every definition the walk ran: this document names no KEV source, so the two KEV
+    # definitions are refused and the critical one runs.
+    assert set(outcomes) == set(result["policies"]) == {*walk.STOPS, "critical-only"}
+    assert "intervals" in outcomes["60d"] and all("intervals" not in outcomes[s] for s in outcomes if s != "60d")
     assert first["intervals_for"] == "60d"
     # The walk held in memory is untouched by the trim: every stop that saw the CVE open keeps its days.
     held = next(row for row in result["cves"] if row["cve_id"] == "CVE-2025-0001")["outcomes"]
-    assert [s for s in walk.STOPS if "intervals" in held[s]] == [s for s in walk.STOPS if held[s]["outcome"] == "exposed"]
-    assert any("intervals" in held[s] for s in walk.STOPS if s != "60d")
+    assert [s for s in held if "intervals" in held[s]] == [s for s in held if held[s]["outcome"] == "exposed"]
+    assert any("intervals" in held[s] for s in held if s != "60d")
 
     second = views.served(result, timeline, check=check, stop=None, page=2)
     assert [row["cve_id"] for row in second["cves"]] == ["CVE-2025-0002"]

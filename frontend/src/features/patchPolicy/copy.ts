@@ -1,16 +1,17 @@
-import { REPLAY_SCHEMA, type AffectedRange, type Refusal, type SliderStop } from "@/features/patchPolicy/replay";
+import { REPLAY_SCHEMA, stopDays, type AffectedRange, type Refusal, type SliderStop } from "@/features/patchPolicy/replay";
 
 /**
  * The words of the patch-policy reference page (#614, first slice), kept beside the feature the way
  * `devices/historyCopy.ts` is, so the views can be lifted out with their copy and no dictionary.
  *
- * Five things these words must keep saying. A release date is the date the file's own timeline gives
+ * Six things these words must keep saying. A release date is the date the file's own timeline gives
  * it, and the page names that timeline from the file (`timeline.name`), never a source of its own and
- * never *released on*. The CVE clock is said: each CVE counts from NVD's publication date, the one
- * clock a file may be on (`readReplay` refuses another). The replayed count is never called all the
- * CVEs: the excluded ones are named and counted. An app with no replay reads *no reference replay
- * yet*, never zero. And the page is a reference analysis of a hypothetical Mac, never this
- * organization's exposure.
+ * never *released on*. A stop's label is the days it waits after that date (ruled 2026-11-27, "0 =
+ * same day"): 0 installs a release on its date, 1 the day after. The CVE clock is said: each CVE
+ * counts from NVD's publication date, the one clock a file may be on (`readReplay` refuses another).
+ * The replayed count is never called all the CVEs: the excluded ones are named and counted. An app
+ * with no replay reads *no reference replay yet*, never zero. And the page is a reference analysis of
+ * a hypothetical Mac, never this organization's exposure.
  */
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
@@ -48,6 +49,12 @@ export const patchPolicyEnglish = {
         return refusal.found === "1"
           ? `Its schema is 1, the earlier replay format, which has no timeline block, the part of the file this page reads to name and link where its release dates come from. This page reads schema ${REPLAY_SCHEMA} only.`
           : `Its schema is ${refusal.found}, and this page reads schema ${REPLAY_SCHEMA} only.`;
+      case "old_count":
+        return `Its schema is 2, the replay that counts the old way: its N-day row is N − 1 days waited, so it cannot be drawn under this page's stops, whose labels are the days waited. This page reads schema ${REPLAY_SCHEMA} only.`;
+      case "delay":
+        return refusal.found === "absent"
+          ? `Its ${refusal.stop} row does not state the days it waits after a release's date (install_delay_days), so this page cannot tell whether it counts the days waited, which its label means.`
+          : `Its ${refusal.stop} row states install_delay_days ${refusal.found}, but its label means ${stopDays(refusal.stop)} ${plural(stopDays(refusal.stop), "day", "days")} waited after a release's date, so it is not drawn under that label.`;
       case "clock":
         return `Its CVE clock is ${refusal.found}. This page states one CVE clock, NVD's publication date (published), and would misstate any other.`;
       case "missing":
@@ -72,11 +79,23 @@ export const patchPolicyEnglish = {
     `This replay ends on ${until}, ${requested ? `before the ${requested} it was asked to reach` : "earlier than it was asked to"}: the file cut its window short, and Evidence › Window gives its reason in the file's own words.`,
 
   policyHeading: "Patch policy",
-  stops: { "1d": "1 day", "7d": "7 days", "14d": "14 days", "30d": "30 days", "60d": "60 days", never: "Never" } satisfies Record<SliderStop, string>,
+  // Each label is the days the stop waits (ruled 2026-11-27): 0 is the release's own date.
+  stops: {
+    "0d": "0 days",
+    "1d": "1 day",
+    "3d": "3 days",
+    "7d": "7 days",
+    "14d": "14 days",
+    "30d": "30 days",
+    "60d": "60 days",
+    never: "Never"
+  } satisfies Record<SliderStop, string>,
   policySaid: (stop: SliderStop) =>
     stop === "never"
       ? "No release is installed: the Mac stays on the version it opened the window with."
-      : `Every release is installed by day ${parseInt(stop, 10)}, where day one is the date the release-date source above gives the release.`,
+      : stop === "0d"
+        ? "Every release is installed on the date the release-date source above gives it."
+        : `Every release is installed ${stopDays(stop)} ${plural(stopDays(stop), "day", "days")} after the date the release-date source above gives it.`,
   waitsForPromotion:
     "A build served before its major version is promoted to stable is installed no earlier than the promotion day, and a major above the promotion table's newest row is not installed (early_stable, under Definitions).",
   promotionTableBehind:
@@ -181,9 +200,9 @@ export const patchPolicyEnglish = {
   definitionsHeading: "Definitions and clocks, in the file's own words",
   definitions: "Definitions",
   clocks: "Clocks",
-  tabledHeading: "Not on the slider",
-  tabledSaid:
-    "The file also carries a policy that installs a release only when a fix is critical or KEV-listed. It is tabled, so this page shows none of its numbers. Its definition, as the file states it:",
+  supersededHeading: "Not on the slider",
+  supersededSaid:
+    "The file also carries a policy that installs a release only when a fix is critical or KEV-listed. The built-in policy definitions superseded it on 2026-11-28, and LoonSec's next replay files replace it with rows on them, so this page shows none of its numbers. Its definition, as the file states it:",
 
   evidenceHeading: "Evidence",
   evidenceWindow: "Window",
@@ -235,6 +254,12 @@ export const patchPolicyGerman: PatchPolicyCopy = {
         return refusal.found === "1"
           ? `Ihr schema ist 1, das frühere Replay-Format ohne timeline-Block, den Teil der Datei, aus dem diese Seite die Quelle ihrer Release-Daten benennt und verlinkt. Diese Seite liest nur schema ${REPLAY_SCHEMA}.`
           : `Ihr schema ist ${refusal.found}; diese Seite liest nur schema ${REPLAY_SCHEMA}.`;
+      case "old_count":
+        return `Ihr schema ist 2, das Replay, das nach der alten Regel zählt: Seine N-Tage-Zeile entspricht N − 1 gewarteten Tagen; es lässt sich daher nicht unter den Stufen dieser Seite darstellen, deren Beschriftung die gewarteten Tage nennt. Diese Seite liest nur schema ${REPLAY_SCHEMA}.`;
+      case "delay":
+        return refusal.found === "absent"
+          ? `Ihre Zeile ${refusal.stop} nennt nicht die Tage, die sie nach dem Datum eines Release wartet (install_delay_days); diese Seite kann daher nicht erkennen, ob sie die gewarteten Tage zählt, die ihre Beschriftung meint.`
+          : `Ihre Zeile ${refusal.stop} nennt install_delay_days ${refusal.found}, ihre Beschriftung meint aber ${stopDays(refusal.stop) === 1 ? "1 gewarteten Tag" : `${stopDays(refusal.stop)} gewartete Tage`} nach dem Datum eines Release; sie wird daher nicht unter dieser Beschriftung dargestellt.`;
       case "clock":
         return `Ihre CVE-Uhr ist ${refusal.found}. Diese Seite nennt nur eine CVE-Uhr, das Veröffentlichungsdatum bei NVD (published), und würde jede andere falsch angeben.`;
       case "missing":
@@ -257,11 +282,13 @@ export const patchPolicyGerman: PatchPolicyCopy = {
     `Dieses Replay endet am ${until}, ${requested ? `vor dem angefragten ${requested}` : "früher als angefragt"}: Die Datei hat ihr Zeitfenster gekürzt, und Belege › Zeitfenster nennt den Grund im Wortlaut der Datei.`,
 
   policyHeading: "Patch-Richtlinie",
-  stops: { "1d": "1 Tag", "7d": "7 Tage", "14d": "14 Tage", "30d": "30 Tage", "60d": "60 Tage", never: "Nie" },
+  stops: { "0d": "0 Tage", "1d": "1 Tag", "3d": "3 Tage", "7d": "7 Tage", "14d": "14 Tage", "30d": "30 Tage", "60d": "60 Tage", never: "Nie" },
   policySaid: (stop: SliderStop) =>
     stop === "never"
       ? "Kein Release wird installiert: Der Mac bleibt auf der Version, mit der er das Zeitfenster begonnen hat."
-      : `Jedes Release ist bis Tag ${parseInt(stop, 10)} installiert; Tag eins ist das Datum, das die oben genannte Quelle der Release-Daten dem Release gibt.`,
+      : stop === "0d"
+        ? "Jedes Release wird an dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt."
+        : `Jedes Release wird ${stopDays(stop)} ${mehrzahl(stopDays(stop), "Tag", "Tage")} nach dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt.`,
   waitsForPromotion:
     "Ein Build, der vor der Beförderung seiner Hauptversion zu Stable ausgeliefert wurde, wird frühestens am Tag der Beförderung installiert, und eine Hauptversion oberhalb der neuesten Zeile der Beförderungstabelle wird nicht installiert (early_stable, unter Definitionen).",
   promotionTableBehind:
@@ -361,9 +388,9 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   definitionsHeading: "Definitionen und Uhren, im Wortlaut der Datei",
   definitions: "Definitionen",
   clocks: "Uhren",
-  tabledHeading: "Nicht auf dem Regler",
-  tabledSaid:
-    "Die Datei enthält außerdem eine Richtlinie, die ein Release nur installiert, wenn ein Fix kritisch oder KEV-gelistet ist. Sie ist zurückgestellt; diese Seite zeigt keine ihrer Zahlen. Ihre Definition, wie die Datei sie angibt:",
+  supersededHeading: "Nicht auf dem Regler",
+  supersededSaid:
+    "Die Datei enthält außerdem eine Richtlinie, die ein Release nur installiert, wenn ein Fix kritisch oder KEV-gelistet ist. Die eingebauten Richtliniendefinitionen haben sie am 2026-11-28 abgelöst, und die nächsten Replay-Dateien von LoonSec ersetzen sie durch Zeilen zu diesen; diese Seite zeigt daher keine ihrer Zahlen. Ihre Definition, wie die Datei sie angibt:",
 
   evidenceHeading: "Belege",
   evidenceWindow: "Zeitfenster",

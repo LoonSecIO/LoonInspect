@@ -1,0 +1,7453 @@
+{
+ "kind": "patch_policy_reference",
+ "schema": 1,
+ "doc_id": "5be66cee1c7beedaca2eff32b0fc8707edc5cde08d97cc12775e03b47a6f9fad",
+ "as_of": "2026-11-23T20:00:00Z",
+ "algorithm": "patch_walk/2",
+ "definitions_version": "2",
+ "engine": {
+  "parser_version": "fixture",
+  "version_compare": "v0",
+  "rules_digest": "frozen-check fixture"
+ },
+ "definitions": {
+  "fixture": "A hand-made document for LoonInspect's frozen-check test: four invented apps, fictional CVE ids (CVE-2099-7*), and a check each track's walk wrote once. None of its numbers describes a real app."
+ },
+ "clocks": {
+  "detectable_at": "The detectable_at definition's day, when it is known (`clock: detectable_at`).",
+  "published": "NVD `published`, truncated to the UTC date, when detectable_at is not known (`clock: published`)."
+ },
+ "sources": {
+  "nvd": {
+   "as_of": "2026-11-23T20:00:00Z"
+  },
+  "detectable": {
+   "name": "LoonSec's record of NVD changes",
+   "coverage_since": "2024-05-21",
+   "gaps": []
+  },
+  "timelines": {
+   "example-browser-releases": {
+    "name": "Example Browser release notes",
+    "url": "https://releases.example.com/browser/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   },
+   "example-analyzer-tags": {
+    "name": "Example Analyzer tags",
+    "url": "https://releases.example.com/analyzer/tags",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor tagged each version."
+   },
+   "example-editor-releases": {
+    "name": "Example Editor release notes",
+    "url": "https://releases.example.com/editor/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   },
+   "example-viewer-releases": {
+    "name": "Example Viewer release posts",
+    "url": "https://releases.example.com/viewer/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release post gives each version."
+   },
+   "example-notes-releases": {
+    "name": "Example Notes release notes",
+    "url": "https://releases.example.com/notes/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   },
+   "example-mail-releases": {
+    "name": "Example Mail release notes",
+    "url": "https://releases.example.com/mail/",
+    "fetched_at": "2026-11-23T18:00:00Z",
+    "clock": "The day the vendor's release notes give each version."
+   }
+  },
+  "kev": {
+   "via": "NVD cisaExploitAdd"
+  }
+ },
+ "exclusion_reasons": [
+  "rejected",
+  "no_configuration_for_pair",
+  "excluded_platform",
+  "configuration_declined",
+  "only_prerelease_criteria",
+  "no_fixed_version_determinable",
+  "fixed_version_not_in_catalog",
+  "branch_ambiguity",
+  "other_edition_only"
+ ],
+ "apps": [
+  {
+   "app": "browser",
+   "name": "Example Browser",
+   "bundle_ids": [
+    "com.example.browser"
+   ],
+   "other_channels": [
+    {
+     "channel": "esr",
+     "label": "Example Browser ESR",
+     "source": "https://releases.example.com/browser/esr.json",
+     "versions": [
+      "115.10.0",
+      "115.11.0",
+      "128.2.0",
+      "128.3.0"
+     ]
+    }
+   ],
+   "tracks": [
+    {
+     "track": "browser/release",
+     "label": "Example Browser",
+     "default": true,
+     "channel": "release",
+     "edition": "release",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-browser-releases",
+     "versions": [
+      {
+       "v": "100.0",
+       "keys": [
+        "100.0"
+       ],
+       "line": "",
+       "train": "100",
+       "date": "2023-05-09"
+      },
+      {
+       "v": "100.0.1",
+       "keys": [
+        "100.0.1"
+       ],
+       "line": "",
+       "train": "100",
+       "date": "2023-05-23"
+      },
+      {
+       "v": "101.0",
+       "keys": [
+        "101.0"
+       ],
+       "line": "",
+       "train": "101",
+       "date": "2023-06-20"
+      },
+      {
+       "v": "101.0.1",
+       "keys": [
+        "101.0.1"
+       ],
+       "line": "",
+       "train": "101",
+       "date": "2023-07-04"
+      },
+      {
+       "v": "102.0",
+       "keys": [
+        "102.0"
+       ],
+       "line": "",
+       "train": "102",
+       "date": "2023-08-01"
+      },
+      {
+       "v": "102.0.1",
+       "keys": [
+        "102.0.1"
+       ],
+       "line": "",
+       "train": "102",
+       "date": "2023-08-15"
+      },
+      {
+       "v": "103.0",
+       "keys": [
+        "103.0"
+       ],
+       "line": "",
+       "train": "103",
+       "date": "2023-09-12"
+      },
+      {
+       "v": "103.0.1",
+       "keys": [
+        "103.0.1"
+       ],
+       "line": "",
+       "train": "103",
+       "date": "2023-09-26"
+      },
+      {
+       "v": "104.0",
+       "keys": [
+        "104.0"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-10-24"
+      },
+      {
+       "v": "104.0.1",
+       "keys": [
+        "104.0.1"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-11-07"
+      },
+      {
+       "v": "104.0.2",
+       "keys": [
+        "104.0.2"
+       ],
+       "line": "",
+       "train": "104",
+       "date": "2023-11-21"
+      },
+      {
+       "v": "105.0",
+       "keys": [
+        "105.0"
+       ],
+       "line": "",
+       "train": "105",
+       "date": "2023-12-05"
+      },
+      {
+       "v": "105.0.1",
+       "keys": [
+        "105.0.1"
+       ],
+       "line": "",
+       "train": "105",
+       "date": "2023-12-19"
+      },
+      {
+       "v": "106.0",
+       "keys": [
+        "106.0"
+       ],
+       "line": "",
+       "train": "106",
+       "date": "2024-01-16"
+      },
+      {
+       "v": "106.0.1",
+       "keys": [
+        "106.0.1"
+       ],
+       "line": "",
+       "train": "106",
+       "date": "2024-01-30"
+      },
+      {
+       "v": "107.0",
+       "keys": [
+        "107.0"
+       ],
+       "line": "",
+       "train": "107",
+       "date": "2024-02-27"
+      },
+      {
+       "v": "107.0.1",
+       "keys": [
+        "107.0.1"
+       ],
+       "line": "",
+       "train": "107",
+       "date": "2024-03-12"
+      },
+      {
+       "v": "108.0",
+       "keys": [
+        "108.0"
+       ],
+       "line": "",
+       "train": "108",
+       "date": "2024-04-09"
+      },
+      {
+       "v": "108.0.1",
+       "keys": [
+        "108.0.1"
+       ],
+       "line": "",
+       "train": "108",
+       "date": "2024-04-23"
+      },
+      {
+       "v": "109.0",
+       "keys": [
+        "109.0"
+       ],
+       "line": "",
+       "train": "109",
+       "date": "2024-05-21"
+      },
+      {
+       "v": "109.0.1",
+       "keys": [
+        "109.0.1"
+       ],
+       "line": "",
+       "train": "109",
+       "date": "2024-06-04"
+      },
+      {
+       "v": "110.0",
+       "keys": [
+        "110.0"
+       ],
+       "line": "",
+       "train": "110",
+       "date": "2024-07-02"
+      },
+      {
+       "v": "110.0.1",
+       "keys": [
+        "110.0.1"
+       ],
+       "line": "",
+       "train": "110",
+       "date": "2024-07-16"
+      },
+      {
+       "v": "111.0",
+       "keys": [
+        "111.0"
+       ],
+       "line": "",
+       "train": "111",
+       "date": "2024-08-13"
+      },
+      {
+       "v": "111.0.1",
+       "keys": [
+        "111.0.1"
+       ],
+       "line": "",
+       "train": "111",
+       "date": "2024-08-27"
+      },
+      {
+       "v": "112.0",
+       "keys": [
+        "112.0"
+       ],
+       "line": "",
+       "train": "112",
+       "date": "2024-09-24"
+      },
+      {
+       "v": "112.0.1",
+       "keys": [
+        "112.0.1"
+       ],
+       "line": "",
+       "train": "112",
+       "date": "2024-10-08"
+      },
+      {
+       "v": "113.0",
+       "keys": [
+        "113.0"
+       ],
+       "line": "",
+       "train": "113",
+       "date": "2024-11-05"
+      },
+      {
+       "v": "113.0.1",
+       "keys": [
+        "113.0.1"
+       ],
+       "line": "",
+       "train": "113",
+       "date": "2024-11-19"
+      },
+      {
+       "v": "114.0",
+       "keys": [
+        "114.0"
+       ],
+       "line": "",
+       "train": "114",
+       "date": "2024-12-17"
+      },
+      {
+       "v": "114.0.1",
+       "keys": [
+        "114.0.1"
+       ],
+       "line": "",
+       "train": "114",
+       "date": "2024-12-31"
+      },
+      {
+       "v": "115.0",
+       "keys": [
+        "115.0"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-01-28"
+      },
+      {
+       "v": "115.0.1",
+       "keys": [
+        "115.0.1"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-02-11"
+      },
+      {
+       "v": "115.0.2",
+       "keys": [
+        "115.0.2"
+       ],
+       "line": "",
+       "train": "115",
+       "date": "2025-03-13"
+      },
+      {
+       "v": "116.0",
+       "keys": [
+        "116.0"
+       ],
+       "line": "",
+       "train": "116",
+       "date": "2025-03-11"
+      },
+      {
+       "v": "116.0.1",
+       "keys": [
+        "116.0.1"
+       ],
+       "line": "",
+       "train": "116",
+       "date": "2025-03-25"
+      },
+      {
+       "v": "117.0",
+       "keys": [
+        "117.0"
+       ],
+       "line": "",
+       "train": "117",
+       "date": "2025-04-22"
+      },
+      {
+       "v": "117.0.1",
+       "keys": [
+        "117.0.1"
+       ],
+       "line": "",
+       "train": "117",
+       "date": "2025-05-06"
+      },
+      {
+       "v": "118.0",
+       "keys": [
+        "118.0"
+       ],
+       "line": "",
+       "train": "118",
+       "date": "2025-06-03"
+      },
+      {
+       "v": "118.0.1",
+       "keys": [
+        "118.0.1"
+       ],
+       "line": "",
+       "train": "118",
+       "date": "2025-06-17"
+      },
+      {
+       "v": "119.0",
+       "keys": [
+        "119.0"
+       ],
+       "line": "",
+       "train": "119",
+       "date": "2025-07-15"
+      },
+      {
+       "v": "119.0.1",
+       "keys": [
+        "119.0.1"
+       ],
+       "line": "",
+       "train": "119",
+       "date": "2025-07-29"
+      },
+      {
+       "v": "120.0",
+       "keys": [
+        "120.0"
+       ],
+       "line": "",
+       "train": "120",
+       "date": "2025-08-26"
+      },
+      {
+       "v": "120.0.1",
+       "keys": [
+        "120.0.1"
+       ],
+       "line": "",
+       "train": "120",
+       "date": "2025-09-09"
+      },
+      {
+       "v": "121.0",
+       "keys": [
+        "121.0"
+       ],
+       "line": "",
+       "train": "121",
+       "date": "2025-10-07"
+      },
+      {
+       "v": "121.0.1",
+       "keys": [
+        "121.0.1"
+       ],
+       "line": "",
+       "train": "121",
+       "date": "2025-10-21"
+      },
+      {
+       "v": "122.0",
+       "keys": [
+        "122.0"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-11-18"
+      },
+      {
+       "v": "122.0.1",
+       "keys": [
+        "122.0.1"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-02"
+      },
+      {
+       "v": "122.0.2",
+       "keys": [
+        "122.0.2"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-16"
+      },
+      {
+       "v": "122.0.2.1",
+       "keys": [
+        "122.0.2.1"
+       ],
+       "line": "",
+       "train": "122",
+       "date": "2025-12-15"
+      },
+      {
+       "v": "123.0",
+       "keys": [
+        "123.0"
+       ],
+       "line": "",
+       "train": "123",
+       "date": "2025-12-30"
+      },
+      {
+       "v": "123.0.1",
+       "keys": [
+        "123.0.1"
+       ],
+       "line": "",
+       "train": "123",
+       "date": "2026-01-13"
+      },
+      {
+       "v": "124.0",
+       "keys": [
+        "124.0"
+       ],
+       "line": "",
+       "train": "124",
+       "date": "2026-02-10"
+      },
+      {
+       "v": "124.0.1",
+       "keys": [
+        "124.0.1"
+       ],
+       "line": "",
+       "train": "124",
+       "date": "2026-02-24"
+      },
+      {
+       "v": "125.0",
+       "keys": [
+        "125.0"
+       ],
+       "line": "",
+       "train": "125",
+       "date": "2026-03-24"
+      },
+      {
+       "v": "125.0.1",
+       "keys": [
+        "125.0.1"
+       ],
+       "line": "",
+       "train": "125",
+       "date": "2026-04-07"
+      },
+      {
+       "v": "126.0",
+       "keys": [
+        "126.0"
+       ],
+       "line": "",
+       "train": "126",
+       "date": "2026-05-05"
+      },
+      {
+       "v": "126.0.1",
+       "keys": [
+        "126.0.1"
+       ],
+       "line": "",
+       "train": "126",
+       "date": "2026-05-19"
+      },
+      {
+       "v": "126.0.1.1",
+       "keys": [
+        "126.0.1.1"
+       ],
+       "line": "",
+       "train": "126",
+       "date": null
+      },
+      {
+       "v": "127.0",
+       "keys": [
+        "127.0"
+       ],
+       "line": "",
+       "train": "127",
+       "date": "2026-06-16"
+      },
+      {
+       "v": "127.0.1",
+       "keys": [
+        "127.0.1"
+       ],
+       "line": "",
+       "train": "127",
+       "date": "2026-07-31"
+      },
+      {
+       "v": "128.0",
+       "keys": [
+        "128.0"
+       ],
+       "line": "",
+       "train": "128",
+       "date": "2026-07-28"
+      },
+      {
+       "v": "128.0.1",
+       "keys": [
+        "128.0.1"
+       ],
+       "line": "",
+       "train": "128",
+       "date": "2026-08-11"
+      },
+      {
+       "v": "129.0",
+       "keys": [
+        "129.0"
+       ],
+       "line": "",
+       "train": "129",
+       "date": "2026-09-08"
+      },
+      {
+       "v": "129.0.1",
+       "keys": [
+        "129.0.1"
+       ],
+       "line": "",
+       "train": "129",
+       "date": "2026-09-22"
+      },
+      {
+       "v": "130.0",
+       "keys": [
+        "130.0"
+       ],
+       "line": "",
+       "train": "130",
+       "date": "2026-10-20"
+      },
+      {
+       "v": "130.0.1",
+       "keys": [
+        "130.0.1"
+       ],
+       "line": "",
+       "train": "130",
+       "date": "2026-11-03"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7101",
+       "published": "2024-04-12",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-04-13",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 108.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7102",
+       "published": "2025-03-05",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-06",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         32
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 33
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 115.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7103",
+       "published": "2025-06-13",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         0,
+         39
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 40,
+         "named": "118.0.4"
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 118.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7104",
+       "published": "2025-10-12",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-10-13",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         42,
+         45
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": null
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "120.0 to 121.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7105",
+       "published": "2026-01-01",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-01-08",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         21,
+         24
+        ],
+        [
+         46,
+         50
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 25
+        },
+        {
+         "line": "",
+         "index": 51
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "110.0 to 111.0.1, 122.0 to 123.0"
+      },
+      {
+       "cve_id": "CVE-2099-7106",
+       "published": "2026-05-25",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-05-26",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         57
+        ],
+        [
+         59,
+         59
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 58
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 126.0.1, 127.0"
+      },
+      {
+       "cve_id": "CVE-2099-7107",
+       "published": "2026-09-09",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-08",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         66
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": null
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 130.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7108",
+       "published": "2024-10-01",
+       "severity": "low",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         11,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "105.0 to 112.0"
+      },
+      {
+       "cve_id": "CVE-2099-7112",
+       "published": "2025-12-08",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-12-09",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         47
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 48
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "100.0 to 122.0.1"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 1,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 1
+      },
+      "cves": [
+       {
+        "cve_id": "CVE-2099-7109",
+        "reason": "other_edition_only",
+        "published": "2026-02-13",
+        "detectable_at": "2026-02-14",
+        "detail": "NVD's configuration names the ESR edition only."
+       },
+       {
+        "cve_id": "CVE-2099-7110",
+        "reason": "no_configuration_for_pair",
+        "published": "2026-06-24",
+        "detectable_at": null,
+        "detail": "NVD's record names no configuration for example:browser."
+       }
+      ]
+     },
+     "not_detectable": {
+      "count": 1,
+      "cves": [
+       "CVE-2099-7111"
+      ]
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 221,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 34,
+        "initial_version": "113.0.1",
+        "final_version": "130.0.1"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 227,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 34,
+        "initial_version": "113.0.1",
+        "final_version": "130.0.1"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 239,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 34,
+        "initial_version": "113.0.1",
+        "final_version": "130.0.1"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 263,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "113.0",
+        "final_version": "130.0.1"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 305,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "113.0",
+        "final_version": "130.0.1"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 401,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "112.0.1",
+        "final_version": "130.0"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 560,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 15,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 36,
+        "initial_version": "111.0.1",
+        "final_version": "129.0.1"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 1731,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "113.0.1",
+        "final_version": "113.0.1"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 1731,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "113.0.1",
+        "final_version": "113.0.1"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 1731,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "113.0.1",
+        "final_version": "113.0.1"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 7,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 401,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 2,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 35,
+        "initial_version": "112.0.1",
+        "final_version": "130.0"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 228,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 43,
+        "initial_version": "109.0",
+        "final_version": "130.0.1"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 235,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 43,
+        "initial_version": "109.0",
+        "final_version": "130.0.1"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 249,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 2,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0.1",
+        "final_version": "130.0.1"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 277,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 6,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0.1",
+        "final_version": "130.0.1"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 326,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 13,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0.1",
+        "final_version": "130.0.1"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 438,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 29,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0",
+        "final_version": "130.0"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 627,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 59,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "107.0.1",
+        "final_version": "129.0.1"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 2,
+        "exposed": 6,
+        "exposure_days": 2514,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "109.0",
+        "final_version": "109.0"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 2,
+        "exposed": 6,
+        "exposure_days": 2514,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "109.0",
+        "final_version": "109.0"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 2,
+        "never_seen_outside_affected_range": 2,
+        "exposed": 6,
+        "exposure_days": 2514,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "109.0",
+        "final_version": "109.0"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 10,
+        "replayed": 8,
+        "excluded": 2,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 438,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 29,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 44,
+        "initial_version": "108.0",
+        "final_version": "130.0"
+       }
+      }
+     },
+     "counts": {
+      "versions": 67,
+      "versions_dated": 66,
+      "candidates": 12,
+      "listed": 9,
+      "excluded": 2,
+      "not_detectable": 1,
+      "clock": {
+       "detectable_at": 7,
+       "published": 2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "analyzer",
+   "name": "Example Analyzer",
+   "bundle_ids": [
+    "com.example.analyzer"
+   ],
+   "tracks": [
+    {
+     "track": "analyzer/4.2",
+     "label": "Example Analyzer 4.2",
+     "default": true,
+     "channel": "stable",
+     "edition": "any",
+     "path": {
+      "kind": "hold",
+      "ceiling_line": "4.2"
+     },
+     "promotions": null,
+     "timeline": "example-analyzer-tags",
+     "versions": [
+      {
+       "v": "4.0.0",
+       "keys": [
+        "4.0.0"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-03-01"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-04-12"
+      },
+      {
+       "v": "4.0.2",
+       "keys": [
+        "4.0.2"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-06-07"
+      },
+      {
+       "v": "4.0.3",
+       "keys": [
+        "4.0.3"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-08-02"
+      },
+      {
+       "v": "4.0.4",
+       "keys": [
+        "4.0.4"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-10-04"
+      },
+      {
+       "v": "4.0.5",
+       "keys": [
+        "4.0.5"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-12-06"
+      },
+      {
+       "v": "4.0.6",
+       "keys": [
+        "4.0.6"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-02-07"
+      },
+      {
+       "v": "4.0.7",
+       "keys": [
+        "4.0.7"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-04-03"
+      },
+      {
+       "v": "4.0.8",
+       "keys": [
+        "4.0.8"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-06-05"
+      },
+      {
+       "v": "4.2.0",
+       "keys": [
+        "4.2.0"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-10-11"
+      },
+      {
+       "v": "4.2.1",
+       "keys": [
+        "4.2.1"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-12-13"
+      },
+      {
+       "v": "4.2.2",
+       "keys": [
+        "4.2.2"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-02-14"
+      },
+      {
+       "v": "4.2.3",
+       "keys": [
+        "4.2.3"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-04-10"
+      },
+      {
+       "v": "4.2.4",
+       "keys": [
+        "4.2.4"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-07-10"
+      },
+      {
+       "v": "4.2.5",
+       "keys": [
+        "4.2.5"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-10-09"
+      },
+      {
+       "v": "4.2.6",
+       "keys": [
+        "4.2.6"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.2.7",
+       "keys": [
+        "4.2.7"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-05-14"
+      },
+      {
+       "v": "4.2.8",
+       "keys": [
+        "4.2.8"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-09-10"
+      },
+      {
+       "v": "4.2.9",
+       "keys": [
+        "4.2.9"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.2.10",
+       "keys": [
+        "4.2.10"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-05-13"
+      },
+      {
+       "v": "4.4.0",
+       "keys": [
+        "4.4.0"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-08-28"
+      },
+      {
+       "v": "4.4.1",
+       "keys": [
+        "4.4.1"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-11-22"
+      },
+      {
+       "v": "4.4.2",
+       "keys": [
+        "4.4.2"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.4.3",
+       "keys": [
+        "4.4.3"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-04-09"
+      },
+      {
+       "v": "4.4.4",
+       "keys": [
+        "4.4.4"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-07-09"
+      },
+      {
+       "v": "4.4.5",
+       "keys": [
+        "4.4.5"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-10-08"
+      },
+      {
+       "v": "4.4.6",
+       "keys": [
+        "4.4.6"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.4.7",
+       "keys": [
+        "4.4.7"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-04-08"
+      },
+      {
+       "v": "4.4.8",
+       "keys": [
+        "4.4.8"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-07-08"
+      },
+      {
+       "v": "4.4.9",
+       "keys": [
+        "4.4.9"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-10-07"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7201",
+       "published": "2024-12-20",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-12-21",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         14
+        ],
+        [
+         20,
+         21
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 15
+        },
+        {
+         "line": "4.4",
+         "index": 22
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.5, 4.4.0 to 4.4.1"
+      },
+      {
+       "cve_id": "CVE-2099-7202",
+       "published": "2025-03-18",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-19",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         8
+        ],
+        [
+         9,
+         15
+        ],
+        [
+         20,
+         22
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.0",
+         "index": null
+        },
+        {
+         "line": "4.2",
+         "index": 16
+        },
+        {
+         "line": "4.4",
+         "index": 23
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.0.0 to 4.0.8, 4.2.0 to 4.2.6, 4.4.0 to 4.4.2"
+      },
+      {
+       "cve_id": "CVE-2099-7203",
+       "published": "2025-11-04",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         20,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.4",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.4.0 to 4.4.5"
+      },
+      {
+       "cve_id": "CVE-2099-7204",
+       "published": "2026-02-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-02-03",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.9"
+      },
+      {
+       "cve_id": "CVE-2099-7205",
+       "published": "2026-08-11",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-08-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         19
+        ],
+        [
+         20,
+         28
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": null
+        },
+        {
+         "line": "4.4",
+         "index": 29
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.10, 4.4.0 to 4.4.8"
+      },
+      {
+       "cve_id": "CVE-2099-7206",
+       "published": "2024-05-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-05-23",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         12
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 13
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.3"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 283,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 286,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 292,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 304,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 325,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 373,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 463,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "4.2.4",
+        "final_version": "4.2.10"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1712,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.5"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1712,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.5"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1712,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.5"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 373,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 5,
+        "initial_version": "4.2.5",
+        "final_version": "4.2.10"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 331,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 335,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 343,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 359,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 387,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 451,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 571,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.2.2",
+        "final_version": "4.2.10"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 451,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.10"
+       }
+      }
+     },
+     "counts": {
+      "versions": 30,
+      "versions_dated": 30,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 5,
+       "published": 1
+      }
+     }
+    },
+    {
+     "track": "analyzer/newest",
+     "label": "Example Analyzer (newest line)",
+     "default": false,
+     "channel": "stable",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-analyzer-tags",
+     "versions": [
+      {
+       "v": "4.0.0",
+       "keys": [
+        "4.0.0"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-03-01"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-04-12"
+      },
+      {
+       "v": "4.0.2",
+       "keys": [
+        "4.0.2"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-06-07"
+      },
+      {
+       "v": "4.0.3",
+       "keys": [
+        "4.0.3"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-08-02"
+      },
+      {
+       "v": "4.0.4",
+       "keys": [
+        "4.0.4"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-10-04"
+      },
+      {
+       "v": "4.0.5",
+       "keys": [
+        "4.0.5"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2023-12-06"
+      },
+      {
+       "v": "4.0.6",
+       "keys": [
+        "4.0.6"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-02-07"
+      },
+      {
+       "v": "4.0.7",
+       "keys": [
+        "4.0.7"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-04-03"
+      },
+      {
+       "v": "4.0.8",
+       "keys": [
+        "4.0.8"
+       ],
+       "line": "4.0",
+       "train": "4.0",
+       "date": "2024-06-05"
+      },
+      {
+       "v": "4.2.0",
+       "keys": [
+        "4.2.0"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-10-11"
+      },
+      {
+       "v": "4.2.1",
+       "keys": [
+        "4.2.1"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2023-12-13"
+      },
+      {
+       "v": "4.2.2",
+       "keys": [
+        "4.2.2"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-02-14"
+      },
+      {
+       "v": "4.2.3",
+       "keys": [
+        "4.2.3"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-04-10"
+      },
+      {
+       "v": "4.2.4",
+       "keys": [
+        "4.2.4"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-07-10"
+      },
+      {
+       "v": "4.2.5",
+       "keys": [
+        "4.2.5"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2024-10-09"
+      },
+      {
+       "v": "4.2.6",
+       "keys": [
+        "4.2.6"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.2.7",
+       "keys": [
+        "4.2.7"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-05-14"
+      },
+      {
+       "v": "4.2.8",
+       "keys": [
+        "4.2.8"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2025-09-10"
+      },
+      {
+       "v": "4.2.9",
+       "keys": [
+        "4.2.9"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.2.10",
+       "keys": [
+        "4.2.10"
+       ],
+       "line": "4.2",
+       "train": "4.2",
+       "date": "2026-05-13"
+      },
+      {
+       "v": "4.4.0",
+       "keys": [
+        "4.4.0"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-08-28"
+      },
+      {
+       "v": "4.4.1",
+       "keys": [
+        "4.4.1"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2024-11-22"
+      },
+      {
+       "v": "4.4.2",
+       "keys": [
+        "4.4.2"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-01-15"
+      },
+      {
+       "v": "4.4.3",
+       "keys": [
+        "4.4.3"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-04-09"
+      },
+      {
+       "v": "4.4.4",
+       "keys": [
+        "4.4.4"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-07-09"
+      },
+      {
+       "v": "4.4.5",
+       "keys": [
+        "4.4.5"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2025-10-08"
+      },
+      {
+       "v": "4.4.6",
+       "keys": [
+        "4.4.6"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-01-14"
+      },
+      {
+       "v": "4.4.7",
+       "keys": [
+        "4.4.7"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-04-08"
+      },
+      {
+       "v": "4.4.8",
+       "keys": [
+        "4.4.8"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-07-08"
+      },
+      {
+       "v": "4.4.9",
+       "keys": [
+        "4.4.9"
+       ],
+       "line": "4.4",
+       "train": "4.4",
+       "date": "2026-10-07"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7201",
+       "published": "2024-12-20",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-12-21",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         14
+        ],
+        [
+         20,
+         21
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 15
+        },
+        {
+         "line": "4.4",
+         "index": 22
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.5, 4.4.0 to 4.4.1"
+      },
+      {
+       "cve_id": "CVE-2099-7202",
+       "published": "2025-03-18",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-19",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         8
+        ],
+        [
+         9,
+         15
+        ],
+        [
+         20,
+         22
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.0",
+         "index": null
+        },
+        {
+         "line": "4.2",
+         "index": 16
+        },
+        {
+         "line": "4.4",
+         "index": 23
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.0.0 to 4.0.8, 4.2.0 to 4.2.6, 4.4.0 to 4.4.2"
+      },
+      {
+       "cve_id": "CVE-2099-7203",
+       "published": "2025-11-04",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": null,
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": null,
+       "clock": "published",
+       "affected": [
+        [
+         20,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.4",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.4.0 to 4.4.5"
+      },
+      {
+       "cve_id": "CVE-2099-7204",
+       "published": "2026-02-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-02-03",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         18
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 19
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.9"
+      },
+      {
+       "cve_id": "CVE-2099-7205",
+       "published": "2026-08-11",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-08-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         19
+        ],
+        [
+         20,
+         28
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": null
+        },
+        {
+         "line": "4.4",
+         "index": 29
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.10, 4.4.0 to 4.4.8"
+      },
+      {
+       "cve_id": "CVE-2099-7206",
+       "published": "2024-05-02",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-05-23",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         9,
+         12
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "4.2",
+         "index": 13
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "4.2.0 to 4.2.3"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 173,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.9"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 177,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 185,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 201,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 229,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 293,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 400,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.8"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1803,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.1"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1803,
+        "open_at_window_end": {
+         "in_window": 4,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.1"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 1615,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "4.4.1",
+        "final_version": "4.4.9"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 4,
+        "exposure_days": 293,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 9,
+        "initial_version": "4.4.0",
+        "final_version": "4.4.9"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 221,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 226,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 236,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 256,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 291,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 371,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 508,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.2",
+        "final_version": "4.4.8"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2626,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "4.2.3",
+        "final_version": "4.2.3"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2391,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 371,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 11,
+        "initial_version": "4.2.3",
+        "final_version": "4.4.9"
+       }
+      }
+     },
+     "counts": {
+      "versions": 30,
+      "versions_dated": 30,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 5,
+       "published": 1
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "editor",
+   "name": "Example Editor",
+   "bundle_ids": [
+    "com.example.editor"
+   ],
+   "tracks": [
+    {
+     "track": "editor/release",
+     "label": "Example Editor",
+     "default": true,
+     "channel": "release",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-editor-releases",
+     "versions": [
+      {
+       "v": "1.0",
+       "keys": [
+        "1.0"
+       ],
+       "line": "",
+       "train": "1",
+       "date": "2024-01-08"
+      },
+      {
+       "v": "1.0.1",
+       "keys": [
+        "1.0.1"
+       ],
+       "line": "",
+       "train": "1",
+       "date": "2024-02-12"
+      },
+      {
+       "v": "2.0",
+       "keys": [
+        "2.0"
+       ],
+       "line": "",
+       "train": "2",
+       "date": "2024-04-01"
+      },
+      {
+       "v": "2.0.1",
+       "keys": [
+        "2.0.1"
+       ],
+       "line": "",
+       "train": "2",
+       "date": "2024-06-10"
+      },
+      {
+       "v": "3.0",
+       "keys": [
+        "3.0"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-09-16"
+      },
+      {
+       "v": "3.0.1",
+       "keys": [
+        "3.0.1"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-11-10"
+      },
+      {
+       "v": "3.0.2",
+       "keys": [
+        "3.0.2"
+       ],
+       "line": "",
+       "train": "3",
+       "date": "2024-12-02"
+      },
+      {
+       "v": "4.0",
+       "keys": [
+        "4.0"
+       ],
+       "line": "",
+       "train": "4",
+       "date": "2025-02-03"
+      },
+      {
+       "v": "4.0.1",
+       "keys": [
+        "4.0.1"
+       ],
+       "line": "",
+       "train": "4",
+       "date": "2025-03-03"
+      },
+      {
+       "v": "5.0",
+       "keys": [
+        "5.0"
+       ],
+       "line": "",
+       "train": "5",
+       "date": "2025-05-05"
+      },
+      {
+       "v": "6.0",
+       "keys": [
+        "6.0"
+       ],
+       "line": "",
+       "train": "6",
+       "date": "2025-06-02"
+      },
+      {
+       "v": "6.0.1",
+       "keys": [
+        "6.0.1"
+       ],
+       "line": "",
+       "train": "6",
+       "date": null
+      },
+      {
+       "v": "7.0",
+       "keys": [
+        "7.0"
+       ],
+       "line": "",
+       "train": "7",
+       "date": "2025-07-01"
+      },
+      {
+       "v": "7.0.1",
+       "keys": [
+        "7.0.1"
+       ],
+       "line": "",
+       "train": "7",
+       "date": "2025-06-28"
+      },
+      {
+       "v": "8.0",
+       "keys": [
+        "8.0"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-08-11"
+      },
+      {
+       "v": "8.0.1",
+       "keys": [
+        "8.0.1"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-09-08"
+      },
+      {
+       "v": "8.0.2",
+       "keys": [
+        "8.0.2"
+       ],
+       "line": "",
+       "train": "8",
+       "date": "2025-09-22"
+      },
+      {
+       "v": "9.0",
+       "keys": [
+        "9.0"
+       ],
+       "line": "",
+       "train": "9",
+       "date": "2025-09-22"
+      },
+      {
+       "v": "9.0.1",
+       "keys": [
+        "9.0.1"
+       ],
+       "line": "",
+       "train": "9",
+       "date": "2025-10-06"
+      },
+      {
+       "v": "10.0",
+       "keys": [
+        "10.0"
+       ],
+       "line": "",
+       "train": "10",
+       "date": "2025-11-03"
+      },
+      {
+       "v": "10.0.1",
+       "keys": [
+        "10.0.1"
+       ],
+       "line": "",
+       "train": "10",
+       "date": "2025-11-17"
+      },
+      {
+       "v": "11.0",
+       "keys": [
+        "11.0"
+       ],
+       "line": "",
+       "train": "11",
+       "date": "2025-12-15"
+      },
+      {
+       "v": "12.0",
+       "keys": [
+        "12.0"
+       ],
+       "line": "",
+       "train": "12",
+       "date": "2026-02-09"
+      },
+      {
+       "v": "13.0",
+       "keys": [
+        "13.0"
+       ],
+       "line": "",
+       "train": "13",
+       "date": "2026-05-04"
+      },
+      {
+       "v": "14.0",
+       "keys": [
+        "14.0"
+       ],
+       "line": "",
+       "train": "14",
+       "date": "2026-08-03"
+      },
+      {
+       "v": "14.0.1",
+       "keys": [
+        "14.0.1"
+       ],
+       "line": "",
+       "train": "14",
+       "date": "2026-09-14"
+      },
+      {
+       "v": "15.0",
+       "keys": [
+        "15.0"
+       ],
+       "line": "",
+       "train": "15",
+       "date": "2026-10-26"
+      },
+      {
+       "v": "15.0.1",
+       "keys": [
+        "15.0.1"
+       ],
+       "line": "",
+       "train": "15",
+       "date": "2026-11-16"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7301",
+       "published": "2024-11-21",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-11-22",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         5
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 6
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 3.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7302",
+       "published": "2024-11-11",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-11-12",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         5,
+         5
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 6
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "3.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7303",
+       "published": "2025-06-09",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-06-10",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         10
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 11
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 6.0"
+      },
+      {
+       "cve_id": "CVE-2099-7304",
+       "published": "2025-08-31",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-09-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         15
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 16
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 8.0.1"
+      },
+      {
+       "cve_id": "CVE-2099-7305",
+       "published": "2025-11-24",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": "2025-11-25",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         19
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 20
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 10.0"
+      },
+      {
+       "cve_id": "CVE-2099-7306",
+       "published": "2026-09-30",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         26
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 27
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 15.0"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 95,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 10,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 19,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 99,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 11,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 19,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 107,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 13,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 19,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 123,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 17,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 18,
+        "initial_version": "3.0.1",
+        "final_version": "15.0"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 150,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 19,
+        "initial_version": "3.0",
+        "final_version": "15.0"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 214,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 18,
+        "initial_version": "3.0",
+        "final_version": "14.0.1"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 334,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 18,
+        "initial_version": "3.0",
+        "final_version": "14.0.1"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "3.0.1",
+        "final_version": "3.0.1"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "3.0.1",
+        "final_version": "3.0.1"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 2091,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 724,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "3.0.1",
+        "final_version": "15.0.1"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 214,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 22,
+        "update_events": 18,
+        "initial_version": "3.0",
+        "final_version": "14.0.1"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 115,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 120,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 129,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 145,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "2.0",
+        "final_version": "15.0"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 172,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "2.0",
+        "final_version": "15.0"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 236,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 20,
+        "initial_version": "2.0",
+        "final_version": "14.0.1"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 356,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "1.0.1",
+        "final_version": "14.0.1"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "2.0",
+        "final_version": "2.0"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2126,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "2.0",
+        "final_version": "2.0"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 5,
+        "exposure_days": 2091,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "2.0",
+        "final_version": "15.0.1"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 236,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 20,
+        "initial_version": "2.0",
+        "final_version": "14.0.1"
+       }
+      }
+     },
+     "counts": {
+      "versions": 28,
+      "versions_dated": 27,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 6,
+       "published": 0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "viewer",
+   "name": "Example Viewer",
+   "bundle_ids": [
+    "com.example.viewer"
+   ],
+   "tracks": [
+    {
+     "track": "viewer/stable",
+     "label": "Example Viewer (stable)",
+     "default": true,
+     "channel": "stable",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "line_components": 0,
+     "promotions": [
+      {
+       "major": "101",
+       "promoted": "2024-04-16",
+       "source": "https://releases.example.com/viewer/101",
+       "versions": [
+        2,
+        4
+       ]
+      },
+      {
+       "major": "102",
+       "promoted": "2024-07-16",
+       "source": "https://releases.example.com/viewer/102",
+       "versions": [
+        5,
+        7
+       ]
+      },
+      {
+       "major": "103",
+       "promoted": "2024-10-15",
+       "source": "https://releases.example.com/viewer/103",
+       "versions": [
+        8,
+        10
+       ]
+      },
+      {
+       "major": "104",
+       "promoted": "2025-01-14",
+       "source": "https://releases.example.com/viewer/104",
+       "versions": [
+        11,
+        13
+       ]
+      },
+      {
+       "major": "105",
+       "promoted": "2025-04-15",
+       "source": "https://releases.example.com/viewer/105",
+       "versions": [
+        14,
+        16
+       ]
+      },
+      {
+       "major": "106",
+       "promoted": "2025-07-15",
+       "source": "https://releases.example.com/viewer/106",
+       "versions": [
+        17,
+        19
+       ]
+      },
+      {
+       "major": "107",
+       "promoted": "2025-10-14",
+       "source": "https://releases.example.com/viewer/107",
+       "versions": [
+        20,
+        22
+       ]
+      },
+      {
+       "major": "108",
+       "promoted": "2026-01-13",
+       "source": "https://releases.example.com/viewer/108",
+       "versions": [
+        23,
+        26
+       ]
+      },
+      {
+       "major": "109",
+       "promoted": "2026-04-14",
+       "source": "https://releases.example.com/viewer/109",
+       "versions": [
+        27,
+        29
+       ]
+      },
+      {
+       "major": "110",
+       "promoted": "2026-07-14",
+       "source": "https://releases.example.com/viewer/110",
+       "versions": [
+        30,
+        32
+       ]
+      },
+      {
+       "major": "111",
+       "promoted": "2026-10-13",
+       "source": "https://releases.example.com/viewer/111",
+       "versions": [
+        33,
+        35
+       ]
+      }
+     ],
+     "timeline": "example-viewer-releases",
+     "versions": [
+      {
+       "v": "100.0.5000.50",
+       "keys": [
+        "100.0.5000.50"
+       ],
+       "line": "",
+       "train": "100.0.5000",
+       "date": "2024-01-16"
+      },
+      {
+       "v": "100.0.5000.80",
+       "keys": [
+        "100.0.5000.80"
+       ],
+       "line": "",
+       "train": "100.0.5000",
+       "date": "2024-02-20"
+      },
+      {
+       "v": "101.0.5100.20",
+       "keys": [
+        "101.0.5100.20"
+       ],
+       "line": "",
+       "train": "101.0.5100",
+       "date": "2024-04-02"
+      },
+      {
+       "v": "101.0.5100.45",
+       "keys": [
+        "101.0.5100.45"
+       ],
+       "line": "",
+       "train": "101.0.5100",
+       "date": "2024-04-16"
+      },
+      {
+       "v": "101.0.5100.70",
+       "keys": [
+        "101.0.5100.70"
+       ],
+       "line": "",
+       "train": "101.0.5100",
+       "date": "2024-05-21"
+      },
+      {
+       "v": "102.0.5200.25",
+       "keys": [
+        "102.0.5200.25"
+       ],
+       "line": "",
+       "train": "102.0.5200",
+       "date": "2024-07-02"
+      },
+      {
+       "v": "102.0.5200.50",
+       "keys": [
+        "102.0.5200.50"
+       ],
+       "line": "",
+       "train": "102.0.5200",
+       "date": "2024-07-16"
+      },
+      {
+       "v": "102.0.5200.75",
+       "keys": [
+        "102.0.5200.75"
+       ],
+       "line": "",
+       "train": "102.0.5200",
+       "date": "2024-08-20"
+      },
+      {
+       "v": "103.0.5300.20",
+       "keys": [
+        "103.0.5300.20"
+       ],
+       "line": "",
+       "train": "103.0.5300",
+       "date": "2024-10-01"
+      },
+      {
+       "v": "103.0.5300.45",
+       "keys": [
+        "103.0.5300.45"
+       ],
+       "line": "",
+       "train": "103.0.5300",
+       "date": "2024-10-15"
+      },
+      {
+       "v": "103.0.5300.70",
+       "keys": [
+        "103.0.5300.70"
+       ],
+       "line": "",
+       "train": "103.0.5300",
+       "date": "2024-11-19"
+      },
+      {
+       "v": "104.0.5400.30",
+       "keys": [
+        "104.0.5400.30"
+       ],
+       "line": "",
+       "train": "104.0.5400",
+       "date": "2024-12-31"
+      },
+      {
+       "v": "104.0.5400.55",
+       "keys": [
+        "104.0.5400.55"
+       ],
+       "line": "",
+       "train": "104.0.5400",
+       "date": "2025-01-14"
+      },
+      {
+       "v": "104.0.5400.80",
+       "keys": [
+        "104.0.5400.80"
+       ],
+       "line": "",
+       "train": "104.0.5400",
+       "date": "2025-02-18"
+      },
+      {
+       "v": "105.0.5500.20",
+       "keys": [
+        "105.0.5500.20"
+       ],
+       "line": "",
+       "train": "105.0.5500",
+       "date": "2025-04-01"
+      },
+      {
+       "v": "105.0.5500.45",
+       "keys": [
+        "105.0.5500.45"
+       ],
+       "line": "",
+       "train": "105.0.5500",
+       "date": "2025-04-15"
+      },
+      {
+       "v": "105.0.5500.70",
+       "keys": [
+        "105.0.5500.70"
+       ],
+       "line": "",
+       "train": "105.0.5500",
+       "date": "2025-05-20"
+      },
+      {
+       "v": "106.0.5600.20",
+       "keys": [
+        "106.0.5600.20"
+       ],
+       "line": "",
+       "train": "106.0.5600",
+       "date": "2025-07-01"
+      },
+      {
+       "v": "106.0.5600.45",
+       "keys": [
+        "106.0.5600.45"
+       ],
+       "line": "",
+       "train": "106.0.5600",
+       "date": "2025-07-15"
+      },
+      {
+       "v": "106.0.5600.70",
+       "keys": [
+        "106.0.5600.70"
+       ],
+       "line": "",
+       "train": "106.0.5600",
+       "date": "2025-08-19"
+      },
+      {
+       "v": "107.0.5700.20",
+       "keys": [
+        "107.0.5700.20"
+       ],
+       "line": "",
+       "train": "107.0.5700",
+       "date": "2025-09-30"
+      },
+      {
+       "v": "107.0.5700.45",
+       "keys": [
+        "107.0.5700.45"
+       ],
+       "line": "",
+       "train": "107.0.5700",
+       "date": "2025-10-14"
+      },
+      {
+       "v": "107.0.5700.70",
+       "keys": [
+        "107.0.5700.70"
+       ],
+       "line": "",
+       "train": "107.0.5700",
+       "date": "2025-11-18"
+      },
+      {
+       "v": "108.0.5800.20",
+       "keys": [
+        "108.0.5800.20"
+       ],
+       "line": "",
+       "train": "108.0.5800",
+       "date": "2025-12-30"
+      },
+      {
+       "v": "108.0.5800.45",
+       "keys": [
+        "108.0.5800.45"
+       ],
+       "line": "",
+       "train": "108.0.5800",
+       "date": "2026-01-13"
+      },
+      {
+       "v": "108.0.5800.70",
+       "keys": [
+        "108.0.5800.70"
+       ],
+       "line": "",
+       "train": "108.0.5800",
+       "date": "2026-02-17"
+      },
+      {
+       "v": "108.0.5800.90",
+       "keys": [
+        "108.0.5800.90"
+       ],
+       "line": "",
+       "train": "108.0.5800",
+       "date": "2026-04-07"
+      },
+      {
+       "v": "109.0.5900.20",
+       "keys": [
+        "109.0.5900.20"
+       ],
+       "line": "",
+       "train": "109.0.5900",
+       "date": "2026-03-31"
+      },
+      {
+       "v": "109.0.5900.45",
+       "keys": [
+        "109.0.5900.45"
+       ],
+       "line": "",
+       "train": "109.0.5900",
+       "date": "2026-04-14"
+      },
+      {
+       "v": "109.0.5900.70",
+       "keys": [
+        "109.0.5900.70"
+       ],
+       "line": "",
+       "train": "109.0.5900",
+       "date": "2026-05-19"
+      },
+      {
+       "v": "110.0.6000.20",
+       "keys": [
+        "110.0.6000.20"
+       ],
+       "line": "",
+       "train": "110.0.6000",
+       "date": "2026-06-30"
+      },
+      {
+       "v": "110.0.6000.45",
+       "keys": [
+        "110.0.6000.45"
+       ],
+       "line": "",
+       "train": "110.0.6000",
+       "date": "2026-07-14"
+      },
+      {
+       "v": "110.0.6000.70",
+       "keys": [
+        "110.0.6000.70"
+       ],
+       "line": "",
+       "train": "110.0.6000",
+       "date": "2026-08-18"
+      },
+      {
+       "v": "111.0.6100.20",
+       "keys": [
+        "111.0.6100.20"
+       ],
+       "line": "",
+       "train": "111.0.6100",
+       "date": "2026-09-29"
+      },
+      {
+       "v": "111.0.6100.45",
+       "keys": [
+        "111.0.6100.45"
+       ],
+       "line": "",
+       "train": "111.0.6100",
+       "date": "2026-10-13"
+      },
+      {
+       "v": "111.0.6100.70",
+       "keys": [
+        "111.0.6100.70"
+       ],
+       "line": "",
+       "train": "111.0.6100",
+       "date": "2026-11-03"
+      },
+      {
+       "v": "112.0.6200.15",
+       "keys": [
+        "112.0.6200.15"
+       ],
+       "line": "",
+       "train": "112.0.6200",
+       "date": "2026-11-10"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7401",
+       "published": "2024-07-08",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-07-09",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         4
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 5
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 102.0.5200.25"
+      },
+      {
+       "cve_id": "CVE-2099-7402",
+       "published": "2025-03-24",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-03-25",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         13
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 14
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 105.0.5500.20"
+      },
+      {
+       "cve_id": "CVE-2099-7403",
+       "published": "2025-10-06",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2025-10-07",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         20
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 21
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 107.0.5700.45"
+      },
+      {
+       "cve_id": "CVE-2099-7404",
+       "published": "2026-03-25",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-03-26",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         25
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 26
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 108.0.5800.90"
+      },
+      {
+       "cve_id": "CVE-2099-7405",
+       "published": "2026-10-19",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-20",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         34
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 35
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 111.0.6100.70"
+      },
+      {
+       "cve_id": "CVE-2099-7406",
+       "published": "2026-11-04",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-11-05",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         35
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 36
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "< 112.0.6200.15"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 59,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "103.0.5300.70",
+        "final_version": "111.0.6100.70"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 63,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "103.0.5300.70",
+        "final_version": "111.0.6100.70"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 71,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "103.0.5300.70",
+        "final_version": "111.0.6100.70"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 87,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "103.0.5300.45",
+        "final_version": "111.0.6100.45"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 108,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "103.0.5300.45",
+        "final_version": "111.0.6100.45"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 156,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 16,
+        "initial_version": "103.0.5300.45",
+        "final_version": "110.0.6000.70"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 246,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 17,
+        "initial_version": "102.0.5200.75",
+        "final_version": "110.0.6000.70"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 1249,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "103.0.5300.70",
+        "final_version": "103.0.5300.70"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 1249,
+        "open_at_window_end": {
+         "in_window": 5,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "103.0.5300.70",
+        "final_version": "103.0.5300.70"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 1221,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "103.0.5300.70",
+        "final_version": "111.0.6100.70"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-09",
+        "in_window": 5,
+        "replayed": 5,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 156,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 16,
+        "initial_version": "103.0.5300.45",
+        "final_version": "110.0.6000.70"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 66,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "101.0.5100.70",
+        "final_version": "111.0.6100.70"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 71,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "101.0.5100.70",
+        "final_version": "111.0.6100.70"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 81,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 22,
+        "initial_version": "101.0.5100.45",
+        "final_version": "111.0.6100.70"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 101,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "101.0.5100.45",
+        "final_version": "111.0.6100.45"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 129,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "101.0.5100.45",
+        "final_version": "111.0.6100.45"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 193,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 20,
+        "initial_version": "101.0.5100.45",
+        "final_version": "110.0.6000.70"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 313,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 21,
+        "initial_version": "100.0.5000.80",
+        "final_version": "110.0.6000.70"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 2103,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "101.0.5100.70",
+        "final_version": "101.0.5100.70"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 2103,
+        "open_at_window_end": {
+         "in_window": 6,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "101.0.5100.70",
+        "final_version": "101.0.5100.70"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 2068,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 1,
+        "initial_version": "101.0.5100.70",
+        "final_version": "111.0.6100.70"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-09",
+        "in_window": 6,
+        "replayed": 6,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 193,
+        "open_at_window_end": {
+         "in_window": 2,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 20,
+        "initial_version": "101.0.5100.45",
+        "final_version": "110.0.6000.70"
+       }
+      }
+     },
+     "counts": {
+      "versions": 37,
+      "versions_dated": 37,
+      "candidates": 6,
+      "listed": 6,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 6,
+       "published": 0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "notes",
+   "name": "Example Notes",
+   "bundle_ids": [
+    "com.example.notes"
+   ],
+   "tracks": [
+    {
+     "track": "notes/release",
+     "label": "Example Notes",
+     "default": true,
+     "channel": "release",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-notes-releases",
+     "versions": [
+      {
+       "v": "1.0",
+       "keys": [
+        "1.0"
+       ],
+       "line": "",
+       "train": "1.0",
+       "date": "2024-01-08"
+      },
+      {
+       "v": "1.1",
+       "keys": [
+        "1.1"
+       ],
+       "line": "",
+       "train": "1.1",
+       "date": "2024-11-22"
+      },
+      {
+       "v": "1.2",
+       "keys": [
+        "1.2"
+       ],
+       "line": "",
+       "train": "1.2",
+       "date": "2025-06-02"
+      },
+      {
+       "v": "1.3",
+       "keys": [
+        "1.3"
+       ],
+       "line": "",
+       "train": "1.3",
+       "date": "2026-11-19"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7401",
+       "published": "2024-11-19",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2024-11-20",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         1,
+         1
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 2
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.1"
+      },
+      {
+       "cve_id": "CVE-2099-7402",
+       "published": "2026-09-30",
+       "severity": "high",
+       "kev_date_added": null,
+       "detectable_at": "2026-10-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         2
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 3
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "1.0 to 1.2"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 49,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 192,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.1",
+        "final_version": "1.3"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 50,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 3,
+        "initial_version": "1.0",
+        "final_version": "1.3"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 52,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 3,
+        "initial_version": "1.0",
+        "final_version": "1.3"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.1",
+        "final_version": "1.1"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.1",
+        "final_version": "1.1"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 1,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 731,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.1",
+        "final_version": "1.1"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 1,
+        "replayed": 1,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 1,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 192,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 241,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 3,
+        "initial_version": "1.0",
+        "final_version": "1.3"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 242,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 3,
+        "initial_version": "1.0",
+        "final_version": "1.3"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 244,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 3,
+        "initial_version": "1.0",
+        "final_version": "1.3"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 245,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 245,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 245,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 245,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.0",
+        "final_version": "1.0"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.0",
+        "final_version": "1.0"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 1,
+        "exposure_days": 53,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "1.0",
+        "final_version": "1.0"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 2,
+        "replayed": 2,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 2,
+        "exposure_days": 245,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "1.0",
+        "final_version": "1.2"
+       }
+      }
+     },
+     "counts": {
+      "versions": 4,
+      "versions_dated": 4,
+      "candidates": 2,
+      "listed": 2,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 2,
+       "published": 0
+      }
+     }
+    }
+   ]
+  },
+  {
+   "app": "mail",
+   "name": "Example Mail",
+   "bundle_ids": [
+    "com.example.mail"
+   ],
+   "tracks": [
+    {
+     "track": "mail/release",
+     "label": "Example Mail",
+     "default": true,
+     "channel": "release",
+     "edition": "any",
+     "path": {
+      "kind": "latest"
+     },
+     "promotions": null,
+     "timeline": "example-mail-releases",
+     "versions": [
+      {
+       "v": "5.0",
+       "keys": [
+        "5.0"
+       ],
+       "line": "",
+       "train": "5.0",
+       "date": "2024-01-10"
+      },
+      {
+       "v": "5.1",
+       "keys": [
+        "5.1"
+       ],
+       "line": "",
+       "train": "5.1",
+       "date": "2024-10-01"
+      },
+      {
+       "v": "5.2",
+       "keys": [
+        "5.2"
+       ],
+       "line": "",
+       "train": "5.2",
+       "date": "2024-11-10"
+      },
+      {
+       "v": "5.3",
+       "keys": [
+        "5.3"
+       ],
+       "line": "",
+       "train": "5.3",
+       "date": "2025-03-03"
+      },
+      {
+       "v": "5.4",
+       "keys": [
+        "5.4"
+       ],
+       "line": "",
+       "train": "5.4",
+       "date": "2025-06-02"
+      },
+      {
+       "v": "5.5",
+       "keys": [
+        "5.5"
+       ],
+       "line": "",
+       "train": "5.5",
+       "date": "2025-09-01"
+      },
+      {
+       "v": "5.6",
+       "keys": [
+        "5.6"
+       ],
+       "line": "",
+       "train": "5.6",
+       "date": "2026-01-05"
+      },
+      {
+       "v": "5.6.1",
+       "keys": [
+        "5.6.1"
+       ],
+       "line": "",
+       "train": "5.6.1",
+       "date": null
+      },
+      {
+       "v": "5.7",
+       "keys": [
+        "5.7"
+       ],
+       "line": "",
+       "train": "5.7",
+       "date": "2026-04-06"
+      },
+      {
+       "v": "5.8",
+       "keys": [
+        "5.8"
+       ],
+       "line": "",
+       "train": "5.8",
+       "date": "2026-08-03"
+      }
+     ],
+     "cves": [
+      {
+       "cve_id": "CVE-2099-7501",
+       "published": "2024-11-05",
+       "severity": "high",
+       "kev_date_added": "2024-11-15",
+       "detectable_at": "2024-11-06",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         1
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 2
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.1"
+      },
+      {
+       "cve_id": "CVE-2099-7502",
+       "published": "2025-02-19",
+       "severity": "high",
+       "kev_date_added": "2025-06-20",
+       "detectable_at": "2025-02-20",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         2
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 3
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.2"
+      },
+      {
+       "cve_id": "CVE-2099-7503",
+       "published": "2025-06-30",
+       "severity": "medium",
+       "kev_date_added": "2025-07-15",
+       "detectable_at": "2025-07-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         4
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 5
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.4"
+      },
+      {
+       "cve_id": "CVE-2099-7504",
+       "published": "2025-12-01",
+       "severity": "critical",
+       "first_scored": {
+        "critical": "2026-02-10",
+        "critical_or_high": "2025-12-02"
+       },
+       "kev_date_added": null,
+       "detectable_at": "2025-12-02",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         5
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 6
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.5"
+      },
+      {
+       "cve_id": "CVE-2099-7505",
+       "published": "2026-05-01",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-05-10",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         6
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 8
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.6"
+      },
+      {
+       "cve_id": "CVE-2099-7506",
+       "published": "2026-03-01",
+       "severity": "critical",
+       "kev_date_added": null,
+       "detectable_at": "2026-04-20",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         6
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 8
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.6"
+      },
+      {
+       "cve_id": "CVE-2099-7507",
+       "published": "2026-06-01",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": "2026-06-01",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         8,
+         8
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 9
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.7"
+      },
+      {
+       "cve_id": "CVE-2099-7508",
+       "published": "2026-04-25",
+       "severity": "high",
+       "kev_date_added": "2026-05-01",
+       "detectable_at": "2026-04-25",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         6
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 7
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.6"
+      },
+      {
+       "cve_id": "CVE-2099-7509",
+       "published": "2026-04-09",
+       "severity": "medium",
+       "kev_date_added": null,
+       "detectable_at": "2026-04-10",
+       "detectable_not_before": null,
+       "detectable_censored": false,
+       "detectable_source": "api",
+       "clock": "detectable_at",
+       "affected": [
+        [
+         0,
+         6
+        ]
+       ],
+       "fixes": [
+        {
+         "line": "",
+         "index": 8
+        }
+       ],
+       "ambiguous_lines": [],
+       "edition_signal": null,
+       "configurations_changed_after_detectable": false,
+       "affected_text": "5.0 to 5.6"
+      }
+     ],
+     "exclusions": {
+      "by_reason": {
+       "rejected": 0,
+       "no_configuration_for_pair": 0,
+       "excluded_platform": 0,
+       "configuration_declined": 0,
+       "only_prerelease_criteria": 0,
+       "no_fixed_version_determinable": 0,
+       "fixed_version_not_in_catalog": 0,
+       "branch_ambiguity": 0,
+       "other_edition_only": 0
+      },
+      "cves": []
+     },
+     "not_detectable": {
+      "count": 0,
+      "cves": []
+     },
+     "check": {
+      "2y": {
+       "0d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 170,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "5.2",
+        "final_version": "5.8"
+       },
+       "1d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 174,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "5.2",
+        "final_version": "5.8"
+       },
+       "3d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 4,
+        "exposure_days": 182,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "5.2",
+        "final_version": "5.8"
+       },
+       "7d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 201,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "5.2",
+        "final_version": "5.8"
+       },
+       "14d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 236,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 2,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "5.1",
+        "final_version": "5.8"
+       },
+       "30d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 343,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 18,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 7,
+        "initial_version": "5.1",
+        "final_version": "5.8"
+       },
+       "60d": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 575,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 1,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 48,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "never": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 7,
+        "exposure_days": 2360,
+        "open_at_window_end": {
+         "in_window": 7,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "5.2",
+        "final_version": "5.2"
+       },
+       "kev-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 545,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 3,
+        "initial_version": "5.2",
+        "final_version": "5.7"
+       },
+       "critical-only": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 834,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "5.2",
+        "final_version": "5.7"
+       },
+       "30d-or-kev": {
+        "since": "2024-11-22",
+        "until": "2026-11-22",
+        "in_window": 8,
+        "replayed": 8,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 7,
+        "exposure_days": 298,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 1,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 6,
+        "initial_version": "5.2",
+        "final_version": "5.8"
+       }
+      },
+      "3y": {
+       "0d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 174,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "1d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 179,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "3d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 4,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 5,
+        "exposure_days": 189,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "7d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 212,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "14d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 254,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "30d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 377,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "60d": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 0,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 9,
+        "exposure_days": 639,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       },
+       "never": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 1,
+        "exposed": 8,
+        "exposure_days": 3107,
+        "open_at_window_end": {
+         "in_window": 8,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 0,
+        "initial_version": "5.0",
+        "final_version": "5.0"
+       },
+       "kev-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 554,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 4,
+        "initial_version": "5.0",
+        "final_version": "5.7"
+       },
+       "critical-only": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 3,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 6,
+        "exposure_days": 1295,
+        "open_at_window_end": {
+         "in_window": 1,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 2,
+        "initial_version": "5.0",
+        "final_version": "5.7"
+       },
+       "30d-or-kev": {
+        "since": "2024-05-22",
+        "until": "2026-11-22",
+        "in_window": 9,
+        "replayed": 9,
+        "excluded": 0,
+        "never_seen": 1,
+        "never_seen_outside_affected_range": 0,
+        "exposed": 8,
+        "exposure_days": 307,
+        "open_at_window_end": {
+         "in_window": 0,
+         "carried_in": 0,
+         "entered_after_start": 0
+        },
+        "carried_in": 0,
+        "entered_after_start": 0,
+        "pre_window_closed": 0,
+        "exposure_days_carried_in": 0,
+        "exposure_days_entered_after_start": 0,
+        "update_events": 8,
+        "initial_version": "5.0",
+        "final_version": "5.8"
+       }
+      }
+     },
+     "counts": {
+      "versions": 10,
+      "versions_dated": 9,
+      "candidates": 9,
+      "listed": 9,
+      "excluded": 0,
+      "not_detectable": 0,
+      "clock": {
+       "detectable_at": 9,
+       "published": 0
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

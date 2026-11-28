@@ -6,7 +6,7 @@ detectable day per CVE, and the public release records each track's dates come f
 own feed, or Homebrew's cask history where no vendor feed is read). It
 arrives the way the corpus does (`app.core.vuln_library`): a signed link riding the daily
 data-sharing exchange's response, under `patch_policy`, keyed by the algorithm that reads it —
-`{"patch_walk/1": {"signature", "asof", "url"}}` — and downloaded only when the signature, which
+`{"patch_walk/2": {"signature", "asof", "url"}}` — and downloaded only when the signature, which
 is the document's own `doc_id`, has moved. An air-gapped instance reads it from
 `PATCH_POLICY_FEED_FILE` instead, and then the exchange downloads none.
 
@@ -65,6 +65,7 @@ from sqlalchemy.orm import defer
 
 from app.core.config import settings
 from app.core.egress import BlockedCorpusUrl, validate_corpus_url
+from app.core.patch_policy_walk import is_older_algorithm
 from app.core.tenancy import get_tenant_id
 from app.core.vuln import TIER_OFF
 from app.core.vuln_library import CorpusRefused, download_signed
@@ -74,8 +75,9 @@ logger = logging.getLogger(__name__)
 
 # What this build reads. A document is refused unless all three match; a link under another
 # algorithm's key is not this build's to download (LoonSec keeps publishing N-1 for at least
-# 90 days after a bump, ruled R11).
-ALGORITHM = "patch_walk/1"
+# 90 days after a bump, ruled R11). The walk's own (`patch_policy_walk.ALGORITHM`): publication
+# starts at `patch_walk/2`, and `patch_walk/1` is never published (ruled 2026-11-27).
+ALGORITHM = "patch_walk/2"
 DOC_KIND = "patch_policy_reference"
 DOC_SCHEMA = 1
 
@@ -150,7 +152,7 @@ class DocumentRefused(Exception):
 
 @dataclass(frozen=True, slots=True)
 class PatchPolicyPointer:
-    """`response["patch_policy"]["patch_walk/1"]`: where the current document is.
+    """`response["patch_policy"]["patch_walk/2"]`: where the current document is.
 
     `signature` is the document's `doc_id`, and equality is its only operation, as for the corpus
     signature. `asof` is a copy of the document's own `as_of`, optional, and read by nothing here:
@@ -219,6 +221,16 @@ def _host(url: str) -> str | None:
         return urlsplit(url.strip()).hostname
     except ValueError:
         return None
+
+
+def only_older(named: str | None) -> bool:
+    """Whether every algorithm the exchange named (`algorithm_unknown`'s detail, the names joined
+    by commas) is an older `patch_walk` than this build's. The exchange then named the document
+    only for older builds, which updating this one cannot reach: nothing here needs updating, and
+    the sentence says so. Any name newer, or not a `patch_walk/N` at all, keeps the sentence that
+    says to update LoonInspect if it lasts."""
+    names = [name.strip() for name in (named or "").split(",") if name.strip()]
+    return bool(names) and all(is_older_algorithm(name) for name in names)
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -745,11 +757,16 @@ async def deliver_from_exchange(
             listed = ", ".join(offer.algorithms)
             await record_attempt(db, source=SOURCE_EXCHANGE, outcome=ALGORITHM_UNKNOWN, detail=listed)
             logger.warning(
-                "patch-policy data not updated: this build reads %s and LoonSec's exchange named only %s. Once is a "
-                "passing gap at LoonSec; if the next exchange names the same, update LoonInspect "
+                "patch-policy data not updated: this build reads %s and LoonSec's exchange named only %s%s "
                 "(docs/troubleshooting.md §32)",
                 ALGORITHM,
                 listed,
+                (
+                    ", which older builds read. Nothing on this instance needs updating: once is a passing gap at "
+                    "LoonSec, and if the next exchange names the same, report it"
+                    if only_older(listed)
+                    else ". Once is a passing gap at LoonSec; if the next exchange names the same, update LoonInspect"
+                ),
                 extra={"state": ALGORITHM_UNKNOWN},
             )
             outcome = ALGORITHM_UNKNOWN
@@ -1082,6 +1099,13 @@ def sentence_for(
         return NOT_PUBLISHED_SENTENCE + copy_clause(as_of)
     if state == ALGORITHM_UNKNOWN:
         published = detail or "other algorithms"
+        if only_older(detail):
+            # The exchange named the document only for older builds (`patch_walk/1` is never
+            # published, ruled 2026-11-27): an update would change nothing, so the sentence says not to.
+            return (
+                f"This build reads {ALGORITHM}; LoonSec's last exchange named only {published}, which older builds read. "
+                "Nothing on this instance needs updating; report it if it lasts a day."
+            ) + copy_clause(as_of)
         return (
             f"This build reads {ALGORITHM}; LoonSec's last exchange named only {published}. If the next exchange "
             "names the same, update LoonInspect."

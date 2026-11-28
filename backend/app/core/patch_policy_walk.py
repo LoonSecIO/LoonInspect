@@ -3,8 +3,10 @@
 `walk` is the one entry point. It takes LoonSec's `patch_policy_reference` document, one app and
 track in it, one timeline of release dates (the dates LoonSec published, this instance's copy of
 Jamf's public patch catalog, or this instance's Fleet history) and the window asked for, and
-returns the walk as data: a per-day series of open CVEs, every CVE's outcome under each stop,
-the totals, the installs, the exclusions, how the timeline joined the document, and an
+returns the walk as data: a per-day series of open CVEs, every CVE's outcome under each stop and
+each built-in policy definition (#954: `POLICY_DEFINITIONS`, such as "Patch on a KEV", run in place
+of a stop and held to LoonSec's published check as a stop is), the totals, the installs, the
+exclusions, how the timeline joined the document, and an
 `input_id` that names the inputs so a caller can memoise the answer. `GET /api/patch-policy/walk`
 (`app.api.patch_policy`) serves it, over the timelines `app.core.patch_policy_timelines` reads;
 the page that draws it is a later slice. Each `REFUSED_*` sentence says what failed, why and
@@ -48,18 +50,77 @@ from typing import Any
 KIND = "patch_policy_walk"
 SCHEMA = 1
 REFERENCE_KIND = "patch_policy_reference"
-ALGORITHM = "patch_walk/1"
-DEFINITIONS_VERSION = "2"
+# A walk that counts differently is a new algorithm, because LoonSec publishes each track's check
+# from its pinned copy of this module. `patch_walk/2` is the walk of the eight stops below, whose
+# labels are the days waited (ruled 2026-11-27); `patch_walk/1`, the six stops counted the old way,
+# is never published (ruled 2026-11-27, "Start at 2").
+ALGORITHM = "patch_walk/2"
+ALGORITHM_FAMILY = "patch_walk"
+DEFINITIONS_VERSION = "3"
 
-# The slider's stops, in order. A day stop of D days installs each release D - 1 days after the
-# day it became available: the day the timeline dates a release is day one (ruled 2026-10-02).
-STOPS = ("1d", "7d", "14d", "30d", "60d", "never")
+# The slider's stops, in order. A day stop's label is the days it waits: a stop of D days installs
+# each release D days after the day it became available, so the 0-day stop installs it on that day
+# itself (ruled 2026-11-27, "0 = same day"). It replaces the 2026-10-02 rule, under which a stop of
+# D days waited D - 1 days.
+STOPS = ("0d", "1d", "3d", "7d", "14d", "30d", "60d", "never")
 NEVER = "never"
-DAY_STOPS = {"1d": 1, "7d": 7, "14d": 14, "30d": 30, "60d": 60}
-REPORT_DAY_IS_DAY = 1
+DAY_STOPS = {"0d": 0, "1d": 1, "3d": 3, "7d": 7, "14d": 14, "30d": 30, "60d": 60}
 # The longest a day stop waits: the window must hold this many days of a timeline before its
 # first day, or the slowest device would open the window with nothing installed.
-LONGEST_WAIT = max(DAY_STOPS.values()) - REPORT_DAY_IS_DAY
+LONGEST_WAIT = max(DAY_STOPS.values())
+
+# A policy definition (#954, ruled 2026-11-28): data the walk runs in place of a slider stop,
+# `{id, name, otherwise, when[]}`. `otherwise` is what happens to a release no trigger names: a day
+# count, as a day stop waits, or `never`. `when[]` holds triggers over a closed set: a release that
+# fixes a CVE of the trigger's kind is due `within_days` after its trigger day. Both take only the
+# slider's day counts, so `LONGEST_WAIT` stays the longest wait and the window rule does not move. A
+# slider stop is a definition with no `when`. The definitions are built in (ruled 2026-11-28): none is
+# an organization's own rule or a file an operator supplies, and none is named for a framework.
+TRIGGER_KEV = "kev_listed"
+TRIGGER_CRITICAL = "critical"
+TRIGGER_CRITICAL_OR_HIGH = "critical_or_high"
+TRIGGERS = (TRIGGER_KEV, TRIGGER_CRITICAL, TRIGGER_CRITICAL_OR_HIGH)
+# The severities each severity trigger reads today's score for, as LoonSec's data spells `severity`.
+SEVERITY_TRIGGERS = {TRIGGER_CRITICAL: ("critical",), TRIGGER_CRITICAL_OR_HIGH: ("critical", "high")}
+# Every `severity` this walk reads; null (or absent) is a CVE NVD gave no score.
+SEVERITIES = ("critical", "high", "medium", "low", "none")
+DEFINITION_DAYS = tuple(sorted(set(DAY_STOPS.values())))
+# The optional object a CVE row may carry, read when present (ruled 2026-11-28): for each severity
+# trigger, the first UTC day LoonSec's record of NVD changes held a score of that kind.
+FIRST_SCORED = "first_scored"
+# Where a trigger's day comes from (`knowable[kind].basis`, `installs[].by.basis`), the way `clock`
+# says which clock placed a row: KEV's date added, the first-scored day LoonSec's data states, or the
+# CVE's clock day standing in, with today's severity.
+BASIS_KEV = "kev_date_added"
+BASIS_FIRST_SCORED = "first_scored"
+BASIS_CLOCK = "clock_day"
+BASES = {
+    TRIGGER_KEV: (BASIS_KEV,),
+    TRIGGER_CRITICAL: (BASIS_FIRST_SCORED, BASIS_CLOCK),
+    TRIGGER_CRITICAL_OR_HIGH: (BASIS_FIRST_SCORED, BASIS_CLOCK),
+}
+# What installed a release no trigger named sooner (`installs[].by.rule`).
+OTHERWISE = "otherwise"
+
+POLICY_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {"id": "kev-only", "name": "Patch on a KEV", "otherwise": NEVER, "when": [{"fixes": TRIGGER_KEV, "within_days": 0}]},
+    {
+        "id": "critical-only",
+        "name": "Patch only on a critical",
+        "otherwise": NEVER,
+        "when": [{"fixes": TRIGGER_CRITICAL, "within_days": 0}],
+    },
+    # The mixed definition is this batch's choice: the issue asks for one "such as 30 days, sooner on a KEV".
+    {
+        "id": "30d-or-kev",
+        "name": "30 days, same day on a KEV",
+        "otherwise": 30,
+        "when": [{"fixes": TRIGGER_KEV, "within_days": 0}],
+    },
+)
+# Every policy LoonSec's published check covers, in order: the stops, then the built-in definitions.
+# LoonVD's pin harness writes `check_totals` for each of these, and an instance holds each to it.
+POLICIES = STOPS + tuple(definition["id"] for definition in POLICY_DEFINITIONS)
 
 WINDOW_YEARS = (2, 3)
 DEFAULT_YEARS = 2
@@ -143,6 +204,12 @@ REFUSED_WINDOW = "window_empty"
 REFUSED_REQUEST = "request_invalid"
 REFUSED_INVARIANT = "invariant"
 REFUSED_PARITY = "parity"
+# Why one policy definition is not walked while every stop is (`policy_refusals`): the data cannot
+# say whether a CVE is on KEV, or what a CVE's severity is or first was; or the definition names a
+# trigger or a day count this walk does not run.
+REFUSED_KEV_UNKNOWN = "kev_unknown"
+REFUSED_SEVERITY_UNKNOWN = "severity_unknown"
+REFUSED_DEFINITION = "definition_invalid"
 
 # `check.state` on a walk: the public walk at the default window matched LoonSec's totals; there is
 # no entry for this window; or parity is not judged here (another timeline, an aligned or moved
@@ -157,7 +224,7 @@ DEFINITIONS = {
     "the track does not list but another track of the app does is the other track's "
     "(`other_track`). A version no track lists is unmatched and never installed (`unmatched`). "
     "The versions in reach are those a device in this view could install: the timeline dates "
-    "them from 59 days before the window's first day to its last day. A matched version in "
+    "them from 60 days before the window's first day to its last day. A matched version in "
     "reach is counted once, by its place in the version list, and only when the track's path "
     "installs it; every unmatched version in reach is counted, because an unmatched version "
     "cannot be placed on a line. When more than 5% of the versions in reach are unmatched, "
@@ -171,12 +238,13 @@ DEFINITIONS = {
     "has a promotion table, a release of a promoted major is available on that date or the "
     "major's promotion day, whichever is later, and a release above the table's newest row is "
     "never available.",
-    "install": "A stop of D days installs each available release D - 1 days after it became "
-    "available, so the 1-day stop installs it on the day itself. The installed version only "
-    "rises: a release ranked below the installed one is never an event.",
+    "install": "A stop's label is the days it waits (ruled 2026-11-27: 0 is the same day): a stop "
+    "of D days installs each available release D days after the day it became available, so "
+    "the 0-day stop installs it on that day itself and the 1-day stop the day after. The "
+    "installed version only rises: a release ranked below the installed one is never an event.",
     "steady_state": "A day stop opens the window on the newest release whose install day had "
     "already passed. `never` opens it on the newest release available by the window's first "
-    "day and installs nothing after it, so for the window's first 59 days `never` can run a "
+    "day and installs nothing after it, so for the window's first 60 days `never` can run a "
     "newer release than the 60-day stop.",
     "affected": "A version is affected by a CVE when its rank is inside one of the CVE's "
     "affected runs, as LoonVD compiled them. Rule 5 (ruled 2026-10-02): a version at or above "
@@ -213,9 +281,9 @@ DEFINITIONS = {
     "`counts.replayed_by_clock` says how many of each.",
     "window": "The window runs from `since` to `until`, both days included. It is asked for as "
     "2 or 3 years ending on `until`, which defaults to the day before the document's date. It "
-    "starts no earlier than the day after the detectable-day record begins, 59 days after the "
-    "first release this timeline makes available on the track's path, 59 days after the first "
-    "release on a held track's ceiling line, and 59 days after a channel's start; it ends no "
+    "starts no earlier than the day after the detectable-day record begins, 60 days after the "
+    "first release this timeline makes available on the track's path, 60 days after the first "
+    "release on a held track's ceiling line, and 60 days after a channel's start; it ends no "
     "later than the day before the document's date, the day before the timeline was read, and "
     "the day before the timeline dates a release above the promotion table. Each binding term "
     "is in `window.shortened_by`.",
@@ -239,12 +307,64 @@ DEFINITIONS = {
     "open[d] = open[d - 1] + new[d] - resolved[d].",
     "exclusions": "A CVE the document excludes keeps the document's reason. The walk adds one, "
     "judged on the lines the path visits (the line of any version a device under any of the "
-    "six stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
+    "eight stops runs on a day in the window): `branch_ambiguity` when the CVE's range is "
     "ambiguous on such a line. A fix this timeline does not date excludes nothing; it is dated "
     "as `fix_dating` says.",
+    "policy_definition": "Ruled 2026-11-28: a policy definition is data the walk runs in place of a "
+    "slider stop, `{id, name, otherwise, when[]}`. `otherwise` is what happens to a release no "
+    "trigger names sooner: a day count, installing it that many days after it became available as "
+    "a day stop does, or `never`. `when[]` holds triggers over a closed set, `kev_listed`, `critical` "
+    "and `critical_or_high`, each with `within_days`. `otherwise` and `within_days` take only the "
+    "slider's day counts (0, 1, 3, 7, 14, 30 and 60), so the longest wait is still 60 days and the "
+    "window rule does not move. A slider stop is a definition with no `when`. The definitions are "
+    "built into this walk, beside the stops, and LoonSec's published check holds each one's totals "
+    "as it holds a stop's; none is an organization's own rule, none is named for a framework, and "
+    "none says a policy is met. Each CVE's outcome, the series and the totals follow a definition "
+    "exactly as they follow a stop, under the definition's id. A definition adds no line to the "
+    "path: exclusions and `fix_dated_by` are judged on the lines the eight stops visit.",
+    "trigger_day": "A trigger names the release that fixes a CVE of its kind: for each of the CVE's "
+    "fixes, the version `fix_dating` dates it by, where the path can install it; the walk compares "
+    "no version strings, and reads the fixes LoonSec's data compiled. That release's trigger day is "
+    "the later of the day it is available and the day the fact was knowable: the CVE's "
+    "`kev_date_added` for `kev_listed`, and for a severity trigger the day `severity_day` gives. It "
+    "is due `within_days` after its trigger day. A release's install day is the earliest of its "
+    "`otherwise` day and the due day of every trigger naming it; on a tie `otherwise` names it, then "
+    "the triggers in the definition's order, then the CVE ids in order. The installed version only "
+    "rises, and two releases due on one day install only the higher, as `install` says for a stop. "
+    "The triggers read every CVE row the walk places, before, in or after the window, that it does "
+    "not exclude. Each install a definition makes names what installed it (`installs[].by`: the "
+    "trigger, its CVE, the day its fact was knowable and that day's basis, or `otherwise`), and "
+    "`opening_by` names what installed the release the window opens on.",
+    "fixing_release": "A trigger installs the fixing release it names, not the newest release: when "
+    "a CVE is listed on KEV after newer releases are out, the definition installs the release that "
+    "fixes it on its due day and each newer release on its own install day, as every stop gives "
+    "each release its own install day. A fixing release ranked below the version already running "
+    "installs nothing.",
+    "severity_day": "Ruled 2026-11-28. A severity trigger fires on the day LoonSec's data says the "
+    "CVE first scored that severity, where the data states one: `first_scored.critical`, and "
+    "`first_scored.critical_or_high`, the first UTC day LoonSec's record of NVD changes held a "
+    "critical score, or a high or critical one (read when present). Where it states none, the CVE's "
+    "clock day (the day that placed it: first detectable, else NVD publication) stands in, with "
+    "today's severity standing in for the score: `critical` names a CVE that is critical today, "
+    "`critical_or_high` one that is high or critical today. Each CVE row says which "
+    "(`knowable`: the day and its basis, `first_scored` or `clock_day`), and `counts.knowable` "
+    "counts them over the rows `cves` lists. A CVE whose severity is null was not scored, and no "
+    "severity trigger names it from today's severity.",
+    "definition_opening": "A definition opens the window on the release its `otherwise` opens it on "
+    "as a plain stop, raised by any trigger already due by the window's first day that the CVE rows "
+    "show: with `otherwise` `never`, the newest release available by the window's first day, which "
+    "no trigger due by then can rank above; with a day count, the newest release whose install day "
+    "(the earliest of its `otherwise` day and its due days) is on or before that day.",
+    "definition_refusals": "A definition the walk cannot run on this data is not walked, and every "
+    "stop still is: `policy_refusals` gives its reason and sentence, `kev_unknown` for data that "
+    "cannot say whether a CVE is on CISA's KEV list, `severity_unknown` for a severity or a "
+    "first-scored day the walk cannot read, and `definition_invalid` for a definition that names a "
+    "trigger or a day count this walk does not run. LoonSec's data says a CVE is not on KEV with a "
+    "null `kev_date_added` under a named KEV source (`sources.kev`); without that source, or "
+    "without the key, a row says nothing about KEV.",
     "input_id": "The digest of the document's id, the app and track, the timeline's source, name, "
-    "date, clock and the digest of its dated versions, the stops and the window asked for. The "
-    "same inputs walk to the same `run_id`.",
+    "date, clock and the digest of its dated versions, the stops and definitions and the window "
+    "asked for. The same inputs walk to the same `run_id`.",
 }
 
 COMPAT_V1_DEFINITIONS = {
@@ -252,7 +372,9 @@ COMPAT_V1_DEFINITIONS = {
     "a CVE is replayed only when published inside the window, the window is the requested "
     "years before `until` with no start term, a held device's line is the line of the newest "
     "release dated by the window's first day, and exposure stops the day before `until`, as "
-    "LoonVD's replay files count it.",
+    "LoonVD's replay files count it. A stop of D days waits D days, as `install` says: the count "
+    "of LoonVD's schema-3 replay files, each of whose day rows states it (`install_delay_days`). "
+    "A schema-2 file counted D - 1 and is not conformed to.",
 }
 
 _DAY = dt.timedelta(days=1)
@@ -308,6 +430,22 @@ def years_before(day: dt.date, years: int) -> dt.date:
 
 def _iso(day: dt.date | None) -> str | None:
     return day.isoformat() if day else None
+
+
+def algorithm_number(name: Any) -> int | None:
+    """N of a `patch_walk/N` name, or None for any other name: what tells an older way of reading
+    LoonSec's data from a newer one, so a refusal can say whether updating LoonInspect helps."""
+    if not isinstance(name, str):
+        return None
+    family, slash, number = name.partition("/")
+    return int(number) if family == ALGORITHM_FAMILY and slash and number.isascii() and number.isdigit() else None
+
+
+def is_older_algorithm(name: Any) -> bool:
+    """Whether `name` is a `patch_walk` older than this build's: data only older builds read, which
+    updating this build cannot make readable (ruled 2026-11-27: `patch_walk/1` is never published)."""
+    number, ours = algorithm_number(name), algorithm_number(ALGORITHM)
+    return number is not None and ours is not None and number < ours
 
 
 # --- The inputs, read and checked ------------------------------------------------------------
@@ -428,10 +566,18 @@ def _find_track(document: Any, app: str, track: str) -> tuple[Mapping[str, Any],
             "nothing was walked. Settings › Support shows the last data-sharing exchange.",
         )
     if document.get("algorithm") != ALGORITHM:
+        found = document.get("algorithm")
+        # Only a copy an older build stored can be older: this build's own check refuses one before
+        # it is stored. Updating cannot help it, and LoonSec's data for this build replaces it.
         raise WalkRefused(
             REFUSED_ALGORITHM,
-            f"This build reads {ALGORITHM}; the patch-policy data on this instance is {document.get('algorithm')!r}. "
-            "Update LoonInspect.",
+            f"This build reads {ALGORITHM}; the patch-policy data on this instance is {found!r}"
+            + (
+                ", which older builds read, so nothing was walked. Nothing on this instance needs updating: LoonSec's "
+                f"data for {ALGORITHM} replaces it when it arrives."
+                if is_older_algorithm(found)
+                else ". Update LoonInspect."
+            ),
         )
     _check_document(document)
     apps = document["apps"]
@@ -1072,8 +1218,8 @@ def _promotion_runs(prepared: _Prepared) -> list[tuple[int, int, dt.date]]:
 def _reach(prepared: _Prepared, since: dt.date, until: dt.date) -> dict[str, Any]:
     """The versions a device in this view could install, and how many of them the document lists.
 
-    A device installs a release at most 59 days after it becomes available, so every release a
-    stop installs inside [since, until] became available in [since - 59, until]. (The release a
+    A device installs a release at most 60 days after it becomes available, so every release a
+    stop installs inside [since, until] became available in [since - 60, until]. (The release a
     slow device opens the window on can be older, and counts only when it falls in that span.) A
     matched version counts once (by its place in the list), only on the track's path, on the day
     it becomes available; an unmatched one counts on the earliest day the timeline gives it, and
@@ -1134,9 +1280,20 @@ def _steps(stop: str, available: list[tuple[int, dt.date]], since: dt.date, unti
     """The installed version as steps `(from this day, this rank)`, the first at `since`."""
     if stop == NEVER:
         return [(since, max((index for index, day in available if day <= since), default=None))]
-    delay = dt.timedelta(days=DAY_STOPS[stop] - REPORT_DAY_IS_DAY)
-    installs = [(index, day + delay) for index, day in available]
+    delay = dt.timedelta(days=DAY_STOPS[stop])
+    return _stepped([(index, day + delay) for index, day in available], since, until)
+
+
+def _stepped(
+    installs: list[tuple[int, dt.date]], since: dt.date, until: dt.date, floor: int | None = None
+) -> list[tuple[dt.date, int | None]]:
+    """Steps from each release's install day, for a day stop and a definition alike: the window opens
+    on the newest release installed by `since` (or on `floor`, a definition's `never` opening, when it
+    ranks higher), and a later install day installs its release when it ranks above the one running;
+    two releases due on one day install only the higher."""
     current = max((index for index, day in installs if day <= since), default=None)
+    if floor is not None and (current is None or floor > current):
+        current = floor
     steps: list[tuple[dt.date, int | None]] = [(since, current)]
     due: dict[dt.date, int] = {}
     for index, day in installs:
@@ -1243,7 +1400,260 @@ def _fix_dated_by(prepared: _Prepared, row: _Row, visited: set[str]) -> list[dic
     return entries
 
 
+# --- Policy definitions (#954, ruled 2026-11-28) ----------------------------------------------
+
+_OTHERWISE_CAUSE: dict[str, Any] = {"rule": OTHERWISE, "cve_id": None, "on": None, "basis": None}
+# A trigger's kind in the walk's own words: what a release it names fixes, and the day that fact was knowable.
+_KIND_WORDS = {
+    TRIGGER_KEV: ("a CVE on CISA's KEV list", "the day the CVE was added to the list (`kev_date_added`)"),
+    TRIGGER_CRITICAL: ("a critical CVE", "the day `severity_day` gives for critical"),
+    TRIGGER_CRITICAL_OR_HIGH: ("a high or critical CVE", "the day `severity_day` gives for high or critical"),
+}
+# A severity trigger's kind, as a refusal names it.
+_SEVERITY_WORDS = {TRIGGER_CRITICAL: "critical", TRIGGER_CRITICAL_OR_HIGH: "high or critical"}
+
+
+def definition_of(policy: str) -> Mapping[str, Any] | None:
+    """The built-in policy definition with this id, or None for a stop or an id this build does not know."""
+    return next((each for each in POLICY_DEFINITIONS if isinstance(each, Mapping) and each.get("id") == policy), None)
+
+
+def definition_data(definition: Mapping[str, Any]) -> dict[str, Any]:
+    """A definition as the walk answers it, `{id, name, otherwise, when[]}`: a copy, plain data."""
+    when = definition.get("when")
+    return {
+        "id": definition.get("id"),
+        "name": definition.get("name"),
+        "otherwise": definition.get("otherwise"),
+        "when": [dict(each) if isinstance(each, Mapping) else each for each in when] if isinstance(when, list | tuple) else when,
+    }
+
+
+def _is_day_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value in DEFINITION_DAYS
+
+
+def _definition_problem(definition: Mapping[str, Any] | None) -> str | None:
+    """What a definition names that this walk cannot run, in its own key names; None when it can run."""
+    if definition is None:
+        return "no definition with this id is built in"
+    days = ", ".join(map(str, DEFINITION_DAYS))
+    if not isinstance(definition.get("name"), str) or not definition["name"]:
+        return "it has no name"
+    otherwise = definition.get("otherwise")
+    if otherwise != NEVER and not _is_day_count(otherwise):
+        return f"otherwise is {otherwise!r}, neither never nor one of the slider's day counts ({days})"
+    when = definition.get("when")
+    if not isinstance(when, list | tuple):
+        return "when is not a list of triggers"
+    for at, trigger in enumerate(when):
+        kind = trigger.get("fixes") if isinstance(trigger, Mapping) else None
+        if kind not in TRIGGERS:
+            return f"when[{at}] fixes {kind!r}, which is not one of the triggers this walk runs ({', '.join(TRIGGERS)})"
+        if not _is_day_count(trigger.get("within_days")):
+            return f"when[{at}].within_days is {trigger.get('within_days')!r}, not one of the slider's day counts ({days})"
+    return None
+
+
+def definition_words(definition: Mapping[str, Any]) -> str:
+    """A built-in definition in the walk's own words, as the walk's `definitions` carries it under its id."""
+    otherwise = definition["otherwise"]
+    if otherwise == NEVER:
+        parts = [
+            "otherwise never: no release is installed unless a trigger names it, and the window opens on the release "
+            "`never` opens it on"
+        ]
+    else:
+        parts = [
+            f"otherwise {otherwise} days: a release no trigger names sooner is installed {otherwise} days after it became "
+            f"available, as the {otherwise}-day stop installs it"
+        ]
+    for trigger in definition["when"]:
+        kind, within = trigger["fixes"], trigger["within_days"]
+        what, knowable = _KIND_WORDS[kind]
+        due = "on its trigger day" if within == 0 else f"{within} days after its trigger day"
+        parts.append(
+            f"when `{kind}` within {within} days: a release that fixes {what} is installed {due}, the later of the day "
+            f"it is available and {knowable}"
+        )
+    return f"{definition['name']}, a built-in policy definition (`{definition['id']}`): " + "; ".join(parts) + "."
+
+
+def _knowable(
+    document: Mapping[str, Any], rows: list[_Row]
+) -> tuple[dict[str, dict[str, tuple[dt.date, str] | None]], dict[str, tuple[str, str]]]:
+    """For each row a trigger may read: the day each trigger's fact was knowable and its basis, or None
+    where the CVE is not of that kind; and, per kind the data cannot say, why: `(reason, what)` in the
+    data's own key names. A null `kev_date_added` is "not listed" only under a named KEV source
+    (`sources.kev`); without it, or without the key, the data says nothing about KEV. A severity
+    trigger reads `first_scored` where the data states the day and today's `severity` at the CVE's
+    clock day where it does not (`severity_day`)."""
+    unknown: dict[str, tuple[str, str]] = {}
+    sources = document.get("sources")
+    kev = sources.get("kev") if isinstance(sources, Mapping) else None
+    if not isinstance(kev, Mapping) or not kev:
+        unknown[TRIGGER_KEV] = (REFUSED_KEV_UNKNOWN, "it names no source of KEV dates, sources.kev")
+    facts: dict[str, dict[str, tuple[dt.date, str] | None]] = {}
+    for row in rows:
+        raw, known = row.raw, dict.fromkeys(TRIGGERS)
+        if TRIGGER_KEV not in unknown:
+            if "kev_date_added" not in raw:
+                unknown[TRIGGER_KEV] = (REFUSED_KEV_UNKNOWN, f"{row.cve_id} has no kev_date_added")
+            else:
+                try:
+                    listed = day_of(raw["kev_date_added"])
+                except (TypeError, ValueError):
+                    unknown[TRIGGER_KEV] = (
+                        REFUSED_KEV_UNKNOWN,
+                        f"{row.cve_id}'s kev_date_added {raw['kev_date_added']!r} is not a date",
+                    )
+                else:
+                    known[TRIGGER_KEV] = (listed, BASIS_KEV) if listed else None
+        severity, scored = raw.get("severity"), raw.get(FIRST_SCORED)
+        if severity is not None and severity not in SEVERITIES:
+            for kind in SEVERITY_TRIGGERS:
+                unknown.setdefault(
+                    kind, (REFUSED_SEVERITY_UNKNOWN, f"{row.cve_id}'s severity {severity!r} is not one this walk reads")
+                )
+        if scored is not None and not isinstance(scored, Mapping):
+            for kind in SEVERITY_TRIGGERS:
+                unknown.setdefault(kind, (REFUSED_SEVERITY_UNKNOWN, f"{row.cve_id}'s first_scored is not an object of days"))
+            scored = None
+        for kind, today in SEVERITY_TRIGGERS.items():
+            if kind in unknown:
+                continue
+            stated = (scored or {}).get(kind)
+            try:
+                first = day_of(stated)
+            except (TypeError, ValueError):
+                unknown[kind] = (REFUSED_SEVERITY_UNKNOWN, f"{row.cve_id}'s first_scored.{kind} {stated!r} is not a date")
+                continue
+            if first is not None:
+                known[kind] = (first, BASIS_FIRST_SCORED)
+            elif severity in today and row.clock_day is not None:
+                known[kind] = (row.clock_day, BASIS_CLOCK)
+        facts[row.cve_id] = known
+    for known in facts.values():
+        for kind in unknown:
+            known[kind] = None
+    return facts, unknown
+
+
+def _definition_refused(
+    definition: Mapping[str, Any] | None, policy: str, unknown: Mapping[str, tuple[str, str]], prepared: _Prepared
+) -> dict[str, str] | None:
+    """Why the walk does not run this definition on this data, as `policy_refusals` gives it; None to run it."""
+    named = f"{definition.get('name')} ({policy})" if isinstance(definition, Mapping) and definition.get("name") else policy
+    problem = _definition_problem(definition)
+    if problem is not None:
+        return {
+            "reason": REFUSED_DEFINITION,
+            "sentence": f"The built-in policy definition {named} cannot be walked ({problem}), so it was not walked; every "
+            "stop was. This is a defect in LoonInspect, not in this instance's data: report the sentence (Settings › "
+            "Support).",
+        }
+    for trigger in definition["when"]:
+        kind = trigger["fixes"]
+        if kind not in unknown:
+            continue
+        reason, what = unknown[kind]
+        said = "whether a CVE is on CISA's KEV list" if kind == TRIGGER_KEV else f"which CVEs are {_SEVERITY_WORDS[kind]}"
+        return {
+            "reason": reason,
+            "sentence": f"LoonSec's patch-policy data for {prepared.label} cannot say {said} ({what}), so the policy "
+            f"definition {named} was not walked; every stop was. The data is the same for every instance and none of "
+            "yours is read: report the sentence with the data's date (Settings › Support).",
+        }
+    return None
+
+
+def _named(
+    prepared: _Prepared, rows: list[_Row], facts: Mapping[str, Mapping[str, tuple[dt.date, str] | None]], kind: str
+) -> list[tuple[int, dt.date, str, str, dt.date]]:
+    """Each release a trigger of this kind names, `(release, trigger day, CVE, basis, knowable day)`: for
+    each fix of each CVE of the kind, the version `fix_dating` dates it by, where the path can install
+    it, on the later of the day it is available and the day the fact was knowable (`trigger_day`)."""
+    available = dict(prepared.available)
+    named: list[tuple[int, dt.date, str, str, dt.date]] = []
+    for row in rows:
+        fact = facts[row.cve_id][kind]
+        if fact is None:
+            continue
+        on, basis = fact
+        for line, fix in row.fixes:
+            dated_as, _ = _effective_fix(prepared, row, line, fix)
+            if dated_as is None or dated_as not in available:
+                continue
+            named.append((dated_as, max(available[dated_as], on), row.cve_id, basis, on))
+    return named
+
+
+def _install_days(
+    definition: Mapping[str, Any],
+    available: list[tuple[int, dt.date]],
+    named: Mapping[str, list[tuple[int, dt.date, str, str, dt.date]]],
+) -> dict[int, tuple[dt.date, tuple[int, str], dict[str, Any]]]:
+    """Each release's install day under a definition and what set it: the earliest of its `otherwise`
+    day and the due day of every trigger naming it; on a tie `otherwise`, then the triggers in the
+    definition's order, then the CVE ids in order."""
+    best: dict[int, tuple[dt.date, tuple[int, str], dict[str, Any]]] = {}
+
+    def offer(index: int, due: dt.date, rank: tuple[int, str], cause: dict[str, Any]) -> None:
+        held = best.get(index)
+        if held is None or (due, rank) < (held[0], held[1]):
+            best[index] = (due, rank, cause)
+
+    otherwise = definition["otherwise"]
+    if otherwise != NEVER:
+        wait = dt.timedelta(days=otherwise)
+        for index, day in available:
+            offer(index, day + wait, (0, ""), _OTHERWISE_CAUSE)
+    for position, trigger in enumerate(definition["when"], start=1):
+        within = dt.timedelta(days=trigger["within_days"])
+        for index, trigger_day, cve_id, basis, on in named[trigger["fixes"]]:
+            cause = {"rule": trigger["fixes"], "cve_id": cve_id, "on": on.isoformat(), "basis": basis}
+            offer(index, trigger_day + within, (position, cve_id), cause)
+    return best
+
+
+def _definition_steps(
+    definition: Mapping[str, Any],
+    prepared: _Prepared,
+    best: Mapping[int, tuple[dt.date, tuple[int, str], dict[str, Any]]],
+    since: dt.date,
+    until: dt.date,
+) -> tuple[list[tuple[dt.date, int | None]], dict[str, Any] | None, list[dict[str, Any]]]:
+    """A definition's device (`definition_opening`): its steps, what installed the release it opens the
+    window on, and what installed each release after it."""
+    floor = _steps(NEVER, prepared.available, since, until)[0][1] if definition["otherwise"] == NEVER else None
+    steps = _stepped([(index, due) for index, (due, _, _) in sorted(best.items())], since, until, floor)
+    opening = steps[0][1]
+    if opening is None:
+        opened_by = None
+    elif floor is not None and opening == floor:
+        opened_by = dict(_OTHERWISE_CAUSE)
+    else:
+        opened_by = dict(best[opening][2])
+    return steps, opened_by, [dict(best[index][2]) for _, index in steps[1:] if index is not None]
+
+
 # --- The walk ---------------------------------------------------------------------------------
+
+
+def _asked(stops: Sequence[str] | None, compat_v1: bool) -> tuple[str, ...]:
+    """The stops and built-in definitions to walk, in `POLICIES` order: every one when `stops` is None.
+    Conformance mode walks the stops only."""
+    known = STOPS if compat_v1 else POLICIES
+    if stops is None:
+        return known
+    unknown = [stop for stop in stops if stop not in known]
+    if unknown or not stops or len(set(stops)) != len(stops):
+        mode = " (conformance mode walks the stops only)" if compat_v1 and set(unknown) <= set(POLICIES) else ""
+        raise WalkRefused(
+            REFUSED_REQUEST,
+            f"The stops and policy definitions asked for are {list(stops)}; each is one of {', '.join(known)}, once{mode}.",
+        )
+    return tuple(stop for stop in known if stop in stops)
 
 
 def walk(
@@ -1252,24 +1662,25 @@ def walk(
     app: str,
     track: str,
     timeline: Any,
-    stops: Sequence[str] = STOPS,
+    stops: Sequence[str] | None = None,
     years: int = DEFAULT_YEARS,
     until: Any = None,
     common: Sequence[Any] | None = None,
     compat_v1: bool = False,
 ) -> dict[str, Any]:
-    """Walk one app track over one timeline, for each stop in `stops`. A pure function of its arguments.
+    """Walk one app track over one timeline, for each stop and built-in policy definition in `stops`
+    (every one of `POLICIES` when it is None; conformance mode walks the stops only). A pure function
+    of its arguments.
 
     `document` is a `patch_policy_reference`; `timeline` is `{source, name, as_of, clock?,
     observations: [{version, date|null}]}` from any source (`public_timeline` builds the public
     one from the document). `until` defaults to the day before the document's date; `common` is
     an optional `(since, until)` both views are cut to, for comparing timelines. Raises
-    `WalkRefused` with a sentence rather than return a partial answer.
+    `WalkRefused` with a sentence rather than return a partial answer. A definition the walk cannot
+    run on this data is the one exception: it is named in `policy_refusals` with its sentence, and
+    every stop is walked as without it.
     """
-    unknown = [stop for stop in stops if stop not in STOPS]
-    if unknown or not stops or len(set(stops)) != len(stops):
-        raise WalkRefused(REFUSED_REQUEST, f"The stops asked for are {list(stops)}; each is one of {', '.join(STOPS)}, once.")
-    stops = tuple(stop for stop in STOPS if stop in stops)
+    stops = _asked(stops, compat_v1)
     prepared = _prepare(document, app, track, timeline, compat_v1)
     since, until_day, window, reach = _checked_window(prepared, years, until, common)
     judge = _Judge(prepared)
@@ -1299,12 +1710,44 @@ def walk(
     outcomes: dict[str, dict[str, dict[str, Any]]] = {row.cve_id: {} for row in replayed + before}
     policies: dict[str, dict[str, Any]] = {}
     for stop in stops:
-        steps = every[stop]
-        policies[stop] = _run_stop(prepared, stop, steps, replayed, before, outcomes, since, until_day, judge)
+        if stop in STOPS:
+            policies[stop] = _run_stop(prepared, stop, every[stop], replayed, before, outcomes, since, until_day, judge)
 
-    listed = replayed + [row for row in before if any(outcomes[row.cve_id][s]["class"] != PRE_WINDOW_CLOSED for s in stops)]
+    # The built-in definitions, after the stops (ruled 2026-11-28). Their triggers read every row the
+    # walk places and does not exclude, wherever its clock day falls (`trigger_day`).
+    asked_definitions = [stop for stop in stops if stop not in STOPS]
+    triggering = sorted(
+        (row for key in ("before", "in", "after") for row in placed[key] if not exclusion_of[row.cve_id]),
+        key=lambda r: r.cve_id,
+    )
+    facts, unknown_kinds = ({}, {}) if compat_v1 else _knowable(document, triggering)
+    refusals: dict[str, dict[str, str]] = {}
+    named = {
+        kind: _named(prepared, triggering, facts, kind) for kind in TRIGGERS if kind not in unknown_kinds and asked_definitions
+    }
+    for policy in asked_definitions:
+        definition = definition_of(policy)
+        refused = _definition_refused(definition, policy, unknown_kinds, prepared)
+        if refused is not None:
+            refusals[policy] = refused
+        elif definition is not None:
+            best = _install_days(definition, prepared.available, named)
+            steps, opened_by, causes = _definition_steps(definition, prepared, best, since, until_day)
+            run = _run_stop(prepared, policy, steps, replayed, before, outcomes, since, until_day, judge)
+            for install, cause in zip(run["installs"], causes, strict=True):
+                install["by"] = cause
+            run["opening_by"] = opened_by
+            policies[policy] = run
+
+    listed = replayed + [row for row in before if any(outcomes[row.cve_id][s]["class"] != PRE_WINDOW_CLOSED for s in policies)]
     rows_out = [
-        _cve_row(row, outcomes[row.cve_id], compat_v1, _fix_dated_by(prepared, row, visited))
+        _cve_row(
+            row,
+            outcomes[row.cve_id],
+            compat_v1,
+            _fix_dated_by(prepared, row, visited),
+            None if compat_v1 else facts.get(row.cve_id, dict.fromkeys(TRIGGERS)),
+        )
         for row in sorted(listed, key=lambda r: r.cve_id)
     ]
     dating = Counter(entry["how"] for row in rows_out for entry in row["fix_dated_by"])
@@ -1347,6 +1790,7 @@ def walk(
             "replayed_by_clock": _by_clock(replayed, clock_name),
             "placed_by_clock": _by_clock([row for key in ("before", "in", "after") for row in placed[key]], clock_name),
             "fix_dating": {how: dating[how] for how in FIX_DATING},
+            **({} if compat_v1 else {"knowable": _knowable_counts(rows_out)}),
         },
         "exclusions": {
             "by_reason": {reason: by_reason[reason] for reason in prepared.reasons},
@@ -1364,8 +1808,19 @@ def walk(
             "before_window_by_reason": dict(sorted(Counter(exclusion_of[row.cve_id] for row in before_excluded).items())),
         },
         "policies": policies,
+        # Each definition asked for, as data, and each one the walk could not run on this data, with its words.
+        "policy_definitions": [definition_data(definition_of(policy) or {"id": policy}) for policy in asked_definitions],
+        "policy_refusals": refusals,
         "cves": rows_out,
-        "definitions": {**DEFINITIONS, **(COMPAT_V1_DEFINITIONS if compat_v1 else {})},
+        "definitions": {
+            **DEFINITIONS,
+            **{
+                policy: definition_words(definition)
+                for policy in asked_definitions
+                if (definition := definition_of(policy)) is not None and _definition_problem(definition) is None
+            },
+            **(COMPAT_V1_DEFINITIONS if compat_v1 else {}),
+        },
         "document_definitions": document.get("definitions") or {},
         "clocks": {
             **(document.get("clocks") or {}),
@@ -1534,7 +1989,7 @@ def _run_stop(
     installs = [{"date": day.isoformat(), "version": name(index)} for day, index in steps[1:]]
     return {
         "stop": stop,
-        "install_delay_days": DAY_STOPS[stop] - REPORT_DAY_IS_DAY if stop in DAY_STOPS else None,
+        "install_delay_days": DAY_STOPS.get(stop),
         "never_seen": totals[NEVER_SEEN],
         "never_seen_outside_affected_range": totals[OUTSIDE_RANGE],
         "exposed": totals[EXPOSED],
@@ -1561,11 +2016,15 @@ def _run_stop(
 
 
 def _cve_row(
-    row: _Row, outcomes: dict[str, dict[str, Any]], compat_v1: bool, fix_dated_by: list[dict[str, Any]]
+    row: _Row,
+    outcomes: dict[str, dict[str, Any]],
+    compat_v1: bool,
+    fix_dated_by: list[dict[str, Any]],
+    knowable: Mapping[str, tuple[dt.date, str] | None] | None = None,
 ) -> dict[str, Any]:
     raw = row.raw
     clock_day = row.published if compat_v1 else row.clock_day
-    return {
+    out = {
         "cve_id": row.cve_id,
         "class": IN_WINDOW if all(o["class"] == IN_WINDOW for o in outcomes.values()) else BEFORE_WINDOW,
         "clock": CLOCK_PUBLISHED if compat_v1 else row.clock,
@@ -1581,8 +2040,20 @@ def _cve_row(
         "configurations_changed_after_detectable": raw.get("configurations_changed_after_detectable"),
         "affected_text": raw.get("affected_text"),
         "fix_dated_by": fix_dated_by,
-        "outcomes": outcomes,
     }
+    if knowable is not None:
+        # The day each trigger's fact was knowable for this CVE, and its basis, as `clock` says which
+        # clock placed it (`severity_day`); null where the CVE is not of the kind, or the data cannot say.
+        facts = {kind: knowable.get(kind) for kind in TRIGGERS}
+        out["knowable"] = {kind: {"on": fact[0].isoformat(), "basis": fact[1]} if fact else None for kind, fact in facts.items()}
+    out["outcomes"] = outcomes
+    return out
+
+
+def _knowable_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """`counts.knowable`: per trigger kind, the rows `cves` lists by the basis of the day the fact was knowable."""
+    counted = Counter((kind, fact["basis"]) for row in rows for kind, fact in (row.get("knowable") or {}).items() if fact)
+    return {kind: {basis: counted[(kind, basis)] for basis in BASES[kind]} for kind in TRIGGERS}
 
 
 # --- Identity, parity and the totals that must close -----------------------------------------
@@ -1594,15 +2065,18 @@ def input_id(
     app: str,
     track: str,
     timeline: Any,
-    stops: Sequence[str] = STOPS,
+    stops: Sequence[str] | None = None,
     years: int = DEFAULT_YEARS,
     until: Any = None,
     common: Sequence[Any] | None = None,
     compat_v1: bool = False,
 ) -> str:
     """The memo key: the digest of what the walk reads. The observations enter as their digest,
-    which is order-free, so a timeline listed in another order is the same input."""
+    which is order-free, so a timeline listed in another order is the same input. `stops` is the
+    stops and definitions asked for, every one of them when it is None, as `walk` reads it."""
     read = timeline if isinstance(timeline, _Timeline) else _timeline(timeline)
+    known = STOPS if compat_v1 else POLICIES
+    asked = known if stops is None else stops
     return digest(
         {
             "algorithm": ALGORITHM,
@@ -1617,7 +2091,7 @@ def input_id(
                 "clock": read.clock,
                 "digest": read.digest,
             },
-            "stops": [stop for stop in STOPS if stop in stops],
+            "stops": [stop for stop in known if stop in asked],
             "window": {
                 "years": years,
                 "until": _iso(day_of(until)),
@@ -1651,8 +2125,14 @@ CHECK_KEYS = (
 
 
 def check_totals(result: Mapping[str, Any], stop: str) -> dict[str, Any]:
-    """The totals LoonVD publishes as the track's `check` for one stop: LoonVD computes them by
-    running this module at a pinned commit, so the public walk is held to exactly these."""
+    """The totals LoonVD publishes as the track's `check` for one stop or built-in definition (one of
+    `POLICIES`): LoonVD computes them by running this module at a pinned commit, so the public walk
+    is held to exactly these. A definition this walk could not run on the data is `{"refused":
+    reason}`, which LoonVD's pinned copy writes the same way, so parity holds a refusal as it holds
+    totals."""
+    refused = (result.get("policy_refusals") or {}).get(stop)
+    if refused is not None:
+        return {"refused": refused["reason"]}
     policy, counts, window = result["policies"][stop], result["counts"], result["window"]
     flat = {
         **{key: window[key] for key in ("since", "until")},
@@ -1664,17 +2144,19 @@ def check_totals(result: Mapping[str, Any], stop: str) -> dict[str, Any]:
 
 
 def _parity(prepared: _Prepared, result: dict[str, Any], years: int, until: Any, common: Any) -> dict[str, Any]:
-    """Plan 4.7: the public walk at the unaligned default window must equal the document's check."""
+    """Plan 4.7: the public walk at the unaligned default window must equal the document's check, for
+    every stop and built-in definition walked: a definition is held to its entry exactly as a stop is,
+    and one the check lacks is refused as a missing stop's entry is, never drawn unchecked."""
     if prepared.compat_v1 or prepared.timeline.source != PUBLIC or until is not None or common:
         return {"state": CHECK_NOT_APPLICABLE, "detail": "Parity is held on LoonSec's published dates at the default window."}
     entry = (prepared.track.get("check") or {}).get(f"{years}y")
     if not isinstance(entry, Mapping):
         return {"state": CHECK_NO_ENTRY, "detail": f"The data holds no check for a {years}-year window of {prepared.name}."}
-    for stop in result["policies"]:
+    for stop in result["inputs"]["stops"]:
         stated = entry.get(stop)
         computed = check_totals(result, stop)
         if stated != computed:
-            first = next((k for k in CHECK_KEYS if not isinstance(stated, Mapping) or stated.get(k) != computed[k]), "the entry")
+            first = next((k for k in computed if not isinstance(stated, Mapping) or stated.get(k) != computed[k]), "the entry")
             shown = stated.get(first) if isinstance(stated, Mapping) else stated
             raise WalkRefused(
                 REFUSED_PARITY,
@@ -1722,9 +2204,23 @@ def invariant_failures(result: Mapping[str, Any]) -> list[str]:
         {how: dating[how] for how in FIX_DATING} == counts["fix_dating"],
         "counts.fix_dating does not tally the rows' fix_dated_by",
     )
+    if "knowable" in counts:
+        expect(_knowable_counts(rows) == counts["knowable"], "counts.knowable does not tally the rows' knowable")
     for stop, policy in result["policies"].items():
         prefix = f"policies.{stop}"
         outcomes = [row["outcomes"][stop] for row in rows]
+        if stop not in STOPS:
+            # A definition's every install, and its opening, names a rule that could install it then: a
+            # trigger's never before the day its fact was knowable (`trigger_day`).
+            installed = [(install.get("by"), install["date"]) for install in policy["installs"]]
+            if policy.get("opening_by") is not None:
+                installed.append((policy["opening_by"], result["window"]["since"]))
+            for by, day in installed:
+                rule = by.get("rule") if isinstance(by, Mapping) else None
+                expect(
+                    rule == OTHERWISE or (rule in TRIGGERS and isinstance(by.get("on"), str) and by["on"] <= day),
+                    f"{prefix}: what installed the release of {day} could not install it then",
+                )
         mine = [o for o in outcomes if o["class"] == IN_WINDOW]
         expect(policy["never_seen"] + policy["exposed"] == counts["replayed"], f"{prefix}: never_seen + exposed != replayed")
         tallies = {
@@ -1748,7 +2244,10 @@ def invariant_failures(result: Mapping[str, Any]) -> list[str]:
         series = policy["series"]
         open_, new, resolved = series["open"], series["new"], series["resolved"]
         expect(len(open_) == result["window"]["days"], f"{prefix}.series covers {len(open_)} days, not the window's")
-        expect(bool(open_) and open_[0] == series["opening"] + new[0] - resolved[0], f"{prefix}.series: day one does not open")
+        expect(
+            bool(open_) and open_[0] == series["opening"] + new[0] - resolved[0],
+            f"{prefix}.series: the window's first day does not open",
+        )
         for at in range(1, len(open_)):
             if open_[at] != open_[at - 1] + new[at] - resolved[at]:
                 failures.append(f"{prefix}.series: open[{at}] != open[{at - 1}] + new - resolved")

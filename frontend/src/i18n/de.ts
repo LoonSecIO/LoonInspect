@@ -757,6 +757,8 @@ export const de: Translations = {
           `Angezeigt werden Patch-Policy-Daten vom ${asOf}, mehr als drei Tage alt: Der Veröffentlichungsdienst von LoonSec lief zuletzt am ${builtAt}, vor mehr als drei Tagen, und der Durchlauf endet am ${until}.`,
         not_published: "Der letzte Austausch mit LoonSec enthielt keine Patch-Policy-Daten. Auf dieser Instanz ist nichts falsch; melden Sie es, wenn es länger als einen Tag anhält.",
         algorithm_unknown: (reads: string, published: string) => `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}. Nennt der nächste Austausch dasselbe, aktualisieren Sie LoonInspect.`,
+        algorithmOlder: (reads: string, published: string) =>
+          `Dieser Build liest ${reads}; der letzte Austausch mit LoonSec nannte nur ${published}, was ältere Builds lesen. Auf dieser Instanz muss nichts aktualisiert werden; melden Sie es, wenn es länger als einen Tag anhält.`,
         downloadFailed: (host: string, reason: string) => `Die Patch-Policy-Datei konnte nicht von ${host} heruntergeladen werden: ${reason}.`,
         readFailed: (path: string, reason: string) => `Die Patch-Policy-Datei konnte nicht aus ${path} gelesen werden: ${reason}.`,
         invalid: (reason: string) => `Die Patch-Policy-Daten von LoonSec haben ihre Prüfung nicht bestanden (${reason}) und wurden nicht gespeichert.`

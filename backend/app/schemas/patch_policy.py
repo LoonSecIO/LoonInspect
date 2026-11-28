@@ -215,8 +215,16 @@ class PatchPolicyWalkOut(BaseModel):
     window: dict[str, Any]
     counts: dict[str, Any]
     exclusions: dict[str, Any]
-    # One entry per stop (1d, 7d, 14d, 30d, 60d, never): totals, installs, and the per-day series.
+    # One entry per stop (0d, 1d, 3d, 7d, 14d, 30d, 60d, never; a day stop's label is the days it
+    # waits, `install_delay_days`): totals, installs, and the per-day series. Then one per built-in
+    # policy definition the walk ran (#954), the same shape, each install naming what installed it
+    # (`installs[].by`) and `opening_by` the release the window opens on.
     policies: dict[str, Any]
+    # Each built-in definition walked, as data: `{id, name, otherwise, when: [{fixes, within_days}]}`.
+    policy_definitions: list[dict[str, Any]]
+    # Each definition the walk could not run on this data, by id: `{reason, sentence}`
+    # (`kev_unknown`, `severity_unknown`, `definition_invalid`; docs/troubleshooting.md §33 step 7, 8).
+    policy_refusals: dict[str, dict[str, str]]
     cves: list[dict[str, Any]]
     cves_page: PatchPolicyWalkPageOut
     intervals_for: str | None

@@ -437,7 +437,9 @@ recorded for Kyle to overrule.
   `severe: null`, and the page says the ordinary limit applied because nobody assessed it.
   With no corpus answering for the organization at all, the severe limit judges nothing and
   both responses say so (`severityAnswering: false`); the page prints it under the rules. KEV
-  is not part of *severe*: `critical_or_kev` is tabled (#614).
+  is not part of *severe*. Posture › Patch policy's *Patch on a KEV*, a built-in policy
+  definition of that reference analysis that superseded its `critical_or_kev` row (#954), sets
+  no Jamf Patch rule.
 - **Per-title overrides.** A Jamf Patch title may carry its own rule, which **replaces** the
   organization's for that title rather than merging with it, or be `exempt`. Exempt is named
   as not judged and is never counted as within policy. An override is keyed on the Jamf title
@@ -467,7 +469,8 @@ recorded for Kyle to overrule.
   by version* chart, each with the words beside it.
 - **Not built.** A posture key for devices out of policy; out-of-policy on the Splunk wire;
   a pinned or minimum version per title; separate limits for critical and for high; a limit
-  for exploited findings (`critical_or_kev` is tabled, #614); a clock that starts at a
+  for exploited findings (Posture › Patch policy's *Patch on a KEV* definition, #954, is a
+  reference analysis and sets none); a clock that starts at a
   finding's publication rather than at the newer release.
 
 ### 8b. Drafting the rule from the statement (#732)

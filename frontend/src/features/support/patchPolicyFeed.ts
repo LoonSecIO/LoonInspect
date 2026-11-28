@@ -128,6 +128,28 @@ export function publisherRunning(builtAt: string, now: Date): boolean {
   return now.getTime() - Date.parse(builtAt) <= STALE_AFTER_MS;
 }
 
+/** N of a `patch_walk/N` name, or null for any other name: the backend's `algorithm_number`. */
+function walkNumber(name: string): number | null {
+  const match = /^patch_walk\/([0-9]+)$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+/** Whether every algorithm the exchange named (`algorithm_unknown`'s detail, joined by commas) is an
+ *  older `patch_walk` than the one this build reads: the backend's `only_older`, so the page names
+ *  the same case. Then no update can reach the data, and the sentence says so. */
+export function onlyOlder(named: string | null, reads: string): boolean {
+  const ours = walkNumber(reads);
+  const names = (named ?? "").split(",").map((each) => each.trim()).filter((each) => each !== "");
+  return (
+    ours !== null &&
+    names.length > 0 &&
+    names.every((name) => {
+      const number = walkNumber(name);
+      return number !== null && number < ours;
+    })
+  );
+}
+
 /** The state's sentence, the way `sentence_for` builds it: the state's words, then the copy that
  *  still answers (or that there is none) after a failure. A stale copy's cause is the instance's
  *  `feed.publisherRunning`; `now` is read only when that is missing (`publisherRunning`). */
@@ -153,7 +175,9 @@ export function describeFeed(feed: PatchPolicyFeed, words: FeedWords, now: Date 
     case "not_published":
       return `${s.not_published} ${copy()}`;
     case "algorithm_unknown":
-      return `${s.algorithm_unknown(feed.algorithm, feed.detail || words.anotherAlgorithm)} ${copy()}`;
+      return onlyOlder(feed.detail, feed.algorithm)
+        ? `${s.algorithmOlder(feed.algorithm, feed.detail ?? "")} ${copy()}`
+        : `${s.algorithm_unknown(feed.algorithm, feed.detail || words.anotherAlgorithm)} ${copy()}`;
     case "download_failed":
       return feed.source === "file"
         ? `${s.readFailed(feed.host ?? words.fromFile, detail)} ${copy()}`

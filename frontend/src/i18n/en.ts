@@ -817,6 +817,10 @@ export const en = {
           `Showing patch-policy data dated ${asOf}, more than three days old: LoonSec's publisher last ran on ${builtAt}, more than three days ago, and the walk ends ${until}.`,
         not_published: "LoonSec's last exchange carried no patch-policy data. Nothing on this instance is wrong; report it if it lasts a day.",
         algorithm_unknown: (reads: string, published: string) => `This build reads ${reads}; LoonSec's last exchange named only ${published}. If the next exchange names the same, update LoonInspect.`,
+        // The same state when every algorithm named is older than this build's (patch_walk/1 is never
+        // published, ruled 2026-11-27): no update can reach that data, so the sentence says not to.
+        algorithmOlder: (reads: string, published: string) =>
+          `This build reads ${reads}; LoonSec's last exchange named only ${published}, which older builds read. Nothing on this instance needs updating; report it if it lasts a day.`,
         downloadFailed: (host: string, reason: string) => `The patch-policy file could not be downloaded from ${host}: ${reason}.`,
         readFailed: (path: string, reason: string) => `The patch-policy file could not be read from ${path}: ${reason}.`,
         invalid: (reason: string) => `LoonSec's patch-policy data failed its check (${reason}), so it was not stored.`

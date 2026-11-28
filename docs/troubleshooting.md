@@ -3009,7 +3009,12 @@ that log, then repeat the act.
 Posture › Patch policy (#614, first slice) is a **reference analysis**: one hypothetical Mac that
 runs one app, replayed against public CVE records under each stop of a patch-policy slider. It is
 not this organization's exposure. It reads no inventory, sends nothing, and stores nothing. The page
-is at `/posture/patch-policy` and needs **app:read**, which every role holds.
+is at `/posture/patch-policy` and needs **app:read**, which every role holds. The slider has eight
+stops: 0, 1, 3, 7, 14, 30 and 60 days, and Never. A stop's label is the days it waits (ruled
+2026-11-27, "0 = same day"): the 0-day stop installs each release on the date its release record
+gives it, the 1-day stop the day after, and so on; the sentence under the slider says the same.
+The built-in policy definitions beside the slider (*Patch on a KEV* and the others; #954) are
+offered on the day-walk only, never over the replays (step 11).
 
 The page has two modes. Once LoonSec's patch-policy data (§32) is held for this organization, it
 walks that data day by day, with a source toggle (Public, Jamf, Fleet) and a day graph: that page is
@@ -3049,6 +3054,18 @@ the replays, and step 11 about how the page chooses between the two.
      the replay this build does not read. *Its schema is 1, the earlier replay format…* is a file
      with no `timeline` block, the part of the file this page reads to name and link where its
      release dates come from; this build reads only replays that have one.
+   - *Its schema is 2, the replay that counts the old way…* → the file was written before the
+     2026-11-27 ruling that a stop's label is the days it waits. Its N-day row is N − 1 days waited
+     (its own `definitions.install` says the install date is the release date + (D − 1) days), so
+     drawn under this page's stops every number would sit a day early. The page refuses it whole and
+     relabels nothing, because the file is LoonSec's and the page computes nothing in it; this build
+     reads schema 3, which counts the days waited. `replays/README.md` beside the files lists the
+     replays a build ships and says which, if any, are still on the old count.
+   - *Its 7d row does not state the days it waits…* or *Its 7d row states install_delay_days …, but
+     its label means … days waited…* → a schema-3 file whose day row does not state, as
+     `install_delay_days`, the days its stop's label names. The page reads each row's count from the
+     row, never from its label, so a row that waits otherwise, or does not say, is not drawn under
+     that label, and neither is the rest of the file.
    - *Its CVE clock is …* → the file places each CVE on a clock other than NVD's publication date
      (its `cve_clock` is not `published`). The page's words state that one clock, so the file is
      refused rather than drawn under words that would misstate it.
@@ -3061,7 +3078,7 @@ the replays, and step 11 about how the page chooses between the two.
      for every policy, `never_seen` plus `exposed` is `counts.cves_replayed`; the excluded counts
      sum to `counts.cves_excluded`; and the per-CVE rows count to the same totals as the headline.
 
-   Reload once. None of the last four can be fixed on the instance, because the file is part of the
+   Reload once. None but the first can be fixed on the instance, because the file is part of the
    build and no setting or data of yours is read: the same sentence after a reload is reportable
    state **Z**, below.
 5. **The numbers differ from another copy of the same analysis.** Compare the **Run** line under
@@ -3118,9 +3135,20 @@ the replays, and step 11 about how the page chooses between the two.
       failed, which is not missing data. The bracket gives what answered: `HTTP 403` is an account
       without **app:read**; *no answer* is a container that did not answer, which is §4; any other
       status, with the container up, is reportable state **AE**.
+    - Above the replay, *… is a policy definition, which this page walks only over LoonSec's
+      patch-policy data, never over the reference replays it shows until that data arrives, so it
+      opens on the first stop, 0 days* → the address names a built-in policy definition
+      (`?policy=kev-only`, a link saved from a day-walk, say). The replays carry no definition the
+      page draws, so the replay opens on its first stop. Not a fault: once this instance holds
+      LoonSec's data, the same link opens the definition on the day-walk (§33 step 13). *The address
+      names a patch policy this page does not have (…)* is an address naming no stop and no
+      definition at all; the replay opens on its first stop the same way.
 
     Either way the replay underneath is complete and correct on its own terms. Nothing on this page
     mixes the two: a replay is never drawn under the walk's words, or a walk under the replay's.
+    Where the replay underneath is one the page refuses (step 4: a schema-2 file on the old count,
+    say), the refusal stands in its place under the same first sentence, in words, and no number of
+    it is drawn.
 
 **Z.** A reference replay that shipped with the build is refused, and reads the same after a reload,
 or the page says no reference replay ships with the build. Report the page's sentence as it is
@@ -4286,14 +4314,26 @@ stored, and nothing is deleted to make room for one.
    no document. Nothing on this instance is wrong, and a copy already held keeps answering
    (the sentence then ends *Showing the copy dated …*). If it reads the same after the next
    day's exchange, that is reportable state **AA**, below.
-4. ***This build reads patch_walk/1; LoonSec's last exchange named only …*** The exchange named
-   the document only for a newer way of reading it. Once, it is usually a passing gap at
-   LoonSec: while LoonSec publishes two ways at once, after a move, an exchange that could not
-   read one of them leaves it out for a few minutes, and the next exchange (or **Send now**)
-   names it again; nothing needs updating. If the next exchange names the same, LoonSec has moved
-   on: it keeps publishing the older way for at least 90 days after a move, so the instance has
-   stayed behind longer than that. Update LoonInspect (§10); the held copy keeps answering until
-   then.
+4. ***This build reads patch_walk/2; LoonSec's last exchange named only …*** The exchange named
+   the document only for another way of reading it than this build's, so nothing was downloaded.
+   This build reads `patch_walk/2`, the walk of Posture › Patch policy's eight stops (0, 1, 3, 7,
+   14, 30 and 60 days, and Never), each labelled by the days it waits (ruled 2026-11-27);
+   `patch_walk/1`, the six stops on the old count, is never published, and only an older build
+   reads it. A copy already held keeps answering either way (the sentence then ends *Showing the
+   copy dated …*); with none, Posture › Patch policy draws the reference replays that ship with the
+   build, under this sentence (§22 step 11). The sentence goes on in one of two ways:
+   - ***…, which older builds read. Nothing on this instance needs updating…*** → the exchange
+     named only an older way, so updating changes nothing. Once, it is usually a passing gap at
+     LoonSec: while LoonSec publishes two ways at once, an exchange that could not read one of them
+     leaves it out for a few minutes, and the next exchange (or **Send now**) names it again. If the
+     next day's exchange names the same, LoonSec is not publishing its data for this build:
+     reportable state **AA**, below. The container log says the same, beginning
+     `patch-policy data not updated: this build reads patch_walk/2 and LoonSec's exchange named only`.
+   - ***… If the next exchange names the same, update LoonInspect.*** → the exchange named the
+     document only for a newer way of reading it. Once, it is the same passing gap, and nothing
+     needs updating. If the next exchange names the same, LoonSec has moved on: it keeps publishing
+     the older way for at least 90 days after a move, so the instance has stayed behind longer than
+     that. Update LoonInspect (§10); the held copy keeps answering until then.
 5. ***The patch-policy file could not be downloaded from …*** The host it names is the object
    store the exchange's link pointed at, **not** the exchange's own host
    (`api.next.loonsec.io`), so an egress rule that lets the exchange through can still stop
@@ -4323,7 +4363,11 @@ stored, and nothing is deleted to make room for one.
    - *it is not JSON* or *it is not a gzip file* or *its gzip stream is cut short* → the bytes
      did not survive the trip, usually a proxy that rewrote or truncated them.
    - *its kind is …*, *its schema is …*, *its algorithm is …* → the document is not one this
-     build reads. Update LoonInspect (§10).
+     build reads. Update LoonInspect (§10). Except an algorithm older than this build's: *its
+     algorithm is "patch_walk/1"; this build reads patch_walk/2* is a document only older builds
+     read, which LoonSec never publishes (step 4), so updating changes nothing. On an instance that
+     reads the file (step 8), put the file LoonSec provides for this build in its place; from the
+     exchange, it is reportable state **AB**.
    - *its doc_id … is not what its contents hash to*, *it is not the document the exchange
      named* → the content changed after LoonSec built it, or the link served another
      document.
@@ -4385,18 +4429,20 @@ running, the held copy keeps answering, and the next exchange or change to the f
 Report it as state **AB**, with that line, the error type and stack locations logged with it, and
 the build (§8).
 
-**AA.** The exchange answers and LoonSec names no patch-policy document, or names one dated more
-than three days ago (step 7), on two consecutive days. The sentence's cause is the part that
-matters:
+**AA.** The exchange answers and LoonSec names no patch-policy document, names it only for a way
+of reading it older than this build's (step 4), or names one dated more than three days ago (step
+7), on two consecutive days. The sentence's cause is the part that matters:
 - *…LoonSec's publisher last ran on …, but its NVD data has not advanced since …* → LoonSec's
   publisher is running and its NVD data has stood still: LoonSec's to fix, and nothing an
   instance can change.
 - *…LoonSec's publisher last ran on …, more than three days ago…*, or no `feed.builtAt` at all →
   LoonSec's publisher has finished no build that reached this instance since that day.
+- *…, which older builds read. Nothing on this instance needs updating…* → LoonSec is not
+  publishing its data for the way this build reads it: LoonSec's to fix.
 
-Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt` and
-`feed.publisherRunning` from `GET /api/patch-policy/apps`, and the build from Settings › Support
-(§8).
+Report the sentence as worded, `feed.attemptedAt`, `feed.docId`, `feed.asOf`, `feed.builtAt`,
+`feed.publisherRunning`, `feed.algorithm` and `feed.detail` from `GET /api/patch-policy/apps`, and
+the build from Settings › Support (§8).
 
 **AB.** A downloaded document is refused by its check on two consecutive exchanges, with no
 proxy between the container and the store; or the check, or the file read, fails with an
@@ -4415,9 +4461,12 @@ or logs it.
 
 A patch-policy walk (#614) takes one app's track from LoonSec's patch-policy data (§32) and one
 timeline of release dates, and replays a Mac that installs each release a set number of days
-after it is dated, under every stop of the slider, for a window of two or three years. It is a
-reference analysis: it reads no device, and its result is neither stored nor sent anywhere. The
-timeline is one of three, the **source**:
+after it is dated, under every stop of the slider, for a window of two or three years. The eight
+stops are 0, 1, 3, 7, 14, 30 and 60 days, and Never, and a stop's label is the days it waits
+(ruled 2026-11-27, "0 = same day"): the 0-day stop installs a release on the day the timeline dates
+it, the 1-day stop the day after. Each stop's `install_delay_days` in the walk is its label's number,
+and `definitions.install` states the rule. It is a reference analysis: it reads no device, and its
+result is neither stored nor sent anywhere. The timeline is one of three, the **source**:
 
 - **Public**: the release dates LoonSec publishes with its data, from the public release records
   each timeline names (`sources.timelines`): a vendor's own feed (Google's VersionHistory,
@@ -4446,6 +4495,13 @@ LoonSec, englisch)*). Under the slider the day graph draws the CVEs open
 on each day at the selected stop, with the days CVEs opened and the days an install resolved them
 marked in a strip beneath; *The days the count moved, as a table* lists every one of those days.
 
+Beside the slider, under *Or load a policy definition*, the day-walk lists the built-in policy
+definitions ([patch-policy.md › Policy definitions](patch-policy.md#policy-definitions)): *Patch on
+a KEV*, *Patch only on a critical* and *30 days, same day on a KEV*. A loaded one is drawn as a stop
+is, under its id (`?policy=kev-only`), and is held to LoonSec's published totals as a stop is
+(step 7). One the walk cannot run on the data held is drawn disabled with its sentence, and every
+stop still walks (steps 7 and 8). Step 13 says what a definition installs and why.
+
 The same answers, read directly: `GET /api/patch-policy/apps` (**app:read**) lists, for each app, each source and
 each track, `available`, a `state` word and, when it is not available, the sentence that says why;
 `GET /api/patch-policy/walk?app=…&track=…&source=public|jamf|fleet&years=2|3` answers the walk,
@@ -4456,7 +4512,17 @@ below are those reasons. Nothing a walk reads is written, so no container log li
 refusal: the sentence is the whole report.
 
 1. **A sentence from §32** (*…does not share data with LoonSec…*, *…has not arrived…*, a refused
-   copy with none held). The walk needs the copy §32 is about; follow that path first.
+   copy with none held). The walk needs the copy §32 is about; follow that path first. The walk's
+   own `algorithm_unknown` is the one case of a copy held that this build cannot walk:
+   ***This build reads patch_walk/2; the patch-policy data on this instance is …*** This build stores
+   only a copy it reads, so the copy held was stored by a build that reads it another way, before
+   this one replaced it, and it is walked for no app.
+   - ***…, which older builds read, so nothing was walked. Nothing on this instance needs
+     updating…*** → the copy is older (`patch_walk/1`, the six stops on the old count). The next
+     exchange that brings LoonSec's data for this build replaces it (§32 step 4 if it brings none;
+     on an instance that reads the file, §32 step 8: the file LoonSec provides for this build).
+   - ***… Update LoonInspect.*** → the copy is newer, stored by a later build before this one was
+     put back: update LoonInspect (§10) to walk it.
 2. ***No reference yet for …*** (`app_unknown`) or ***… has no … track in LoonSec's patch-policy
    data yet; it has …*** (`track_unknown`). Not a fault and not a count of zero: LoonSec's data
    does not reference that app, or that track of it, yet. The tracks it does have are named.
@@ -4645,10 +4711,36 @@ refusal: the sentence is the whole report.
    - `document_invalid`: ***LoonSec's patch-policy data for … failed this build's check (…)…***
      The data does not hold together for this app in a way the copy's own check (§32 step 6)
      does not test. Reportable state **AD**.
+   - A policy definition's totals are held the same way. `facts.stop` can be a definition's id: a
+     check that lacks a definition's entry reads ***(kev-only: since is '…' here and None in the
+     data)***, as one that lacks a stop's entry does. LoonSec published that copy from a walk
+     without the definitions, so no view of the app is shown: a definition is never drawn
+     unchecked. Reportable state **AD** if it reads the same after the next day's exchange.
+   - Not a refusal of the walk: one definition drawn disabled beside the slider, *Not walked on this
+     data*, with the page's sentence under the buttons and the instance's beneath it. Every stop,
+     and every other definition, is walked and shown.
+     - `kev_unknown`: ***LoonSec's patch-policy data for … cannot say whether a CVE is on CISA's KEV
+       list (…), so the policy definition … was not walked; every stop was.*** The bracket names
+       the gap. *it names no source of KEV dates, sources.kev* is a copy whose null `kev_date_added`
+       says nothing, because only a named KEV source makes a null mean "not listed". *CVE-… has no
+       kev_date_added*, or *CVE-…'s kev_date_added … is not a date*, is one row that does not say.
+       The definitions that read KEV are refused; *Patch only on a critical* still walks.
+     - `severity_unknown`: ***LoonSec's patch-policy data for … cannot say which CVEs are critical
+       (…), so the policy definition … was not walked; every stop was.*** The bracket names the row:
+       a severity this build does not read, or a `first_scored` that is not an object of days, or a
+       first-scored day that is not a date. The definitions that read KEV still walk.
+
+     Nothing on this instance can fix either: the data is the same on every instance. Reportable
+     state **AD** if it reads the same after the next day's exchange.
 8. **A defect on our side.** `invariant` (***…was refused because its own totals disagree…***),
    `timeline_invalid` (***The release timeline given to the walk cannot be read…***) and
-   `request_invalid` (***A window is 2 or 3 years…*** or ***The stops asked for are…***, for a
-   request the page built) are LoonInspect's own and say so. Reportable state **AE**.
+   `request_invalid` (***A window is 2 or 3 years…*** or ***The stops and policy definitions asked
+   for are…***, for a request the page built) are LoonInspect's own and say so. So is
+   `definition_invalid`, one definition drawn disabled beside the slider while every stop walks:
+   ***The built-in policy definition … cannot be walked (…), so it was not walked; every stop was.***
+   The bracket names what the build's own definition gets wrong: a trigger outside the closed set
+   (`kev_listed`, `critical`, `critical_or_high`), or a day count the slider does not have.
+   Reportable state **AE**.
 9. **Two sources give different numbers.** They should: their dates differ, and so do the days
    each covers. Compare them only with `align=common`, which cuts every view to the days all the
    sources that can date the track share (`window.aligned` names them, and any left out with its
@@ -4678,6 +4770,22 @@ refusal: the sentence is the whole report.
       when the link was saved: each new copy of LoonSec's data can change how many CVEs a window
       lists. The route answers such a page with no rows and `cves_page.page` above
       `cves_page.pages`. **Show page M** opens the last page. Not a fault.
+    - Above the slider, a sentence about the address's `policy=`, and the first stop drawn:
+      - *The address names a patch policy this page does not have ("…"), so it opens on the first
+        stop, 0 days* → the address names neither a stop nor a built-in definition: a mistyped
+        link, or one from a build that had a definition this one does not. Pick a stop or a
+        definition.
+      - *… is not walked on this data (the reason is beside it, under the slider)…* → the address
+        names a definition the walk refused on the data held; its sentence beside the slider is
+        step 7 or 8.
+      - *This instance's walk carries no …, as a build without the policy definitions answers…* →
+        the page knows the definition and the instance's answer carries none: a page left open
+        across an update or a rollback of the instance. Reload; if it reads the same, it is
+        reportable state **AE**.
+
+      Read directly, `GET /api/patch-policy/walk?stop=` takes a stop's id or a definition's; an id it
+      does not know is a `422` whose `detail` says *Input should be '0d', '1d', … or '30d-or-kev'*,
+      every id the build accepts. The page never sends `stop`.
 11. **The never stop's never-seen count, and what it does not show.** A device kept to the never
     stop never leaves the first version the window starts it on (the walk's
     `policies.never.initial_version`), so under that stop's count the page splits it by why, in
@@ -4698,9 +4806,9 @@ refusal: the sentence is the whole report.
     track and window, and it moves whenever a new copy of LoonSec's data moves the window: the
     page prints both numbers for the view on screen. That version is the newest release available
     by the window's first day (`definitions.steady_state`): the never stop is a device that stops
-    updating that day, not one already behind, so for the window's first 59 days it can run a
+    updating that day, not one already behind, so for the window's first 60 days it can run a
     newer release than the 60-day stop, which opens the window on the newest release it would
-    already have installed. Where most were already fixed, the never stop can count fewer never
+    already have installed. The 0-day stop opens the window on the release the never stop keeps. Where most were already fixed, the never stop can count fewer never
     seen than the 30-day stop, because the CVEs fixed before the version the device keeps are ones
     it never ran. Read the second kind as "NVD names no range here", not as "this device was never
     exposed"; the stops that install are the comparison that means something. The reference
@@ -4794,6 +4902,35 @@ refusal: the sentence is the whole report.
     `fixed_version_not_in_catalog` either: it lists a fix the track's version list does not hold
     at the next version at or above it, with `named`. A copy built since counts that reason 0, and
     the table says it is no longer a reason; an older copy can still count some. Not a fault.
+13. **A loaded policy definition installs a release no stop does, or a severity counts from a
+    CVE's clock day.** Not a refusal. A definition is walked by the rule
+    [patch-policy.md › Policy definitions](patch-policy.md#policy-definitions) states:
+    - A trigger names the release that fixes a CVE of its kind, dated as step 12 dates a fix. It is
+      due `within_days` after the later of two days: the day that release is available, and the day
+      the fact was knowable. *Patch on a KEV* installs a fixing release on the day the CVE was added
+      to the list when the release was out first, and on the release's own day when the listing came
+      first.
+    - It installs the fixing release it names, not the newest: a CVE listed after newer releases are
+      out installs its fix, and the newer releases wait for their own days. *The N updates this Mac
+      makes* says what installed each one: *… for CVE-…, on KEV since …*, *… critical since …*, or,
+      under *30 days, same day on a KEV*, *30 days after its date* for a release no trigger named
+      sooner.
+    - A severity trigger counts from the day LoonSec's data says the CVE first scored critical (or
+      high or critical), where the data states it (`first_scored`, read when present). Where it does
+      not, the CVE's clock day stands in, with today's severity (ruled 2026-11-28). The sentence under
+      the slider gives how many listed CVEs that is (*… the CVE's clock day stands in, with today's
+      severity (N of the listed CVEs)*). Each such CVE's severity carries *today's severity; its
+      clock day stands in*, and a stated day reads *first critical …*. Where the clock day stands in,
+      a CVE that became critical only later is counted as critical from its clock day, before its
+      score was known: read that row's outcome with the basis beside it. The walk's
+      `cves[].knowable` gives each day and its basis, and `counts.knowable` counts them.
+    - The window can open on a release a trigger installed before it: *… was installed before the
+      window opened, for CVE-…*. Under *30 days, same day on a KEV*, that is a release the 30-day stop
+      has not installed yet. Under *Patch on a KEV* and *Patch only on a critical*, the window opens
+      on the release the never stop keeps.
+
+    The definitions add no line to the path: exclusions and `fix_dated_by` are judged on the lines the
+    eight stops run. Not a fault.
 
 **AD.** A patch-policy walk is refused because LoonSec's data does not hold up — the walk of
 LoonSec's own dates disagrees with the totals published with it (`parity`), no window of the app
@@ -4801,7 +4938,8 @@ has totals this build matched (`unchecked`), the data fails the walk's check
 (`document_invalid`), it names a held line it does not date (`ceiling_line_undated` on
 Public), or a Jamf or Fleet timeline is refused over builds of a channel the data names under
 `other_channels` and does not list in full (`too_many_unmatched`, with Firefox ESR builds among
-`facts.in_reach.unmatched`, say) — and reads the same after the next day's exchange. Report the
+`facts.in_reach.unmatched`, say), or a policy definition is not walked on it (`kev_unknown`,
+`severity_unknown`, step 7) — and reads the same after the next day's exchange. Report the
 sentence as worded, the app, track, source and window asked for, `feed.docId` and `feed.asOf`
 from `GET /api/patch-policy/apps`, and the build from Settings › Support (§8). A walk that was
 shown is reportable state **AD** too when a CVE row's `fix_dated_by` names a `fix` the row's own
@@ -4809,7 +4947,8 @@ shown is reportable state **AD** too when a CVE row's `fix_dated_by` names a `fi
 
 **AE.** A patch-policy walk is refused as a defect in LoonInspect: its own totals disagree
 (`invariant`), the timeline or the request it built is refused (`timeline_invalid`,
-`request_invalid`), or a Jamf or Fleet timeline is refused over versions that are plainly the
+`request_invalid`), a built-in policy definition cannot be walked (`definition_invalid`, step 8),
+or a Jamf or Fleet timeline is refused over versions that are plainly the
 track's own (`too_many_unmatched`, `no_matched_versions`); or, with the container up and the
 account holding **app:read**, the page cannot read LoonSec's data's state or a walk (§22 step 11,
 step 10), or cannot draw a walk it read, after a reload; or a walk that was shown says it dated a

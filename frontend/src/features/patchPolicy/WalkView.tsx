@@ -1,10 +1,20 @@
 import { Fragment } from "react";
 import type { PatchPolicyCopy } from "@/features/patchPolicy/copy";
 import { DayGraph } from "@/features/patchPolicy/DayGraph";
+import { DefinitionPicker } from "@/features/patchPolicy/DefinitionPicker";
+import { SEVERITY_KINDS, isDefinitionId, readsSeverity, type InstallCause, type PolicyDefinition } from "@/features/patchPolicy/definitions";
 import { KeepDates } from "@/features/patchPolicy/KeepDates";
 import { PolicySlider } from "@/features/patchPolicy/PolicySlider";
-import { SLIDER_STOPS, type SliderStop } from "@/features/patchPolicy/replay";
-import { channelsSetAside, fixBelowNamedBuild, type PatchPolicyWalk, type WalkFixDating, type WalkOutcome, type WalkSource } from "@/features/patchPolicy/walk";
+import { SLIDER_STOPS, isSliderStop, type SliderStop } from "@/features/patchPolicy/replay";
+import {
+  channelsSetAside,
+  fixBelowNamedBuild,
+  offeredDefinitions,
+  type PatchPolicyWalk,
+  type WalkFixDating,
+  type WalkOutcome,
+  type WalkSource
+} from "@/features/patchPolicy/walk";
 import { reasonWords, type WalkCopy } from "@/features/patchPolicy/walkCopy";
 
 /**
@@ -13,11 +23,18 @@ import { reasonWords, type WalkCopy } from "@/features/patchPolicy/walkCopy";
  * stop side by side, the page of per-CVE rows with each row's clock, the exclusions, and Evidence.
  * Presentational, like `ReplayView`: it is handed a walk the instance computed, its words and the
  * selected stop and page, and loads nothing. Every number is a field of the walk.
+ *
+ * The selected policy is a stop or a built-in policy definition (#954), as the address names it
+ * (`policy`). A loaded definition is drawn as a stop is: its totals beside the stops', its day graph,
+ * each CVE's outcome under it, its rule as the sentence under the slider, and what installed each
+ * update. A policy the walk does not offer (refused on this data, absent from an older instance, or
+ * unknown) opens the first stop, under one sentence that says why.
  */
 export interface WalkViewProps {
   walk: PatchPolicyWalk;
-  stop: SliderStop;
-  onStop: (stop: SliderStop) => void;
+  /** A stop's id or a definition's, as the address names it. */
+  stop: string;
+  onStop: (stop: string) => void;
   onPage: (page: number) => void;
   copy: PatchPolicyCopy;
   words: WalkCopy;
@@ -64,9 +81,45 @@ function fixDatedWords(entry: WalkFixDating, copy: PatchPolicyCopy, words: WalkC
 
 const openAtEnd = (open: { in_window: number; carried_in: number; entered_after_start: number }) => open.in_window + open.carried_in + open.entered_after_start;
 
-export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewProps) {
+/** The stop a loaded definition's `otherwise` is, where the slider's thumb sits while it is loaded. */
+function otherwiseStop(definition: PolicyDefinition): SliderStop {
+  const named = definition.otherwise === "never" ? "never" : `${definition.otherwise}d`;
+  return isSliderStop(named) ? named : SLIDER_STOPS[0];
+}
+
+/** What installed one update under a definition, in the reader's words. */
+function installedWords(by: InstallCause | undefined, definition: PolicyDefinition, words: WalkCopy): string | null {
+  if (!by) return null;
+  if (by.rule === "otherwise") return typeof definition.otherwise === "number" ? words.installedOtherwise(definition.otherwise) : null;
+  return words.installedFor(words.causeWords(by));
+}
+
+export function WalkView({ walk, stop: asked, onStop, onPage, copy, words }: WalkViewProps) {
   const { inputs, window, counts } = walk;
-  const policy = walk.policies[stop];
+  // The built-in definitions the walk offers, each run or refused on this data (#954). A policy the
+  // walk does not offer opens the first stop, and the sentence under the slider's heading says why.
+  const offered = offeredDefinitions(walk);
+  const askedOffer = offered.find((each) => each.definition.id === asked);
+  const definition = askedOffer?.run ? askedOffer.definition : null;
+  const ran = offered.filter((each) => each.run).map((each) => each.definition.id);
+  const stop: string = isSliderStop(asked) || definition ? asked : SLIDER_STOPS[0];
+  const policy = walk.policies[stop] ?? walk.policies[SLIDER_STOPS[0]];
+  const nameOf = (id: string): string =>
+    (copy.stops as Record<string, string>)[id] ?? words.definitionNames[id] ?? offered.find((each) => each.definition.id === id)?.definition.name ?? id;
+  const name = nameOf(stop);
+  const first = copy.stops[SLIDER_STOPS[0]];
+  const addressNote = isSliderStop(asked) || definition
+    ? null
+    : askedOffer?.refusal
+      ? words.definitionRefusedHere(nameOf(asked), first)
+      : isDefinitionId(asked)
+        ? words.definitionNotOffered(nameOf(asked), first)
+        : words.policyUnknown(asked, first);
+  // How many of the listed CVEs a severity trigger reads on their clock day, with today's severity.
+  const standIns = definition
+    ? SEVERITY_KINDS.filter((kind) => definition.when.some((trigger) => trigger.fixes === kind)).reduce((sum, kind) => sum + (counts.knowable?.[kind]?.clock_day ?? 0), 0)
+    : 0;
+  const severityKinds = definition && readsSeverity(definition) ? SEVERITY_KINDS.filter((kind) => definition.when.some((trigger) => trigger.fixes === kind)) : [];
   const timeline = inputs.timeline;
   const app = inputs.name;
   const line = inputs.path.kind === "hold" ? inputs.path.ceiling_line : null;
@@ -131,13 +184,20 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
         {walk.check.state === "unchecked_window" && <span className="block">{words.uncheckedWindow(window.requested.years, app)}</span>}
       </div>
 
-      <PolicySlider stop={stop} onStop={onStop} copy={copy}>
+      {addressNote && <p className="text-sm">{addressNote}</p>}
+      <PolicySlider
+        stop={definition ? otherwiseStop(definition) : (stop as SliderStop)}
+        onStop={onStop}
+        copy={copy}
+        loaded={definition ? { name, said: words.definitionSaid(definition, standIns) } : undefined}
+        control={<DefinitionPicker offered={offered} selected={definition ? stop : null} onSelect={onStop} words={words} context={context(timeline.source)} />}
+      >
         {inputs.path.waits_for_promotion && stop !== "never" && <p className="pt-1 text-sm text-muted-foreground">{copy.waitsForPromotion}</p>}
       </PolicySlider>
 
       <div className={`${card} space-y-2`}>
-        <h2 className={heading}>{words.graphHeading(copy.stops[stop])}</h2>
-        <DayGraph policy={policy} since={window.since} until={window.until} stopName={copy.stops[stop]} words={words} num={copy.num} />
+        <h2 className={heading}>{words.graphHeading(name)}</h2>
+        <DayGraph policy={policy} since={window.since} until={window.until} stopName={name} words={words} num={copy.num} />
       </div>
 
       <div className={card}>
@@ -179,24 +239,33 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
 
       <div className="space-y-1 text-sm text-muted-foreground">
         {policy.initial_version && policy.final_version && <p>{copy.versions(policy.initial_version, policy.final_version)}</p>}
+        {/* A definition's trigger can install a release before the window opens (`definition_opening`). */}
+        {definition && policy.initial_version && policy.opening_by && policy.opening_by.rule !== "otherwise" && (
+          <p><KeepDates text={words.openedBy(policy.initial_version, words.causeWords(policy.opening_by))} /></p>
+        )}
         {policy.installs.length > 0 && (
           <details>
             <summary className="cursor-pointer">{copy.installs(policy.installs.length)}</summary>
             {/* As many columns as fit one update a line ("152.0.7977.100 · 2026-09-01": two beside the
-                app list at 1024 px, three at 1280), and a date never wraps at its hyphens. */}
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-x-3 pt-1 font-mono text-xs">
-              {policy.installs.map((install) => (
-                <li key={`${install.version} ${install.date}`}>
-                  {install.version ?? "—"} · <span className="whitespace-nowrap">{install.date}</span>
-                </li>
-              ))}
+                app list at 1024 px, three at 1280), and a date never wraps at its hyphens. Under a
+                definition each update says what installed it, so a line holds one update. */}
+            <ul className={`grid gap-x-3 pt-1 font-mono text-xs ${definition ? "grid-cols-1" : "grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]"}`}>
+              {policy.installs.map((install) => {
+                const why = definition ? installedWords(install.by, definition, words) : null;
+                return (
+                  <li key={`${install.version} ${install.date}`}>
+                    {install.version ?? "—"} · <span className="whitespace-nowrap">{install.date}</span>
+                    {why && <span className="font-sans"> · <KeepDates text={why} /></span>}
+                  </li>
+                );
+              })}
             </ul>
           </details>
         )}
       </div>
 
       <div className="space-y-1">
-        <h2 className={heading}>{copy.compareHeading}</h2>
+        <h2 className={heading}>{ran.length > 0 ? words.compareHeading : copy.compareHeading}</h2>
         {/* 38rem, not more: beside the app list at a 1280 px window the view is about 41rem wide, and a
             floor above that clipped the last column (Carried in) behind a sideways scroll. The headings
             are smaller than the cells and the padding tighter, so each German heading's longest word
@@ -211,12 +280,17 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
               </tr>
             </thead>
             <tbody>
-              {SLIDER_STOPS.map((each) => {
+              {/* The stops, then each definition the walk ran (#954). A stop's label stays whole on its
+                  line; a definition's name wraps at its spaces, never inside a word, so the column stays
+                  as narrow as the stops make it and the row still fits at 1280 px in either language. */}
+              {[...SLIDER_STOPS, ...ran].map((each) => {
                 const totals = walk.policies[each];
+                if (!totals) return null;
+                const isStop = isSliderStop(each);
                 return (
                   <tr key={each} aria-current={each === stop || undefined} className={`border-b last:border-0 ${each === stop ? "bg-muted font-medium" : ""}`}>
-                    <td className={`${tight} whitespace-nowrap`}>
-                      <button type="button" className="underline-offset-2 hover:underline" onClick={() => onStop(each)}>{copy.stops[each]}</button>
+                    <td className={`${tight} ${isStop ? "whitespace-nowrap" : "hyphens-manual"}`}>
+                      <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => onStop(each)}>{nameOf(each)}</button>
                     </td>
                     {[totals.never_seen, totals.never_seen_outside_affected_range, totals.exposed, totals.exposure_days, totals.update_events, openAtEnd(totals.open_at_window_end), totals.carried_in].map(
                       (value, index) => <td key={index} className={`${tight} tabular-nums`}>{copy.num(value)}</td>
@@ -250,7 +324,7 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
             <table className="w-full min-w-[38rem] text-sm">
               <thead className="sticky top-0 border-b bg-card text-left text-muted-foreground">
                 <tr>
-                  {[copy.colCve, copy.colOutcome(copy.stops[stop]), words.colFrom, words.colClock, copy.colSeverity, words.colKev].map((label, index) => (
+                  {[copy.colCve, copy.colOutcome(name), words.colFrom, words.colClock, copy.colSeverity, words.colKev].map((label, index) => (
                     <th key={label} className={`${ledger} ${head} ${index === 1 ? "" : fit}`}>{label}</th>
                   ))}
                 </tr>
@@ -269,7 +343,15 @@ export function WalkView({ walk, stop, onStop, onPage, copy, words }: WalkViewPr
                           <span className="whitespace-nowrap">{row.clock_date ?? "—"}</span>
                           {row.clock && <span className="block text-xs text-muted-foreground">{words.clocked[row.clock] ?? row.clock}</span>}
                         </td>
-                        <td className={ledger}>{row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}</td>
+                        <td className={ledger}>
+                          {row.severity ? (copy.severity[row.severity] ?? row.severity) : copy.unscored}
+                          {/* Under a definition that reads severity, the day that counted and its basis: where
+                              LoonSec's data states no first-scored day, the page says the clock day stood in. */}
+                          {severityKinds.map((kind) => {
+                            const fact = row.knowable?.[kind];
+                            return fact ? <span key={kind} className="block text-xs text-muted-foreground"><KeepDates text={words.rowBasis(kind, fact)} /></span> : null;
+                          })}
+                        </td>
                         <td className={`${ledger} tabular-nums`}>{row.kev_date_added ? <KeepDates text={words.kevListed(row.kev_date_added)} /> : "—"}</td>
                       </tr>
                       {fixes.length > 0 && (

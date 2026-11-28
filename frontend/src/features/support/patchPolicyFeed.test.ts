@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { STALE_AFTER_MS, describeFeed, publisherRunning, type PatchPolicyFeed } from "@/features/support/patchPolicyFeed";
+import { STALE_AFTER_MS, describeFeed, onlyOlder, publisherRunning, type PatchPolicyFeed } from "@/features/support/patchPolicyFeed";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
 
@@ -9,7 +9,7 @@ function feed(state: PatchPolicyFeed["state"], extra: Partial<PatchPolicyFeed> =
   return {
     state,
     sentence: "",
-    algorithm: "patch_walk/1",
+    algorithm: "patch_walk/2",
     docId: null,
     asOf: null,
     fetchedAt: null,
@@ -70,8 +70,14 @@ const BACKEND: [string, PatchPolicyFeed, string][] = [
   ],
   [
     "algorithm unknown",
-    feed("algorithm_unknown", { ...held, detail: "patch_walk/2" }),
-    "This build reads patch_walk/1; LoonSec's last exchange named only patch_walk/2. If the next exchange names the same, update LoonInspect. Showing the copy dated 2026-11-23."
+    feed("algorithm_unknown", { ...held, detail: "patch_walk/3" }),
+    "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/3. If the next exchange names the same, update LoonInspect. Showing the copy dated 2026-11-23."
+  ],
+  [
+    // patch_walk/1 is never published (ruled 2026-11-27): a v1.5 build offered only it is not behind.
+    "algorithm unknown, only an older one, no copy",
+    feed("algorithm_unknown", { detail: "patch_walk/1" }),
+    "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/1, which older builds read. Nothing on this instance needs updating; report it if it lasts a day. This instance holds no copy yet."
   ],
   [
     "download failed",
@@ -162,6 +168,26 @@ describe("describeFeed", () => {
       expect(german).not.toBe("");
       expect(german).not.toBe(describeFeed(value, words, NOW));
     }
+  });
+
+  it("tells data only older builds read from data for a newer one, as the backend's only_older does", () => {
+    for (const [named, older] of [
+      ["patch_walk/1", true],
+      ["patch_walk/1, patch_walk/0", true],
+      ["patch_walk/3", false],
+      ["patch_walk/1, patch_walk/3", false],
+      ["other_walk/1", false],
+      ["x", false],
+      ["", false],
+      [null, false]
+    ] as const) {
+      expect(onlyOlder(named, "patch_walk/2"), String(named)).toBe(older);
+    }
+    expect(onlyOlder("patch_walk/1", "not_a_walk")).toBe(false);
+    const german = de.support.patchPolicyFeed;
+    expect(describeFeed(feed("algorithm_unknown", { ...held, detail: "patch_walk/1" }), german, NOW)).toBe(
+      "Dieser Build liest patch_walk/2; der letzte Austausch mit LoonSec nannte nur patch_walk/1, was ältere Builds lesen. Auf dieser Instanz muss nichts aktualisiert werden; melden Sie es, wenn es länger als einen Tag anhält. Angezeigt wird die Kopie vom 2026-11-23."
+    );
   });
 
   it("names the stale copy's cause in German too", () => {

@@ -8,30 +8,52 @@
  * `kind`, `schema` or CVE clock, or one whose own totals disagree, is refused whole rather than drawn
  * in part.
  *
- * Schema 2 is the replay that names its own release dates: `timeline` says where they come from and
- * what a date means, and each release and fix carries `release_date` on that timeline. Schema 1 has
- * no `timeline` block, the part of the file this page reads to name and link where its release dates
- * come from, so this page refuses it rather than print dates without naming and linking their source.
+ * Schema 3 is the replay of the eight stops, each labelled by the days it waits (ruled 2026-11-27,
+ * "0 = same day"): a stop of N days installs each release N days after the date its timeline gives
+ * it, and every day row says so in its own `install_delay_days`, which must be the number in its stop
+ * id. Like schema 2 it names its own release dates: `timeline` says where they come from and what a
+ * date means, and each release and fix carries `release_date` on that timeline.
+ *
+ * Schema 2 counts the old way: its N-day row waits N - 1 days (the file's own `definitions.install`
+ * says the install date is the release date + (D - 1) days), so drawn under this page's stops every
+ * number would sit one day early. It is refused whole, in words, and never relabelled here: LoonSec
+ * writes the replays, and this page computes nothing in them. Schema 1 has no `timeline` block, the
+ * part of the file this page reads to name and link where its release dates come from, so this page
+ * refuses it rather than print dates without naming and linking their source.
  *
  * `cve_clock` names the clock every CVE is placed on. This page states one clock, NVD's publication
  * date, in its own words, so a file on any other clock is refused rather than drawn under words that
  * would misstate it.
  */
 
+import { POLICY_DEFINITION_IDS } from "@/features/patchPolicy/definitions";
+
 export const REPLAY_KIND = "patch_policy_replay";
-export const REPLAY_SCHEMA = 2;
+export const REPLAY_SCHEMA = 3;
+/** The schema that counts the old way, an N-day row being N - 1 days waited: refused in its own words. */
+export const REPLAY_OLD_COUNT_SCHEMA = 2;
 /** The one CVE clock the page's words state: each CVE counts from the day NVD published it. */
 export const REPLAY_CVE_CLOCK = "published";
 
-/** The slider's stops, in order: the day policies, then Never. */
-export const SLIDER_STOPS = ["1d", "7d", "14d", "30d", "60d", "never"] as const;
+/** The slider's stops, in order: the day policies, each labelled by the days it waits, then Never. */
+export const SLIDER_STOPS = ["0d", "1d", "3d", "7d", "14d", "30d", "60d", "never"] as const;
 export type SliderStop = (typeof SLIDER_STOPS)[number];
+/** The day policies, which wait the days their id names; `never` installs nothing. */
+export type DayStop = Exclude<SliderStop, "never">;
+export const DAY_STOPS = SLIDER_STOPS.filter((stop): stop is DayStop => stop !== "never");
+/** The days a day stop waits after the date a release is given: the number in its id. */
+export const stopDays = (stop: DayStop): number => Number.parseInt(stop, 10);
 
-/** Tabled by Kyle, 2026-10-02: computed in the file, never on the slider and never quoted. The page
- *  prints its definition, which says so, and none of its numbers. */
-export const TABLED_POLICY = "critical_or_kev";
+/** The file's `critical_or_kev` row, superseded by the built-in policy definitions (ruled
+ *  2026-11-28, #954): computed in the file, never on the slider and never quoted. LoonSec replaces it
+ *  with rows on the ruled definitions when it writes the files again. A file reads with it, without it,
+ *  or with rows keyed by a definition id instead, and the page draws and quotes none of them: it prints
+ *  this row's definition apart, in the file's words, and none of its numbers. */
+export const SUPERSEDED_POLICY = "critical_or_kev";
 
 export interface PolicyTotals {
+  /** On a day row, the days it waits after a release's date: the number in its stop id (schema 3). */
+  install_delay_days?: number | null;
   never_seen: number;
   never_seen_outside_affected_range: number;
   exposed: number;
@@ -148,6 +170,10 @@ export type Refusal =
   | { why: "unreadable" }
   | { why: "kind"; found: string }
   | { why: "schema"; found: string }
+  /** Schema 2: its N-day row is N - 1 days waited, so it cannot be drawn under labels that mean days waited. */
+  | { why: "old_count" }
+  /** A day row that does not state the days it waits as its stop id's number; `found` as the file has it. */
+  | { why: "delay"; stop: DayStop; found: string }
   | { why: "clock"; found: string }
   | { why: "missing"; key: string }
   | { why: "totals"; detail: string };
@@ -194,6 +220,18 @@ function firstMissing(file: Json): string | null {
   return null;
 }
 
+/** The first day row that does not wait the days its stop id names, with what it states instead;
+ *  `null` when every one does. A schema-3 file states each row's delay, so the page never infers
+ *  the count from a label: a row that waits otherwise, or does not say, is not drawn under it. */
+function firstWrongDelay(file: Json): { stop: DayStop; found: string } | null {
+  const policies = file.policies as Json;
+  for (const stop of DAY_STOPS) {
+    const stated = (policies[stop] as Json).install_delay_days;
+    if (stated !== stopDays(stop)) return { stop, found: shown(stated) };
+  }
+  return null;
+}
+
 /** The first of the file's own totals that does not agree with another, in its own key names; `null`
  *  when they all close. Checked, never repaired: the page prints these numbers side by side, so a
  *  headline over a table that counts differently would be two answers on one screen. */
@@ -207,8 +245,9 @@ function firstDisagreement(replay: PatchPolicyReplay): string | null {
   if (replay.exclusions.cves.length !== excluded) {
     return `exclusions.cves lists ${replay.exclusions.cves.length} ≠ counts.cves_excluded ${excluded}`;
   }
-  // The tabled policy is held to the same sum when the file carries it, though none of it is drawn.
-  for (const key of [...SLIDER_STOPS, TABLED_POLICY]) {
+  // The superseded row, and a row keyed by a definition id, are held to the same sum when the file
+  // carries them, though none of them is drawn: the file's own totals agree, or it is not drawn at all.
+  for (const key of [...SLIDER_STOPS, SUPERSEDED_POLICY, ...POLICY_DEFINITION_IDS]) {
     const policy = replay.policies[key];
     if (!policy || !isCount(policy.never_seen) || !isCount(policy.exposed)) continue;
     if (policy.never_seen + policy.exposed !== replayed) {
@@ -244,12 +283,16 @@ function firstDisagreement(replay: PatchPolicyReplay): string | null {
 export function readReplay(raw: unknown): ReadResult {
   if (!isRecord(raw)) return { refusal: { why: "unreadable" } };
   if (raw.kind !== REPLAY_KIND) return { refusal: { why: "kind", found: shown(raw.kind) } };
+  // The old count has its own words: its rows would be drawn a day early under these stops.
+  if (raw.schema === REPLAY_OLD_COUNT_SCHEMA) return { refusal: { why: "old_count" } };
   if (raw.schema !== REPLAY_SCHEMA) return { refusal: { why: "schema", found: shown(raw.schema) } };
   // Before any other key: the page's words state this clock, so a file on another one is not drawn.
   if (raw.cve_clock === undefined) return { refusal: { why: "missing", key: "cve_clock" } };
   if (raw.cve_clock !== REPLAY_CVE_CLOCK) return { refusal: { why: "clock", found: shown(raw.cve_clock) } };
   const key = firstMissing(raw);
   if (key) return { refusal: { why: "missing", key } };
+  const delay = firstWrongDelay(raw);
+  if (delay) return { refusal: { why: "delay", ...delay } };
   const replay = raw as unknown as PatchPolicyReplay;
   const detail = firstDisagreement(replay);
   return detail ? { refusal: { why: "totals", detail } } : { replay };
