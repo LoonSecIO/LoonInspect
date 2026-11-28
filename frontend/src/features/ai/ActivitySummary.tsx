@@ -48,7 +48,7 @@ export function ActivitySummary({ report: r, select }: { report: ActivityReport;
         <div className="grid gap-5 lg:grid-cols-2">
           <section className="rounded-lg border p-4"><h3 className="font-semibold">{s.purposesTitle}</h3><ul className="mt-3 space-y-2">{r.purposes.map(purpose => <li key={purpose.feature}>
             <button className="flex w-full items-center justify-between gap-3 rounded px-2 py-2 text-left text-sm hover:bg-muted" onClick={() => select("purpose", purpose.feature)}>
-              <span className="underline underline-offset-4">{purpose.label}</span><span className="font-semibold tabular-nums">{s.attemptCount(count(purpose.attempts))}</span>
+              <span className="underline underline-offset-4">{c.purposeLabel(purpose.label)}</span><span className="font-semibold tabular-nums">{s.attemptCount(count(purpose.attempts))}</span>
             </button></li>)}</ul></section>
           <section className="rounded-lg border p-4"><h3 className="font-semibold">{s.trendTitle}</h3><p className="mt-1 text-xs text-muted-foreground">{s.trendHelp}</p>
             <div className="mt-3 flex h-32 items-stretch gap-0.5" role="group" aria-label={s.trendGroup}>{r.trend.map(day => <button key={day.day}
@@ -77,7 +77,7 @@ export function ActivitySummary({ report: r, select }: { report: ActivityReport;
         <p className="mb-3 text-xs text-muted-foreground">{s.durationsNote}</p>
         <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{s.groupColumns.map(label => <th scope="col" className="p-2" key={label}>{label}</th>)}</tr></thead>
           <tbody>{r.groups.map((group, index) => <tr className="border-t" key={index}>
-            <td className="p-2">{group.serviceLabel}<br />{group.purpose}{group.legacy && <span className="block">{s.legacy}</span>}</td>
+            <td className="p-2">{group.serviceLabel}<br />{c.purposeLabel(group.purpose)}{group.legacy && <span className="block">{s.legacy}</span>}</td>
             <td className="p-2 break-all">{group.requested || c.unknown} → {group.reported || c.unknown}</td>
             <td className="p-2">{outcomeLabel(group.outcome)}</td><td className="p-2">{count(group.attempts)}</td>
             <td className="p-2"><Measured value={group.dispatches} reports={group.dispatchReports} attempts={group.attempts} /></td>

@@ -164,6 +164,12 @@ review, the migration detail pages and the migration briefing (the change log, 2
 | `fleet_maintained_apps` | **keep off**; operator opt-in to the catalog source and its licence remains required, and it now also lists Migration review (#893) | verdict at v2.0.0 |
 | `INSTANCE_KIND`, **Check for Updates Daily** | **keep**; shell identity and the Mac user's update preference remain necessary | never |
 
+## Explain (#984)
+
+Explain requires the instance flag `ai_features`, AI-inference consent, and its own
+per-tenant setting with a saved provider. The setting planned in #985 defaults off on
+both new and upgraded instances. Enabling the umbrella flag alone leaves Explain off.
+
 ## How a gate runs
 
 1. Before the release is tagged, list every switch (`grep -n ': bool = ' backend/app/core/config.py`

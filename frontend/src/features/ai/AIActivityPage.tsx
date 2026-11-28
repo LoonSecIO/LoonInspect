@@ -72,7 +72,7 @@ export function AIActivityPage() {
         <details open={filterKeys.some(name => query.has(name))}><summary className="cursor-pointer text-sm font-medium">{h.filters}</summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Filter label={h.service} value={query.get("service") ?? ""} options={(report?.facets.services ?? []).map(service => ({ id: service.serviceId, label: service.serviceLabel }))} onChange={value => select("service", value)} />
-          <Filter label={h.purpose} value={query.get("purpose") ?? ""} options={report?.facets.purposes ?? []} onChange={value => select("purpose", value)} />
+          <Filter label={h.purpose} value={query.get("purpose") ?? ""} options={(report?.facets.purposes ?? []).map(p => ({ id: p.id, label: c.purposeLabel(p.label) }))} onChange={value => select("purpose", value)} />
           <Filter label={h.model} value={query.get("model") ?? ""} options={(report?.facets.models ?? []).map(model => ({ id: model, label: model }))} onChange={value => select("model", value)} />
           <Filter label={h.outcome} value={query.get("outcome") ?? ""} options={report?.facets.outcomes ?? []} onChange={value => select("outcome", value)} />
         </div>

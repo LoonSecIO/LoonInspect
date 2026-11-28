@@ -12,7 +12,10 @@ export const en = {
   patchPolicy: patchPolicyEnglish,
   patchPolicyWalk: walkEnglish,
   mcp: mcpEnglish,
-  aiActivity: aiActivityEnglish,
+  aiActivity: {
+    ...aiActivityEnglish,
+    purposeLabel: (label: string) => label === "explain" ? "Explanations" : label,
+  },
   fleetPlanning: fleetPlanningEnglish,
   fleetDetail: fleetDetailEnglish,
   intelligence: {

@@ -234,6 +234,13 @@ it got before, the closest filters; one that talks it into refusing gets nothing
 reaches a row the filters could not.
 
 
+2026-11-28, recording the 2026-08-29 ruling. A model compresses what the product already
+knows. It never concludes.
+
+2026-11-28, amendment for Explain alone. The reader sees the facts code selected first.
+Explain may then show one inference, explicitly labelled as the model's guess. A click
+requests one answer. There is no typed follow-up.
+
 ## Exclusion ranking boundary (#409, 2026-09-20)
 
 This slot sends inventory labels to a local model. Its builder applies the existing model
@@ -273,3 +280,24 @@ apart from them (P2). Its output is a closed list, one to three distinct codes t
 words each code itself, so the model has no text channel to the page (P4). `FleetBriefing.tsx` is in S4's text-only scan. Nothing it returns is
 stored or applied: it only picks which of the report's own counts lead (P5). `tests/test_fleet_briefing.py` holds the reply corpus, and
 `tests/test_fleet_briefing_db.py` what leaves.
+
+## Explain boundary (#984, 2026-11-28)
+
+A request declares a kind and its subject. The server checks access to the subject and
+reads the enabled evidence sources. Page text, selections and free-form questions are
+outside the input contract. The reader receives linkable facts even with AI off or if a
+provider fails. Fleet values, definitions and scripts are untrusted data.
+
+The model's copy contains only eligible facts. Personal values stay in the reader's copy.
+Script text requires a provider verified to run on the host. A withheld fact says why.
+The builder sanitises fleet text, marks truncated values and drops whole lower-priority
+facts to fit the context budget. Static instructions are separate from the JSON data.
+The share log records the actual field names, destination and requested model before
+dispatch through the adapter, under the feature code `explain`.
+
+One bounded call can return a plain-text `summary` and an optional plain-text `inference`.
+Reject extra fields, markup and numbers in the summary that have no basis in the facts.
+Render accepted text as text, keeping the guess separate from the summary. On refusal,
+timeout or invalid output, the reader still has the facts. The answer cannot take an
+action or alter a record. AI Activity records the outcome. Neither the answer nor the
+evidence is exported to Splunk, and model output is never saved.
