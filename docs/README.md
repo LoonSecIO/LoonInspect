@@ -47,6 +47,7 @@ ends with a reading order through the rest.
 | [`ai-threat-model.md`](ai-threat-model.md) | review of 2026-09-05, findings closed in #323 | The fleet as untrusted input: the attack surface, the principles, the tests that hold them. |
 | [`auth-design.md`](auth-design.md) | implemented through Phase 6, re-checked 2026-09-16 | Accounts, sessions, audit log, and the seam OIDC drops into. |
 | [`data-access-grain.md`](data-access-grain.md) | ruled, 2026-08-30 (#111) | Why row-level scoping is v-never and tenancy is the answer. Prose only. |
+| [`spikes/attribute-breakdown-at-40k.md`](spikes/attribute-breakdown-at-40k.md) | finding, 2026-11-28 (#966) | Whether the ledger answers attribute and group counts inside a second at 40,000 Macs: yes for values, no for a group rule once the ledger has history. |
 
 ## Runbook
 
