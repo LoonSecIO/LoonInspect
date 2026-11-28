@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from app.core.ai_activity import health
+from app.core.ai_activity import PURPOSES, health
 from app.core.ai_usage import failure_category, service_identity
 from app.schemas.ai import AIConfigIn
 
@@ -151,3 +151,10 @@ async def test_recording_failure_names_its_cause_and_never_its_message(caplog, m
     assert "2 seconds" in slow.getMessage() and "database load" in slow.getMessage()
     assert slow.error_type == "TimeoutError"
     assert "SYNTHETIC_UNSAFE_DATABASE_DETAIL" not in caplog.text
+
+
+def test_every_purpose_is_worded_and_explain_is_one_of_them():
+    # The page prints a purpose as the server words it (`activityCopy.ts`), so a label
+    # that is its own code reaches the reader as a code (#984).
+    assert PURPOSES["explain"] == "Explanations"
+    assert all(label[:1].isupper() and label != code for code, label in PURPOSES.items())
