@@ -73,7 +73,7 @@ export function DevicesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams]);
 
-  function renderActions(corpusAsOf: string | null) {
+  function renderActions({ corpusAsOf }: DeviceTableAnswer) {
     return <>
       <FilterBar
         filters={filters}
@@ -127,15 +127,38 @@ export function DevicesPage() {
   );
 }
 
+/** What the table knows about the answer on screen, for the slot above it. */
+export interface DeviceTableAnswer {
+  corpusAsOf: string | null;
+  /** The Macs matching this query. Null while it is being asked or was refused: the last
+   *  question's count is not this one's, and a slot that printed it would say it was. */
+  total: number | null;
+}
+
 interface DeviceTableProps {
+  /** Compared by value, so a caller may build it as it renders. */
   query: DeviceFilters;
   onPageChange: (page: number) => void;
   extraColumn?: { header: ReactNode; cell: (device: Device) => ReactNode };
-  actions?: (corpusAsOf: string | null) => ReactNode;
+  /** Rendered above the table. The table returns sibling blocks and leaves the space
+   *  between them to the caller's container (`space-y-6` on the Devices page). */
+  actions?: (answer: DeviceTableAnswer) => ReactNode;
 }
 
-export function DeviceTable({ query: filters, onPageChange, extraColumn, actions }: DeviceTableProps) {
+// Refusals that arrive with a sentence written for the person reading the page: a device
+// scope the API cannot read (422, #961), a regex in one that ran out of time (408), and a
+// `vuln` filter nothing can answer (409, #535).
+const REFUSALS = new Set([408, 409, 422]);
+
+export function DeviceTable({ query, onPageChange, extraColumn, actions }: DeviceTableProps) {
   const { t } = useLocale();
+  // A page builds `query` as it renders, or memoises it on something that moves for other
+  // reasons (the whole URL, as the Devices page does). Compared by identity, each such
+  // render was a new question: "Loading" again and one more request, and a parent that
+  // re-rendered faster than the debounce below never loaded at all. The serialised query
+  // is the question, so only a different one asks again.
+  const question = JSON.stringify(query);
+  const filters = useMemo(() => JSON.parse(question) as DeviceFilters, [question]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [total, setTotal] = useState(0);
   // The stamp the counts came from (#535). Null is "nothing is answering", which is why
@@ -179,7 +202,7 @@ export function DeviceTable({ query: filters, onPageChange, extraColumn, actions
           // with an empty page (#535), and the refusal names both of its causes. Printing
           // "Could not load devices" over it would throw those words away — a pasted link
           // is exactly how someone arrives here.
-          setError(caught instanceof ApiError && caught.status === 409 && caught.detail ? caught.detail : t.devices.errorLoading);
+          setError(caught instanceof ApiError && REFUSALS.has(caught.status) && caught.detail ? caught.detail : t.devices.errorLoading);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -194,13 +217,14 @@ export function DeviceTable({ query: filters, onPageChange, extraColumn, actions
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = filters.page ?? 1;
-  // Eight, or nine where a corpus answers: the empty and error rows span the table, and a
-  // hard-coded 8 beside a conditional column is how one of them stops spanning it.
+  // Eight, one more where a corpus answers and one more for a caller's column: the empty
+  // and error rows span the table, and a hard-coded 8 beside a conditional column is how
+  // one of them stops spanning it.
   const columns = 8 + Number(corpusAsOf !== null) + Number(extraColumn !== undefined);
 
   return (
     <>
-      {actions?.(corpusAsOf)}
+      {actions?.({ corpusAsOf, total: loading || error ? null : total })}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
