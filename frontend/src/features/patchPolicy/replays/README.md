@@ -15,13 +15,25 @@ The page's slider has eight stops, `0d`, `1d`, `3d`, `7d`, `14d`, `30d`, `60d` a
 stop's label is the days it waits (ruled 2026-11-27, "0 = same day"): the 0-day stop installs a
 release on the date the file's timeline gives it, the 1-day stop the day after, the 3-day stop three
 days after. The page reads **schema 3**, the replay that counts this way: it carries a row under
-`policies` for each of the eight stops (and the tabled `critical_or_kev`, which it never draws), and
-each of the seven day rows states the days it waits as `install_delay_days`, which must be the
+`policies` for each of the eight stops, and each of the seven day rows states the days it waits as
+`install_delay_days`, which must be the
 number in its stop's id (`7d` waits 7). A file whose day row does not say so, or says otherwise, is
 refused whole. A **schema-2** file counts the old way: its N-day row is N − 1 days waited, as its
 own `definitions.install` says (the install date is the release date + (D − 1) days), so drawn under
 these stops each number would sit a day early. The page refuses a schema-2 file whole, in words
 (troubleshooting.md §22 step 4), and never relabels or recomputes one: LoonSec writes the replays.
+
+**The `critical_or_kev` row is superseded.** Each file also carries a `critical_or_kev` row,
+computed in the file and never drawn: a release installed on the first day a CVE it fixes is
+KEV-listed or critical, with today's NVD score standing in for a history the file does not hold.
+The built-in policy definitions superseded it on 2026-11-28 (#954; ruled that day, "Accept all
+five"): *Patch on a KEV*, *Patch only on a critical* and *30 days, same day on a KEV*, which the
+day-walk runs beside the stops ([docs/patch-policy.md](../../../../../docs/patch-policy.md#policy-definitions)).
+When LoonVD writes these files again, it replaces the row with rows keyed by those definitions' ids
+(`kev-only`, `critical-only`, `30d-or-kev`). The page reads a schema-3 file with the row, without it,
+or with rows on the definitions, holds each such row to the file's own totals, and draws and quotes
+none of them: the fallback offers no definition, and prints the old row's definition apart, in the
+file's words, with none of its numbers.
 
 **The four files listed below are schema 2, on the old count, and the page refuses each.** Until
 they are replaced, the fallback is that refusal, one app at a time, never a drawing. Their schema-3
