@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PropsWithChildren } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { CircleQuestionMark } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocale } from "@/i18n/LocaleContext";
@@ -7,22 +7,30 @@ import "./explainMenu.css";
 
 export function ExplainButton({ target }: { target: ExplainTarget }) {
   const { choose, label } = useExplainMenu();
-  return <button type="button" aria-label={label} title={label}
+  return <button type="button" data-explain-ask="" aria-label={label} title={label}
     className="explain-ask inline-flex size-6 items-center justify-center rounded-full text-sm hover:bg-accent"
-    onClick={(event) => { event.stopPropagation(); choose(target); }}>
+    onClick={(event) => { event.stopPropagation(); choose(target, event.currentTarget); }}>
     <CircleQuestionMark aria-hidden="true" size={16} />
   </button>;
 }
 
+function refocus(opener: HTMLElement) {
+  if (opener.isConnected) opener.focus({ preventScroll: true });
+}
+
 export function ExplainMenuProvider({ aiAvailable, onExplain, children }: PropsWithChildren<{
   aiAvailable: boolean;
-  onExplain: (target: ExplainTarget) => void;
+  /** `opener` already has focus again when this runs, so a dialog opened from here records
+   *  it as the place to return to. */
+  onExplain: (target: ExplainTarget, opener: HTMLElement) => void;
 }>) {
   const { t } = useLocale();
   const label = aiAvailable ? t.explain.action : t.explain.facts;
   const [menu, setMenu] = useState<ExplainMenuState | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const item = useRef<HTMLButtonElement>(null);
+  const handler = useRef(onExplain);
+  useEffect(() => { handler.current = onExplain; }, [onExplain]);
 
   useLayoutEffect(() => {
     if (!menu || !box.current) return;
@@ -37,40 +45,60 @@ export function ExplainMenuProvider({ aiAvailable, onExplain, children }: PropsW
     const outside = (event: PointerEvent) => {
       if (!box.current?.contains(event.target as Node)) setMenu(null);
     };
-    const close = () => setMenu(null);
+    // A keyboard scroll (Page Down) happens with focus inside the menu, which is about to go.
+    const scrolled = () => {
+      if (box.current?.contains(document.activeElement)) refocus(menu.opener);
+      setMenu(null);
+    };
+    // The marked element can go while its menu is open: a refetch, or a route change under a
+    // provider mounted in the layout. A menu left standing would send the last page's target.
+    const gone = new MutationObserver(() => {
+      if (!menu.opener.isConnected) setMenu(null);
+    });
     document.addEventListener("pointerdown", outside, true);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", scrolled, true);
+    gone.observe(document.body, { childList: true, subtree: true });
     return () => {
       document.removeEventListener("pointerdown", outside, true);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", scrolled, true);
+      gone.disconnect();
     };
   }, [menu]);
 
-  function choose(target: ExplainTarget) {
+  const choose = useCallback((target: ExplainTarget, opener: HTMLElement) => {
     setMenu(null);
-    onExplain(target);
-  }
+    refocus(opener);
+    handler.current(target, opener);
+  }, []);
+  // Stable while the label is: every marked element reads this, and a new object on each
+  // open and close would re-render all of them.
+  const value = useMemo(() => ({ label, open: setMenu, choose }), [label, choose]);
 
-  return <ExplainContext.Provider value={{ label, open: setMenu, choose }}>
+  return <ExplainContext.Provider value={value}>
     {children}
     {menu && createPortal(
       <div role="menu" aria-label={label} ref={box}
         className="fixed z-50 w-max max-w-full rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+        // A click inside must not move focus. WebKit blurs a focused button on mouse down, and
+        // a menu that closes on blur was gone before the click arrived (Safari, the Mac app).
+        onMouseDown={event => event.preventDefault()}
+        // On Windows the Menu key's own contextmenu arrives on key up, at the item.
+        onContextMenu={event => event.preventDefault()}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(null); }}
         onKeyDown={event => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" || event.key === "Tab") {
             event.preventDefault();
             event.stopPropagation();
             setMenu(null);
-            menu.opener.focus({ preventScroll: true });
-          } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            refocus(menu.opener);
+          } else if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
             event.preventDefault();
             item.current?.focus();
           }
         }}>
-        <button type="button" role="menuitem" ref={item}
+        <button type="button" role="menuitem" tabIndex={-1} ref={item}
           className="rounded-sm px-3 py-1.5 text-sm hover:bg-accent focus:bg-accent"
-          onClick={() => choose(menu.target)}>{label}</button>
+          onClick={() => choose(menu.target, menu.opener)}>{label}</button>
       </div>, document.body)}
   </ExplainContext.Provider>;
 }

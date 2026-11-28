@@ -7,6 +7,7 @@ export interface ExplainTarget {
 
 export interface ExplainMenuState {
   target: ExplainTarget;
+  /** Where focus goes back to: the ask button of the marked element, when it has one. */
   opener: HTMLElement;
   x: number;
   y: number;
@@ -15,7 +16,7 @@ export interface ExplainMenuState {
 export const ExplainContext = createContext<{
   label: string;
   open: (menu: ExplainMenuState) => void;
-  choose: (target: ExplainTarget) => void;
+  choose: (target: ExplainTarget, opener: HTMLElement) => void;
 } | null>(null);
 
 export function useExplainMenu() {
@@ -24,26 +25,33 @@ export function useExplainMenu() {
   return context;
 }
 
-/** Spread on the value or row. Place an ExplainButton with the same target inside it. */
+// A link or a control inside a marked element keeps its own menu and its own keys. The ask
+// button is the one control that belongs to the mark.
+const OWNERS = "[data-explainable], a[href], button:not([data-explain-ask]), input, textarea, select, [contenteditable=true]";
+
+function marks(event: { target: EventTarget; currentTarget: Element }) {
+  return (event.target as Element).closest(OWNERS) === event.currentTarget;
+}
+
+/** Spread on the value or row, with an ExplainButton for the same target inside it. The
+ *  button is the keyboard's way in, so the marked element is not a tab stop of its own: a
+ *  page that marks fifty values gains fifty stops, not a hundred. */
 export function useExplainable(target: ExplainTarget) {
   const { open } = useExplainMenu();
   return {
     "data-explainable": "",
-    "aria-haspopup": "menu" as const,
-    tabIndex: 0,
     onContextMenu(event: MouseEvent<HTMLElement>) {
-      if (event.shiftKey || event.defaultPrevented) return;
-      // Preserve native actions for a link or control inside a marked row.
-      const owner = (event.target as Element).closest("[data-explainable], a[href], button, input, textarea, select, [contenteditable=true]");
-      if (owner !== event.currentTarget) return;
+      if (event.shiftKey || event.defaultPrevented || !marks(event)) return;
       event.preventDefault();
-      open({ target, opener: event.currentTarget, x: event.clientX, y: event.clientY });
+      const marked = event.currentTarget;
+      const opener = marked.querySelector<HTMLElement>("[data-explain-ask]") ?? marked;
+      open({ target, opener, x: event.clientX, y: event.clientY });
     },
     onKeyDown(event: KeyboardEvent<HTMLElement>) {
-      if (event.target !== event.currentTarget || event.defaultPrevented) return;
+      if (event.defaultPrevented || !marks(event)) return;
       if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
       event.preventDefault();
-      const opener = event.currentTarget;
+      const opener = event.target as HTMLElement;
       const { left, bottom } = opener.getBoundingClientRect();
       open({ target, opener, x: left, y: bottom });
     }
