@@ -101,16 +101,16 @@ it("sends a page it cannot read as it was given, never page 1 in its place", asy
 it("asks again for a different query and not for an equal one", async () => {
   vi.mocked(apiRequest).mockResolvedValue(answer([device], 4));
   const scope = { match: "all" as const, rules: [] };
-  const view = render(table({ site: "Sample", scope, page: 1 }));
+  const view = render(table({ site: "Sample", deviceScope: scope, page: 1 }));
   await screen.findByRole("link", { name: device.hostname });
-  view.rerender(table({ site: "Sample", scope: { ...scope }, page: 1 }));
+  view.rerender(table({ site: "Sample", deviceScope: { ...scope }, page: 1 }));
   expect(screen.queryByText(words.loading)).toBeNull();
   await new Promise(resolve => setTimeout(resolve, 400));
   expect(requests()).toHaveLength(1);
   const moved: DeviceFilters[] = [
-    { site: "Sample", scope, page: 2 },
-    { site: "Other", scope, page: 2 },
-    { site: "Other", scope: { match: "any", rules: [] }, page: 2 },
+    { site: "Sample", deviceScope: scope, page: 2 },
+    { site: "Other", deviceScope: scope, page: 2 },
+    { site: "Other", deviceScope: { match: "any", rules: [] }, page: 2 },
   ];
   for (const [index, query] of moved.entries()) {
     view.rerender(table(query));
@@ -118,7 +118,7 @@ it("asks again for a different query and not for an equal one", async () => {
     await waitFor(() => expect(requests()).toHaveLength(index + 2));
     await waitFor(() => expect(screen.queryByText(words.loading)).toBeNull());
   }
-  expect(requests().map(params => [params.get("site"), params.get("scope"), params.get("page")])).toEqual([
+  expect(requests().map(params => [params.get("site"), params.get("deviceScope"), params.get("page")])).toEqual([
     ["Sample", JSON.stringify(scope), "1"],
     ["Sample", JSON.stringify(scope), "2"],
     ["Other", JSON.stringify(scope), "2"],
@@ -166,14 +166,14 @@ it("hands the slot the answer above the table, and never the last question's cou
 });
 
 it("renders the caller's column under its header, sends the whole query, and pages both ways", async () => {
-  const query: DeviceFilters = { site: "Sample", scope: { match: "all", rules: [] }, page: 2, pageSize: 1 };
+  const query: DeviceFilters = { site: "Sample", deviceScope: { match: "all", rules: [] }, page: 2, pageSize: 1 };
   vi.mocked(apiRequest).mockResolvedValue(answer([device], 3));
   const onPageChange = vi.fn();
   const view = render(table(query, { extraColumn, onPageChange }));
   expect((await screen.findByRole("link", { name: device.hostname })).getAttribute("href")).toBe("/devices/7");
   expect((screen.getByRole("columnheader", { name: "Value" }) as HTMLTableCellElement).cellIndex).toBe(8);
   expect((screen.getByRole("cell", { name: "7" }) as HTMLTableCellElement).cellIndex).toBe(8);
-  expect(Object.fromEntries(requests()[0])).toEqual({ site: "Sample", scope: JSON.stringify(query.scope), page: "2", pageSize: "1" });
+  expect(Object.fromEntries(requests()[0])).toEqual({ site: "Sample", deviceScope: JSON.stringify(query.deviceScope), page: "2", pageSize: "1" });
   fireEvent.click(button(words.next));
   fireEvent.click(button(words.previous));
   expect(onPageChange.mock.calls).toEqual([[3], [1]]);

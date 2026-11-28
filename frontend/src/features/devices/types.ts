@@ -107,7 +107,7 @@ export interface DeviceListResponse {
 export type VersionOperator = "eq" | "lt" | "lte" | "gt" | "gte" | "regex";
 
 export interface DeviceFilters {
-  scope?: DeviceScope;
+  deviceScope?: DeviceScope;
   q?: string;
   osVersion?: string;
   osVersionOperator?: VersionOperator;

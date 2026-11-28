@@ -4,7 +4,7 @@ import type { DeviceDetail, DeviceFilters, DeviceListResponse, DeviceObservation
 export function listDevices(filters: DeviceFilters): Promise<DeviceListResponse> {
   const params = new URLSearchParams();
 
-  if (filters.scope) params.set("scope", JSON.stringify(filters.scope));
+  if (filters.deviceScope) params.set("deviceScope", JSON.stringify(filters.deviceScope));
   if (filters.q) params.set("q", filters.q);
   if (filters.osVersion) {
     params.set("osVersion", filters.osVersion);
