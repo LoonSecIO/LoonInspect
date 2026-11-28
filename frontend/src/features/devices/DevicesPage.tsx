@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ApiError } from "@/config/api";
 import { Button } from "@/components/ui/button";
@@ -73,79 +73,8 @@ export function DevicesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => filtersFromSearchParams(searchParams), [searchParams]);
 
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [total, setTotal] = useState(0);
-  // The stamp the counts came from (#535). Null is "nothing is answering", which is why
-  // there is no vulnerability column and no chips rather than a column full of zeros.
-  const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const pageSize = 50;
-
-  // A new set of filters is a new question, and the table has to say it is asking rather
-  // than leave the last answer standing as though it were this one. Adjusted here, during
-  // the render that moved the filters (React's own "adjusting state when a prop changes",
-  // the move the Changes page's filter boxes already make), rather than from the effect
-  // below: from an effect it lands a render late, so the old rows paint one frame looking
-  // settled. Keyed on everything the effect re-runs for — the locale beside the filters —
-  // because a guard on less than that is a re-fetch that clears nothing: switch language
-  // after a failed load and the new rows arrive under the old failure's line (#150 in
-  // reverse, success reading as failure).
-  const [asked, setAsked] = useState({ filters, t });
-  if (asked.filters !== filters || asked.t !== t) {
-    setAsked({ filters, t });
-    setLoading(true);
-    setError(null);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    // Debounced so typing in the filter doesn't fire a query per keystroke.
-    const handle = setTimeout(() => {
-      listDevices({ ...filters, pageSize })
-        .then((response) => {
-          if (cancelled) return;
-          setDevices(response.items);
-          setTotal(response.total);
-          setCorpusAsOf(response.corpusAsOf);
-        })
-        .catch((caught: unknown) => {
-          if (cancelled) return;
-          // A `vuln` filter on a tenant nothing answers for is refused rather than answered
-          // with an empty page (#535), and the refusal names both of its causes. Printing
-          // "Could not load devices" over it would throw those words away — a pasted link
-          // is exactly how someone arrives here.
-          setError(caught instanceof ApiError && caught.status === 409 && caught.detail ? caught.detail : t.devices.errorLoading);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [filters, t]);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = filters.page ?? 1;
-  // Eight, or nine where a corpus answers: the empty and error rows span the table, and a
-  // hard-coded 8 beside a conditional column is how one of them stops spanning it.
-  const columns = corpusAsOf === null ? 8 : 9;
-
-  function goToPage(next: number) {
-    setSearchParams(searchParamsFromFilters({ ...filters, page: next }));
-  }
-
-  return (
-    <section className="space-y-6">
-      <div>
-        <p className="text-sm font-medium text-muted-foreground">{t.devices.eyebrow}</p>
-        <h1 className="text-3xl font-bold tracking-tight">{t.devices.title}</h1>
-      </div>
-
+  function renderActions(corpusAsOf: string | null) {
+    return <>
       <FilterBar
         filters={filters}
         corpusAsOf={corpusAsOf}
@@ -179,6 +108,99 @@ export function DevicesPage() {
           }
         />
       )}
+    </>;
+  }
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <p className="text-sm font-medium text-muted-foreground">{t.devices.eyebrow}</p>
+        <h1 className="text-3xl font-bold tracking-tight">{t.devices.title}</h1>
+      </div>
+
+      <DeviceTable
+        query={filters}
+        actions={renderActions}
+        onPageChange={(page) => setSearchParams(searchParamsFromFilters({ ...filters, page }))}
+      />
+    </section>
+  );
+}
+
+interface DeviceTableProps {
+  query: DeviceFilters;
+  onPageChange: (page: number) => void;
+  extraColumn?: { header: ReactNode; cell: (device: Device) => ReactNode };
+  actions?: (corpusAsOf: string | null) => ReactNode;
+}
+
+export function DeviceTable({ query: filters, onPageChange, extraColumn, actions }: DeviceTableProps) {
+  const { t } = useLocale();
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [total, setTotal] = useState(0);
+  // The stamp the counts came from (#535). Null is "nothing is answering", which is why
+  // there is no vulnerability column and no chips rather than a column full of zeros.
+  const [corpusAsOf, setCorpusAsOf] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pageSize = filters.pageSize ?? 50;
+
+  // A new set of filters is a new question, and the table has to say it is asking rather
+  // than leave the last answer standing as though it were this one. Adjusted here, during
+  // the render that moved the filters (React's own "adjusting state when a prop changes",
+  // the move the Changes page's filter boxes already make), rather than from the effect
+  // below: from an effect it lands a render late, so the old rows paint one frame looking
+  // settled. Keyed on everything the effect re-runs for — the locale beside the filters —
+  // because a guard on less than that is a re-fetch that clears nothing: switch language
+  // after a failed load and the new rows arrive under the old failure's line (#150 in
+  // reverse, success reading as failure).
+  const [asked, setAsked] = useState({ filters, t });
+  if (asked.filters !== filters || asked.t !== t) {
+    setAsked({ filters, t });
+    setLoading(true);
+    setError(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Debounced so typing in the filter doesn't fire a query per keystroke.
+    const handle = setTimeout(() => {
+      listDevices(filters)
+        .then((response) => {
+          if (cancelled) return;
+          setDevices(response.items);
+          setTotal(response.total);
+          setCorpusAsOf(response.corpusAsOf);
+        })
+        .catch((caught: unknown) => {
+          if (cancelled) return;
+          // A `vuln` filter on a tenant nothing answers for is refused rather than answered
+          // with an empty page (#535), and the refusal names both of its causes. Printing
+          // "Could not load devices" over it would throw those words away — a pasted link
+          // is exactly how someone arrives here.
+          setError(caught instanceof ApiError && caught.status === 409 && caught.detail ? caught.detail : t.devices.errorLoading);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [filters, t]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = filters.page ?? 1;
+  // Eight, or nine where a corpus answers: the empty and error rows span the table, and a
+  // hard-coded 8 beside a conditional column is how one of them stops spanning it.
+  const columns = 8 + Number(corpusAsOf !== null) + Number(extraColumn !== undefined);
+
+  return (
+    <>
+      {actions?.(corpusAsOf)}
 
       <div className="overflow-x-auto rounded-lg border bg-card">
         <table className="w-full text-sm">
@@ -195,6 +217,7 @@ export function DevicesPage() {
                   row would be a clean bill nobody looked for. */}
               {corpusAsOf !== null && <th className="px-4 py-2 font-medium">{t.devices.tableAppsWithFindings}</th>}
               <th className="px-4 py-2 font-medium">{t.devices.tableLastCheckIn}</th>
+              {extraColumn && <th className="px-4 py-2 font-medium">{extraColumn.header}</th>}
             </tr>
           </thead>
           <tbody>
@@ -266,6 +289,7 @@ export function DevicesPage() {
                 <td className="px-4 py-2">
                   {device.lastCheckIn ? new Date(device.lastCheckIn).toLocaleString() : "—"}
                 </td>
+                {extraColumn && <td className="px-4 py-2">{extraColumn.cell(device)}</td>}
               </tr>
             ))}
           </tbody>
@@ -290,17 +314,17 @@ export function DevicesPage() {
             <span className="text-xs">{t.common.computersOnlyScope}</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
               {t.devices.previous}
             </Button>
             <span className="self-center">{t.devices.pageOf(page, totalPages)}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
               {t.devices.next}
             </Button>
           </div>
         </div>
       )}
-    </section>
+    </>
   );
 }
 
