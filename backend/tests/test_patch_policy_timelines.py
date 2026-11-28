@@ -1011,7 +1011,7 @@ def _with_checks(doc: dict[str, Any], years: tuple[int, ...] = (2,)) -> dict[str
         track["check"] = {}
         for span in years:
             result = walk.walk(done, app=app["app"], track=track["track"], timeline=timeline.walk_input(), years=span)
-            track["check"][f"{span}y"] = {stop: walk.check_totals(result, stop) for stop in walk.STOPS}
+            track["check"][f"{span}y"] = {stop: walk.check_totals(result, stop) for stop in walk.POLICIES}
     return done
 
 
@@ -1164,13 +1164,15 @@ async def test_a_served_walk_keeps_every_total_and_series_and_trims_intervals_to
     assert first["cves_page"] == {"page": 1, "page_size": 1, "pages": 2, "total": 2}
     assert [row["cve_id"] for row in first["cves"]] == ["CVE-2025-0001"]
     outcomes = first["cves"][0]["outcomes"]
-    assert set(outcomes) == set(walk.STOPS)
-    assert "intervals" in outcomes["60d"] and all("intervals" not in outcomes[s] for s in walk.STOPS if s != "60d")
+    # Every stop and every definition the walk ran: this document names no KEV source, so the two KEV
+    # definitions are refused and the critical one runs.
+    assert set(outcomes) == set(result["policies"]) == {*walk.STOPS, "critical-only"}
+    assert "intervals" in outcomes["60d"] and all("intervals" not in outcomes[s] for s in outcomes if s != "60d")
     assert first["intervals_for"] == "60d"
     # The walk held in memory is untouched by the trim: every stop that saw the CVE open keeps its days.
     held = next(row for row in result["cves"] if row["cve_id"] == "CVE-2025-0001")["outcomes"]
-    assert [s for s in walk.STOPS if "intervals" in held[s]] == [s for s in walk.STOPS if held[s]["outcome"] == "exposed"]
-    assert any("intervals" in held[s] for s in walk.STOPS if s != "60d")
+    assert [s for s in held if "intervals" in held[s]] == [s for s in held if held[s]["outcome"] == "exposed"]
+    assert any("intervals" in held[s] for s in held if s != "60d")
 
     second = views.served(result, timeline, check=check, stop=None, page=2)
     assert [row["cve_id"] for row in second["cves"]] == ["CVE-2025-0002"]

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import patch_policy_feed, patch_policy_views
 from app.core.auth import require
 from app.core.database import get_db
-from app.core.patch_policy_walk import STOPS
+from app.core.patch_policy_walk import POLICIES
 from app.core.permissions import Permission
 from app.schemas.patch_policy import (
     PatchPolicyAppOut,
@@ -32,8 +32,9 @@ from app.schemas.patch_policy import (
 
 router = APIRouter(prefix="/api/patch-policy", tags=["patch-policy"])
 
-Stop = Literal["0d", "1d", "3d", "7d", "14d", "30d", "60d", "never"]
-assert set(get_args(Stop)) == set(STOPS)  # the query's words are the walk's stops
+# The slider's stops, then the built-in policy definitions (#954), each walked under its id.
+Stop = Literal["0d", "1d", "3d", "7d", "14d", "30d", "60d", "never", "kev-only", "critical-only", "30d-or-kev"]
+assert get_args(Stop) == POLICIES  # the query's words are the walk's stops and definitions, in its order
 
 
 @router.get("/apps", response_model=PatchPolicyAppsOut, dependencies=[Depends(require(Permission.APP_READ))])
@@ -103,7 +104,10 @@ async def patch_policy_walk(
     align: Literal["common"] | None = Query(
         default=None, description="`common` cuts the window to the days every source that can date the track covers."
     ),
-    stop: Stop | None = Query(default=None, description="The stop whose day intervals each CVE row carries; none when absent."),
+    stop: Stop | None = Query(
+        default=None,
+        description="The stop or built-in policy definition whose day intervals each CVE row carries; none when absent.",
+    ),
     page: int = Query(default=1, ge=1, le=10_000, description=f"The page of `cves`, {patch_policy_views.PAGE_SIZE} rows each."),
 ):
     """One app track walked day by day over one timeline, under every stop of the patch-policy
@@ -111,6 +115,11 @@ async def patch_policy_walk(
     days after it was dated would have run, and which CVEs it ran affected, from the first day
     each was detectable. A reference analysis: it reads no device, and its result is neither stored
     nor sent anywhere.
+
+    Beside the stops, each built-in policy definition (#954: `kev-only`, `critical-only`,
+    `30d-or-kev`) is walked under its id the same way, with its definition as data
+    (`policy_definitions`); one the walk cannot run on LoonSec's data is named in `policy_refusals`
+    with its sentence, and every stop is still walked.
 
     `source` picks the dates releases install on: `public` (LoonSec's published release dates),
     `jamf` (this instance's copy of Jamf's public patch catalog) or `fleet` (this instance's copy of

@@ -21,9 +21,10 @@ common window, says its own numbers are not. An app LoonSec holds no public date
 nothing to check, so no view of it is shown from any source.
 
 **Trimmed, never re-counted** (2026-11-24). A Chrome-sized walk is several megabytes,
-most of it per-CVE day intervals under eight stops. The response keeps every total and the whole
-per-day series of every stop, keeps each CVE's outcome under every stop, keeps the day intervals
-only for the stop asked for (`stop`), and pages `cves[]`. `run_id` names the walk as computed,
+most of it per-CVE day intervals under eight stops and the built-in policy definitions. The response
+keeps every total and the whole per-day series of every stop and definition, keeps each CVE's
+outcome under each of them, keeps the day intervals only for the stop or definition asked for
+(`stop`), and pages `cves[]`. `run_id` names the walk as computed,
 before it was trimmed or paged.
 
 Nothing here reads a device, and nothing a walk returns is stored, queued or exchanged.

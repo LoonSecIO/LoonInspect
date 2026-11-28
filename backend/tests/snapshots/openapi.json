@@ -9307,6 +9307,24 @@
             "title": "Policies",
             "type": "object"
           },
+          "policy_definitions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Policy Definitions",
+            "type": "array"
+          },
+          "policy_refusals": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Policy Refusals",
+            "type": "object"
+          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -9337,6 +9355,8 @@
           "intervals_for",
           "kind",
           "policies",
+          "policy_definitions",
+          "policy_refusals",
           "run_id",
           "schema",
           "window"
@@ -19040,7 +19060,7 @@
     },
     "/api/patch-policy/walk": {
       "get": {
-        "description": "One app track walked day by day over one timeline, under every stop of the patch-policy\nslider, for a window of two or three years: what a Mac that installed each release that many\ndays after it was dated would have run, and which CVEs it ran affected, from the first day\neach was detectable. A reference analysis: it reads no device, and its result is neither stored\nnor sent anywhere.\n\n`source` picks the dates releases install on: `public` (LoonSec's published release dates),\n`jamf` (this instance's copy of Jamf's public patch catalog) or `fleet` (this instance's copy of\nFleet's history, while this organization's Fleet catalog flag is on). The walk is held to\nLoonSec's published totals for the app: a window whose own walk disagrees refuses every source\nof the app, and a window LoonSec published no totals for is shown as `check.state:\nunchecked_window` only when another window of the app matched.\n\nMemoised by the walk's `input_id`, so the slider and the toggle re-ask cheaply. The answer\nkeeps every total and every stop's per-day series whole, pages `cves` (`cves_page`), and keeps\neach CVE's day intervals only under `stop`. Anything that cannot be walked is a 409 whose\n`detail` is the sentence that says why (docs/troubleshooting.md \u00a733), with `reason`, `source`\nand `facts` beside it; the feed's own states (\u00a732) come back the same way.",
+        "description": "One app track walked day by day over one timeline, under every stop of the patch-policy\nslider, for a window of two or three years: what a Mac that installed each release that many\ndays after it was dated would have run, and which CVEs it ran affected, from the first day\neach was detectable. A reference analysis: it reads no device, and its result is neither stored\nnor sent anywhere.\n\nBeside the stops, each built-in policy definition (#954: `kev-only`, `critical-only`,\n`30d-or-kev`) is walked under its id the same way, with its definition as data\n(`policy_definitions`); one the walk cannot run on LoonSec's data is named in `policy_refusals`\nwith its sentence, and every stop is still walked.\n\n`source` picks the dates releases install on: `public` (LoonSec's published release dates),\n`jamf` (this instance's copy of Jamf's public patch catalog) or `fleet` (this instance's copy of\nFleet's history, while this organization's Fleet catalog flag is on). The walk is held to\nLoonSec's published totals for the app: a window whose own walk disagrees refuses every source\nof the app, and a window LoonSec published no totals for is shown as `check.state:\nunchecked_window` only when another window of the app matched.\n\nMemoised by the walk's `input_id`, so the slider and the toggle re-ask cheaply. The answer\nkeeps every total and every stop's per-day series whole, pages `cves` (`cves_page`), and keeps\neach CVE's day intervals only under `stop`. Anything that cannot be walked is a 409 whose\n`detail` is the sentence that says why (docs/troubleshooting.md \u00a733), with `reason`, `source`\nand `facts` beside it; the feed's own states (\u00a732) come back the same way.",
         "operationId": "patch_policy_walk_api_patch_policy_walk_get",
         "parameters": [
           {
@@ -19124,7 +19144,7 @@
             }
           },
           {
-            "description": "The stop whose day intervals each CVE row carries; none when absent.",
+            "description": "The stop or built-in policy definition whose day intervals each CVE row carries; none when absent.",
             "in": "query",
             "name": "stop",
             "required": false,
@@ -19139,7 +19159,10 @@
                     "14d",
                     "30d",
                     "60d",
-                    "never"
+                    "never",
+                    "kev-only",
+                    "critical-only",
+                    "30d-or-kev"
                   ],
                   "type": "string"
                 },
@@ -19147,7 +19170,7 @@
                   "type": "null"
                 }
               ],
-              "description": "The stop whose day intervals each CVE row carries; none when absent.",
+              "description": "The stop or built-in policy definition whose day intervals each CVE row carries; none when absent.",
               "title": "Stop"
             }
           },

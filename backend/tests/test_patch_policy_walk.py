@@ -32,6 +32,7 @@ import pytest
 from app.core import patch_policy_walk as walk_module
 from app.core.patch_policy_walk import (
     CHECK_KEYS,
+    POLICIES,
     STOPS,
     WalkRefused,
     check_totals,
@@ -259,8 +260,15 @@ def test_golden_a_devices_and_totals_per_stop() -> None:
     """
     doc, observed = golden_a()
     result = walk(doc, app="demo", track="demo/stable", timeline=observed)
-    policies = result["policies"]
+    policies = {stop: policy for stop, policy in result["policies"].items() if stop in STOPS}
     assert list(policies) == ["0d", "1d", "3d", "7d", "14d", "30d", "60d", "never"]
+    # The built-in definitions follow the stops (golden G onward derives them): golden A's data names no
+    # KEV source, so both KEV definitions are refused, and the critical one has no critical CVE to name.
+    assert list(result["policies"])[8:] == ["critical-only"]
+    assert {stop: refused["reason"] for stop, refused in result["policy_refusals"].items()} == {
+        "kev-only": "kev_unknown",
+        "30d-or-kev": "kev_unknown",
+    }
     # Each day stop waits the days its label says.
     assert {stop: policy["install_delay_days"] for stop, policy in policies.items()} == {
         "0d": 0,
@@ -1033,7 +1041,9 @@ def test_parity_with_the_documents_check() -> None:
     """Plan 4.7: the public walk at the default window equals the document's `check`, or nothing is shown."""
     doc, observed = golden_a()
     first = walk(doc, app="demo", track="demo/stable", timeline=observed)
-    doc["apps"][0]["tracks"][0]["check"] = {"2y": {stop: check_totals(first, stop) for stop in STOPS}}
+    doc["apps"][0]["tracks"][0]["check"] = {"2y": {stop: check_totals(first, stop) for stop in POLICIES}}
+    # A definition the walk refused on this data is held as its refusal, as LoonVD's pinned copy writes it.
+    assert doc["apps"][0]["tracks"][0]["check"]["2y"]["kev-only"] == {"refused": "kev_unknown"}
     assert walk(doc, app="demo", track="demo/stable", timeline=observed)["check"]["state"] == "matched"
     assert walk(doc, app="demo", track="demo/stable", timeline=observed, years=3)["check"]["state"] == "no_entry"
     assert (
@@ -1045,6 +1055,25 @@ def test_parity_with_the_documents_check() -> None:
     refused = refusal(doc, observed)
     assert refused.reason == "parity"
     assert "60d: exposure_days is 116 here and 117 in the data" in refused.sentence
+    doc["apps"][0]["tracks"][0]["check"]["2y"]["60d"]["exposure_days"] -= 1
+
+    # A check that lacks a stop's entry is refused at its first total, and so is one that lacks a
+    # definition's (ruled 2026-11-28): a definition is never drawn unchecked.
+    held = doc["apps"][0]["tracks"][0]["check"]["2y"]
+    missing_stop = held.pop("3d")
+    lacks_stop = refusal(doc, observed)
+    assert lacks_stop.reason == "parity" and "(3d: since is '2026-02-01' here and None in the data)" in lacks_stop.sentence
+    held["3d"] = missing_stop
+    missing_definition = held.pop("critical-only")
+    lacks_definition = refusal(doc, observed)
+    assert lacks_definition.reason == "parity"
+    assert "(critical-only: since is '2026-02-01' here and None in the data)" in lacks_definition.sentence
+    assert lacks_definition.detail == {"stop": "critical-only", "key": "since", "walked": "2026-02-01", "published": None}
+    held["critical-only"] = missing_definition
+    # A definition walked here and published as a refusal, or the other way about, is a disagreement too.
+    held["kev-only"] = check_totals(first, "never")
+    swapped = refusal(doc, observed)
+    assert swapped.reason == "parity" and "(kev-only: refused is 'kev_unknown' here and None in the data)" in swapped.sentence
 
 
 def test_window_for_names_the_window_without_walking() -> None:
@@ -1770,6 +1799,566 @@ def test_golden_f_a_stop_waits_its_label_from_a_release_dated_on_the_windows_fir
     assert invariant_failures(result) == []
 
 
+# --- Golden G onward: the built-in policy definitions (#954, ruled 2026-11-28) -----------------
+#
+# Each golden is one line of releases, each its own train and dated in rank order, so rule 5 never
+# applies, under a document that names a KEV source (`sources.kev`), so a null `kev_date_added` says
+# "not listed". The window is d31 to d180 throughout (the detectable record begins 2026-01-31).
+
+
+def kev_document(tracks: list[dict[str, Any]]) -> dict[str, Any]:
+    doc = document(tracks, coverage="2026-01-31")
+    doc["sources"]["kev"] = {"via": "NVD cisaExploitAdd"}
+    return doc
+
+
+def definition_case(versions: list[dict[str, Any]], cves: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    track = {
+        "track": "demo/stable",
+        "label": "Demo",
+        "path": {"kind": "latest"},
+        "timeline": "vendor",
+        "versions": versions,
+        "cves": cves,
+    }
+    return kev_document([track]), timeline([{"version": v["v"], "date": v["date"]} for v in versions])
+
+
+def by(rule: str, cve_id: str | None = None, on: int | None = None, basis: str | None = None) -> dict[str, Any]:
+    """What installed a release (`installs[].by`, `opening_by`), as the walk writes it."""
+    return {"rule": rule, "cve_id": cve_id, "on": d(on) if on is not None else None, "basis": basis}
+
+
+def installs_of(result: dict[str, Any], policy: str) -> list[tuple[str, str, dict[str, Any]]]:
+    return [(row["date"], row["version"], row["by"]) for row in result["policies"][policy]["installs"]]
+
+
+def golden_g() -> tuple[dict[str, Any], dict[str, Any]]:
+    """1.0 (d-100), 1.1 (d40), 1.2 (d70), 1.3 (d100), 1.4 (d130). CVE-601 is listed on KEV on d80,
+    after its fix 1.1 and the newer 1.2 are out; CVE-602 on d90, before its fix 1.3 is; CVE-603 never."""
+    versions = [
+        version("1.0", d(-100)),
+        version("1.1", d(40)),
+        version("1.2", d(70)),
+        version("1.3", d(100)),
+        version("1.4", d(130)),
+    ]
+    cves = [
+        cve(
+            "CVE-2026-0601",
+            published=d(34),
+            detectable=d(35),
+            affected=[[0, 0]],
+            fixes=[fix(1)],
+            severity="high",
+            kev_date_added=d(80),
+        ),
+        cve(
+            "CVE-2026-0602",
+            published=d(44),
+            detectable=d(45),
+            affected=[[0, 2]],
+            fixes=[fix(3)],
+            severity="medium",
+            kev_date_added=d(90),
+        ),
+        cve(
+            "CVE-2026-0603",
+            published=d(110),
+            detectable=d(110),
+            affected=[[3, 3]],
+            fixes=[fix(4)],
+            severity="critical",
+            kev_date_added=None,
+        ),
+    ]
+    return definition_case(versions, cves)
+
+
+def test_golden_g_a_kev_trigger_waits_for_the_later_of_its_release_and_its_listing() -> None:
+    """Patch on a KEV (`kev-only`: otherwise never; kev_listed within 0), derived by hand.
+
+    It opens as `never` does, on the newest release available by d31: 1.0 (1.1 is d40), said
+    `otherwise`. Each KEV CVE names its fix, which the timeline dates itself, on its trigger day, the
+    later of the day the release is available and the day the CVE was listed:
+      CVE-601, listed d80, after its fix 1.1 (d40) is out: due d80 (the listing).
+      CVE-602, listed d90, before its fix 1.3 (d100) is out: due d100 (the release).
+      CVE-603 is never listed, so its fix 1.4 is named by nothing, and installed by nothing.
+    So 1.1 on d80 and 1.3 on d100, each naming its CVE. On d80 the newer 1.2 (d70) is out too, and the
+    device installs the fixing release it names, 1.1, not the newest (`fixing_release`); 1.2 is never
+    installed, because no trigger names it and otherwise never.
+      CVE-601 (affected 1.0; det d35): [d35, d79] = 45 days, cleared d80 by 1.1.
+      CVE-602 (affected 1.0 to 1.2; det d45): 1.0, then 1.1 from d80, both affected: [d45, d99] = 55,
+              cleared d100 by 1.3.
+      CVE-603 (affected 1.3 alone; det d110): the device runs 1.3 from d100 to the end: [d110, d180] =
+              71, open at the window's end.
+    Totals: 3 exposed, 0 never seen, 45 + 55 + 71 = 171 exposure days, 2 update events, 1.0 to 1.3.
+    """
+    doc, observed = golden_g()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    assert (result["window"]["since"], result["window"]["until"]) == (d(31), d(180))
+    assert result["policy_refusals"] == {}
+    assert list(result["policies"]) == list(POLICIES)
+    kev = result["policies"]["kev-only"]
+    assert (kev["stop"], kev["install_delay_days"], kev["initial_version"], kev["final_version"]) == (
+        "kev-only",
+        None,
+        "1.0",
+        "1.3",
+    )
+    assert kev["opening_by"] == by("otherwise")
+    assert installs_of(result, "kev-only") == [
+        (d(80), "1.1", by("kev_listed", "CVE-2026-0601", 80, "kev_date_added")),
+        (d(100), "1.3", by("kev_listed", "CVE-2026-0602", 90, "kev_date_added")),
+    ]
+    assert (kev["exposed"], kev["never_seen"], kev["exposure_days"], kev["update_events"]) == (3, 0, 171, 2)
+    assert kev["open_at_window_end"] == {"in_window": 1, "carried_in": 0, "entered_after_start": 0}
+    assert outcome(result, "CVE-2026-0601", "kev-only") == {
+        "class": "in_window",
+        "outcome": "exposed",
+        "exposure_days": 45,
+        "open_at_window_end": False,
+        "cleared_on": d(80),
+        "cleared_by": "1.1",
+        "intervals": [[d(35), d(79)]],
+        "version_at_clock": "1.0",
+    }
+    assert outcome(result, "CVE-2026-0602", "kev-only")["intervals"] == [[d(45), d(99)]]
+    assert outcome(result, "CVE-2026-0603", "kev-only")["intervals"] == [[d(110), d(180)]]
+    assert not any(row["version"] == "1.2" for row in kev["installs"])
+    # Each CVE row says the day each trigger's fact was knowable, and its basis.
+    knowable = {row["cve_id"]: row["knowable"] for row in result["cves"]}
+    assert knowable["CVE-2026-0601"] == {
+        "kev_listed": {"on": d(80), "basis": "kev_date_added"},
+        "critical": None,
+        "critical_or_high": {"on": d(35), "basis": "clock_day"},
+    }
+    assert knowable["CVE-2026-0603"]["kev_listed"] is None
+    assert result["counts"]["knowable"] == {
+        "kev_listed": {"kev_date_added": 2},
+        "critical": {"first_scored": 0, "clock_day": 1},
+        "critical_or_high": {"first_scored": 0, "clock_day": 2},
+    }
+    # The definitions ride as data, and each is printed in the walk's own words under its id.
+    assert result["policy_definitions"] == [
+        {"id": "kev-only", "name": "Patch on a KEV", "otherwise": "never", "when": [{"fixes": "kev_listed", "within_days": 0}]},
+        {
+            "id": "critical-only",
+            "name": "Patch only on a critical",
+            "otherwise": "never",
+            "when": [{"fixes": "critical", "within_days": 0}],
+        },
+        {
+            "id": "30d-or-kev",
+            "name": "30 days, same day on a KEV",
+            "otherwise": 30,
+            "when": [{"fixes": "kev_listed", "within_days": 0}],
+        },
+    ]
+    assert result["definitions"]["kev-only"].startswith(
+        "Patch on a KEV, a built-in policy definition (`kev-only`): otherwise never"
+    )
+    assert "installs the fixing release it names, not the newest release" in result["definitions"]["fixing_release"]
+    assert invariant_failures(result) == []
+
+
+def test_golden_g_the_mixed_definition_where_otherwise_and_a_trigger_compete() -> None:
+    """30 days, same day on a KEV (`30d-or-kev`: otherwise 30; kev_listed within 0), derived by hand.
+
+    Otherwise, each release 30 days after it is dated: 1.0 d-70, 1.1 d70, 1.2 d100, 1.3 d130, 1.4
+    d160. The KEV triggers compete with those days, and the earlier wins:
+      1.1: otherwise d70, CVE-601's trigger d80: otherwise, d70.
+      1.3: otherwise d130, CVE-602's trigger d100 (its release day): the trigger, d100.
+    It opens on 1.0, installed d-70 by otherwise. On d100, 1.2 (otherwise) and 1.3 (the trigger) are
+    both due, and only the higher, 1.3, is installed; 1.4 on d160 by otherwise.
+      CVE-601: [d35, d69] = 35, cleared d70 by 1.1.
+      CVE-602: 1.0, then 1.1: [d45, d99] = 55, cleared d100 by 1.3.
+      CVE-603: on 1.3 from d100 to d159: [d110, d159] = 50, cleared d160 by 1.4.
+    Totals: 3 exposed, 35 + 55 + 50 = 140 exposure days, 3 update events. The 30-day stop, by hand
+    for the comparison: 1.1 d70, 1.2 d100, 1.3 d130, 1.4 d160, so CVE-602 stays open on 1.2 until
+    d130 ([d45, d129] = 85) and CVE-603 opens on d130 ([d130, d159] = 30): 35 + 85 + 30 = 150, in 4
+    update events.
+    """
+    doc, observed = golden_g()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    mixed, thirty = result["policies"]["30d-or-kev"], result["policies"]["30d"]
+    assert (mixed["initial_version"], mixed["opening_by"]) == ("1.0", by("otherwise"))
+    assert installs_of(result, "30d-or-kev") == [
+        (d(70), "1.1", by("otherwise")),
+        (d(100), "1.3", by("kev_listed", "CVE-2026-0602", 90, "kev_date_added")),
+        (d(160), "1.4", by("otherwise")),
+    ]
+    assert [
+        outcome(result, cve_id, "30d-or-kev")["exposure_days"] for cve_id in ("CVE-2026-0601", "CVE-2026-0602", "CVE-2026-0603")
+    ] == [
+        35,
+        55,
+        50,
+    ]
+    assert (mixed["exposed"], mixed["exposure_days"], mixed["update_events"], mixed["final_version"]) == (3, 140, 3, "1.4")
+    assert [(row["date"], row["version"]) for row in thirty["installs"]] == [
+        (d(70), "1.1"),
+        (d(100), "1.2"),
+        (d(130), "1.3"),
+        (d(160), "1.4"),
+    ]
+    assert (thirty["exposure_days"], thirty["update_events"]) == (150, 4)
+    assert invariant_failures(result) == []
+
+
+def test_golden_g_a_severity_trigger_on_the_clock_day_with_todays_severity() -> None:
+    """Patch only on a critical (`critical-only`: otherwise never; critical within 0), by hand.
+
+    Only CVE-603 is critical today, and the data states no first-scored day for it, so its clock day,
+    d110 (first detectable), stands in (ruled 2026-11-28), and its fix 1.4 (d130) is due d130, the
+    later of the two. It opens on 1.0 and installs 1.4 on d130, never 1.1 to 1.3.
+      CVE-601 (1.0): [d35, d129] = 95, cleared d130 by 1.4.
+      CVE-602 (1.0 to 1.2): on 1.0 throughout: [d45, d129] = 85, cleared d130 by 1.4.
+      CVE-603 (1.3 alone): the device never runs 1.3, and on d110 it runs 1.0, below the fix: never
+              seen, outside the affected range.
+    Totals: 2 exposed, 1 never seen (1 outside), 95 + 85 = 180 exposure days, 1 update event.
+    """
+    doc, observed = golden_g()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    critical = result["policies"]["critical-only"]
+    assert installs_of(result, "critical-only") == [(d(130), "1.4", by("critical", "CVE-2026-0603", 110, "clock_day"))]
+    assert (critical["exposed"], critical["never_seen"], critical["never_seen_outside_affected_range"]) == (2, 1, 1)
+    assert (critical["exposure_days"], critical["update_events"]) == (180, 1)
+    assert outcome(result, "CVE-2026-0603", "critical-only") == {
+        "class": "in_window",
+        "outcome": "never_seen",
+        "why": "outside_affected_range",
+        "version_at_clock": "1.0",
+    }
+    row = next(row for row in result["cves"] if row["cve_id"] == "CVE-2026-0603")
+    assert row["knowable"]["critical"] == {"on": d(110), "basis": "clock_day"}
+
+
+def golden_h() -> tuple[dict[str, Any], dict[str, Any]]:
+    """1.0 (d-100), 1.1 (d40), 1.2 (d120); nothing on KEV. CVE-701 is critical, and LoonSec's data
+    states the day it first scored critical (d90) and high or critical (d45); CVE-702 is critical with
+    no first-scored day; both are fixed by 1.1. CVE-703 is high, fixed by 1.2."""
+    versions = [version("1.0", d(-100)), version("1.1", d(40)), version("1.2", d(120))]
+    cves = [
+        cve(
+            "CVE-2026-0701",
+            published=d(44),
+            detectable=d(45),
+            affected=[[0, 0]],
+            fixes=[fix(1)],
+            severity="critical",
+            kev_date_added=None,
+            first_scored={"critical": d(90), "critical_or_high": d(45)},
+        ),
+        cve(
+            "CVE-2026-0702",
+            published=d(74),
+            detectable=d(75),
+            affected=[[0, 0]],
+            fixes=[fix(1)],
+            severity="critical",
+            kev_date_added=None,
+        ),
+        cve(
+            "CVE-2026-0703",
+            published=d(59),
+            detectable=d(60),
+            affected=[[0, 1]],
+            fixes=[fix(2)],
+            severity="high",
+            kev_date_added=None,
+        ),
+    ]
+    return definition_case(versions, cves)
+
+
+def test_golden_h_severity_on_both_bases_and_two_triggers_naming_one_release() -> None:
+    """Patch only on a critical, by hand: the ruled day under both bases, and the earlier of two
+    triggers naming one release.
+
+    CVE-701's critical day is the one LoonSec's data states, d90 (`first_scored`); CVE-702's is its
+    clock day, d75 (first detectable), with today's severity standing in (`clock_day`). Both name 1.1
+    (d40): CVE-701 on max(d40, d90) = d90, CVE-702 on max(d40, d75) = d75. The earliest due day wins,
+    so 1.1 is installed on d75 by CVE-702, though CVE-701's trigger is offered first. CVE-703 is high,
+    so nothing names 1.2.
+      CVE-701 (1.0; det d45): [d45, d74] = 30, cleared d75 by 1.1.
+      CVE-702 (1.0; det d75): 1.1 is installed that day, so the device never runs an affected version
+              from its clock day: never seen, the fix installed first.
+      CVE-703 (1.0 to 1.1; det d60): [d60, d180] = 121, open.
+    Totals: 2 exposed, 1 never seen (0 outside), 30 + 121 = 151 exposure days, 1 update event.
+    """
+    doc, observed = golden_h()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    critical = result["policies"]["critical-only"]
+    assert installs_of(result, "critical-only") == [(d(75), "1.1", by("critical", "CVE-2026-0702", 75, "clock_day"))]
+    assert outcome(result, "CVE-2026-0701", "critical-only")["intervals"] == [[d(45), d(74)]]
+    assert outcome(result, "CVE-2026-0702", "critical-only") == {
+        "class": "in_window",
+        "outcome": "never_seen",
+        "why": "fix_installed_first",
+        "version_at_clock": "1.1",
+    }
+    assert outcome(result, "CVE-2026-0703", "critical-only")["exposure_days"] == 121
+    assert (critical["exposed"], critical["never_seen"], critical["never_seen_outside_affected_range"]) == (2, 1, 0)
+    assert (critical["exposure_days"], critical["update_events"]) == (151, 1)
+    knowable = {row["cve_id"]: row["knowable"] for row in result["cves"]}
+    assert knowable["CVE-2026-0701"]["critical"] == {"on": d(90), "basis": "first_scored"}
+    assert knowable["CVE-2026-0702"]["critical"] == {"on": d(75), "basis": "clock_day"}
+    assert knowable["CVE-2026-0703"]["critical"] is None
+    assert result["counts"]["knowable"]["critical"] == {"first_scored": 1, "clock_day": 1}
+
+
+def test_golden_h_within_days_and_critical_or_high_on_a_test_definition(monkeypatch) -> None:
+    """A definition no build ships, put beside the built-in ones for this test only: otherwise never;
+    critical_or_high within 3 days. By hand:
+
+    high or critical: CVE-701's stated day is d45 (`first_scored.critical_or_high`); CVE-702 is
+    critical today with no stated day, so its clock day d75; CVE-703 is high today, so its clock day
+    d60. Due 3 days after each trigger day: CVE-701 names 1.1 on max(d40, d45) + 3 = d48; CVE-702
+    names 1.1 on max(d40, d75) + 3 = d78 (later, so it loses); CVE-703 names 1.2 on max(d120, d60) + 3
+    = d123. So 1.1 on d48 and 1.2 on d123.
+      CVE-701: [d45, d47] = 3, cleared d48. CVE-702: on 1.1 by d75, never seen, the fix first.
+      CVE-703: [d60, d122] = 63, cleared d123 by 1.2.
+    Totals: 2 exposed, 1 never seen, 66 exposure days, 2 update events.
+    """
+    test_definition = {
+        "id": "high-3d",
+        "name": "High or critical within 3 days",
+        "otherwise": "never",
+        "when": [{"fixes": "critical_or_high", "within_days": 3}],
+    }
+    monkeypatch.setattr(walk_module, "POLICY_DEFINITIONS", (*walk_module.POLICY_DEFINITIONS, test_definition))
+    monkeypatch.setattr(walk_module, "POLICIES", (*POLICIES, "high-3d"))
+    doc, observed = golden_h()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed, stops=("0d", "high-3d"))
+    assert list(result["policies"]) == ["0d", "high-3d"]
+    assert installs_of(result, "high-3d") == [
+        (d(48), "1.1", by("critical_or_high", "CVE-2026-0701", 45, "first_scored")),
+        (d(123), "1.2", by("critical_or_high", "CVE-2026-0703", 60, "clock_day")),
+    ]
+    run = result["policies"]["high-3d"]
+    assert (run["exposed"], run["never_seen"], run["exposure_days"], run["update_events"]) == (2, 1, 66, 2)
+    assert outcome(result, "CVE-2026-0701", "high-3d")["intervals"] == [[d(45), d(47)]]
+    assert outcome(result, "CVE-2026-0703", "high-3d")["intervals"] == [[d(60), d(122)]]
+    assert result["definitions"]["high-3d"].endswith(
+        "a release that fixes a high or critical CVE is installed 3 days after its trigger day, the later of the day it "
+        "is available and the day `severity_day` gives for high or critical."
+    )
+
+
+def golden_i() -> tuple[dict[str, Any], dict[str, Any]]:
+    """1.0 (d-200), 1.1 (d10), 1.2 (d100). CVE-801, from before the window, is listed on KEV on d20,
+    after its fix 1.1 is out; CVE-802 is never listed."""
+    versions = [version("1.0", d(-200)), version("1.1", d(10)), version("1.2", d(100))]
+    cves = [
+        cve(
+            "CVE-2026-0801",
+            published=d(4),
+            detectable=d(5),
+            affected=[[0, 0]],
+            fixes=[fix(1)],
+            severity="high",
+            kev_date_added=d(20),
+        ),
+        cve(
+            "CVE-2026-0802",
+            published=d(49),
+            detectable=d(50),
+            affected=[[0, 1]],
+            fixes=[fix(2)],
+            severity="medium",
+            kev_date_added=None,
+        ),
+    ]
+    return definition_case(versions, cves)
+
+
+def test_golden_i_a_trigger_due_before_the_windows_first_day_raises_the_opening() -> None:
+    """The opening (`definition_opening`), by hand. The 30-day stop's install days are 1.0 d-170, 1.1
+    d40 and 1.2 d130, so it opens on d31 on 1.0. Under `30d-or-kev`, CVE-801's trigger names 1.1 on
+    max(d10, d20) = d20, before the window's first day and before its otherwise day d40, so 1.1's
+    install day is d20 and the window opens on 1.1, installed by the listing (`opening_by`).
+      30d:        CVE-801 is carried in on 1.0, [d31, d39] = 9 days, cleared d40 by 1.1; CVE-802
+                  [d50, d129] = 80, cleared d130 by 1.2.
+      30d-or-kev: CVE-801 is never open in the window (pre_window_closed); CVE-802 [d50, d129] = 80.
+    Patch on a KEV opens as `never` does, on the newest release available by d31, 1.1 (d10): CVE-801's
+    trigger names that release too, and no trigger due by then can rank above it, so `otherwise` opened
+    it. Nothing names 1.2, so CVE-802 is open from d50 to the end, [d50, d180] = 131.
+    """
+    doc, observed = golden_i()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    thirty, mixed, kev = (result["policies"][policy] for policy in ("30d", "30d-or-kev", "kev-only"))
+    assert (thirty["initial_version"], thirty["carried_in"], thirty["exposure_days_carried_in"]) == ("1.0", 1, 9)
+    assert (mixed["initial_version"], mixed["opening_by"]) == ("1.1", by("kev_listed", "CVE-2026-0801", 20, "kev_date_added"))
+    assert installs_of(result, "30d-or-kev") == [(d(130), "1.2", by("otherwise"))]
+    assert (mixed["carried_in"], mixed["pre_window_closed"], mixed["exposed"], mixed["exposure_days"]) == (0, 1, 1, 80)
+    assert outcome(result, "CVE-2026-0801", "30d-or-kev") == {"class": "pre_window_closed", "outcome": "not_open_in_window"}
+    assert outcome(result, "CVE-2026-0802", "30d-or-kev")["intervals"] == [[d(50), d(129)]]
+    assert (kev["initial_version"], kev["opening_by"], kev["installs"]) == ("1.1", by("otherwise"), [])
+    assert outcome(result, "CVE-2026-0802", "kev-only")["intervals"] == [[d(50), d(180)]]
+    assert "raised by any trigger already due by the window's first day" in result["definitions"]["definition_opening"]
+    assert invariant_failures(result) == []
+
+
+def test_the_stops_walk_the_same_with_the_definitions_beside_them() -> None:
+    """The definitions change no stop: every stop's run, and every CVE's outcome under it, is the
+    same asked alone as beside every definition, and the exclusions and counts are the same."""
+    for doc, observed in (golden_g(), golden_h(), golden_i(), golden_a()):
+        every = walk(doc, app="demo", track="demo/stable", timeline=observed)
+        alone = walk(doc, app="demo", track="demo/stable", timeline=observed, stops=STOPS)
+        assert {stop: every["policies"][stop] for stop in STOPS} == alone["policies"]
+        assert every["exclusions"] == alone["exclusions"]
+        rows = {row["cve_id"]: row["outcomes"] for row in alone["cves"]}
+        for row in every["cves"]:
+            assert {stop: row["outcomes"][stop] for stop in STOPS} == rows[row["cve_id"]]
+        assert alone["policy_definitions"] == [] and alone["policy_refusals"] == {}
+
+
+def test_a_definition_the_data_cannot_run_is_refused_in_words_and_every_stop_still_walks() -> None:
+    """`kev_unknown`: a document that names no KEV source, or a row that does not say, or says it with
+    something that is not a date. `severity_unknown`: a severity, or a first-scored day, the walk does
+    not read. Each refuses only the definitions that read it, with a sentence; the stops, and the
+    definitions that do not read it, walk as before."""
+    doc, observed = golden_g()
+    plain = copy.deepcopy(doc)
+    del plain["sources"]["kev"]
+    result = walk(plain, app="demo", track="demo/stable", timeline=observed)
+    assert set(result["policy_refusals"]) == {"kev-only", "30d-or-kev"}
+    assert result["policy_refusals"]["kev-only"] == {
+        "reason": "kev_unknown",
+        "sentence": "LoonSec's patch-policy data for Demo cannot say whether a CVE is on CISA's KEV list (it names no source "
+        "of KEV dates, sources.kev), so the policy definition Patch on a KEV (kev-only) was not walked; every stop was. "
+        "The data is the same for every instance and none of yours is read: report the sentence with the data's date "
+        "(Settings › Support).",
+    }
+    assert list(result["policies"]) == [*STOPS, "critical-only"]
+    assert check_totals(result, "kev-only") == {"refused": "kev_unknown"}
+    # Every CVE row says nothing about KEV then, rather than "not listed".
+    assert all(row["knowable"]["kev_listed"] is None for row in result["cves"])
+    assert result["counts"]["knowable"]["kev_listed"] == {"kev_date_added": 0}
+    # Its definition is still carried as data, so the page can name what it refused.
+    assert [each["id"] for each in result["policy_definitions"]] == ["kev-only", "critical-only", "30d-or-kev"]
+
+    unsaid = copy.deepcopy(doc)
+    del unsaid["apps"][0]["tracks"][0]["cves"][2]["kev_date_added"]
+    assert (
+        "(CVE-2026-0603 has no kev_date_added)"
+        in walk(unsaid, app="demo", track="demo/stable", timeline=observed)["policy_refusals"]["kev-only"]["sentence"]
+    )
+    garbled = copy.deepcopy(doc)
+    garbled["apps"][0]["tracks"][0]["cves"][0]["kev_date_added"] = "soon"
+    assert (
+        "(CVE-2026-0601's kev_date_added 'soon' is not a date)"
+        in walk(garbled, app="demo", track="demo/stable", timeline=observed)["policy_refusals"]["30d-or-kev"]["sentence"]
+    )
+
+    full = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    for mutate, what in (
+        (lambda row: row.__setitem__("severity", "severe"), "CVE-2026-0601's severity 'severe' is not one this walk reads"),
+        (lambda row: row.__setitem__("first_scored", ["2026-03-01"]), "CVE-2026-0601's first_scored is not an object of days"),
+        (
+            lambda row: row.__setitem__("first_scored", {"critical": "later"}),
+            "CVE-2026-0601's first_scored.critical 'later' is not a date",
+        ),
+    ):
+        odd = copy.deepcopy(doc)
+        mutate(odd["apps"][0]["tracks"][0]["cves"][0])
+        refused = walk(odd, app="demo", track="demo/stable", timeline=observed)
+        assert set(refused["policy_refusals"]) == {"critical-only"}, what
+        assert refused["policy_refusals"]["critical-only"]["reason"] == "severity_unknown"
+        assert refused["policy_refusals"]["critical-only"]["sentence"] == (
+            f"LoonSec's patch-policy data for Demo cannot say which CVEs are critical ({what}), so the policy definition "
+            "Patch only on a critical (critical-only) was not walked; every stop was. The data is the same for every "
+            "instance and none of yours is read: report the sentence with the data's date (Settings › Support)."
+        )
+        # The KEV definitions read no severity, so they walk as before, and so does every stop.
+        assert refused["policies"]["kev-only"] == full["policies"]["kev-only"]
+        assert {stop: refused["policies"][stop] for stop in STOPS} == {stop: full["policies"][stop] for stop in STOPS}
+
+
+@pytest.mark.parametrize(
+    ("broken", "problem"),
+    [
+        (
+            {"when": [{"fixes": "epss_over_half", "within_days": 0}]},
+            "when[0] fixes 'epss_over_half', which is not one of the triggers",
+        ),
+        (
+            {"when": [{"fixes": "kev_listed", "within_days": 2}]},
+            "when[0].within_days is 2, not one of the slider's day counts (0, 1, 3, 7, 14, 30, 60)",
+        ),
+        ({"otherwise": 90}, "otherwise is 90, neither never nor one of the slider's day counts (0, 1, 3, 7, 14, 30, 60)"),
+        ({"when": "kev_listed"}, "when is not a list of triggers"),
+    ],
+)
+def test_a_definition_whose_trigger_the_walk_cannot_run_is_refused_as_a_defect(monkeypatch, broken: dict, problem: str) -> None:
+    """A built-in definition that names a trigger outside the closed set, or a day count the slider
+    does not have, is LoonInspect's own defect: it is refused in words, and nothing else is."""
+    odd = {"id": "odd", "name": "An odd one", "otherwise": "never", "when": [], **broken}
+    monkeypatch.setattr(walk_module, "POLICY_DEFINITIONS", (*walk_module.POLICY_DEFINITIONS, odd))
+    monkeypatch.setattr(walk_module, "POLICIES", (*POLICIES, "odd"))
+    doc, observed = golden_g()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    refused = result["policy_refusals"]["odd"]
+    assert refused["reason"] == "definition_invalid"
+    assert refused["sentence"].startswith(f"The built-in policy definition An odd one (odd) cannot be walked ({problem}")
+    assert refused["sentence"].endswith(
+        "so it was not walked; every stop was. This is a defect in LoonInspect, not in this instance's data: report the "
+        "sentence (Settings › Support)."
+    )
+    assert "odd" not in result["policies"] and "odd" not in result["definitions"]
+    assert list(result["policy_refusals"]) == ["odd"]
+
+
+def test_a_definition_is_asked_for_by_its_id_and_conformance_mode_walks_the_stops_only() -> None:
+    doc, observed = golden_g()
+    one = walk(doc, app="demo", track="demo/stable", timeline=observed, stops=("kev-only",))
+    assert list(one["policies"]) == ["kev-only"] and one["inputs"]["stops"] == ["kev-only"]
+    assert one["policies"]["kev-only"] == walk(doc, app="demo", track="demo/stable", timeline=observed)["policies"]["kev-only"]
+    unknown = refusal(doc, observed, stops=("kev-maybe",))
+    assert unknown.reason == "request_invalid"
+    assert unknown.sentence.startswith("The stops and policy definitions asked for are ['kev-maybe']; each is one of 0d, 1d")
+    assert unknown.sentence.endswith("never, kev-only, critical-only, 30d-or-kev, once.")
+    conformance = refusal(doc, observed, stops=("kev-only",), compat_v1=True)
+    assert conformance.sentence.endswith("never, once (conformance mode walks the stops only).")
+    v1 = walk(doc, app="demo", track="demo/stable", timeline=observed, compat_v1=True)
+    assert list(v1["policies"]) == list(STOPS) and v1["policy_definitions"] == [] and "knowable" not in v1["counts"]
+    assert all("knowable" not in row for row in v1["cves"])
+
+
+def test_no_definition_is_named_for_a_framework_or_says_a_policy_is_met() -> None:
+    """The 2026-08-31 scope ruling: "Patch on a KEV" is a rule about a public list. No built-in
+    definition, and none of the walk's words about them, names a framework or says meets, passes or
+    complies."""
+    doc, observed = golden_g()
+    result = walk(doc, app="demo", track="demo/stable", timeline=observed)
+    said = [definition["name"] for definition in walk_module.POLICY_DEFINITIONS]
+    said += [result["definitions"][key] for key in ("policy_definition", "trigger_day", "fixing_release", "severity_day")]
+    said += [result["definitions"][definition["id"]] for definition in walk_module.POLICY_DEFINITIONS]
+    for text in said:
+        lowered = text.lower()
+        for word in (
+            "meets",
+            "passes",
+            "complies",
+            "compliant",
+            "compliance",
+            "nist",
+            "cis ",
+            "pci",
+            "hipaa",
+            "soc 2",
+            "iso ",
+            "fedramp",
+            "essentials",
+            "bod ",
+        ):
+            assert word not in lowered, (word, text)
+    ids = [definition["id"] for definition in walk_module.POLICY_DEFINITIONS]
+    assert not set(ids) & set(STOPS) and all(each == each.lower() and " " not in each for each in ids)
+    assert (*STOPS, *ids) == POLICIES
+
+
 # --- Seeded property tests --------------------------------------------------------------------
 
 
@@ -1840,6 +2429,17 @@ def random_case(rng: random.Random, *, monotone: bool = False) -> tuple[dict[str
         observations.append({"version": twin["version"].upper(), "date": d(rng.randint(0, 300))})
     observed = timeline(observations, as_of=d(rng.randint(310, 430)))
     request = {"years": rng.choice([2, 3]), "until": rng.choice([None, d(rng.randint(250, 400))])}
+    # What the built-in definitions read (#954), drawn last, so that every draw above is the one it
+    # always was: a named KEV source, each row's listing day or none, today's severity, and now and
+    # then the first-scored days LoonSec's data may state.
+    doc["sources"]["kev"] = {"via": "generated"}
+    for row in track["cves"]:
+        row["kev_date_added"] = d(rng.randint(-60, 330)) if rng.random() < 0.35 else None
+        row["severity"] = rng.choice(["critical", "high", "medium", "low", None])
+        if rng.random() < 0.25:
+            row["first_scored"] = {
+                kind: d(rng.randint(-60, 330)) if rng.random() < 0.6 else None for kind in ("critical", "critical_or_high")
+            }
     return doc, observed, request
 
 
@@ -1912,6 +2512,33 @@ def test_longer_stops_never_see_fewer_cves() -> None:
             assert exposed[faster] <= exposed[slower], (seed, faster, slower)
             assert result["policies"][faster]["exposed"] <= result["policies"][slower]["exposed"], seed
         assert exposed["0d"] <= exposed["never"], seed
+
+
+def test_a_definition_runs_between_its_otherwise_stop_and_the_0_day_stop() -> None:
+    """On monotone documents, a definition's device never runs a release below its `otherwise` stop's
+    (each release is installed no later, and the window opens no lower), nor above the 0-day stop's
+    (no release is installed before it is available), so the CVEs it is exposed to contain the 0-day
+    stop's and are contained in its otherwise stop's: `never` for `kev-only` and `critical-only`, 30
+    days for `30d-or-kev`. And no trigger installs a release before its date or its fact."""
+    otherwise = {"kev-only": "never", "critical-only": "never", "30d-or-kev": "30d"}
+    triggered = 0
+    for seed, _, observed, _, result in generated(GENERATED, monotone=True):
+        assert result["policy_refusals"] == {}, seed
+        dated = {row["version"].lower(): row["date"] for row in observed["observations"]}
+        exposed = {
+            policy: {
+                r["cve_id"] for r in result["cves"] if r["class"] == "in_window" and r["outcomes"][policy]["outcome"] == "exposed"
+            }
+            for policy in POLICIES
+        }
+        for policy, slower in otherwise.items():
+            assert exposed["0d"] <= exposed[policy] <= exposed[slower], (seed, policy)
+            for install in result["policies"][policy]["installs"]:
+                assert install["date"] >= dated[install["version"].lower()], (seed, policy, install)
+                if install["by"]["rule"] != "otherwise":
+                    triggered += 1
+                    assert install["date"] >= install["by"]["on"], (seed, policy, install)
+    assert triggered > 50, "the generated documents give the definitions too few triggers to test"
 
 
 def shifted(value: Any, days: int) -> Any:
@@ -2006,10 +2633,10 @@ class FrozenRefused(Exception):
 
 def frozen_checks(doc: dict[str, Any], module: Any = walk_module) -> dict[tuple[str, str], dict[str, dict[str, Any]]]:
     """Each track's `check` as `module`'s walk writes it, by (app, track): every window length the
-    walk offers, every stop's `check_totals`, over the track's public timeline. The shape LoonVD
-    publishes. Walked on a copy without the checks it holds, so a walk that disagrees is compared
-    here, in words, rather than refused as parity. A window the walk refuses is a broken fixture,
-    and raises."""
+    walk offers, every stop's and built-in definition's `check_totals` (`POLICIES`), over the track's
+    public timeline. The shape LoonVD publishes. Walked on a copy without the checks it holds, so a
+    walk that disagrees is compared here, in words, rather than refused as parity. A window the walk
+    refuses is a broken fixture, and raises."""
     doc = copy.deepcopy(doc)
     doc["doc_id"] = doc.get("doc_id") or "frozen-check"  # a walk names its inputs by it; totals never read it
     for app in doc["apps"]:
@@ -2022,7 +2649,7 @@ def frozen_checks(doc: dict[str, Any], module: Any = walk_module) -> dict[tuple[
             check = {}
             for years in module.WINDOW_YEARS:
                 result = module.walk(doc, app=app["app"], track=track["track"], timeline=timeline, years=years)
-                check[f"{years}y"] = {stop: module.check_totals(result, stop) for stop in module.STOPS}
+                check[f"{years}y"] = {stop: module.check_totals(result, stop) for stop in module.POLICIES}
             written[(app["app"], track["track"])] = check
     return written
 
@@ -2033,7 +2660,7 @@ def first_difference(held: dict[str, Any], walked: dict[str, Any]) -> tuple[str,
     either side lacks differs at its first key."""
     for window in sorted(set(held) | set(walked), key=lambda name: (name not in walked, name)):
         stops_held, stops_walked = held.get(window) or {}, walked.get(window) or {}
-        for stop in [*STOPS, *sorted(set(stops_held) - set(STOPS))]:
+        for stop in [*POLICIES, *sorted(set(stops_held) - set(POLICIES))]:
             now, then = stops_walked.get(stop) or {}, stops_held.get(stop) or {}
             for key in [*CHECK_KEYS, *sorted(set(then) - set(CHECK_KEYS))]:
                 if now.get(key) != then.get(key):
@@ -2068,13 +2695,15 @@ def _algorithm_number(path: Path, directory: Path = FROZEN_DIR) -> int:
 def write_frozen(directory: Path = FROZEN_DIR, module: Any = walk_module) -> tuple[Path, list[str]]:
     """Write the frozen check of `module`'s algorithm, and say which tracks it wrote.
 
-    With that algorithm's file present it fills only a track whose `check` is empty (a new case, or
-    one whose case was changed on purpose and its check emptied in the same change), and refuses,
-    writing nothing, when any check already there differs from this walk: a counting change under
-    the same algorithm is the change the frozen check exists to stop. With no file for it (a new
-    algorithm) it writes one beside the others from the newest one's body, every track's check
-    walked afresh, and leaves the older files as they are. The `doc_id` is recomputed whenever it
-    writes; a file with nothing to fill is left alone."""
+    With that algorithm's file present it fills only what a check lacks: a track whose `check` is
+    empty (a new case, or one whose case was changed on purpose and its check emptied in the same
+    change), and the entries of a policy a check does not hold yet (the built-in definitions, added
+    to patch_walk/2 before it was published; ruled 2026-11-28). It refuses, writing nothing, when any
+    entry already there differs from this walk: a counting change under the same algorithm is the
+    change the frozen check exists to stop. With no file for it (a new algorithm) it writes one
+    beside the others from the newest one's body, every track's check walked afresh, and leaves the
+    older files as they are. The `doc_id` is recomputed whenever it writes; a file with nothing to
+    fill is left alone."""
     from app.core import patch_policy_feed as feed
 
     path = frozen_path(module.ALGORITHM, directory)
@@ -2091,15 +2720,27 @@ def write_frozen(directory: Path = FROZEN_DIR, module: Any = walk_module) -> tup
                     track["check"] = walked
                     filled.append(track["track"])
                     continue
-                differs = first_difference(track["check"], walked)
+                held = track["check"]
+                # Every entry the check holds is compared; one it lacks is not a difference but a new case.
+                compared = {
+                    window: {stop: (walked.get(window) or {}).get(stop) for stop in stops} for window, stops in held.items()
+                }
+                differs = first_difference(held, compared)
                 if differs:
                     window, stop, key, now, then = differs
                     raise FrozenRefused(
                         "Nothing written. "
                         + _counts_differently(path, f"{track['track']}, {window}, {stop}", key, now, then)
                         + ' To change a case on purpose, empty that track\'s check ("check": {}) in the same change; '
-                        "--write fills only an empty one."
+                        "--write fills only an empty check, or an entry a check lacks."
                     )
+                lacked = [
+                    (window, stop) for window, stops in walked.items() for stop in stops if stop not in held.get(window, {})
+                ]
+                for window, stop in lacked:
+                    held.setdefault(window, {})[stop] = walked[window][stop]
+                if lacked:
+                    filled.append(track["track"])
         if not filled:
             return path, []
     else:
@@ -2153,7 +2794,9 @@ def test_the_walk_still_counts_the_check_it_wrote() -> None:
                 f"{track['track']} has no frozen check for every window; {FROZEN_WRITE} fills an empty one"
             )
             for window, stops in frozen.items():
-                assert set(stops) == set(STOPS), f"{track['track']} {window} lacks a stop"
+                assert set(stops) == set(POLICIES), (
+                    f"{track['track']} {window} lacks a stop or a definition; {FROZEN_WRITE} fills it"
+                )
             differs = first_difference(frozen, written[(app["app"], track["track"])])
             if differs:
                 window, stop, key, walked, held = differs
@@ -2390,6 +3033,29 @@ def test_write_fills_only_a_track_whose_check_is_empty(tmp_path: Path) -> None:
     assert copied.read_bytes() == before
 
 
+def test_write_fills_a_definitions_entries_a_check_lacks_and_moves_no_stop(tmp_path: Path) -> None:
+    """How the built-in definitions joined patch_walk/2's frozen check (ruled 2026-11-28, before it was
+    published): `--write` fills each entry a check lacks and compares every entry it holds, so a
+    definition is added beside the stops without a stop's number moving, and a stop that moved still
+    refuses."""
+    copied = _frozen_copy(tmp_path)
+    before = copied.read_bytes()
+    lacking = json.loads(before)
+    for app in lacking["apps"]:
+        for track in app["tracks"]:
+            for stops in track["check"].values():
+                for definition in ("kev-only", "critical-only", "30d-or-kev"):
+                    del stops[definition]
+    copied.write_text(json.dumps(lacking, indent=1, ensure_ascii=False) + "\n")
+    _, filled = write_frozen(tmp_path)
+    assert filled == [track["track"] for app in lacking["apps"] for track in app["tracks"]]
+    assert copied.read_bytes() == before
+    lacking["apps"][0]["tracks"][0]["check"]["2y"]["7d"]["exposure_days"] += 1
+    copied.write_text(json.dumps(lacking, indent=1, ensure_ascii=False) + "\n")
+    with pytest.raises(FrozenRefused, match=r"\(browser/release, 2y, 7d: exposure_days is \d+ here and \d+ in the check\)"):
+        write_frozen(tmp_path)
+
+
 def test_a_new_algorithm_writes_its_own_check_beside_the_old_one(tmp_path: Path, monkeypatch) -> None:
     """The documented path works: with ALGORITHM bumped, `--write` writes the new algorithm's file
     from the old one's body and leaves the old file as it was. (The same walk under a new name
@@ -2484,6 +3150,40 @@ COUNTING_MUTANTS = {
         "if False:",
     ),
     "the window runs past the first release above the promotion table": ("if prepared.above_table:", "if False:"),
+    # The built-in definitions (ruled 2026-11-28; Example Mail holds each case). A trigger's day is the
+    # later of its release's day and the day its fact was knowable; the earliest due day wins; a
+    # severity trigger reads the first-scored day the data states, else the CVE's clock day; a fix the
+    # timeline does not date is named by its stand-in; and a trigger due by the window's first day
+    # raises the opening.
+    "a trigger fires before the fact was knowable": (
+        "named.append((dated_as, max(available[dated_as], on), row.cve_id, basis, on))",
+        "named.append((dated_as, available[dated_as], row.cve_id, basis, on))",
+    ),
+    "a trigger fires before its release is available": (
+        "named.append((dated_as, max(available[dated_as], on), row.cve_id, basis, on))",
+        "named.append((dated_as, on, row.cve_id, basis, on))",
+    ),
+    "the first trigger offered wins, not the earliest due": (
+        "if held is None or (due, rank) < (held[0], held[1]):",
+        "if held is None:",
+    ),
+    "a severity trigger reads no first-scored day": (
+        "            if first is not None:\n                known[kind] = (first, BASIS_FIRST_SCORED)",
+        "            if False:\n                known[kind] = (first, BASIS_FIRST_SCORED)",
+    ),
+    "a severity trigger's clock day is NVD publication": (
+        "known[kind] = (row.clock_day, BASIS_CLOCK)",
+        "known[kind] = (row.published, BASIS_CLOCK)",
+    ),
+    "a trigger names only a fix the timeline dates itself": (
+        "dated_as, _ = _effective_fix(prepared, row, line, fix)",
+        "dated_as = fix if fix in prepared.join.dates else None",
+    ),
+    "a definition's opening ignores a trigger due by the window's first day": (
+        "steps = _stepped([(index, due) for index, (due, _, _) in sorted(best.items())], since, until, floor)",
+        "steps = _stepped([(i, due) for i, (due, rank, _) in sorted(best.items()) if due > since or not rank[0]], "
+        "since, until, floor)",
+    ),
 }
 
 
@@ -2581,6 +3281,61 @@ def test_the_frozen_document_holds_what_its_check_is_meant_to_pin() -> None:
         for track in promoted
         for version in track["versions"][track["promotions"][-1]["versions"][1] + 1 :]
     ), "no release above the promotion table's newest row inside the window"
+
+    # The built-in definitions' cases (Example Mail, ruled 2026-11-28), read from the document: a named KEV
+    # source; a CVE listed after its fix and a newer release are dated, and one listed before its fix is;
+    # a critical CVE whose stated first-scored day is after its clock day and its fix's date; a critical
+    # one with none, detectable after it was published and after its fix; two critical CVEs naming one
+    # fix, the later id due first; a listed CVE whose fix is undated; and a listing due before the
+    # two-year window's first day, of a fix dated within 30 days of it.
+    assert doc["sources"].get("kev"), "no KEV source, so a null kev_date_added would say nothing"
+
+    def dated(track: dict[str, Any], index: int | None) -> str | None:
+        return track["versions"][index]["date"] if index is not None else None
+
+    listed = [
+        (track, row, row["fixes"][0]["index"])
+        for _, track in tracks
+        for row in track["cves"]
+        if row.get("kev_date_added") and row["fixes"]
+    ]
+    assert any(
+        dated(track, at)
+        and dated(track, at) < row["kev_date_added"]
+        and any(v["date"] and dated(track, at) < v["date"] < row["kev_date_added"] for v in track["versions"])
+        for track, row, at in listed
+    ), "no CVE listed after its fix and a newer release are dated"
+    assert any(dated(track, at) and row["kev_date_added"] < dated(track, at) for track, row, at in listed), (
+        "no CVE listed before its fix"
+    )
+    assert any(dated(track, at) is None for track, row, at in listed), "no listed CVE whose fix the timeline does not date"
+    two_year_since = "2024-11-22"
+    assert any(
+        dated(track, at) and row["kev_date_added"] <= two_year_since and dated(track, at) > "2024-10-23"
+        for track, row, at in listed
+    ), "no listing due before the two-year window opens, of a fix dated within 30 days of it"
+    critical = [(track, row) for _, track in tracks for row in track["cves"] if row.get("severity") == "critical"]
+    assert any(
+        (row.get("first_scored") or {}).get("critical", "")
+        > max(row["detectable_at"], dated(track, row["fixes"][0]["index"]) or "")
+        for track, row in critical
+    ), "no stated first-scored day after both the clock day and the fix's date"
+    assert any(
+        not row.get("first_scored")
+        and row["published"] < row["detectable_at"]
+        and (dated(track, row["fixes"][0]["index"]) or "9") < row["detectable_at"]
+        for track, row in critical
+    ), "no critical CVE without a first-scored day, detectable after its publication and its fix"
+    by_fix: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for track, row in critical:
+        if not row.get("first_scored"):
+            by_fix.setdefault((track["track"], row["fixes"][0]["index"]), []).append(row)
+    assert any(
+        len(rows) > 1
+        and sorted(rows, key=lambda r: r["cve_id"])[-1]["detectable_at"]
+        < sorted(rows, key=lambda r: r["cve_id"])[0]["detectable_at"]
+        for rows in by_fix.values()
+    ), "no two critical CVEs naming one fix with the later id due first"
 
 
 if __name__ == "__main__":

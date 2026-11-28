@@ -671,7 +671,7 @@ def published_checks(doc: dict) -> dict:
                     result = walk.walk(done, app=app["app"], track=track["track"], timeline=timeline, years=years)
                 except walk.WalkRefused:
                     continue
-                track["check"][f"{years}y"] = {stop: walk.check_totals(result, stop) for stop in walk.STOPS}
+                track["check"][f"{years}y"] = {stop: walk.check_totals(result, stop) for stop in walk.POLICIES}
     done["doc_id"] = feed.canonical_doc_id(done)
     return done
 
