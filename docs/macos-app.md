@@ -369,6 +369,12 @@ and [failure recovery](troubleshooting.md#macos-clean-uninstall-and-reinstall).
   **Quit** means.
 - **The setup claim exchange** stays, shell-held, by Kyle's ruling of 2026-10-06; gutting it is a
   backend change and a ruling, owed before a public release.
+- **No saved password and no passkey in the window.** macOS offers the app's web view neither: no
+  AutoFill on the sign-in fields, no offer to save after setup, and the page is told that no
+  passkey is available ([measured](#saved-passwords-and-passkeys-in-the-window)). The password is
+  typed, or **Open in Browser** (⌘B) puts the same page in a browser, where a password manager
+  has the form's `autocomplete` hints to read. Which route closes this is #956's ruling, and it
+  is not made.
 - **No update mechanism.** The app says that a newer release exists, and taking it is
   [by hand](#updates). Sparkle 2 (an EdDSA-signed appcast and a URL to host it) or a Homebrew
   cask would take it. Undecided.
@@ -408,6 +414,54 @@ support directory and no keychain items.
 | Shell SIGKILLed | Backend and Postgres both gone 0.45 s later, through the watchdog; Postgres logged a fast shutdown and *database system is shut down* |
 | Memory at rest, sign-in page shown | Shell 99 MB RSS (WebKit's own processes not counted), backend 184 MB, the postmaster 23 MB |
 | Support directory after setup | 50 MB |
+
+### Saved passwords and passkeys in the window
+
+What macOS offers at the app's sign-in page, measured for #956 on 2026-11-27 on one Mac: a
+MacBook Pro (Mac16,6) on macOS 27.3, which reports itself configured for passkeys
+(`ASAuthorizationWebBrowserPublicKeyCredentialManager.isDeviceConfiguredForPasskeys`). The signed
+app was 1.4.0 build 65.1 (`v1.4.0-rc.1`, commit `5823a7a7`): Developer ID, the hardened runtime,
+and `codesign -d --entitlements` prints nothing.
+
+That app's window was signed in and was left alone; only its menu bar was read, through
+Accessibility. The fields were measured in a stand-in: an app bundle holding one `WKWebView` of
+the default configuration and an Edit menu of the standard items, signed ad-hoc with the hardened
+runtime and no entitlements, as `build-app.sh` signs a development build. It loaded the running
+release candidate's own sign-in page, `http://127.0.0.1:<port>/login`, in a non-persistent data
+store where the app uses the default one. Clicks and context menus were events sent inside that
+process, with the app active and its window key. The last two rows were also read headless, by
+the same kind of bundle with no window, from a fixture page served at `127.0.0.1` and at
+`localhost`. No AutoFill item was chosen, no credential ceremony was run, and nothing was
+submitted to the instance.
+
+| Question | Answer |
+| --- | --- |
+| Click into the email field (`autocomplete="username"`): is anything offered? | Nothing. No new window on screen and none in the app. |
+| Click into the password field (`current-password`): is anything offered? | Nothing. |
+| Context menu on the email field | Cut, Copy, Paste, Spelling and Grammar, Substitutions, Font, Speech, Paragraph Direction. No AutoFill. |
+| Context menu on the password field | Cut, Copy, Paste. No AutoFill. |
+| **Edit › AutoFill › Passwords…** with a web field focused | Disabled, as are **Contact…** and **Credit Card…** beside it. AppKit adds the AutoFill submenu to an Edit menu by itself, and it is in the signed app's menu bar too. With the web view focused only `NSApplication` answers `_handleInsertFromPasswordsCommand:`. |
+| The same item with a native field focused, in the same app | Enabled, for an `NSTextField` and for an `NSSecureTextField`, answered by the field's own editor. |
+| A setup-shaped page (`username` and `new-password`, redrawn in place on submit): is a strong password offered on focus, or a save after submit? | Neither. No window and no sheet. |
+| `isSecureContext` and `PublicKeyCredential` | `true` and present: on the sign-in page with the window key, and headless at `127.0.0.1` and at `localhost`. |
+| `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` and `.isConditionalMediationAvailable()` | `false` and `false`, in the same three places. |
+
+**What it settles.** The web view gets nothing from macOS: no offer on focus, no AutoFill in the
+context menu, the Edit menu's item disabled, no offer to save, and no passkey. A native field in
+the same app, with no entitlement, does get the system's **AutoFill › Passwords…**.
+
+**What it does not.**
+
+- The stand-in is ad-hoc signed and is not the Developer ID app. The first two rows want one look
+  in the signed app, at a sign-out.
+- Whether Apple Passwords held a login for this instance was not checked, so "nothing" on focus
+  says less than the menu rows do.
+- The native row is the menu item's enabled state only. The picker was not opened: whether it
+  fills the field is unverified, and so is whether a password typed into a native field is
+  offered for saving without an associated domain.
+- **Open in Browser** in Safari: whether Apple Passwords fills and saves at
+  `http://127.0.0.1:<port>`, and whether the entry still matches after the port changes. That
+  takes a person and Touch ID.
 
 ## Validation (1.2.0)
 
