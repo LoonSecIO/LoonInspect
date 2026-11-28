@@ -12,6 +12,7 @@ export const de: Translations = {
   patchPolicy: patchPolicyGerman,
   patchPolicyWalk: walkGerman,
   mcp: mcpGerman,
+  explain: { action: "Dies erklären", facts: "Was ist das?" },
   aiActivity: aiActivityGerman,
   fleetPlanning: fleetPlanningGerman,
   fleetDetail: fleetDetailGerman,
