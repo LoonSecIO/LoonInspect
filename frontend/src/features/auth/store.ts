@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { setUnauthorizedHandler } from "@/config/api";
 import * as authApi from "@/features/auth/api";
+import { passkeySignInFlow, type PasskeyCopy, type SignInOutcome } from "@/features/auth/passkeys";
 import type { AuthStatus, AuthUser, MfaChallenge, PermissionName, SetupInput } from "@/features/auth/types";
 import { clearReviewDrafts } from "@/features/catalog/patchPlanDraft";
 
@@ -17,6 +18,8 @@ interface AuthStore {
    *  answers first (#653); the store stays signed out until `loginMfa` redeems it. */
   login: (email: string, password: string) => Promise<MfaChallenge | null>;
   loginMfa: (challenge: string, code: string) => Promise<void>;
+  /** One passkey sign-in (#955): signed in when the outcome says so, and otherwise left signed out. */
+  signInWithPasskey: (mode: "conditional" | "modal", signal: AbortSignal, copy: PasskeyCopy) => Promise<SignInOutcome>;
   refreshUser: () => Promise<void>;
   completeSetup: (input: SetupInput) => Promise<void>;
   logout: () => Promise<void>;
@@ -62,6 +65,13 @@ export const useAuthStore = create<AuthStore>((set) => ({
   async loginMfa(challenge, code) {
     // Exactly what a password-only login sets: the second step ends in the same session.
     set({ status: "authenticated", user: await authApi.loginMfa(challenge, code) });
+  },
+
+  async signInWithPasskey(mode, signal, copy) {
+    const outcome = await passkeySignInFlow(mode, signal, copy);
+    // The same session a password sign-in ends in; no code step follows a passkey (#955, default 1).
+    if (outcome.kind === "signed-in") set({ status: "authenticated", user: outcome.user });
+    return outcome;
   },
 
   async refreshUser() {

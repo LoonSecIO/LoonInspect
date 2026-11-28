@@ -29,6 +29,18 @@ export function loginMfa(challenge: string, code: string): Promise<AuthUser> {
   });
 }
 
+/** A passkey sign-in's challenge (#955). Takes nothing and names nobody; `publicKey` is what
+ *  `PublicKeyCredential.parseRequestOptionsFromJSON()` reads. A 409 is this address refused, in the server's words. */
+export function passkeySignInOptions(): Promise<{ publicKey: PublicKeyCredentialRequestOptionsJSON }> {
+  return apiRequest<{ publicKey: PublicKeyCredentialRequestOptionsJSON }>("/auth/login/passkey/options", { method: "POST" });
+}
+
+/** The browser's answer to that challenge: verified, and the session minted in the same step, as a password-only
+ *  sign-in answers. A refusal is a 401 whose sentence is the server's. */
+export function passkeySignIn(credential: AuthenticationResponseJSON): Promise<AuthUser> {
+  return apiRequest<AuthUser>("/auth/login/passkey", { method: "POST", json: { credential } });
+}
+
 export function completeSetup(input: SetupInput): Promise<AuthUser> {
   return apiRequest<AuthUser>("/auth/setup", {
     method: "POST",

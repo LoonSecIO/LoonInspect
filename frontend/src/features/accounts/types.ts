@@ -13,6 +13,19 @@ export interface Account {
   lastLoginAt: string | null;
   /** A confirmed second factor guards this account's sign-in (#653): what "Remove second factor" removes. */
   mfaEnrolled: boolean;
+  /** How many passkeys the account holds (#955): what "Remove passkeys" removes, every one at once. */
+  passkeys: number;
+}
+
+/** One of the caller's passkeys (#955), as `GET /api/auth/passkeys` answers it (app/schemas/passkeys.py). */
+export interface Passkey {
+  id: string;
+  name: string;
+  /** The host it was made at, the only one it works at. */
+  host: string;
+  createdAt: string;
+  /** Null until it first signs in. */
+  lastUsedAt: string | null;
 }
 
 export interface CreateAccountInput {
