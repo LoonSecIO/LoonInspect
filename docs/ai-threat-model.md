@@ -234,12 +234,14 @@ it got before, the closest filters; one that talks it into refusing gets nothing
 reaches a row the filters could not.
 
 
-2026-11-28, recording the 2026-08-29 ruling. A model compresses what the product already
-knows. It never concludes.
+Kyle, 2026-08-29, on what a model may do in this product, written down here on 2026-11-28
+because it was recorded nowhere in the repository (#984): a model compresses what the
+product already knows. It never concludes.
 
-2026-11-28, amendment for Explain alone. The reader sees the facts code selected first.
-Explain may then show one inference, explicitly labelled as the model's guess. A click
-requests one answer. There is no typed follow-up.
+Kyle, 2026-11-28, for Explain alone (#960, ruling 5): the reader sees the facts code
+selected first. Explain may then show one inference, labelled as the model's guess. A
+click asks for one answer, and there is no typed follow-up. This amends the rule above
+for this slot and for no other.
 
 ## Exclusion ranking boundary (#409, 2026-09-20)
 
@@ -283,20 +285,29 @@ stored or applied: it only picks which of the report's own counts lead (P5). `te
 
 ## Explain boundary (#984, 2026-11-28)
 
+**This section is a contract, and nothing in it is built yet.** The only Explain code on
+`main` is its name in AI Activity's list of purposes. #985 to #995 build the slot and are
+held to what follows, and each kind lands with the tests §6 asks for.
+
 A request declares a kind and its subject. The server checks access to the subject and
 reads the enabled evidence sources. Page text, selections and free-form questions are
 outside the input contract. The reader receives linkable facts even with AI off or if a
 provider fails. Fleet values, definitions and scripts are untrusted data.
 
 The model's copy contains only eligible facts. Personal values stay in the reader's copy.
-Script text requires a provider verified to run on the host. A withheld fact says why.
+Script text goes into the model's copy only when the provider's endpoint is on the host
+(#976) and the reader may read the script themselves (#977): a reply written from a script
+would otherwise show its contents to an account that may not see them. A withheld fact
+says why.
 The builder sanitises fleet text, marks truncated values and drops whole lower-priority
 facts to fit the context budget. Static instructions are separate from the JSON data.
 The share log records the actual field names, destination and requested model before
 dispatch through the adapter, under the feature code `explain`.
 
 One bounded call can return a plain-text `summary` and an optional plain-text `inference`.
-Reject extra fields, markup and numbers in the summary that have no basis in the facts.
+Reject extra fields, markup, and any number in the summary or the inference that the facts
+do not contain: no number in the product comes from a model (`v-never.md`), and a guess is
+no exception.
 Render accepted text as text, keeping the guess separate from the summary. On refusal,
 timeout or invalid output, the reader still has the facts. The answer cannot take an
 action or alter a record. AI Activity records the outcome. Neither the answer nor the

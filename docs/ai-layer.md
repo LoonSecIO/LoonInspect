@@ -779,6 +779,9 @@ an answered call is closed `completed` or `unusable`, and a failed one under its
 
 ## Explain (registered 2026-11-28, #984)
 
+**Not built.** This section says what #985 to #995 are to build. Today the name `explain`
+in AI Activity's purposes is all there is, and nothing calls a model.
+
 Explain reserves the feature code `explain` for the share log and AI Activity. Each click
 names a subject. The server assembles facts from the tenant's enabled sources
 (`inventory`, `change_log`, `definitions`). The following field groups bound what can
@@ -791,8 +794,10 @@ leave the pod when the selected provider runs elsewhere.
 | `group_membership` · device and group | Recorded membership (in, out or unknown), when it began, ordered criteria with the Mac's mapped current values, missing mappings and the time of the last criteria change. Static membership is identified as manually assigned. Explain does not recalculate membership. |
 
 Personal values are withheld from every model copy, including values in change history
-and group criteria. The authorised reader can still see their facts. An extension
-attribute's script can reach only a provider verified to run on the host. When it is
-withheld, the facts give the reason. The disclosure names the fields actually sent
+and group criteria: #987 builds that for attribute values, and #988 and #989 are held to
+it for change rows and group criteria. The authorised reader can still see their facts.
+An extension attribute's script can reach only a provider whose endpoint is on the host,
+and only for a reader who may read the script. When it is withheld, the facts give the
+reason. The disclosure names the fields actually sent
 after omissions and budgeting. The [Explain boundary](ai-threat-model.md#explain-boundary-984-2026-11-28)
 defines the reply and its grounding check. This registration adds no provider call.

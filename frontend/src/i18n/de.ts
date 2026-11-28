@@ -12,10 +12,7 @@ export const de: Translations = {
   patchPolicy: patchPolicyGerman,
   patchPolicyWalk: walkGerman,
   mcp: mcpGerman,
-  aiActivity: {
-    ...aiActivityGerman,
-    purposeLabel: (label: string) => label === "explain" ? "Erklärungen" : label,
-  },
+  aiActivity: aiActivityGerman,
   fleetPlanning: fleetPlanningGerman,
   fleetDetail: fleetDetailGerman,
   intelligence: {

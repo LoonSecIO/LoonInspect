@@ -166,9 +166,10 @@ review, the migration detail pages and the migration briefing (the change log, 2
 
 ## Explain (#984)
 
-Explain requires the instance flag `ai_features`, AI-inference consent, and its own
-per-tenant setting with a saved provider. The setting planned in #985 defaults off on
-both new and upgraded instances. Enabling the umbrella flag alone leaves Explain off.
+Explain will require the organization's `ai_features` flag (the flag is stored for each
+organization, not for the instance), AI-inference consent, and its own per-tenant setting
+with a saved provider. That setting is #985's and defaults off on new and upgraded
+instances alike, so turning on the flag alone leaves Explain off.
 
 ## How a gate runs
 
@@ -204,3 +205,4 @@ both new and upgraded instances. Enabling the umbrella flag alone leaves Explain
 | 2026-11-25 | `fleet_maintained_apps` also decides the migration detail routes, `GET /api/fleet-catalog/migration/apps/{appHash}` and `…/titles/{slug}` (#899), and the observed upgrades they carry from the change log (#900): off, each answers `409` with the flag's sentence before it reads inventory or the change log. Read-only, so no new switch. Its verdict at v1.3.0 (keep off) stands. |
 | 2026-11-25 | `fleet_maintained_apps` also gates the migration report's AI briefing, `GET` and `POST /api/fleet-catalog/briefing` (#910): off, both answer `409` with the flag's sentence and nothing is sent. On, the briefing also needs `ai_features`, inference consent and a saved provider, sends only aggregate counts and is logged in the share log as `fleet_catalog_briefing`, so no new switch. Its verdict at v1.3.0 (keep off) stands. |
 | 2026-11-27 | The v1.4.0 gate as ruled (#946, "Carry all forward"): every v1.3.0 verdict stands for the twenty-one switches. No switch was added since v1.3.0, and `PATCH_POLICY_FEED_FILE` is a path, not a switch. No default flipped. |
+| 2026-11-28 | Explain (#984) is registered behind `ai_features`, AI-inference consent and a setting of its own (#985, default off). The registration adds no switch and changes no default. |

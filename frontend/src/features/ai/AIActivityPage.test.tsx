@@ -81,18 +81,6 @@ describe("AI Activity", () => {
     expect(screen.getByRole("link", { name: "Provider setup" }).getAttribute("href")).toBe("/settings/ai");
     expect(request.mock.calls.every(([, options]) => !options?.method || options.method === "GET")).toBe(true);
   });
-  it.each([["en", "Explanations"], ["de", "Erklärungen"]] as const)("renders the Explain purpose in %s and filters by code", async (lang, label) => {
-    locale.current = lang;
-    const data = report();
-    data.facets.purposes = [{ id: "explain", label: "explain" }];
-    data.purposes = [{ ...metrics, feature: "explain", label: "explain" }];
-    data.groups = [{ ...data.groups[0], feature: "explain", purpose: "explain" }];
-    request.mockImplementation(async path => path === "/system/ai/activity/live" ? live() : data);
-    page("?purpose=explain");
-    expect((await screen.findByRole("option", { name: label })).getAttribute("value")).toBe("explain");
-    expect(screen.getByRole("button", { name: new RegExp(label) })).toBeTruthy();
-    expect(screen.getByText((_, el) => el?.tagName === "TD" && el.textContent === data.groups[0].serviceLabel + label)).toBeTruthy();
-  });
   it("composes URL filters, chart drilldown and back/forward without filtering the live read", async () => {
     page("?purpose=changes&model=requested-model&outcome=completed");
     fireEvent.click(await screen.findByRole("button", { name: "Local Ollama" }));

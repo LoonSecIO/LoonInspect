@@ -37,7 +37,7 @@ PURPOSES = {
     "exclusion_ranking": "Exclusion ranking",
     "patch_policy_rules": "Patch-policy drafting",
     "fleet_catalog_briefing": "Fleet migration briefings",
-    "explain": "explain",  # The page localises this purpose code.
+    "explain": "Explanations",
     "ai_test_box": "Test prompts",
 }
 OUTCOMES = {
