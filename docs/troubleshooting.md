@@ -4111,7 +4111,7 @@ Start in **Settings → AI connections**, with the intended organization selecte
   includes only managed Macs, outside the brackets. Remove each Managed condition,
   including nested ones, or switch to Advanced search. The mode switch keeps your rules
   for review. Supervised is independent and remains available in both modes.
-- **The device list API says the device filter is invalid.** Check the JSON in the `scope`
+- **The device list API says the device filter is invalid.** Check the JSON in the `deviceScope`
   query parameter, or remove that parameter and try again. A valid scope selects current Jamf
   Macs. Each flat list filter further narrows those results.
 - **The EA regular expression is invalid.** Check unmatched brackets, parentheses and

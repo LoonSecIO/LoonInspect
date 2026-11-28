@@ -111,16 +111,12 @@ async def test_invalid_regex_fails_before_even_an_empty_inventory_query(admin, f
         "connectionId": 2147483647,
         "rules": [{"field": "ea", "key": "19", "operator": "does_not_match_regex", "value": "["}],
     }
-    for route in ["/api/applications", "/api/catalog", "/api/application-patch-plans/scope-options"]:
+    # The device list is one of them (#961). Without the pre-check this empty inventory never
+    # runs the regex and answers 200; without the guard the database's error has no sentence.
+    for route in ["/api/applications", "/api/catalog", "/api/application-patch-plans/scope-options", "/api/devices"]:
         response = await admin.get(route, params={"deviceScope": json.dumps(scope)})
         assert response.status_code == 422, response.text
         assert "regular expression is invalid" in response.json()["detail"]
-    # The device list takes the same scope under its own parameter name (#961). Without the
-    # pre-check this empty inventory never runs the regex and answers 200; without the guard
-    # the database's error has no sentence.
-    response = await admin.get("/api/devices", params={"scope": json.dumps(scope)})
-    assert response.status_code == 422, response.text
-    assert "regular expression is invalid" in response.json()["detail"]
     response = await admin.post("/api/application-patch-plans", json={"scope": scope, "appHashes": ["a" * 32]})
     assert response.status_code == 422 and "regular expression is invalid" in response.json()["detail"]
     assert (await admin.get("/api/application-patch-plans/scope-options")).status_code == 200
@@ -159,7 +155,7 @@ async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(d
     )
 
     async def listed(**params):
-        response = await admin.get("/api/devices", params={"scope": scope, **params})
+        response = await admin.get("/api/devices", params={"deviceScope": scope, **params})
         assert response.status_code == 200, response.text
         return response.json()
 
@@ -179,6 +175,6 @@ async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(d
 
 
 async def test_device_list_refuses_invalid_scope(admin):  # noqa: F811
-    response = await admin.get("/api/devices", params={"scope": '{"rules":[{"field":"unsupported"}]}'})
+    response = await admin.get("/api/devices", params={"deviceScope": '{"rules":[{"field":"unsupported"}]}'})
     assert response.status_code == 422
     assert response.json()["detail"] == "The device filter is invalid. Check each condition or clear the filter and try again."

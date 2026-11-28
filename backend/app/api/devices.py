@@ -232,14 +232,15 @@ async def list_devices(
         alias="includeDeparted",
         description=(
             "Also list Macs that left the fleet — absent from every clean census for seven days. "
-            "Has no effect with `scope`, which lists current Macs only."
+            "Has no effect with `deviceScope`, which lists current Macs only."
         ),
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
-    scope: Annotated[
+    device_scope: Annotated[
         str | None,
         Query(
+            alias="deviceScope",
             max_length=12000,
             description=(
                 "JSON device scope to intersect with the list filters. A scope lists current Jamf Macs only, "
@@ -249,10 +250,10 @@ async def list_devices(
     ] = None,
 ) -> DeviceListResponse:
     stmt = select(Device)
-    if scope is not None:
-        device_scope = parse_scope(scope)
-        await prepare_scope(db, device_scope)
-        population = scoped_devices(device_scope)
+    if device_scope is not None:
+        scope = parse_scope(device_scope)
+        await prepare_scope(db, scope)
+        population = scoped_devices(scope)
         stmt = stmt.where(Device.id.in_(select(population.c.id)))
     elif not include_departed:
         # The default answer is the current fleet (#183), pushed into the WHERE clause rather
@@ -344,7 +345,7 @@ async def list_devices(
     # pass to matter. The eq case (the default) stays a normal indexed SQL filter.
     needs_python_version_filter = bool(os_version) and os_version_operator != VersionOperator.eq
 
-    ordering = (Device.hostname, Device.id) if scope is not None else (Device.hostname,)
+    ordering = (Device.hostname, Device.id) if device_scope is not None else (Device.hostname,)
     if needs_python_version_filter:
         result = await db.execute(stmt.order_by(*ordering))
         matching = [
