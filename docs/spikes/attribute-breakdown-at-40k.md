@@ -57,4 +57,4 @@ backend/.venv/bin/python docs/spikes/attribute-breakdown-at-40k/bench.py 40000 5
 
 The runner starts a separate PostgreSQL 17.12 container for each size, applies the migrations in main commit `8c42d569` through Alembic head `c614b3d2e8f4`, and runs `VACUUM (ANALYZE)` before timing. A tenant-bound application role has `NOSUPERUSER NOBYPASSRLS`. Docker Desktop reported 16 arm64 vCPUs and 7.75 GiB of VM memory. PostgreSQL used 128MB shared buffers and 4MB work memory.
 
-This measures a single reader, one connection, current spans and the specified scope. Fleet history, additional tenants, simultaneous ingest and more selective or expensive device rules can change the plan and its timing.
+The Docker Desktop VM shared CPU and disk resources with other local work. Contention and the retained filesystem cache can affect these times. This measures a single reader, one connection, current spans and the specified scope. Fleet history, additional tenants, simultaneous ingest and more selective or expensive device rules can change the plan and its timing.
