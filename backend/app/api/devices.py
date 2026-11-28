@@ -230,12 +230,22 @@ async def list_devices(
     include_departed: bool = Query(
         default=False,
         alias="includeDeparted",
-        description="Also list Macs that left the fleet — absent from every clean census for seven days.",
+        description=(
+            "Also list Macs that left the fleet — absent from every clean census for seven days. "
+            "Has no effect with `scope`, which lists current Macs only."
+        ),
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
     scope: Annotated[
-        str | None, Query(max_length=12000, description="JSON device scope to intersect with the list filters.")
+        str | None,
+        Query(
+            max_length=12000,
+            description=(
+                "JSON device scope to intersect with the list filters. A scope lists current Jamf Macs only, "
+                "whatever `includeDeparted` says."
+            ),
+        ),
     ] = None,
 ) -> DeviceListResponse:
     stmt = select(Device)

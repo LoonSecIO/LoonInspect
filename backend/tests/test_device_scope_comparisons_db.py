@@ -115,6 +115,12 @@ async def test_invalid_regex_fails_before_even_an_empty_inventory_query(admin, f
         response = await admin.get(route, params={"deviceScope": json.dumps(scope)})
         assert response.status_code == 422, response.text
         assert "regular expression is invalid" in response.json()["detail"]
+    # The device list takes the same scope under its own parameter name (#961). Without the
+    # pre-check this empty inventory never runs the regex and answers 200; without the guard
+    # the database's error has no sentence.
+    response = await admin.get("/api/devices", params={"scope": json.dumps(scope)})
+    assert response.status_code == 422, response.text
+    assert "regular expression is invalid" in response.json()["detail"]
     response = await admin.post("/api/application-patch-plans", json={"scope": scope, "appHashes": ["a" * 32]})
     assert response.status_code == 422 and "regular expression is invalid" in response.json()["detail"]
     assert (await admin.get("/api/application-patch-plans/scope-options")).status_code == 200
@@ -136,10 +142,15 @@ async def test_regex_timeout_respects_stricter_limit_and_does_not_leak(db):
 async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(db, inventory, admin):  # noqa: F811
     source, _, _ = inventory
     devices = await macs(db, source)
-    for device, site in zip(devices, ["North", "South", "East", "North"], strict=True):
-        device.hostname = "shared-name"
-        device.site = site
-    await db.commit()
+    sites = ["North", "South", "East", "North"]
+    assert len(devices) == len(sites)
+    # The higher id is rewritten first, each in its own commit, so the two matching rows do
+    # not sit in id order on disk. One name for all four then leaves only the tie-break on
+    # id to keep page 1 and page 2 from trading rows.
+    for index in (1, 0, 2, 3):
+        devices[index].hostname = "shared-name"
+        devices[index].site = sites[index]
+        await db.commit()
     scope = json.dumps(
         {
             "connectionId": source,
@@ -160,8 +171,11 @@ async def test_device_list_intersects_nested_scope_with_flat_filters_and_pages(d
         assert page["total"] == 2
         assert [row["id"] for row in page["items"]] == [identifier]
     assert (await listed(page=3, pageSize=1))["items"] == []
-    flat = await listed(site="South", includeDeparted="true")
-    assert flat["total"] == 1 and flat["items"][0]["id"] == devices[1].id
+    # Both halves have to hold for one row to come back. Without the scope, `site=North`
+    # with departed Macs included is two rows: the fourth Mac is in North and has left the
+    # fleet. A scope lists current Macs only, so `includeDeparted` cannot bring it back.
+    flat = await listed(site="North", includeDeparted="true")
+    assert flat["total"] == 1 and [row["id"] for row in flat["items"]] == [devices[0].id]
 
 
 async def test_device_list_refuses_invalid_scope(admin):  # noqa: F811
