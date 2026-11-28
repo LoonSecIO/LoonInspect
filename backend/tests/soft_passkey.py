@@ -2,7 +2,8 @@
 
 A P-256 key with the credential id, counter and backup flags a test chooses, so a test can answer the way Apple
 Passwords does (a synced passkey, counter zero for good), the way a security key does (a counter that climbs), or
-the ways no honest browser does: for another origin or host, without user verification, with a counter going back.
+the ways no honest browser does: for another origin or host, without user verification, with a counter going back,
+or a registration with no credential in it.
 """
 
 from __future__ import annotations
@@ -44,14 +45,17 @@ class SoftPasskey:
     def _client(kind: str, challenge: str, origin: str) -> bytes:
         return json.dumps({"type": kind, "challenge": challenge, "origin": origin, "crossOrigin": False}).encode()
 
-    def create(self, options: dict, *, origin: str, verified: bool = True, rp_id: str | None = None) -> dict:
-        """The answer to a registration's `publicKey` options, made for `rp_id` (the options' own by default)."""
+    def create(
+        self, options: dict, *, origin: str, verified: bool = True, rp_id: str | None = None, attested: bool = True
+    ) -> dict:
+        """The answer to a registration's `publicKey` options, made for `rp_id` (the options' own by default).
+        `attested=False` leaves the credential out of the authenticator data, and its AT flag unset."""
         self.user_handle = unb64(options["user"]["id"])
         client = self._client("webauthn.create", options["challenge"], origin)
         public = cbor.encode(ES256.from_cryptography_key(self.key.public_key()))
-        attested = b"\0" * 16 + struct.pack(">H", len(self.credential_id)) + self.credential_id + public
+        made = (b"\0" * 16 + struct.pack(">H", len(self.credential_id)) + self.credential_id + public) if attested else b""
         rp_hash = hashlib.sha256((rp_id or options["rp"]["id"]).encode()).digest()
-        data = rp_hash + struct.pack(">BI", self._flags(verified=verified, attested=True), self.counter) + attested
+        data = rp_hash + struct.pack(">BI", self._flags(verified=verified, attested=attested), self.counter) + made
         attestation = cbor.encode({"fmt": "none", "attStmt": {}, "authData": data})
         return {
             "id": b64(self.credential_id),

@@ -260,6 +260,19 @@ async def test_registration_refuses_another_host_no_verification_and_a_challenge
         assert (await asker.get(MINE)).json() == []
 
 
+async def test_a_registration_answer_with_no_credential_in_it_is_refused_in_words_not_a_500(people):
+    """Authenticator data present and verified but carrying no credential (its AT flag unset) made no passkey. fido2
+    only asserts that a registration has one, so the answer is refused before fido2 sees it, in the unreadable
+    answer's sentence."""
+    async with _client() as client:
+        await _sign_in(client, ADMIN)
+        refused = await _add(client, SoftPasskey(), attested=False)
+        assert (refused.status_code, refused.json()["detail"]) == (400, passkeys.UNREADABLE)
+        assert (await client.get(MINE)).json() == []
+        # It spent its challenge, as a refused answer does, and nothing else: the next answer adds its passkey.
+        assert (await _add(client, SoftPasskey())).status_code == 201
+
+
 async def test_adding_a_passkey_wants_the_current_password_which_shares_the_lockout_a_passkey_does_not(people):
     key, _ = await _enrolled(ADMIN)
     async with _client() as client:
@@ -331,6 +344,14 @@ async def test_no_challenge_at_an_ip_address_or_over_plain_http_off_localhost(pe
     assert (refused.status_code, refused.json()["detail"]) == (409, expected)
     # The sentence names the address the page was reached at, and what to open instead.
     assert passkeys.parse_origin(base).origin in expected and "localhost" in expected
+
+
+async def test_a_host_header_longer_than_a_host_name_can_be_is_refused_in_words_not_a_500(people):
+    """No browser sends one, and the challenge's `rp_id` column could not hold it: refused before a row is written."""
+    too_long = ".".join(["a" * 63] * 4) + ".localhost:8001"
+    async with _client("http://localhost:8001") as client:
+        refused = await client.post(OPTIONS, headers={"Host": too_long})
+    assert (refused.status_code, refused.json()["detail"]) == (400, passkeys.NO_ADDRESS)
 
 
 @pytest.mark.parametrize("base", ["http://localhost:8001", "http://looninspect.localhost:8001", "https://inspect.corp.example"])

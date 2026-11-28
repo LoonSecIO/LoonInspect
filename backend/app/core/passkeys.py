@@ -68,6 +68,8 @@ SIGN_IN = "sign-in"
 REGISTER = "register"
 CHALLENGE_TTL_SECONDS = 300
 MAX_CREDENTIAL_ID_BYTES = 1023
+# The longest a host name can be, and so a relying-party id: what the `rp_id` columns hold.
+MAX_HOST_LENGTH = 253
 MAX_NAME_LENGTH = 64
 # What `rp.name` says in a browser's own dialog. The relying-party id, which a passkey is bound to, is the host.
 RP_NAME = "LoonInspect"
@@ -78,7 +80,7 @@ _TRANSPORTS = frozenset({"usb", "nfc", "ble", "smart-card", "hybrid", "internal"
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 NO_ADDRESS = (
-    "This request named no host, so LoonInspect cannot tell which address a passkey would be for. "
+    "This request named no host name LoonInspect can use, so it cannot tell which address a passkey would be for. "
     "Open LoonInspect in a browser at its address."
 )
 SPENT = {
@@ -142,6 +144,8 @@ class Address:
 
 
 def parse_origin(value: str | None) -> Address | None:
+    """An origin, or None for what is not one: another scheme, no host, a port past 65535, or a host longer than a host
+    name can be, which no browser sends and no `rp_id` column holds."""
     if not value:
         return None
     try:
@@ -150,7 +154,7 @@ def parse_origin(value: str | None) -> Address | None:
     except ValueError:
         return None
     scheme, host = parts.scheme.lower(), (parts.hostname or "").rstrip(".")
-    if scheme not in _DEFAULT_PORTS or not host:
+    if scheme not in _DEFAULT_PORTS or not host or len(host) > MAX_HOST_LENGTH:
         return None
     if port == _DEFAULT_PORTS[scheme]:
         port = None
@@ -483,13 +487,15 @@ async def finish_registration(
         raise PasskeyRefused(409, OTHER_HOST, "other_host")
     if not data.is_user_present() or not data.is_user_verified():
         raise PasskeyRefused(409, NOT_VERIFIED, "not_verified")
+    # Authenticator data with no credential in it (its AT flag unset) made no passkey. Refused here, before fido2
+    # sees it: `register_complete` only asserts that there is one, which would answer 500 instead of this sentence.
+    made = data.credential_data
+    if made is None or made.credential_id != answer.raw_id:
+        raise PasskeyRefused(400, UNREADABLE, "unreadable")
     try:
         data = _server(row.rp_id, row.origin).register_complete(_state(client.challenge), answer)
     except (ValueError, TypeError, KeyError):
         raise PasskeyRefused(400, UNREADABLE, "unreadable") from None
-    made = data.credential_data
-    if made is None or made.credential_id != answer.raw_id:
-        raise PasskeyRefused(400, UNREADABLE, "unreadable")
     # COSE label 3 is the key's algorithm: one of the kinds the challenge offered, or the key is refused.
     if made.public_key.get(3) not in ALGORITHMS:
         raise PasskeyRefused(409, UNSUPPORTED_KEY, "unsupported_key")

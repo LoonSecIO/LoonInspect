@@ -586,7 +586,7 @@ export const en = {
       `Remove every passkey of ${email}? Every session of that account is signed out, and it signs in with its password.`,
     mfaPolicy: {
       title: "Two-step sign-in policy", loading: "Reading the policy…", failed: "Could not change the policy.",
-      description: "Who must type a six-digit code from an authenticator app after the password. Break-glass accounts are never asked.",
+      description: "Who must sign in with a passkey, or type a six-digit code from an authenticator app after the password. Break-glass accounts are never asked.",
       unreadable: "The policy could not be read, which is not the same as off. Reload the page.",
       names: { off: "Off", admins: "Administrators", everyone: "Everyone" },
       confirm: {

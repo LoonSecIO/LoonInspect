@@ -4859,9 +4859,10 @@ refusals are in the container log too: `docker compose logs app --since 30m | gr
 3. ***Passkeys need a host name, and this page was reached at …, which is an IP address.*** or ***Passkeys need
    HTTPS, and this page was reached at … over plain HTTP.*** The server's, under **Sign in with a passkey** or
    **Add a passkey**, or to anything that asks the API: the same two rules as step 1, read from the address the
-   request arrived at. The fixes are step 1's. ***This request named no host, so LoonInspect cannot tell which
-   address a passkey would be for. …*** is a client that sent no `Host` header, which a browser always sends: open
-   LoonInspect in a browser.
+   request arrived at. The fixes are step 1's. ***This request named no host name LoonInspect can use, so it cannot
+   tell which address a passkey would be for. …*** is a client whose `Host` header was missing or was no host name:
+   longer than a host name's 253 characters, or with a port past 65535. A browser sends neither: open LoonInspect
+   in a browser.
 4. ***This browser is at https://inspect.corp.example, and LoonInspect sees the request as
    http://inspect.corp.example. …*** Something in front of LoonInspect changed the address on the way, and a passkey
    is checked against the address the browser is at. Check, in order:
@@ -4906,7 +4907,8 @@ refusals are in the container log too: `docker compose logs app --since 30m | gr
     the key's make and model. A passkey a password manager syncs always counts zero and never meets this.
 12. **Add a passkey refused.** Each sentence, and what it means:
     - ***Current password is incorrect***: the password, not the passkey. Wrong ones count toward the sign-in
-      lockout, so five answer ***Too many failed attempts. Try again later.*** (§20 step 4): wait it out;
+      lockout: after five, ***Too many failed attempts. Wait a few minutes and try again.*** (the page's own; the
+      API answers ***Too many failed attempts. Try again later.***). Wait it out, as §20 step 4 says;
     - ***Give the passkey a name of 1 to 64 characters, such as the device or password manager that holds it.***;
     - ***No passkey was made: the request was cancelled or timed out. …*** (the page's own): choose it again;
     - ***This device or password manager already holds a passkey for this account at this address. …*** (the
@@ -4936,6 +4938,14 @@ refusals are in the container log too: `docker compose logs app --since 30m | gr
     passkeys*) removes every passkey of another account and signs out every session it has; it answers ***You
     cannot remove your own passkeys here. Remove them under My Account › Passkeys.*** for your own, and ***That
     account has no passkeys to remove.*** when there are none left.
+16. ***Your passkeys could not be read, which is not the same as having none. Reload the page.*** The page's own,
+    under *Passkeys* on My Account: the list read had no answer it could use, so the section lists no passkey and
+    offers no **Remove**. Reload the page; the sign-in page instead means the session had ended, so sign in and come
+    back (***Not authenticated*** under **Add a passkey** or **Remove** is that ended session too). Still there while
+    other pages answer: `docker compose logs app --since 30m | grep /api/auth/passkeys`. No `GET` line from the
+    reload means the read never reached the app, and a `"status_code": 200` means its answer never reached the page:
+    either way, look at what sits between ([a proxy in front](#a-proxy-in-front-answers-for-itself)). A
+    `"status_code"` of 500 or more: report those lines (§8).
 
 **AF.** A passkey is not offered where *Passkeys* offers **Add a passkey** (step 1), or one listed at this host on
 an active account is refused as not accepted (step 7). Report the browser and its version, the address in the

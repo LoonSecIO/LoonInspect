@@ -537,7 +537,7 @@ export const de: Translations = {
       `Alle Passkeys von ${email} entfernen? Jede Sitzung dieses Kontos wird abgemeldet, und es meldet sich mit seinem Passwort an.`,
     mfaPolicy: {
       title: "Richtlinie für die Anmeldung in zwei Schritten", loading: "Richtlinie wird gelesen…", failed: "Die Richtlinie konnte nicht geändert werden.",
-      description: "Wer nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App eingeben muss. Notfallzugänge werden nie gefragt.",
+      description: "Wer sich mit einem Passkey anmelden oder nach dem Passwort einen sechsstelligen Code aus einer Authenticator-App eingeben muss. Notfallzugänge werden nie gefragt.",
       unreadable: "Die Richtlinie konnte nicht gelesen werden – und unbekannt ist nicht dasselbe wie aus. Laden Sie die Seite neu.",
       names: { off: "Aus", admins: "Administratoren", everyone: "Alle" },
       confirm: {

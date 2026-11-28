@@ -35,9 +35,25 @@ def test_an_origin_is_written_the_way_a_browser_writes_one(value: str, origin: s
     assert (parsed.origin, parsed.host) == (origin, host)
 
 
-@pytest.mark.parametrize("value", [None, "", "null", "ftp://inspect.example.com", "https://", "https://host:99999"])
+# Host names of 253 characters, the most there can be, and 254: labels of 63 and the dots between them.
+_LONGEST = ".".join(["a" * 63] * 3 + ["b" * 61])
+_TOO_LONG = _LONGEST + "c"
+
+
+@pytest.mark.parametrize(
+    "value", [None, "", "null", "ftp://inspect.example.com", "https://", "https://host:99999", f"https://{_TOO_LONG}"]
+)
 def test_what_is_not_an_origin_is_none(value: str | None) -> None:
     assert passkeys.parse_origin(value) is None
+
+
+def test_a_host_name_of_253_characters_is_one_and_254_is_not() -> None:
+    assert (len(_LONGEST), len(_TOO_LONG)) == (passkeys.MAX_HOST_LENGTH, passkeys.MAX_HOST_LENGTH + 1)
+    assert passkeys.parse_origin(f"https://{_LONGEST}").host == _LONGEST
+    # Refused before a challenge is written, whose `rp_id` column holds 253 characters, where it would be a 500.
+    with pytest.raises(passkeys.PasskeyRefused) as refused:
+        passkeys.check_address(_request("http", f"{_TOO_LONG}.localhost:8001"))
+    assert (refused.value.status, refused.value.detail, refused.value.reason) == (400, passkeys.NO_ADDRESS, "no_host")
 
 
 @pytest.mark.parametrize(
@@ -204,6 +220,9 @@ _PAGE = (
     "The passkey request failed in this browser before LoonInspect saw an answer.",
     "LoonInspect's answer did not arrive or could not be read.",
     "Every session it signed in ends, this one included if it did.",
+    "Your passkeys could not be read, which is not the same as having none. Reload the page.",
+    # What the page shows for a lockout in place of the server's 429 sentence (answerError), which §34 quotes too.
+    "Too many failed attempts. Wait a few minutes and try again.",
 )
 
 
