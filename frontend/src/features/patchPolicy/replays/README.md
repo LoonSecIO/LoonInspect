@@ -25,9 +25,9 @@ these stops each number would sit a day early. The page refuses a schema-2 file 
 
 **The four files listed below are schema 2, on the old count, and the page refuses each.** Until
 they are replaced, the fallback is that refusal, one app at a time, never a drawing. Their schema-3
-replacements, on the new count with each day row's delay stated, are owed from
-[LoonVD-Internal#151](https://github.com/LoonSecIO/LoonVD-Internal/issues/151), which writes all four
-again; when they land, they replace these files and their rows in the table below.
+replacements, on the new count with each day row's delay stated, are owed from LoonVD-Internal#151,
+which writes all four again; when they land, they replace these files and their rows in the table
+below.
 
 A replay names its own release dates: its `timeline` block says which public release record the
 dates come from, where that record is, when it was fetched, its SHA-256, and what one of its dates
