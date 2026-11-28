@@ -85,7 +85,7 @@ describe("My Account's passkeys (#955)", () => {
     const unread = render({ state: "failed" }, AVAILABLE);
     expect(unread).toContain(copy.unreadable);
     expect(unread).not.toContain(copy.none);
-    expect(render(ready([MAC]), AVAILABLE, PANEL_CLOSED, {}, "de")).toContain("Funktioniert an inspect.example.com");
+    expect(render(ready([MAC]), AVAILABLE, PANEL_CLOSED, {}, "de")).toContain("Funktioniert unter inspect.example.com");
   });
 
   it("draws the enrolment form: a name, and the current password the server asks for before any passkey is made", () => {

@@ -25,6 +25,7 @@ import ipaddress
 import json
 import logging
 import secrets
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -164,9 +165,13 @@ def address_of(request: Request) -> Address | None:
     return parse_origin(f"{request.url.scheme}://{host}") if host else None
 
 
-def _same_origin(value: str | None) -> str | None:
+def _same_origin(value: object) -> str:
+    """An origin a browser signed, written the way `parse_origin` writes one; what is not an origin comes back as it
+    was, cut to a length a sentence can carry, since whoever sent the answer chose it."""
+    if not isinstance(value, str):
+        return "(no origin)"
     parsed = parse_origin(value)
-    return parsed.origin if parsed is not None else value
+    return parsed.origin if parsed is not None else value[:200]
 
 
 def is_ip_address(host: str) -> bool:
@@ -388,17 +393,19 @@ async def finish_sign_in(db: AsyncSession, credential: Mapping[str, Any]) -> tup
         raise PasskeyRefused(400, UNREADABLE, "unreadable")
     signed = _same_origin(client.origin)
     if signed != row.origin:
-        raise PasskeyRefused(401, signed_origin_refusal(str(signed), row.origin), "origin_mismatch")
+        raise PasskeyRefused(401, signed_origin_refusal(signed, row.origin), "origin_mismatch")
     data = answer.response.authenticator_data
-    identity = await _passkey_by_id(db, answer.raw_id)
+    identity = await _passkey_by_id(db, answer.raw_id) if answer.raw_id else None
     if identity is None or identity.rp_id != row.rp_id or data.rp_id_hash != hashlib.sha256(row.rp_id.encode()).digest():
         raise PasskeyRefused(401, NOT_ACCEPTED, "not_accepted")
     if not data.is_user_present() or not data.is_user_verified():
         raise PasskeyRefused(401, NOT_VERIFIED, "not_verified")
-    stored = AttestedCredentialData.create(Aaguid.NONE, identity.credential_id, CoseKey.parse(cbor.decode(identity.public_key)))
     try:
+        key = CoseKey.parse(cbor.decode(identity.public_key))
+        stored = AttestedCredentialData.create(Aaguid.NONE, identity.credential_id, key)
         _server(row.rp_id, row.origin).authenticate_complete(_state(client.challenge), [stored], answer)
-    except ValueError:
+    except (ValueError, TypeError, KeyError):
+        # A signature that does not verify, said as every other refusal that would name a passkey or an account.
         raise PasskeyRefused(401, NOT_ACCEPTED, "not_accepted") from None
     account = await db.get(Account, identity.account_id)
     handle = answer.response.user_handle
@@ -444,7 +451,9 @@ async def begin_registration(db: AsyncSession, address: Address, account: Accoun
 
 
 def clean_name(name: str) -> str:
-    label = " ".join(name.split())
+    """The name as it is kept: control and invisible formatting characters gone, runs of spaces one space."""
+    visible = "".join(ch for ch in name if unicodedata.category(ch) not in ("Cc", "Cf"))
+    label = " ".join(visible.split())
     if not 1 <= len(label) <= MAX_NAME_LENGTH:
         raise PasskeyRefused(422, NAME_REQUIRED, "name")
     return label
@@ -464,7 +473,9 @@ async def finish_registration(
         raise PasskeyRefused(400, UNREADABLE, "unreadable")
     signed = _same_origin(client.origin)
     if signed != row.origin:
-        raise PasskeyRefused(409, signed_origin_refusal(str(signed), row.origin), "origin_mismatch")
+        raise PasskeyRefused(409, signed_origin_refusal(signed, row.origin), "origin_mismatch")
+    if not answer.raw_id:
+        raise PasskeyRefused(400, UNREADABLE, "unreadable")
     if len(answer.raw_id) > MAX_CREDENTIAL_ID_BYTES:
         raise PasskeyRefused(422, too_long(len(answer.raw_id)), "credential_id_too_long")
     data = answer.response.attestation_object.auth_data
@@ -474,7 +485,7 @@ async def finish_registration(
         raise PasskeyRefused(409, NOT_VERIFIED, "not_verified")
     try:
         data = _server(row.rp_id, row.origin).register_complete(_state(client.challenge), answer)
-    except ValueError:
+    except (ValueError, TypeError, KeyError):
         raise PasskeyRefused(400, UNREADABLE, "unreadable") from None
     made = data.credential_data
     if made is None or made.credential_id != answer.raw_id:

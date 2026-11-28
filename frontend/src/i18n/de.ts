@@ -590,12 +590,12 @@ export const de: Translations = {
     passkeys: {
       title: "Passkeys",
       description:
-        "Ein Passkey meldet Sie allein an, mit Ihrem Fingerabdruck, Ihrem Gesicht oder dem Gerätepasswort, wo Sie sonst das Passwort eingeben. Er funktioniert nur an dem Host, an dem er erstellt wurde. Ihr Passwort funktioniert weiter.",
+        "Ein Passkey meldet Sie allein an, mit Ihrem Fingerabdruck, Ihrem Gesicht oder dem Gerätepasswort, wo Sie sonst das Passwort eingeben. Er funktioniert nur an dem Host, an dem er hinzugefügt wurde. Ihr Passwort funktioniert weiter.",
       loading: "Ihre Passkeys werden gelesen…",
       unreadable: "Ihre Passkeys konnten nicht gelesen werden – und unbekannt ist nicht dasselbe wie keine. Laden Sie die Seite neu.",
       none: "Noch keine Passkeys.",
-      worksAt: (host: string) => `Funktioniert an ${host}`,
-      notHere: (host: string) => `An dieser Adresse nicht angeboten: Er funktioniert nur an ${host}.`,
+      worksAt: (host: string) => `Funktioniert unter ${host}`,
+      notHere: (host: string) => `An dieser Adresse nicht angeboten: Er funktioniert nur unter ${host}.`,
       added: (date: string) => `Hinzugefügt am ${date}`,
       lastUsed: (date: string) => `Zuletzt angemeldet am ${date}`,
       neverUsed: "Noch nicht zur Anmeldung verwendet",

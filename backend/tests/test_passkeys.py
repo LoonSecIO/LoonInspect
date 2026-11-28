@@ -212,3 +212,19 @@ def test_every_sentence_the_page_says_is_in_en_ts_and_the_step_through(fragment:
     english = _flat((_ROOT / "frontend" / "src" / "i18n" / "en.ts").read_text())
     assert fragment in english, f"frontend/src/i18n/en.ts no longer says: {fragment}"
     assert fragment in _step_through(), f"docs/troubleshooting.md §34 has no line for: {fragment}"
+
+
+def test_a_name_keeps_no_invisible_characters_and_runs_of_spaces_close_up() -> None:
+    # Built from code points, so no invisible character sits in this file's own source.
+    hidden = "Mac" + chr(0x202E) + "Book" + chr(0x200B) + "  Pro" + chr(0x0007) + "\n"
+    assert passkeys.clean_name(hidden) == "MacBook Pro"
+    for name in ("", "   ", chr(0x200B) * 3, "x" * (passkeys.MAX_NAME_LENGTH + 1)):
+        with pytest.raises(passkeys.PasskeyRefused) as refused:
+            passkeys.clean_name(name)
+        assert (refused.value.status, refused.value.detail) == (422, passkeys.NAME_REQUIRED)
+
+
+@pytest.mark.parametrize(("signed", "shown"), [(None, "(no origin)"), (42, "(no origin)"), ("x" * 500, "x" * 200)])
+def test_a_signed_origin_that_is_not_one_is_quoted_short(signed: object, shown: str) -> None:
+    """Whoever sent the answer chose what its client data calls the origin: a sentence quotes at most 200 characters."""
+    assert passkeys._same_origin(signed) == shown
