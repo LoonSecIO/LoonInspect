@@ -27,6 +27,8 @@ class AccountSummaryOut(_CamelModel):
     last_login_at: datetime | None
     # A confirmed second factor guards this account's sign-in (#653): what the Accounts page can remove.
     mfa_enrolled: bool
+    # How many passkeys the account holds (#955): what Remove passkeys removes, every one at once.
+    passkeys: int = 0
 
 
 class AccountCreateRequest(_CamelModel):

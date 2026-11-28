@@ -61,6 +61,9 @@ _PUBLIC_EXACT = frozenset(
         "/api/auth/login",
         # The second sign-in step (#653) carries a challenge token, not a session.
         "/api/auth/login/mfa",
+        # A passkey sign-in (#955): a challenge that names nobody, and the answer that mints the session.
+        "/api/auth/login/passkey/options",
+        "/api/auth/login/passkey",
         # Logout stays public so it works with an already-expired session — clearing
         # cookies should never itself require a valid one.
         "/api/auth/logout",
@@ -68,8 +71,18 @@ _PUBLIC_EXACT = frozenset(
 )
 
 # All a session reaches while the tenant's policy asks its account for a second factor it lacks (#653):
-# who it is, and enrolment (logout is public). Pinned in tests/test_auth.py like the allowlist above.
-_ENROLMENT_EXACT = frozenset({"/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/enrol", "/api/auth/mfa/confirm"})
+# who it is, and enrolment (logout is public): a code, or a passkey, which answers too (#955). Pinned in
+# tests/test_auth.py like the allowlist above.
+_ENROLMENT_EXACT = frozenset(
+    {
+        "/api/auth/me",
+        "/api/auth/mfa",
+        "/api/auth/mfa/enrol",
+        "/api/auth/mfa/confirm",
+        "/api/auth/passkeys",
+        "/api/auth/passkeys/options",
+    }
+)
 MFA_ENROLMENT_REQUIRED = (
     "Your administrator requires two-step sign-in for this account. Set it up on My Account; nothing else opens until then."
 )
@@ -562,7 +575,7 @@ async def _authenticate_session(db: AsyncSession, request: Request, response: Re
         auth_method="session",
         session=session,
         acting_tenant_id=acting if acting != session.tenant_id else None,
-        mfa_enrolment_required=await mfa.enrolment_required(db, account, roles, acting),
+        mfa_enrolment_required=await mfa.enrolment_required(db, account, roles, acting, session.auth_method),
     )
 
 

@@ -68,12 +68,14 @@ def test_every_allowlisted_path_is_public(path: str) -> None:
     assert is_public_path(path) is True
 
 
-def test_the_allowlist_is_the_five_routes_a_signed_out_browser_needs() -> None:
+def test_the_allowlist_is_the_routes_a_signed_out_browser_needs() -> None:
     """Adding to this set is the one change that can expose a route by accident, so the
     set itself is pinned: health for the container probe, status/setup/login for the
-    sign-in flow, logout so an expired session can still clear its cookies."""
+    sign-in flow with its second step (#653) and a passkey's two (#955), logout so an
+    expired session can still clear its cookies."""
     public = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/login/mfa", "/api/auth/logout"}
-    assert public == _PUBLIC_EXACT
+    passkey = {"/api/auth/login/passkey/options", "/api/auth/login/passkey"}
+    assert public | passkey == _PUBLIC_EXACT
 
 
 def test_every_registered_api_route_needs_a_session_unless_allowlisted() -> None:
@@ -96,6 +98,11 @@ def test_every_registered_api_route_needs_a_session_unless_allowlisted() -> None
         "/api/health/../accounts",  # traversal is compared literally, so it is not health
         "/api/auth/login/anything",  # a public route's sub-path is not public
         "/api/auth/loginx",
+        "/api/auth/login/passkey/",  # a passkey sign-in's routes, and nothing beside them (#955)
+        "/api/auth/login/passkeys",
+        "/api/auth/login/passkey/options/x",
+        "/api/auth/passkeys",  # a person's own passkeys need their session
+        "/api/auth/passkeys/options",
         "/api/auth",
         "/api/accounts",
         "/api/mdm/connections",
@@ -240,15 +247,18 @@ async def test_a_public_path_is_not_authenticated_at_all(monkeypatch) -> None:
 
 
 async def test_a_session_owing_a_second_factor_reaches_who_it_is_and_enrolment_only(monkeypatch) -> None:
-    """Pinned like the allowlist: a path added here opens without the second factor the policy asks for (#653)."""
-    assert {"/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/enrol", "/api/auth/mfa/confirm"} == _ENROLMENT_EXACT
+    """Pinned like the allowlist: a path added here opens without the second factor the policy asks for (#653).
+    A passkey answers the policy too (#955), so the list and the addition of one are in it; removing one is not."""
+    code = {"/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/enrol", "/api/auth/mfa/confirm"}
+    assert code | {"/api/auth/passkeys", "/api/auth/passkeys/options"} == _ENROLMENT_EXACT
     owed = replace(_principal_via(monkeypatch, "session"), mfa_enrolment_required=True)
     monkeypatch.setattr(auth_module, "_authenticate_session", AsyncMock(return_value=owed))
     for path in _ENROLMENT_EXACT:
         await authenticate(_request("GET", path=path), Response(), db=object())
-    with pytest.raises(HTTPException) as refused:
-        await authenticate(_request("GET", path="/api/auth/mfa/recovery-codes"), Response(), db=object())
-    assert refused.value.status_code == 403 and refused.value.detail == MFA_ENROLMENT_REQUIRED
+    for path in ("/api/auth/mfa/recovery-codes", "/api/auth/passkeys/a-passkey-id"):
+        with pytest.raises(HTTPException) as refused:
+            await authenticate(_request("GET", path=path), Response(), db=object())
+        assert refused.value.status_code == 403 and refused.value.detail == MFA_ENROLMENT_REQUIRED
 
 
 async def test_no_credential_is_a_401(monkeypatch) -> None:

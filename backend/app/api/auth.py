@@ -1,6 +1,8 @@
 """Sign-in, sign-out, the first-run setup, the tenant switch and the caller's own account.
 
-The password step and the second step (#653) share one lockout per address and client.
+The password step and the second step (#653) share one lockout per address and client. A passkey's
+sign-in (#955) is app.api.passkeys, which uses the helpers here and neither counts toward nor waits on
+that lockout: a signature over a fresh challenge is not a guess.
 """
 
 from __future__ import annotations
@@ -333,7 +335,8 @@ async def login(
         return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=challenge.model_dump(by_alias=True))
 
     roles = sorted({row.role for row in account.roles})
-    enrolment_required = await mfa.enrolment_required(db, account, roles, account.tenant_id)
+    # A password session: a passkey the account holds answers the policy only when it signs a session in (#955).
+    enrolment_required = await mfa.enrolment_required(db, account, roles, account.tenant_id, "password")
     if account.is_break_glass and await mfa.policy_asks(db, roles, account.tenant_id):
         logger.info("break-glass sign-in without a second factor: the policy exempts it", extra={"account_id": account.id})
 
@@ -607,5 +610,6 @@ async def switch_tenant(
             roles=roles,
         )
     logger.info("tenant switched", extra={"account_id": account.id, "from_tenant": str(left), "to_tenant": str(target)})
-    memberships, owed = await memberships_for(db, account), await mfa.enrolment_required(db, account, roles, target)
+    memberships = await memberships_for(db, account)
+    owed = await mfa.enrolment_required(db, account, roles, target, session.auth_method)
     return _account_out(account, roles=roles, acting=target, memberships=memberships, mfa_enrolment_required=owed)

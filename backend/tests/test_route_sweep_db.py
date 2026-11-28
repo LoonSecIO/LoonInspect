@@ -67,6 +67,7 @@ OWNED = {
     "tenant_id": "Tenant",
     "token_id": "ApiToken",
     "plan_id": "ApplicationPatchPlan",
+    "passkey_id": "AuthIdentity",  # one of the caller's own passkeys (#955)
 }
 # A parameter naming one of those rows by another name or spelling: (its OWNED key, its value as a template
 # over the `tenants` fixture's keys).
@@ -111,6 +112,10 @@ BODIES: dict[str, dict] = {
     "POST /api/auth/change-password": {"currentPassword": "not-the-password", "newPassword": PASSWORD},
     "POST /api/auth/mfa/confirm": {"code": "no-digits"},  # never a code: a random secret could accept "000000"
     "POST /api/auth/mfa/recovery-codes": {"code": "no-digits"},
+    # A passkey's answer the sweep has no key to sign (#955): read, and refused as unreadable.
+    "POST /api/auth/login/passkey": {"credential": {}},
+    "POST /api/auth/passkeys/options": {"currentPassword": "not-the-password"},
+    "POST /api/auth/passkeys": {"name": "route sweep", "credential": {}},
     "POST /api/accounts": {"email": "route-sweep@sweep.example.com", "displayName": "route sweep", "password": PASSWORD},
     "POST /api/accounts/{account_id}/reset-password": {"newPassword": PASSWORD},
     "POST /api/auth/tokens": {"name": "route sweep"},
@@ -153,9 +158,11 @@ STOPS = {
         *("POST /api/auth/login/mfa", "POST /api/auth/change-password", "POST /api/auth/mfa/confirm"),
         "POST /webhooks/jamf/{connection_id}",
         "POST /api/mcp/test",
+        *("POST /api/auth/login/passkey", "POST /api/auth/passkeys/options", "POST /api/auth/passkeys"),
     ],
-    "setup is done, and the account holds no second factor": [
+    "setup is done, and the account holds no second factor and no passkey": [
         *("POST /api/auth/setup", "POST /api/auth/mfa/recovery-codes", "DELETE /api/accounts/{account_id}/mfa"),
+        "DELETE /api/accounts/{account_id}/passkeys",
     ],
     "AI features are off and no provider is saved": [
         "GET /api/system/ai/usage",
@@ -324,8 +331,29 @@ async def _seed(tenant: dict) -> dict:
         snapshot = await build_snapshot(db, BuildPlan(appHashes=["0" * 32]), f"route sweep {tenant['tenant_id']}")
         plan = ApplicationPatchPlan(title="route sweep patch plan", created_by="route sweep", snapshot=snapshot)
         db.add(plan)
+        passkey = _passkey(tenant["account_id"], "route sweep")
+        db.add(passkey)
         await db.commit()
-        return {"span_id": span.id, "subject": device.external_id, "stored": stored, "plan_id": plan.id}
+        return {"span_id": span.id, "subject": device.external_id, "stored": stored, "plan_id": plan.id, "passkey_id": passkey.id}
+
+
+def _passkey(account_id: str, name: str):
+    """A passkey row on the admin's account (#955), whose path id `DELETE /api/auth/passkeys/{passkey_id}` names: never
+    signed with, so no key behind it is needed."""
+    from app.core.passkeys import PROVIDER, subject_for
+    from app.models.schema import AuthIdentity
+
+    credential = os.urandom(32)
+    return AuthIdentity(
+        account_id=account_id,
+        provider=PROVIDER,
+        subject=subject_for(credential),
+        credential_id=credential,
+        public_key=b"\xa0",
+        sign_count=0,
+        rp_id="sweep.example",
+        name=name,
+    )
 
 
 async def _tidy(rows: dict[str, dict], since: datetime) -> None:
@@ -338,6 +366,8 @@ async def _tidy(rows: dict[str, dict], since: datetime) -> None:
     for tenant in rows.values():
         async with session_for_tenant(tenant["tenant_id"]) as db:
             await db.execute(delete(s.ApplicationPatchPlan).where(s.ApplicationPatchPlan.title.like("route sweep%")))
+            swept = s.AuthIdentity.provider == "webauthn", s.AuthIdentity.name.like("route sweep%")
+            await db.execute(delete(s.AuthIdentity).where(*swept))
             mine = s.UserSession.account_id == tenant["account_id"], s.UserSession.created_at >= since
             await db.execute(delete(s.UserSession).where(*mine))
             # The own lane's sign-in counts against the operational tenant, as a failed one.
@@ -564,6 +594,7 @@ async def _doomed(tenant: dict, name: str) -> object:
         "connection_id": lambda: MdmConnection(name=label, provider="jamf", base_url="https://doomed.jamfcloud.com"),
         "destination_id": lambda: Destination(name=label, type="generic_webhook", url="https://doomed.example", auth_type="none"),
         "token_id": lambda: ApiToken(id=f"sweep{tag}", account_id=tenant["account_id"], name=label, token_hash=tag * 8),
+        "passkey_id": lambda: _passkey(tenant["account_id"], label),
     }
     if name == "plan_id":
         async with session_for_tenant(tenant["tenant_id"]) as db:
@@ -593,6 +624,8 @@ async def _fingerprint(tenant: dict) -> dict[str, str | None]:
 
     where = {t.name: "tenant_id = :tenant" for t in Base.metadata.sorted_tables if "tenant_id" in t.c}
     where |= {"tenants": "id = :tenant", "login_attempts": f"tenant_id = :tenant AND identifier <> '{ADMIN2[0]}'"}
+    # A passkey sign-in's challenge, which the own lane's public request asks for, lands there too (#955).
+    where["passkey_challenges"] = "tenant_id = :tenant AND purpose <> 'sign-in'"
     sql = "SELECT md5(string_agg(r::text, ',' ORDER BY r::text)) FROM {} r WHERE {}"
     async with session_for_tenant(tenant["tenant_id"]) as db:
         return {name: await db.scalar(text(sql.format(name, w)), {"tenant": tenant["tenant_id"]}) for name, w in where.items()}

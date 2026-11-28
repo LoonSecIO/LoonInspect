@@ -731,6 +731,11 @@
             "title": "Mfaenrolled",
             "type": "boolean"
           },
+          "passkeys": {
+            "default": 0,
+            "title": "Passkeys",
+            "type": "integer"
+          },
           "roles": {
             "items": {
               "type": "string"
@@ -8519,6 +8524,116 @@
         "title": "ParticipationOut",
         "type": "object"
       },
+      "PasskeyAddRequest": {
+        "description": "A new passkey: what its owner calls it, and the browser's answer, as `PublicKeyCredential.toJSON()` writes it.\nThe name's own rule (1 to 64 characters once spaces are tidied) is the route's, with its sentence.",
+        "properties": {
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 256,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "credential",
+          "name"
+        ],
+        "title": "PasskeyAddRequest",
+        "type": "object"
+      },
+      "PasskeyOptionsOut": {
+        "description": "What `navigator.credentials` is handed: `publicKey` is the JSON that `PublicKeyCredential.parseCreationOptionsFromJSON()`\nor `parseRequestOptionsFromJSON()` reads. The challenge in it is good for one answer, within five minutes.",
+        "properties": {
+          "publicKey": {
+            "additionalProperties": true,
+            "title": "Publickey",
+            "type": "object"
+          }
+        },
+        "required": [
+          "publicKey"
+        ],
+        "title": "PasskeyOptionsOut",
+        "type": "object"
+      },
+      "PasskeyOptionsRequest": {
+        "description": "Adding a passkey starts with the current password, as changing it does: a session alone adds no way in.",
+        "properties": {
+          "currentPassword": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Currentpassword",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword"
+        ],
+        "title": "PasskeyOptionsRequest",
+        "type": "object"
+      },
+      "PasskeyOut": {
+        "description": "One passkey on My Account: its name, the host it works at (the one it was made at), and when it was made and\nlast signed in, which is null until it first does.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastusedat"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "host",
+          "id",
+          "lastUsedAt",
+          "name"
+        ],
+        "title": "PasskeyOut",
+        "type": "object"
+      },
+      "PasskeySignInRequest": {
+        "description": "The browser's answer, as `PublicKeyCredential.toJSON()` writes it.",
+        "properties": {
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "title": "PasskeySignInRequest",
+        "type": "object"
+      },
       "PasswordChangeRequest": {
         "properties": {
           "currentPassword": {
@@ -13955,6 +14070,42 @@
         ]
       }
     },
+    "/api/accounts/{account_id}/passkeys": {
+      "delete": {
+        "description": "A lost or stolen device's path (#955), the way the second factor goes: every passkey on the account, and every\nsession it has, end together; the next sign-in is the password. Never one's own here: My Account removes those,\none at a time.",
+        "operationId": "remove_passkeys_api_accounts__account_id__passkeys_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Passkeys",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/accounts/{account_id}/reset-password": {
       "post": {
         "description": "Administrative password reset \u2014 the only account recovery path, since there is\nno mail transport to send a reset link through.",
@@ -14723,6 +14874,70 @@
         ]
       }
     },
+    "/api/auth/login/passkey": {
+      "post": {
+        "description": "A passkey's answer: verified, and the session minted in the same step (#955, default 1: user verification on\nevery passkey, so no code follows it). Neither counted toward nor held by the password lockout.",
+        "operationId": "sign_in_api_auth_login_passkey_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeySignInRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign In",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/login/passkey/options": {
+      "post": {
+        "description": "A challenge for a passkey sign-in. Takes nothing, not even an email, and answers every caller alike apart\nfrom the challenge itself: with no allow-list in it, the answer says nothing about which accounts exist or\nhold a passkey. A browser lists the passkeys it holds for this host, and the answer names the one it used.",
+        "operationId": "sign_in_options_api_auth_login_passkey_options_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sign In Options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/logout": {
       "post": {
         "operationId": "logout_api_auth_logout_post",
@@ -14881,6 +15096,150 @@
           }
         },
         "summary": "Regenerate Recovery Codes",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys": {
+      "get": {
+        "description": "The caller's passkeys, oldest first: each one's name, the host it works at, when it was made and last signed in.",
+        "operationId": "list_passkeys_api_auth_passkeys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PasskeyOut"
+                  },
+                  "title": "Response List Passkeys Api Auth Passkeys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Passkeys",
+        "tags": [
+          "auth"
+        ]
+      },
+      "post": {
+        "description": "The browser's answer to a registration challenge, and the name: the passkey is added to the caller's account.",
+        "operationId": "add_passkey_api_auth_passkeys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyAddRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Passkey",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/options": {
+      "post": {
+        "description": "A challenge for adding a passkey, for the current password (#955, default 4). The address is checked first, so\na page that can hold no passkey spends no password; a wrong one counts toward the sign-in lockout, as a wrong\ncode does on New recovery codes.",
+        "operationId": "registration_options_api_auth_passkeys_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Registration Options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/{passkey_id}": {
+      "delete": {
+        "description": "Removes one of the caller's own passkeys, and ends every session it signed in, this one included if it did:\na passkey removed for a lost device takes that device's sessions with it. The password still signs in.",
+        "operationId": "remove_passkey_api_auth_passkeys__passkey_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "passkey_id",
+            "required": true,
+            "schema": {
+              "title": "Passkey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Passkey",
         "tags": [
           "auth"
         ]

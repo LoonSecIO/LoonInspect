@@ -63,6 +63,7 @@ from app.api.mcp import router as mcp_router
 from app.api.mfa import router as mfa_router
 from app.api.os_posture import router as os_posture_router
 from app.api.outbox import router as outbox_router
+from app.api.passkeys import router as passkeys_router
 from app.api.patch_policy import router as patch_policy_router
 from app.api.patch_policy_rules import router as patch_policy_rules_router
 from app.api.posture import router as posture_router
@@ -926,6 +927,7 @@ app.router.routes.extend(
 
 app.include_router(auth_router)
 app.include_router(mfa_router)
+app.include_router(passkeys_router)
 app.include_router(accounts_router)
 app.include_router(tokens_router)
 app.include_router(mcp_router)

@@ -182,3 +182,6 @@ def configure_logging() -> None:
     # outbound call including the per-device MDM fetches during a sync sweep.
     logging.getLogger("apscheduler").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # fido2 (passkeys, #955) logs each credential id it registers or verifies at INFO. Its warnings stay; what a
+    # ceremony did is said by app.core.passkeys' own lines and the audit record, which name a passkey by its row.
+    logging.getLogger("fido2").setLevel(logging.WARNING)
