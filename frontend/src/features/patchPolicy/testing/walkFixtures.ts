@@ -41,7 +41,7 @@ function policy(stop: SliderStop, delay: number | null): WalkPolicy {
         { date: `2025-01-${String(firstFix! + 1).padStart(2, "0")}`, version: "4.4.2" },
         { date: `2025-01-${String(secondFix! + 1).padStart(2, "0")}`, version: "4.4.3" }
       ].filter((each, index, all) => all.findIndex((other) => other.date === each.date) === index);
-  const neverSeen = { "1d": 2, "7d": 2, "14d": 1, "30d": 1, "60d": 1, never: 0 }[stop];
+  const neverSeen = { "0d": 2, "1d": 2, "3d": 2, "7d": 2, "14d": 1, "30d": 1, "60d": 1, never: 0 }[stop];
   return {
     stop,
     install_delay_days: delay,
@@ -70,7 +70,8 @@ function policy(stop: SliderStop, delay: number | null): WalkPolicy {
   };
 }
 
-const DELAYS: Record<SliderStop, number | null> = { "1d": 0, "7d": 6, "14d": 13, "30d": 29, "60d": 59, never: null };
+/** Each day stop waits the days its label says (ruled 2026-11-27), as the walk's `install_delay_days` does. */
+const DELAYS: Record<SliderStop, number | null> = { "0d": 0, "1d": 1, "3d": 3, "7d": 7, "14d": 14, "30d": 30, "60d": 60, never: null };
 
 export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: WalkSource } = {}): PatchPolicyWalk {
   const { source = "public", ...rest } = overrides;
@@ -86,8 +87,8 @@ export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: Wal
   return {
     kind: "patch_policy_walk",
     schema: 1,
-    algorithm: "patch_walk/1",
-    definitions_version: "2",
+    algorithm: "patch_walk/2",
+    definitions_version: "3",
     input_id: "fixture-input-0001",
     run_id: "fixture-run-0001",
     inputs: {
@@ -260,7 +261,7 @@ export function feedFixture(overrides: Partial<PatchPolicyFeed> = {}): PatchPoli
   return {
     state: "current",
     sentence: "",
-    algorithm: "patch_walk/1",
+    algorithm: "patch_walk/2",
     docId: "fixture-doc-0001",
     asOf: "2025-01-11T20:00:00Z",
     fetchedAt: "2025-01-11T21:00:00Z",

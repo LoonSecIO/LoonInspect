@@ -2,7 +2,8 @@
 /** Posture › Patch policy after its reads land (#614): which mode the page draws, what the source
  *  toggle offers and refuses, what the slider and the pager ask for, and every way a walk can fail
  *  to be shown, in English and German. The reads are stubbed (`/apps`, the walk, Jamf's catalog);
- *  the replays the fallback draws are the files that ship with the build. */
+ *  the replays the fallback reads are the files that ship with the build, which count the old way
+ *  until LoonVD-Internal#151's files replace them, so the fallback states their refusal. */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -12,6 +13,7 @@ import { PatchPolicyPage } from "@/features/patchPolicy/PatchPolicyPage";
 import { CHECK_DETAIL, FLAG_OFF_SENTENCE, NO_TITLE_SENTENCE, appFixture, appsFixture, openApp, walkFixture } from "@/features/patchPolicy/testing/walkFixtures";
 import type { PatchPolicyWalk, WalkAnswer, WalkSource } from "@/features/patchPolicy/walk";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
+import { SLIDER_STOPS } from "@/features/patchPolicy/replay";
 import { walkEnglish, walkGerman } from "@/features/patchPolicy/walkCopy";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
@@ -73,17 +75,38 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** The fallback's sentence for a shipped replay that counts the old way, which every shipped file
+ *  does until LoonVD-Internal#151's schema-3 files replace them: a refusal in words, never a drawing.
+ *  Those files flip these tests back to the replay's own reference box. */
+const refusedOldCount = (name: string, copy = patchPolicyEnglish) => `${copy.refusedLead(name)} ${copy.refused({ why: "old_count" })}`;
+
 describe("without LoonSec's data, the page falls back to the reference replays", () => {
-  it("says the data has not arrived, in the feed's own sentence, and draws the build's replay", async () => {
+  it("says the data has not arrived, in the feed's own sentence, and states why the build's replay is not drawn", async () => {
     feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture(null, { state: "never", docId: null, asOf: null }));
     await open();
     expect(text()).toContain(walkEnglish.fallback(en.support.patchPolicyFeed.states.never));
-    // The replay the build ships, drawn by the replay view: its reference box and its source line.
-    // The file is a chunk of its own, so it lands when it lands.
-    await waitFor(() => expect(text()).toContain("A reference analysis, not this organization's exposure"), { timeout: 5000 });
-    expect(text()).toContain("Release dates: The wireshark/wireshark repository's tags on GitLab");
+    // The replay the build ships counts the old way: refused in words, with the check to make. The
+    // file is a chunk of its own, so the refusal lands when it lands.
+    await waitFor(() => expect(text()).toContain(refusedOldCount("Wireshark")), { timeout: 5000 });
+    expect(text()).toContain(patchPolicyEnglish.refusedCheck);
+    expect(text()).not.toContain("A reference analysis, not this organization's exposure");
+    expect(text()).not.toContain("vulnerabilities never seen");
     expect(walkApi.getPatchPolicyWalk).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /Public/ })).toBeNull();
+  });
+
+  it("states the same refusal for every app the build ships a replay for, in English and German", async () => {
+    feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture(null, { state: "never", docId: null, asOf: null }));
+    for (const [id, name] of [["firefox", "Firefox"], ["chrome", "Google Chrome"], ["thunderbird", "Thunderbird"]]) {
+      cleanup();
+      await open(`?app=${id}`);
+      await waitFor(() => expect(text()).toContain(refusedOldCount(name)), { timeout: 5000 });
+    }
+    cleanup();
+    locale.current = "de";
+    await open("?app=chrome");
+    await waitFor(() => expect(text()).toContain(refusedOldCount("Google Chrome", patchPolicyGerman)), { timeout: 5000 });
+    expect(text()).toContain(patchPolicyGerman.refusedCheck);
   });
 
   it("says this organization shares no data, when that is why", async () => {
@@ -92,11 +115,11 @@ describe("without LoonSec's data, the page falls back to the reference replays",
     expect(text()).toContain(walkEnglish.fallback(en.support.patchPolicyFeed.states.tier_off));
   });
 
-  it("says a failed read of the data's state is a failed read, not missing data, and still draws a replay", async () => {
+  it("says a failed read of the data's state is a failed read, not missing data, and still falls back to the replays", async () => {
     feedApi.getPatchPolicyApps.mockRejectedValue(new ApiError(500, null));
     await open();
     expect(text()).toContain(walkEnglish.appsFailed(500));
-    await waitFor(() => expect(text()).toContain("A reference analysis, not this organization's exposure"), { timeout: 5000 });
+    await waitFor(() => expect(text()).toContain(refusedOldCount("Wireshark")), { timeout: 5000 });
     feedApi.getPatchPolicyApps.mockRejectedValue(new TypeError("Failed to fetch"));
     cleanup();
     await open();
@@ -109,7 +132,7 @@ describe("without LoonSec's data, the page falls back to the reference replays",
     await open();
     expect(text()).toContain(en.patchPolicy.catalogFailed);
     expect(text()).not.toContain(walkEnglish.catalogFailed);
-    await waitFor(() => expect(text()).toContain("A reference analysis, not this organization's exposure"), { timeout: 5000 });
+    await waitFor(() => expect(text()).toContain(refusedOldCount("Wireshark")), { timeout: 5000 });
   });
 
   it("says it is reading before either answer lands", async () => {
@@ -121,7 +144,7 @@ describe("without LoonSec's data, the page falls back to the reference replays",
 });
 
 describe("with LoonSec's data, the page walks it", () => {
-  it("opens on the first app's default track, over Public, for two years, at 1 day", async () => {
+  it("opens on the first app's default track, over Public, for two years, at the first stop, 0 days", async () => {
     await open();
     expect(asked()).toHaveLength(1);
     expect(Object.fromEntries(asked()[0])).toEqual({ app: "example", track: "example/4.4", source: "public", years: "2" });
@@ -130,7 +153,27 @@ describe("with LoonSec's data, the page walks it", () => {
     expect(text()).toContain("Release dates: Example release tags (fixture).");
     expect(text()).toContain(walkEnglish.clockLine);
     expect(text()).toContain("2 of 3 vulnerabilities never seen");
-    expect(text()).toContain("Open CVEs per day, at 1 day");
+    expect(text()).toContain("Open CVEs per day, at 0 days");
+    expect(text()).toContain(patchPolicyEnglish.policySaid("0d"));
+    expect(text()).toContain("Every release is installed on the date the release-date source above gives it.");
+    // The slider's own button, the first of the two (the table of every stop has the other).
+    expect(screen.getAllByRole("button", { name: "0 days" })[0].getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps resolving a saved address's stop, which now means the days waited", async () => {
+    // ?policy=7d was the 7-day stop before 2026-11-27's ruling and still is: seven days waited now.
+    await open("?policy=7d");
+    expect(text()).toContain("Open CVEs per day, at 7 days");
+    expect(text()).toContain("Every release is installed 7 days after the date the release-date source above gives it.");
+    expect(screen.getAllByRole("button", { name: "7 days" })[0].getAttribute("aria-pressed")).toBe("true");
+    cleanup();
+    // The two new stops are addresses too; a stop the page does not have opens on the first.
+    await open("?policy=3d");
+    expect(text()).toContain("Open CVEs per day, at 3 days");
+    cleanup();
+    await open("?policy=2d");
+    expect(text()).toContain("Open CVEs per day, at 0 days");
+    expect(asked()).toHaveLength(3);
   });
 
   it("lists the data's apps first, and every other catalog app as no reference yet", async () => {
@@ -221,7 +264,7 @@ describe("with LoonSec's data, the page walks it", () => {
   });
 
   it("names each cut of a shortened window in the reader's words, and the instance's under Evidence", async () => {
-    const sentence = "Example 4.4 begins with 4.4.0 on 2024-08-28, and the 60-day stop needs 59 days of it.";
+    const sentence = "Example 4.4 begins with 4.4.0 on 2024-08-28, and the 60-day stop needs 60 days of it.";
     walkApi.getPatchPolicyWalk.mockResolvedValue({
       walk: walkFixture({
         window: { requested: { years: 3, since: "2022-01-10", until: "2025-01-10" }, since: "2025-01-01", until: "2025-01-10", days: 10, shortened_by: [{ reason: "line_start", date: "2025-01-01", sentence }] }
@@ -683,7 +726,8 @@ describe("in German", () => {
   it("draws a walk with German words", async () => {
     locale.current = "de";
     await open();
-    expect(text()).toContain("Offene CVEs pro Tag, bei 1 Tag");
+    expect(text()).toContain("Offene CVEs pro Tag, bei 0 Tage");
+    expect(text()).toContain("Jedes Release wird an dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt.");
     expect(text()).toContain(walkGerman.clockLine);
     expect(text()).toContain(walkGerman.checks.matched);
   });
@@ -783,6 +827,22 @@ describe("the walk's tables and dates, as a reader at 1280 px sees them", () => 
       // Eight columns at a 1280 px window: tighter cells, so each German heading's longest word fits.
       expect(heads(stops).every((head) => head.includes("px-2"))).toBe(true);
       expect(Array.from(stops.querySelectorAll("tbody td")).every((cell) => classes(cell).includes("px-2"))).toBe(true);
+      // And eight rows, one per stop in the slider's order, each label whole on its line in either
+      // language ("14 Tage", never "14 / Tage"), so the table's width is still its columns'.
+      const words = language === "en" ? patchPolicyEnglish : patchPolicyGerman;
+      const rows = Array.from(stops.querySelectorAll("tbody tr"));
+      expect(rows).toHaveLength(SLIDER_STOPS.length);
+      expect(rows.map((row) => row.firstElementChild!.textContent)).toEqual(SLIDER_STOPS.map((stop) => words.stops[stop]));
+      expect(rows.every((row) => classes(row.firstElementChild!).includes("whitespace-nowrap"))).toBe(true);
+      expect(classes(stops)).toContain("min-w-[38rem]");
+      // The slider above them: eight equal columns of buttons, and the range input inset by half of
+      // one (a sixteenth, less half the thumb), so the thumb sits over the stop it names.
+      const range = document.querySelector("input[type=range]")!;
+      expect((range as HTMLInputElement).max).toBe(String(SLIDER_STOPS.length - 1));
+      expect(classes(range.parentElement!)).toContain("px-[calc(100%/16_-_8px)]");
+      const grid = range.parentElement!.nextElementSibling!;
+      expect(classes(grid)).toContain("grid-cols-8");
+      expect(Array.from(grid.querySelectorAll("button")).map((each) => each.textContent)).toEqual(SLIDER_STOPS.map((stop) => words.stops[stop]));
       // Each listed CVE: every column but the outcome shrinks to its widest word or date, so "Herkunft"
       // is not squeezed to a syllable beside a KEV column holding a dash.
       expect(heads(ledger).map((head) => head.includes("w-[1%]"))).toEqual([true, false, true, true, true, true]);

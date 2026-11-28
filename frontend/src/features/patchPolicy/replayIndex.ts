@@ -24,7 +24,10 @@ export interface ReplayEntry {
 }
 
 /**
- * One entry per app with a schema-2 replay, in the order the picker lists them. Each file names its
+ * One entry per app with a reference replay, in the order the picker lists them. The four files are
+ * LoonVD's schema-2 output, on the old count, so the page refuses each in words until
+ * LoonVD-Internal#151's schema-3 files replace them (`replays/README.md`); the picker still lists
+ * the app, and the refusal stands where its replay would be. Each file names its
  * own release-date source (`timeline`), and the page prints that name and no other. Wireshark is
  * first, so it stays the app the page opens on, as it was when it was the only replay, and it is the
  * smallest file to load; the rest follow by name. An app is listed here only once its file is in

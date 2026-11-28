@@ -86,7 +86,10 @@ export const walkEnglish = {
     not_published: () => "LoonSec's last exchange carried no patch-policy data (troubleshooting.md §32 step 3).",
     download_failed: () => "LoonSec's patch-policy data could not be downloaded, and no copy is held (troubleshooting.md §32 step 5).",
     invalid: () => "LoonSec's patch-policy data failed its check, and no copy is held (troubleshooting.md §32 step 6).",
-    algorithm_unknown: () => "LoonSec's patch-policy data is in a form this build does not read. Update LoonInspect (troubleshooting.md §32 step 4).",
+    // Either way round: the data can be for an older build (then no update helps) or a newer one. The
+    // instance's own sentence, printed beneath, says which and what to do.
+    algorithm_unknown: () =>
+      "LoonSec's patch-policy data is in a form this build does not read. The instance's words below say whether updating LoonInspect helps (troubleshooting.md §32 step 4).",
     app_unknown: ({ app }: ReasonContext) => `No reference yet for ${app}. That is not a count of zero (troubleshooting.md §33 step 2).`,
     track_unknown: ({ app, track }: ReasonContext) =>
       `${app} has no ${track} track in LoonSec's patch-policy data yet (troubleshooting.md §33 step 2).`,
@@ -177,9 +180,9 @@ export const walkEnglish = {
     `You asked for ${years} years; this view covers ${since} to ${until} because ${reasons.join("; ")}. Evidence › Window gives each reason in the instance's words.`,
   windowReasons: {
     clock_coverage: "LoonSec's record of the day each CVE became detectable begins later",
-    timeline_coverage: "the release dates begin later, and the 60-day stop needs 59 days of them",
-    line_start: "the held line begins later, and the 60-day stop needs 59 days of it",
-    channel_start: "the channel begins later, and the 60-day stop needs 59 days of it",
+    timeline_coverage: "the release dates begin later, and the 60-day stop needs 60 days of them",
+    line_start: "the held line begins later, and the 60-day stop needs 60 days of it",
+    channel_start: "the channel begins later, and the 60-day stop needs 60 days of it",
     common_window: "it is aligned to the days every compared source covers",
     ledger_as_of: "LoonSec's data ends the day before its date",
     timeline_as_of: "the release dates were read earlier",
@@ -372,7 +375,7 @@ export const walkGerman: WalkCopy = {
     invalid: () =>
       "Die Patch-Policy-Daten von LoonSec haben ihre Prüfung nicht bestanden, und es wird keine Kopie gehalten (troubleshooting.md §32 Schritt 6).",
     algorithm_unknown: () =>
-      "Die Patch-Policy-Daten von LoonSec liegen in einer Form vor, die dieser Build nicht liest. Aktualisieren Sie LoonInspect (troubleshooting.md §32 Schritt 4).",
+      "Die Patch-Policy-Daten von LoonSec liegen in einer Form vor, die dieser Build nicht liest. Der Wortlaut der Instanz darunter sagt, ob eine Aktualisierung von LoonInspect hilft (troubleshooting.md §32 Schritt 4).",
     app_unknown: ({ app }: ReasonContext) => `Für ${app} gibt es noch keine Referenz. Das ist keine Zählung von null (troubleshooting.md §33 Schritt 2).`,
     track_unknown: ({ app, track }: ReasonContext) =>
       `${app} hat in den Patch-Policy-Daten von LoonSec noch keinen Track ${track} (troubleshooting.md §33 Schritt 2).`,
@@ -459,9 +462,9 @@ export const walkGerman: WalkCopy = {
     `Angefragt waren ${years} Jahre; diese Ansicht umfasst ${since} bis ${until}, weil ${reasons.join("; ")}. Belege › Zeitfenster nennt jeden Grund im Wortlaut der Instanz.`,
   windowReasons: {
     clock_coverage: "die Aufzeichnung von LoonSec, ab wann jede CVE erkennbar war, später beginnt",
-    timeline_coverage: "die Release-Daten später beginnen und die 60-Tage-Stufe 59 Tage davon braucht",
-    line_start: "die gehaltene Linie später beginnt und die 60-Tage-Stufe 59 Tage davon braucht",
-    channel_start: "der Kanal später beginnt und die 60-Tage-Stufe 59 Tage davon braucht",
+    timeline_coverage: "die Release-Daten später beginnen und die 60-Tage-Stufe 60 Tage davon braucht",
+    line_start: "die gehaltene Linie später beginnt und die 60-Tage-Stufe 60 Tage davon braucht",
+    channel_start: "der Kanal später beginnt und die 60-Tage-Stufe 60 Tage davon braucht",
     common_window: "sie auf die Tage ausgerichtet ist, die jede verglichene Quelle abdeckt",
     ledger_as_of: "die Daten von LoonSec am Tag vor ihrem Datum enden",
     timeline_as_of: "die Release-Daten früher gelesen wurden",
