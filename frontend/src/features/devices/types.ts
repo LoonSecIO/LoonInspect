@@ -1,3 +1,4 @@
+import type { DeviceScope } from "@/features/catalog/deviceScope";
 import type { CatalogTitleRef } from "@/features/catalog/types";
 import type { DeviceVulnRollup } from "@/features/vulnerabilities/deviceRollup";
 import type { AppTitleUpdate, AppUpdate, AppVulnerability } from "@/features/vulnerabilities/types";
@@ -106,6 +107,7 @@ export interface DeviceListResponse {
 export type VersionOperator = "eq" | "lt" | "lte" | "gt" | "gte" | "regex";
 
 export interface DeviceFilters {
+  deviceScope?: DeviceScope;
   q?: string;
   osVersion?: string;
   osVersionOperator?: VersionOperator;
