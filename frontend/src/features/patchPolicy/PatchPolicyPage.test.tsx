@@ -109,6 +109,19 @@ describe("without LoonSec's data, the page falls back to the reference replays",
     expect(text()).toContain(patchPolicyGerman.refusedCheck);
   });
 
+  it("says an exchange that named only patch_walk/1 needs no update here, and falls back", async () => {
+    // patch_walk/1 is never published (ruled 2026-11-27): a build offered only it says so in words,
+    // walks nothing and draws the fallback, which is never a parity refusal.
+    feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture(null, { state: "algorithm_unknown", detail: "patch_walk/1", docId: null, asOf: null }));
+    await open();
+    const sentence = `${en.support.patchPolicyFeed.states.algorithmOlder("patch_walk/2", "patch_walk/1")} ${en.support.patchPolicyFeed.noCopy}`;
+    expect(text()).toContain(walkEnglish.fallback(sentence));
+    expect(text()).toContain("Nothing on this instance needs updating");
+    expect(text()).not.toContain("update LoonInspect");
+    await waitFor(() => expect(text()).toContain(refusedOldCount("Wireshark")), { timeout: 5000 });
+    expect(walkApi.getPatchPolicyWalk).not.toHaveBeenCalled();
+  });
+
   it("says this organization shares no data, when that is why", async () => {
     feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture(null, { state: "tier_off", docId: null, asOf: null }));
     await open();
