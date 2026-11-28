@@ -1,0 +1,33 @@
+setup {"devices": 40000, "ea_rows": 6000000, "entries": 382491, "spans": 1593942, "current_computer_spans": 40000, "closed_computer_spans": 1553640, "sections": 1378605, "hardware_sections": 40000, "group_sections": 455640, "departure_rows": 2460, "spans_heap": "3455 MB", "spans_total": "4036 MB", "sections_heap": "562 MB", "sections_total": "1472 MB", "entries_heap": "118 MB", "ea_heap": "669 MB", "db": "6895 MB", "shared_buffers": "128MB", "work_mem": "4MB", "max_parallel_workers_per_gather": "2"}
+D365-lists10   built-in   whole-fleet            cold=    140.3 warm=    123.7 (warm runs 128.6 123.7 120.3) plan_ms=1.8 rows=24 buf hit=27441 read=84848 tread=0 twrite=0
+      workers=2 o_spans:Index(uq_observation_spans_current_subject)x3 o_sections:Seqx3 devices:Seqx3 subject_departures:Seqx3
+D365-lists10   ea         whole-fleet            cold=   1072.4 warm=    112.1 (warm runs 123.3 112.1 109.4) plan_ms=1.6 rows=14 buf hit=54 read=41506 tread=0 twrite=0
+      workers=1 devices:Seqx2 subject_departures:Seqx2 dea:Bitmap Heapx2
+D365-lists10   all-groups whole-fleet            cold=    878.2 warm=    602.4 (warm runs 602.4 608.9 595.2) plan_ms=2.6 rows=300 buf hit=79315 read=93524 tread=81446 twrite=82195
+      workers=2 o_spans:Index(uq_observation_spans_current_subject)x3 o_sections:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 devices:Seqx3 subject_departures:Seqx3 o_entries:Index(ix_observation_entries_kind)x1
+D365-lists10   one-group  whole-fleet            cold=    479.4 warm=    460.1 (warm runs 460.1 473.4 456.5) plan_ms=2.2 rows=1 buf hit=143016 read=90056 tread=80679 twrite=81400
+      workers=2 o_entries:Index(ix_observation_entries_kind)x1 o_spans:Index(uq_observation_spans_current_subject)x3 devices:Seqx3 subject_departures:Seqx3 o_sections:Seqx3
+D365-lists10   built-in   three-column           cold=    154.1 warm=    139.5 (warm runs 137.0 144.3 139.5) plan_ms=1.6 rows=16 buf hit=74871 read=71795 tread=0 twrite=0
+      workers=1 devices:Seqx2 subject_departures:Seqx2 o_spans:Index(uq_observation_spans_current_subject)x18285 o_sections:Seqx2
+D365-lists10   ea         three-column           cold=    565.9 warm=     62.0 (warm runs 62.0 63.6 58.7) plan_ms=1.5 rows=14 buf hit=42313 read=32354 tread=0 twrite=0
+      workers=1 devices:Seqx2 subject_departures:Seqx2 dea:Index(uq_device_extension_attribute_definition)x18285
+D365-lists10   all-groups three-column           cold=    654.2 warm=    558.6 (warm runs 562.9 558.6 558.2) plan_ms=2.2 rows=300 buf hit=92214 read=83972 tread=77441 twrite=77916
+      workers=1 devices:Seqx2 subject_departures:Seqx2 o_spans:Index(uq_observation_spans_current_subject)x18285 o_sections:Seqx2 o_entries:Index(ix_observation_entries_kind)x2 o_entries:Index(ix_observation_entries_kind)x1
+D365-lists10   one-group  three-column           cold=    516.3 warm=    484.0 (warm runs 477.1 484.0 496.4) plan_ms=2.2 rows=1 buf hit=123307 read=82191 tread=77242 twrite=77696
+      workers=1 o_entries:Index(ix_observation_entries_kind)x1 devices:Seqx2 subject_departures:Seqx2 o_spans:Index(uq_observation_spans_current_subject)x18285 o_sections:Seqx2
+D365-lists10   built-in   grp_managed_site       cold=   2999.2 warm=   2374.2 (warm runs 2374.2 2428.2 2369.2) plan_ms=2.4 rows=16 buf hit=1331620 read=680211 tread=8923 twrite=8923
+      workers=1 devices:Seqx2 o_spans:Seqx2 o_entries:Index(ix_observation_entries_kind)x2 o_sections:Seqx2 subject_departures:Seqx2 o_spans:Index(uq_observation_spans_current_subject)x4266 o_sections:Seqx2
+D365-lists10   ea         grp_managed_site       cold=   2549.4 warm=   2542.2 (warm runs 2537.1 2542.2 2835.2) plan_ms=3.0 rows=13 buf hit=1329432 read=610411 tread=8922 twrite=8922
+      workers=1 devices:Seqx2 o_spans:Seqx2 o_entries:Index(ix_observation_entries_kind)x2 o_sections:Seqx2 subject_departures:Seqx2 dea:Index(uq_device_extension_attribute_definition)x4266
+D365-lists10   all-groups grp_managed_site       cold=   2885.3 warm=   2771.0 (warm runs 2771.0 2936.7 2723.1) plan_ms=6.2 rows=300 buf hit=2018383 read=743840 tread=10547 twrite=10547
+      workers=2 o_entries:Index(ix_observation_entries_kind)x1 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 subject_departures:Seqx3 o_spans:Index(uq_observation_spans_current_subject)x4266 o_entries:Index(ix_observation_entries_digest)x900
+D365-lists10   one-group  grp_managed_site       cold=   2654.3 warm=   2682.9 (warm runs 2664.2 2684.6 2682.9) plan_ms=7.1 rows=1 buf hit=2021467 read=744451 tread=10546 twrite=10546
+      workers=2 o_entries:Index(ix_observation_entries_kind)x1 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 subject_departures:Seqx3 o_spans:Index(uq_observation_spans_current_subject)x4266
+D365-lists10   built-in   notgrp_managed_site    cold=   3624.3 warm=   3276.7 (warm runs 2903.2 3359.0 3276.7) plan_ms=6.0 rows=16 buf hit=2060499 read=1246122 tread=16187 twrite=16270
+      workers=2 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_sections:Seqx3 subject_departures:Seqx1 o_spans:Index(uq_observation_spans_current_subject)x14526 o_sections:Seqx3
+D365-lists10   ea         notgrp_managed_site    cold=   3709.4 warm=   3886.6 (warm runs 3781.0 3886.6 4084.6) plan_ms=6.9 rows=13 buf hit=2034344 read=1200267 tread=16186 twrite=16254
+      workers=2 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_sections:Seqx3 subject_departures:Seqx1 dea:Index(uq_device_extension_attribute_definition)x14526
+D365-lists10   all-groups notgrp_managed_site    cold=   3902.0 warm=   3887.8 (warm runs 3887.8 3889.1 3883.9) plan_ms=7.0 rows=300 buf hit=2091715 read=1239490 tread=92482 twrite=92966
+      workers=2 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_sections:Seqx3 subject_departures:Seqx1 o_spans:Index(uq_observation_spans_current_subject)x14526 o_sections:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_entries:Index(ix_observation_entries_kind)x1
+D365-lists10   one-group  notgrp_managed_site    cold=   3813.1 warm=   4027.2 (warm runs 4148.4 3826.9 4027.2) plan_ms=6.7 rows=1 buf hit=2092508 read=1263145 tread=92829 twrite=93305
+      workers=2 o_entries:Index(ix_observation_entries_kind)x1 o_spans:Seqx3 o_entries:Index(ix_observation_entries_kind)x3 o_sections:Seqx3 devices:Seqx3 o_spans:Seqx3 o_sections:Seqx3 subject_departures:Seqx1 o_spans:Index(uq_observation_spans_current_subject)x14526 o_sections:Seqx3
