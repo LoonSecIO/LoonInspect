@@ -32,7 +32,7 @@ const cleared = (days: number, by: string, on: string): Outcome => ({
 const open = (days: number): Outcome => ({ outcome: "exposed", exposure_days: days, cleared_by: null, cleared_on: null, open_at_window_end: true });
 
 /** One policy row. `delay` is the days a day row waits (`install_delay_days`): null for Never, and
- *  absent for the tabled row, which is no stop. */
+ *  absent for the superseded `critical_or_kev` row, which is no stop. */
 const policy = (
   delay: number | null | undefined,
   never_seen: number,
@@ -78,8 +78,9 @@ const clocks = {
 
 const install =
   "A policy of D days installs each release D days after its date on the timeline, so 0 days installs it on that date (fixture definition).";
-const tabled =
-  "TABLED 2026-10-02, not ruled: do not quote this row. As computed, a release is installed on the first day a CVE it fixes is KEV-listed or critical.";
+/** The superseded row's definition, in a file's words (invented, like the rest). */
+const superseded =
+  "Superseded by the ruled policy definitions: do not quote this row. As computed, a release is installed on the first day a CVE it fixes is KEV-listed or critical (fixture definition).";
 
 /** Example App, held on 4.4. Releases on its timeline: 4.4.2 on 2024-11-27, 4.4.3 on 2025-01-08 and
  *  4.4.4 on 2025-03-05, each installed D days after that date:
@@ -116,7 +117,7 @@ export function heldLineReplay(): Record<string, unknown> {
     definitions: {
       install,
       never: "The device stays on the version that was current when the window opened.",
-      critical_or_kev: tabled
+      critical_or_kev: superseded
     },
     cve_clock: "published",
     clocks,
@@ -261,7 +262,7 @@ export function singleLineReplay(): Record<string, unknown> {
     definitions: {
       install,
       early_stable: "A build served before its major's promotion day is installed no earlier than that day.",
-      critical_or_kev: tabled
+      critical_or_kev: superseded
     },
     cve_clock: "published",
     clocks,

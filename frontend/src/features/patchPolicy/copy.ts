@@ -200,9 +200,9 @@ export const patchPolicyEnglish = {
   definitionsHeading: "Definitions and clocks, in the file's own words",
   definitions: "Definitions",
   clocks: "Clocks",
-  tabledHeading: "Not on the slider",
-  tabledSaid:
-    "The file also carries a policy that installs a release only when a fix is critical or KEV-listed. It is tabled, so this page shows none of its numbers. Its definition, as the file states it:",
+  supersededHeading: "Not on the slider",
+  supersededSaid:
+    "The file also carries a policy that installs a release only when a fix is critical or KEV-listed. The built-in policy definitions superseded it on 2026-11-28, and LoonSec's next replay files replace it with rows on them, so this page shows none of its numbers. Its definition, as the file states it:",
 
   evidenceHeading: "Evidence",
   evidenceWindow: "Window",
@@ -388,9 +388,9 @@ export const patchPolicyGerman: PatchPolicyCopy = {
   definitionsHeading: "Definitionen und Uhren, im Wortlaut der Datei",
   definitions: "Definitionen",
   clocks: "Uhren",
-  tabledHeading: "Nicht auf dem Regler",
-  tabledSaid:
-    "Die Datei enthält außerdem eine Richtlinie, die ein Release nur installiert, wenn ein Fix kritisch oder KEV-gelistet ist. Sie ist zurückgestellt; diese Seite zeigt keine ihrer Zahlen. Ihre Definition, wie die Datei sie angibt:",
+  supersededHeading: "Nicht auf dem Regler",
+  supersededSaid:
+    "Die Datei enthält außerdem eine Richtlinie, die ein Release nur installiert, wenn ein Fix kritisch oder KEV-gelistet ist. Die eingebauten Richtliniendefinitionen haben sie am 2026-11-28 abgelöst, und die nächsten Replay-Dateien von LoonSec ersetzen sie durch Zeilen zu diesen; diese Seite zeigt daher keine ihrer Zahlen. Ihre Definition, wie die Datei sie angibt:",
 
   evidenceHeading: "Belege",
   evidenceWindow: "Zeitfenster",

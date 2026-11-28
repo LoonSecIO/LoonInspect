@@ -26,6 +26,8 @@
  * would misstate it.
  */
 
+import { POLICY_DEFINITION_IDS } from "@/features/patchPolicy/definitions";
+
 export const REPLAY_KIND = "patch_policy_replay";
 export const REPLAY_SCHEMA = 3;
 /** The schema that counts the old way, an N-day row being N - 1 days waited: refused in its own words. */
@@ -42,9 +44,12 @@ export const DAY_STOPS = SLIDER_STOPS.filter((stop): stop is DayStop => stop !==
 /** The days a day stop waits after the date a release is given: the number in its id. */
 export const stopDays = (stop: DayStop): number => Number.parseInt(stop, 10);
 
-/** Tabled by Kyle, 2026-10-02: computed in the file, never on the slider and never quoted. The page
- *  prints its definition, which says so, and none of its numbers. */
-export const TABLED_POLICY = "critical_or_kev";
+/** The file's `critical_or_kev` row, superseded by the built-in policy definitions (ruled
+ *  2026-11-28, #954): computed in the file, never on the slider and never quoted. LoonSec replaces it
+ *  with rows on the ruled definitions when it writes the files again. A file reads with it, without it,
+ *  or with rows keyed by a definition id instead, and the page draws and quotes none of them: it prints
+ *  this row's definition apart, in the file's words, and none of its numbers. */
+export const SUPERSEDED_POLICY = "critical_or_kev";
 
 export interface PolicyTotals {
   /** On a day row, the days it waits after a release's date: the number in its stop id (schema 3). */
@@ -240,8 +245,9 @@ function firstDisagreement(replay: PatchPolicyReplay): string | null {
   if (replay.exclusions.cves.length !== excluded) {
     return `exclusions.cves lists ${replay.exclusions.cves.length} ≠ counts.cves_excluded ${excluded}`;
   }
-  // The tabled policy is held to the same sum when the file carries it, though none of it is drawn.
-  for (const key of [...SLIDER_STOPS, TABLED_POLICY]) {
+  // The superseded row, and a row keyed by a definition id, are held to the same sum when the file
+  // carries them, though none of them is drawn: the file's own totals agree, or it is not drawn at all.
+  for (const key of [...SLIDER_STOPS, SUPERSEDED_POLICY, ...POLICY_DEFINITION_IDS]) {
     const policy = replay.policies[key];
     if (!policy || !isCount(policy.never_seen) || !isCount(policy.exposed)) continue;
     if (policy.never_seen + policy.exposed !== replayed) {

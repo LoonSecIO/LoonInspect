@@ -1,3 +1,4 @@
+import { POLICY_DEFINITION_IDS, type InstallCause, type PolicyDefinition } from "@/features/patchPolicy/definitions";
 import { SLIDER_STOPS, type SliderStop } from "@/features/patchPolicy/replay";
 import type { PatchPolicyWalk, WalkPolicy, WalkSource } from "@/features/patchPolicy/walk";
 import type { PatchPolicyApp, PatchPolicyAppsResponse, PatchPolicyFeed, PatchPolicySource, PatchPolicySourceTrack } from "@/features/support/patchPolicyFeed";
@@ -73,6 +74,41 @@ function policy(stop: SliderStop, delay: number | null): WalkPolicy {
 /** Each day stop waits the days its label says (ruled 2026-11-27), as the walk's `install_delay_days` does. */
 const DELAYS: Record<SliderStop, number | null> = { "0d": 0, "1d": 1, "3d": 3, "7d": 7, "14d": 14, "30d": 30, "60d": 60, never: null };
 
+const cause = (rule: string, cve_id: string | null = null, on: string | null = null, basis: string | null = null): InstallCause => ({ rule, cve_id, on, basis });
+
+/** The built-in definitions, as the walk carries them as data (#954, ruled 2026-11-28). */
+export const DEFINITIONS_FIXTURE: PolicyDefinition[] = [
+  { id: "kev-only", name: "Patch on a KEV", otherwise: "never", when: [{ fixes: "kev_listed", within_days: 0 }] },
+  { id: "critical-only", name: "Patch only on a critical", otherwise: "never", when: [{ fixes: "critical", within_days: 0 }] },
+  { id: "30d-or-kev", name: "30 days, same day on a KEV", otherwise: 30, when: [{ fixes: "kev_listed", within_days: 0 }] }
+];
+
+/** Each definition's run: a stop's shape with numbers of its own, each install naming what installed it.
+ *  Invented like the rest (the walk's own goldens derive real ones): Patch on a KEV installs 4.4.2 on the
+ *  day CVE-2099-0001 is listed; the critical one installs 4.4.2 for CVE-2099-0003, critical today, whose
+ *  clock day stands in; the mixed one opens on 4.4.2, installed before the window for a listing. */
+function definitionRun(id: string): WalkPolicy {
+  const base = policy("7d", 7);
+  const runs: Record<string, Partial<WalkPolicy>> = {
+    "kev-only": {
+      never_seen: 1, never_seen_outside_affected_range: 1, exposed: 2, exposure_days: 11, update_events: 1, final_version: "4.4.2",
+      installs: [{ date: "2025-01-08", version: "4.4.2", by: cause("kev_listed", "CVE-2099-0001", "2025-01-08", "kev_date_added") }],
+      opening_by: cause("otherwise")
+    },
+    "critical-only": {
+      never_seen: 0, never_seen_outside_affected_range: 0, exposed: 3, exposure_days: 13, update_events: 1, final_version: "4.4.2",
+      installs: [{ date: "2025-01-03", version: "4.4.2", by: cause("critical", "CVE-2099-0003", "2024-12-20", "clock_day") }],
+      opening_by: cause("otherwise")
+    },
+    "30d-or-kev": {
+      never_seen: 1, never_seen_outside_affected_range: 1, exposed: 2, exposure_days: 7, update_events: 1, initial_version: "4.4.2", final_version: "4.4.3",
+      installs: [{ date: "2025-01-10", version: "4.4.3", by: cause("otherwise") }],
+      opening_by: cause("kev_listed", "CVE-2099-0004", "2024-12-30", "kev_date_added")
+    }
+  };
+  return { ...base, stop: id, install_delay_days: null, ...runs[id] };
+}
+
 export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: WalkSource } = {}): PatchPolicyWalk {
   const { source = "public", ...rest } = overrides;
   const names: Record<WalkSource, string> = {
@@ -131,14 +167,20 @@ export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: Wal
       not_detectable: 2,
       uncertain_over_1d: 0,
       replayed_by_clock: { detectable_at: 2, published: 1 },
-      placed_by_clock: { detectable_at: 3, published: 3 }
+      placed_by_clock: { detectable_at: 3, published: 3 },
+      knowable: { kev_listed: { kev_date_added: 1 }, critical: { first_scored: 0, clock_day: 1 }, critical_or_high: { first_scored: 0, clock_day: 2 } }
     },
     exclusions: {
       by_reason: { rejected: 0, no_configuration_for_pair: 1, branch_ambiguity: 0 },
       cves: [{ cve_id: "CVE-2099-0009", reason: "no_configuration_for_pair", clock: "published", clock_date: "2025-01-07", published: "2025-01-07", detail: null }],
       before_window_by_reason: {}
     },
-    policies: Object.fromEntries(SLIDER_STOPS.map((stop) => [stop, policy(stop, DELAYS[stop])])) as Record<SliderStop, WalkPolicy>,
+    policies: Object.fromEntries([
+      ...SLIDER_STOPS.map((stop) => [stop, policy(stop, DELAYS[stop])]),
+      ...POLICY_DEFINITION_IDS.map((id) => [id, definitionRun(id)])
+    ]) as Record<SliderStop, WalkPolicy>,
+    policy_definitions: DEFINITIONS_FIXTURE.map((each) => ({ ...each, when: each.when.map((trigger) => ({ ...trigger })) })),
+    policy_refusals: {},
     cves: [
       {
         cve_id: "CVE-2099-0001",
@@ -149,7 +191,8 @@ export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: Wal
         detectable_at: "2025-01-06",
         severity: "high",
         kev_date_added: "2025-01-08",
-        outcomes: Object.fromEntries(SLIDER_STOPS.map((stop) => [stop, outcome(stop)]))
+        knowable: { kev_listed: { on: "2025-01-08", basis: "kev_date_added" }, critical: null, critical_or_high: { on: "2025-01-06", basis: "clock_day" } },
+        outcomes: Object.fromEntries([...SLIDER_STOPS, ...POLICY_DEFINITION_IDS].map((stop) => [stop, outcome(stop === "kev-only" ? "60d" : stop === "critical-only" || stop === "30d-or-kev" ? "7d" : stop)]))
       },
       {
         cve_id: "CVE-2099-0002",
@@ -160,7 +203,8 @@ export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: Wal
         detectable_at: null,
         severity: null,
         kev_date_added: null,
-        outcomes: Object.fromEntries(SLIDER_STOPS.map((stop) => [stop, { class: "in_window", outcome: "never_seen", why: "fix_installed_first" }]))
+        knowable: { kev_listed: null, critical: null, critical_or_high: null },
+        outcomes: Object.fromEntries([...SLIDER_STOPS, ...POLICY_DEFINITION_IDS].map((stop) => [stop, { class: "in_window", outcome: "never_seen", why: "fix_installed_first" }]))
       },
       {
         cve_id: "CVE-2099-0003",
@@ -169,17 +213,21 @@ export function walkFixture(overrides: Partial<PatchPolicyWalk> & { source?: Wal
         clock_date: "2024-12-20",
         published: "2024-12-19",
         detectable_at: "2024-12-20",
-        severity: "medium",
+        severity: "critical",
         kev_date_added: null,
+        knowable: { kev_listed: null, critical: { on: "2024-12-20", basis: "clock_day" }, critical_or_high: { on: "2024-12-20", basis: "clock_day" } },
         outcomes: Object.fromEntries(
-          SLIDER_STOPS.map((stop) => [stop, { class: "carried_in", outcome: "exposed", exposure_days: 3, open_at_window_end: false, cleared_on: "2025-01-04", cleared_by: "4.4.2" }])
+          [...SLIDER_STOPS, ...POLICY_DEFINITION_IDS].map((stop) => [stop, { class: "carried_in", outcome: "exposed", exposure_days: 3, open_at_window_end: false, cleared_on: "2025-01-04", cleared_by: "4.4.2" }])
         )
       }
     ],
     cves_page: { page: 1, page_size: 200, pages: 1, total: 3 },
     intervals_for: null,
     check: { state: "matched", detail: CHECK_DETAIL },
-    definitions: { cve_clock: "A CVE is placed by the first day it was detectable (fixture definition)." },
+    definitions: {
+      cve_clock: "A CVE is placed by the first day it was detectable (fixture definition).",
+      "kev-only": "Patch on a KEV, a built-in policy definition (`kev-only`): otherwise never (fixture definition)."
+    },
     document_definitions: {},
     clocks: { published: "NVD publication (fixture clock)." },
     ...rest

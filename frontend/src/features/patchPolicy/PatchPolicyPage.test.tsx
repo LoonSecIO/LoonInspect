@@ -10,10 +10,12 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/config/api";
 import { PatchPolicyPage } from "@/features/patchPolicy/PatchPolicyPage";
-import { CHECK_DETAIL, FLAG_OFF_SENTENCE, NO_TITLE_SENTENCE, appFixture, appsFixture, openApp, walkFixture } from "@/features/patchPolicy/testing/walkFixtures";
+import { CHECK_DETAIL, DEFINITIONS_FIXTURE, FLAG_OFF_SENTENCE, NO_TITLE_SENTENCE, appFixture, appsFixture, openApp, walkFixture } from "@/features/patchPolicy/testing/walkFixtures";
+import { heldLineReplay } from "@/features/patchPolicy/testing/replayFixtures";
 import type { PatchPolicyWalk, WalkAnswer, WalkSource } from "@/features/patchPolicy/walk";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
-import { SLIDER_STOPS } from "@/features/patchPolicy/replay";
+import { POLICY_DEFINITION_IDS } from "@/features/patchPolicy/definitions";
+import { SLIDER_STOPS, readReplay } from "@/features/patchPolicy/replay";
 import { walkEnglish, walkGerman } from "@/features/patchPolicy/walkCopy";
 import { de } from "@/i18n/de";
 import { en } from "@/i18n/en";
@@ -30,6 +32,13 @@ const walkApi = vi.hoisted(() => ({ getPatchPolicyWalk: vi.fn() }));
 vi.mock("@/features/patchPolicy/walk", async (actual) => ({ ...(await actual<object>()), ...walkApi }));
 const jamfApi = vi.hoisted(() => ({ listJamfPatchTitles: vi.fn() }));
 vi.mock("@/features/jamfPatch/api", () => jamfApi);
+// The shipped replays load as they are, unless a test hands the fallback a hand-made schema-3 file.
+const replayApi = vi.hoisted(() => ({ loadReplay: vi.fn(), real: null as null | ((...args: unknown[]) => unknown) }));
+vi.mock("@/features/patchPolicy/replayIndex", async (actual) => {
+  const real = await actual<typeof import("@/features/patchPolicy/replayIndex")>();
+  replayApi.real = real.loadReplay as (...args: unknown[]) => unknown;
+  return { ...real, loadReplay: replayApi.loadReplay };
+});
 
 function Address() {
   return <output data-testid="address">{useLocation().search}</output>;
@@ -69,6 +78,7 @@ beforeEach(() => {
   jamfApi.listJamfPatchTitles.mockResolvedValue({ items: [{ name: "Example", bundleId: "com.example.app" }, { name: "Other App", bundleId: "com.example.other" }] });
   feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture());
   walkApi.getPatchPolicyWalk.mockResolvedValue({ walk: walkFixture() } satisfies WalkAnswer);
+  replayApi.loadReplay.mockImplementation((...args: unknown[]) => replayApi.real!(...args));
 });
 afterEach(() => {
   cleanup();
@@ -811,6 +821,166 @@ describe("in German", () => {
   });
 });
 
+describe("a built-in policy definition, loaded on the day-walk (#954, ruled 2026-11-28)", () => {
+  const group = (words = walkEnglish) => screen.getByRole("group", { name: words.definitionsLegend });
+  const definitionButton = (name: string, words = walkEnglish) =>
+    Array.from(group(words).querySelectorAll("button")).find((each) => each.querySelector("span")?.textContent === name)!;
+  const range = () => document.querySelector("input[type=range]") as HTMLInputElement;
+  /** The compare table's rows, by their first cell's words. */
+  const compared = () => Array.from(document.querySelectorAll("table")[1].querySelectorAll("tbody tr"));
+
+  it("is listed beside the slider and loads like a stop: its totals beside the stops', its graph, each CVE's outcome, its rule, and what installed each update", async () => {
+    await open();
+    expect(Array.from(group().querySelectorAll("button")).map((each) => each.textContent)).toEqual(["Patch on a KEV", "Patch only on a critical", "30 days, same day on a KEV"]);
+    fireEvent.click(definitionButton("Patch on a KEV"));
+    await settle();
+    // Carried in the address as a stop is, and drawn from the walk already held: nothing is asked again.
+    expect(address().get("policy")).toBe("kev-only");
+    expect(asked()).toHaveLength(1);
+    expect(text()).toContain("Open CVEs per day, at Patch on a KEV");
+    expect(text()).toContain("1 of 3 vulnerabilities never seen");
+    expect(text()).toContain("Outcome at Patch on a KEV");
+    // Its rule is the one sentence under the slider, from its data.
+    const said = walkEnglish.definitionSaid(DEFINITIONS_FIXTURE[0], 0);
+    expect(said).toBe(
+      "No release is installed except one that fixes a CVE on CISA's KEV list, on the day it is out or the day the CVE was added to the list, whichever is later."
+    );
+    expect(text()).toContain(said);
+    expect(text()).not.toContain(patchPolicyEnglish.policySaid("0d"));
+    // Pressed like a stop, and no stop is: the range sits on Never, its otherwise, and names the definition.
+    expect(definitionButton("Patch on a KEV").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByRole("button", { name: "Never" })[0].getAttribute("aria-pressed")).toBe("false");
+    expect(range().value).toBe(String(SLIDER_STOPS.indexOf("never")));
+    expect(range().getAttribute("aria-valuetext")).toBe("Patch on a KEV");
+    // Each update names what installed it.
+    expect(text()).toContain("4.4.2 · 2025-01-08 · for CVE-2099-0001, on KEV since 2025-01-08");
+    // Its totals beside the stops', its row the current one.
+    const row = compared().find((each) => each.firstElementChild!.textContent === "Patch on a KEV")!;
+    expect(row.getAttribute("aria-current")).toBe("true");
+    expect(Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent).slice(1, 5)).toEqual(["1", "1", "2", "11"]);
+    expect(screen.getByRole("heading", { name: walkEnglish.compareHeading })).toBeTruthy();
+    // Its definition, in the walk's own words, under Definitions.
+    expect(text()).toContain("Patch on a KEV, a built-in policy definition (`kev-only`): otherwise never (fixture definition).");
+    // A stop again from the slider, by its button or the range.
+    fireEvent.click(screen.getAllByRole("button", { name: "7 days" })[0]);
+    await settle();
+    expect(address().get("policy")).toBe("7d");
+    expect(definitionButton("Patch on a KEV").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(definitionButton("30 days, same day on a KEV"));
+    await settle();
+    fireEvent.change(range(), { target: { value: "2" } });
+    await settle();
+    expect(address().get("policy")).toBe("3d");
+  });
+
+  it("opens a definition the address names, and says what installed the release it opens the window on", async () => {
+    await open("?policy=30d-or-kev");
+    expect(text()).toContain("Open CVEs per day, at 30 days, same day on a KEV");
+    expect(text()).toContain(walkEnglish.definitionSaid(DEFINITIONS_FIXTURE[2], 0));
+    expect(text()).toContain(
+      "Every release is installed 30 days after the date the release-date source above gives it, or sooner if it fixes a CVE on CISA's KEV list, on the day it is out or the day the CVE was added to the list, whichever is later."
+    );
+    expect(range().value).toBe(String(SLIDER_STOPS.indexOf("30d")));
+    expect(text()).toContain("4.4.2 was installed before the window opened, for CVE-2099-0004, on KEV since 2024-12-30.");
+    expect(text()).toContain("4.4.3 · 2025-01-10 · 30 days after its date");
+  });
+
+  it("says, in its rule and on each CVE row, where a severity trigger read the clock day with today's severity (ruled 2026-11-28)", async () => {
+    await open("?policy=critical-only");
+    expect(text()).toContain(
+      "No release is installed except one that fixes a critical CVE, on the day it is out or the day LoonSec's data says it first scored critical, whichever is later; where LoonSec's data states no first-scored day, the CVE's clock day stands in, with today's severity (1 of the listed CVEs)."
+    );
+    const row = Array.from(document.querySelectorAll("table")[2].querySelectorAll("tbody tr")).find((each) => each.firstElementChild!.textContent === "CVE-2099-0003")!;
+    expect(row.children[4].textContent).toBe("Critical" + "today's severity; its clock day stands in");
+    expect(text()).toContain("for CVE-2099-0003, critical today, its clock day 2024-12-20 standing in");
+    // Under a definition that reads no severity, and under a stop, the severity stands alone.
+    cleanup();
+    await open("?policy=kev-only");
+    expect(text()).not.toContain("its clock day stands in");
+  });
+
+  it("draws a definition the walk did not run on this data disabled, with its sentence, and an address naming it opens the first stop in words", async () => {
+    const sentence = "LoonSec's patch-policy data for Example 4.4 cannot say whether a CVE is on CISA's KEV list (it names no source of KEV dates, sources.kev), so the policy definition Patch on a KEV (kev-only) was not walked; every stop was. (fixture)";
+    const walk = walkFixture({ policy_refusals: { "kev-only": { reason: "kev_unknown", sentence } } });
+    delete (walk.policies as Record<string, unknown>)["kev-only"];
+    walkApi.getPatchPolicyWalk.mockResolvedValue({ walk });
+    await open("?policy=kev-only");
+    expect(text()).toContain("Open CVEs per day, at 0 days");
+    expect(text()).toContain(walkEnglish.definitionRefusedHere("Patch on a KEV", "0 days"));
+    const button = definitionButton("Patch on a KEV");
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.textContent).toContain(walkEnglish.definitionUnavailable);
+    expect(document.getElementById(button.getAttribute("aria-describedby")!)!.textContent).toContain(walkEnglish.reasons.kev_unknown({ app: "", track: "", source: "", sourceId: "public" }));
+    expect(text()).toContain(walkEnglish.serverSaid(sentence));
+    // It has no row among the totals; the two it ran do.
+    expect(compared().map((each) => each.firstElementChild!.textContent).slice(SLIDER_STOPS.length)).toEqual(["Patch only on a critical", "30 days, same day on a KEV"]);
+  });
+
+  it("says an address naming a policy this page does not have opens the first stop", async () => {
+    await open("?policy=kev-maybe");
+    expect(text()).toContain('The address names a patch policy this page does not have ("kev-maybe"), so it opens on the first stop, 0 days (troubleshooting.md §33 step 10).');
+    expect(text()).toContain("Open CVEs per day, at 0 days");
+  });
+
+  it("offers none from an instance whose walk carries none, and an address naming one opens the first stop in words", async () => {
+    const walk = walkFixture({ policy_definitions: undefined, policy_refusals: undefined });
+    for (const id of POLICY_DEFINITION_IDS) delete (walk.policies as Record<string, unknown>)[id];
+    walkApi.getPatchPolicyWalk.mockResolvedValue({ walk });
+    await open("?policy=critical-only");
+    expect(screen.queryByRole("group", { name: walkEnglish.definitionsLegend })).toBeNull();
+    expect(text()).toContain(walkEnglish.definitionNotOffered("Patch only on a critical", "0 days"));
+    expect(compared()).toHaveLength(SLIDER_STOPS.length);
+    expect(screen.getByRole("heading", { name: patchPolicyEnglish.compareHeading })).toBeTruthy();
+  });
+
+  it("is not offered on the reference replays: an address naming one says why in one sentence and opens their first stop, in English and German", async () => {
+    // A hand-made schema-3 replay stands in for the shipped files, which are refused as the old count,
+    // so the first stop the fallback opens on is drawn.
+    replayApi.loadReplay.mockImplementation(() => Promise.resolve({ replay: readReplay(heldLineReplay()).replay }));
+    for (const [language, words, copy] of [["en", walkEnglish, patchPolicyEnglish], ["de", walkGerman, patchPolicyGerman]] as const) {
+      locale.current = language;
+      feedApi.getPatchPolicyApps.mockResolvedValue(appsFixture(null, { state: "never", docId: null, asOf: null }));
+      await open("?policy=kev-only");
+      await waitFor(() => expect(text()).toContain(copy.referenceTitle));
+      expect(text()).toContain(words.definitionOnFallback(words.definitionNames["kev-only"], copy.stops["0d"]));
+      expect(screen.getAllByRole("button", { name: copy.stops["0d"] })[0].getAttribute("aria-pressed")).toBe("true");
+      expect(text()).toContain(copy.policySaid("0d"));
+      expect(screen.queryByRole("group", { name: words.definitionsLegend })).toBeNull();
+      expect(walkApi.getPatchPolicyWalk).not.toHaveBeenCalled();
+      cleanup();
+    }
+    expect(walkGerman.definitionOnFallback("Patchen bei KEV", "0 Tage")).toBe(
+      "Patchen bei KEV ist eine Richtliniendefinition, die diese Seite nur über die Patch-Policy-Daten von LoonSec nachspielt, nie über die Referenz-Replays, die sie bis zu deren Ankunft zeigt; sie öffnet daher auf der ersten Stufe, 0 Tage (troubleshooting.md §22 Schritt 11)."
+    );
+  });
+
+  it("reads in German: the names, the legend, the rule, what installed each update, and a refused one's sentence", async () => {
+    locale.current = "de";
+    const sentence = "LoonSec's patch-policy data … (fixture)";
+    const walk = walkFixture({ policy_refusals: { "30d-or-kev": { reason: "kev_unknown", sentence } } });
+    delete (walk.policies as Record<string, unknown>)["30d-or-kev"];
+    walkApi.getPatchPolicyWalk.mockResolvedValue({ walk });
+    await open("?policy=kev-only");
+    expect(Array.from(group(walkGerman).querySelectorAll("button")).map((each) => each.querySelector("span")!.textContent)).toEqual([
+      "Patchen bei KEV",
+      "Nur bei Kritisch patchen",
+      "30 Tage, bei KEV am selben Tag"
+    ]);
+    expect(text()).toContain("Offene CVEs pro Tag, bei Patchen bei KEV");
+    expect(text()).toContain(
+      "Kein Release wird installiert außer einem, das eine CVE auf der KEV-Liste der CISA behebt, an dem Tag, an dem es erscheint, oder an dem Tag, an dem die CVE in die Liste aufgenommen wurde, je nachdem, was später ist."
+    );
+    expect(text()).toContain("4.4.2 · 2025-01-08 · wegen CVE-2099-0001, seit 2025-01-08 auf der KEV-Liste");
+    expect(text()).toContain(walkGerman.reasons.kev_unknown({ app: "", track: "", source: "", sourceId: "public" }));
+    expect(text()).toContain(walkGerman.serverSaid(sentence));
+    cleanup();
+    await open("?policy=critical-only");
+    expect(text()).toContain("mit dem heutigen Schweregrad (1 der aufgeführten CVEs).");
+    expect(text()).toContain("heutiger Schweregrad; ihr Uhrtag steht dafür");
+    expect(text()).toContain("wegen CVE-2099-0003, heute kritisch, ihr Uhrtag 2024-12-20 steht dafür");
+  });
+});
+
 describe("the walk's tables and dates, as a reader at 1280 px sees them", () => {
   /** A table's markup with every date that cannot wrap taken out: what is left is a date a line could
    *  break at its hyphens ("2026-" above "09-01"). */
@@ -841,13 +1011,31 @@ describe("the walk's tables and dates, as a reader at 1280 px sees them", () => 
       expect(heads(stops).every((head) => head.includes("px-2"))).toBe(true);
       expect(Array.from(stops.querySelectorAll("tbody td")).every((cell) => classes(cell).includes("px-2"))).toBe(true);
       // And eight rows, one per stop in the slider's order, each label whole on its line in either
-      // language ("14 Tage", never "14 / Tage"), so the table's width is still its columns'.
+      // language ("14 Tage", never "14 / Tage"), so the table's width is still its columns'. Then one
+      // row per built-in policy definition (#954), beside the stops: a name wraps at its spaces, never
+      // inside a word, and no word of a name is longer than eight letters in either language, a stop's
+      // label kept whole give or take one ("60 Tage", "60 days" are seven), so the policy column grows
+      // by at most a letter and the row still fits at 1280 px.
       const words = language === "en" ? patchPolicyEnglish : patchPolicyGerman;
+      const walkWords = language === "en" ? walkEnglish : walkGerman;
       const rows = Array.from(stops.querySelectorAll("tbody tr"));
-      expect(rows).toHaveLength(SLIDER_STOPS.length);
-      expect(rows.map((row) => row.firstElementChild!.textContent)).toEqual(SLIDER_STOPS.map((stop) => words.stops[stop]));
-      expect(rows.every((row) => classes(row.firstElementChild!).includes("whitespace-nowrap"))).toBe(true);
+      expect(rows).toHaveLength(SLIDER_STOPS.length + POLICY_DEFINITION_IDS.length);
+      expect(rows.map((row) => row.firstElementChild!.textContent)).toEqual([
+        ...SLIDER_STOPS.map((stop) => words.stops[stop]),
+        ...POLICY_DEFINITION_IDS.map((id) => walkWords.definitionNames[id])
+      ]);
+      const [stopRows, definitionRows] = [rows.slice(0, SLIDER_STOPS.length), rows.slice(SLIDER_STOPS.length)];
+      expect(stopRows.every((row) => classes(row.firstElementChild!).includes("whitespace-nowrap"))).toBe(true);
+      expect(definitionRows.every((row) => !classes(row.firstElementChild!).includes("whitespace-nowrap"))).toBe(true);
+      expect(definitionRows.every((row) => classes(row.firstElementChild!).includes("hyphens-manual"))).toBe(true);
+      for (const id of POLICY_DEFINITION_IDS) {
+        for (const word of walkWords.definitionNames[id].split(/\s+/)) expect(word.replace(/[,.]$/, "").length, `${language} ${id}: ${word}`).toBeLessThanOrEqual(8);
+      }
       expect(classes(stops)).toContain("min-w-[38rem]");
+      // The definitions beside the slider: three to a row from 640 px, each name wrapping in its button.
+      const control = screen.getByRole("group", { name: walkWords.definitionsLegend });
+      expect(classes(control.querySelector("div")!)).toEqual(expect.arrayContaining(["grid", "sm:grid-cols-3"]));
+      expect(Array.from(control.querySelectorAll("button")).every((each) => !classes(each).includes("whitespace-nowrap"))).toBe(true);
       // The slider above them: eight equal columns of buttons, and the range input inset by half of
       // one (a sixteenth, less half the thumb), so the thumb sits over the stop it names.
       const range = document.querySelector("input[type=range]")!;

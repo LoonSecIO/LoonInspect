@@ -14,12 +14,13 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { pickerApps } from "@/features/patchPolicy/apps";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
+import { POLICY_DEFINITION_IDS } from "@/features/patchPolicy/definitions";
 import {
   DAY_STOPS,
   REPLAY_OLD_COUNT_SCHEMA,
   REPLAY_SCHEMA,
   SLIDER_STOPS,
-  TABLED_POLICY,
+  SUPERSEDED_POLICY,
   affectedBounds,
   heldFixes,
   isSliderStop,
@@ -157,10 +158,10 @@ describe("the hand-made schema-3 replays", () => {
     }
   });
 
-  it("the tabled policy is in the file and is not a stop", () => {
-    expect(held.policies[TABLED_POLICY]).toBeDefined();
-    expect(SLIDER_STOPS).not.toContain(TABLED_POLICY);
-    expect(isSliderStop(TABLED_POLICY)).toBe(false);
+  it("the superseded policy is in the file and is not a stop", () => {
+    expect(held.policies[SUPERSEDED_POLICY]).toBeDefined();
+    expect(SLIDER_STOPS).not.toContain(SUPERSEDED_POLICY);
+    expect(isSliderStop(SUPERSEDED_POLICY)).toBe(false);
     expect(isSliderStop("14d")).toBe(true);
     // A saved address keeps resolving: ?policy=7d is the 7-day stop, now seven days waited.
     expect(isSliderStop("7d")).toBe(true);
@@ -472,9 +473,15 @@ describe("readReplay refuses", () => {
     });
   });
 
-  it("the tabled policy too, though none of it is drawn", () => {
-    const result = readReplay(edited((file) => { file.policies[TABLED_POLICY].never_seen = 2; }));
+  it("the superseded policy too, though none of it is drawn", () => {
+    const result = readReplay(edited((file) => { file.policies[SUPERSEDED_POLICY].never_seen = 2; }));
     expect(result.refusal).toEqual({ why: "totals", detail: "policies.critical_or_kev: never_seen 2 + exposed 3 ≠ counts.cves_replayed 4" });
+  });
+
+  it("a row keyed by a built-in definition's id too, though none of it is drawn", () => {
+    const row = { ...(heldLineReplay().policies as Record<string, object>)["30d"], never_seen: 3 };
+    const result = readReplay(edited((file) => { file.policies["kev-only"] = { ...row, install_delay_days: null }; }));
+    expect(result.refusal).toEqual({ why: "totals", detail: "policies.kev-only: never_seen 3 + exposed 3 ≠ counts.cves_replayed 4" });
   });
 
   it("excluded counts that do not sum", () => {
@@ -515,6 +522,24 @@ describe("readReplay ignores what it does not know", () => {
     }));
     expect(result.refusal).toBeUndefined();
     expect(result.replay?.policies["14d"].never_seen).toBe(1);
+  });
+
+  it("whether a schema-3 file carries the superseded row, does not, or carries rows on the ruled definitions instead (ruled 2026-11-28)", () => {
+    const withIt = readReplay(heldLineReplay());
+    expect(withIt.replay?.policies[SUPERSEDED_POLICY]).toBeDefined();
+    const without = readReplay(edited((file) => { delete file.policies[SUPERSEDED_POLICY]; delete file.definitions[SUPERSEDED_POLICY]; }));
+    expect(without.refusal).toBeUndefined();
+    // LoonSec's rewrite replaces the row with rows on the ruled definitions: they read, and their totals close.
+    const rewritten = readReplay(edited((file) => {
+      delete file.policies[SUPERSEDED_POLICY];
+      for (const id of POLICY_DEFINITION_IDS) {
+        file.policies[id] = { ...file.policies.never, install_delay_days: null };
+        file.definitions[id] = `${id}, as the file defines it (fixture).`;
+        for (const row of file.ledger) if (row.outcomes) row.outcomes[id] = row.outcomes.never;
+      }
+    }));
+    expect(rewritten.refusal).toBeUndefined();
+    expect(Object.keys(rewritten.replay!.policies)).toEqual([...SLIDER_STOPS, ...POLICY_DEFINITION_IDS]);
   });
 });
 

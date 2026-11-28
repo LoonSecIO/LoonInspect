@@ -211,7 +211,7 @@ describe("ReplayView on an app held on one release line", () => {
     expect(text(markup)).toContain("javascript:alert(1)");
   });
 
-  it("keeps the tabled policy off the slider and out of every table, and quotes none of its numbers", () => {
+  it("keeps the superseded policy off the slider and out of every table, and quotes none of its numbers", () => {
     for (const stop of SLIDER_STOPS) {
       const markup = markupOf(stop);
       // Eight stops and no ninth, on the slider and in the comparison table.
@@ -219,13 +219,31 @@ describe("ReplayView on an app held on one release line", () => {
       for (const label of Object.values(copy.stops)) expect(markup).toContain(`>${label}</button>`);
       expect(markup.split("<tbody>")[1].split("</tbody>")[0].split("<tr").length - 1).toBe(SLIDER_STOPS.length);
       const page = text(markup);
-      // Its definition is shown apart, in the file's own words, which say it is tabled.
+      // Its definition is shown apart, in the file's own words, under the page's: superseded by the
+      // built-in policy definitions (ruled 2026-11-28), which LoonSec's next files replace it with.
       expect(page).toContain("Not on the slider");
-      expect(page).toContain("TABLED 2026-10-02, not ruled: do not quote this row.");
+      expect(page).toContain(copy.supersededSaid);
+      expect(page).toContain("Superseded by the ruled policy definitions: do not quote this row.");
+      expect(page).not.toMatch(/tabled/i);
       // Its exposure days appear nowhere.
       expect(page).not.toContain("147");
       expect(markup).not.toContain(">critical_or_kev</dt>");
     }
+  });
+
+  it("draws no row keyed by a built-in definition's id, nor quotes its definition: the fallback offers no definition", () => {
+    const file = heldLineReplay() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+    delete file.policies.critical_or_kev;
+    delete file.definitions.critical_or_kev;
+    file.policies["kev-only"] = { ...file.policies.never, install_delay_days: null, exposure_days: 4242 };
+    file.definitions["kev-only"] = "Patch on a KEV, as the file defines it (fixture).";
+    for (const row of file.ledger) if (row.outcomes) row.outcomes["kev-only"] = row.outcomes.never;
+    const replay = readReplay(file).replay as PatchPolicyReplay;
+    const markup = renderToStaticMarkup(<ReplayView replay={replay} appName="Example App" stop="0d" onStop={() => {}} copy={copy} />);
+    expect(markup.split("<tbody>")[1].split("</tbody>")[0].split("<tr").length - 1).toBe(SLIDER_STOPS.length);
+    expect(text(markup)).not.toContain("4242");
+    expect(text(markup)).not.toContain("as the file defines it");
+    expect(markup).not.toContain("Not on the slider");
   });
 
   it("reads in German from the same file", () => {

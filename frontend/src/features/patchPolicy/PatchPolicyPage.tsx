@@ -4,6 +4,7 @@ import { ApiError } from "@/config/api";
 import { listJamfPatchTitles } from "@/features/jamfPatch/api";
 import { AppPicker } from "@/features/patchPolicy/AppPicker";
 import { pickerApps, type CatalogTitle } from "@/features/patchPolicy/apps";
+import { isDefinitionId } from "@/features/patchPolicy/definitions";
 import { SLIDER_STOPS, isSliderStop, type ReadResult, type SliderStop } from "@/features/patchPolicy/replay";
 import { REPLAY_INDEX, loadReplay } from "@/features/patchPolicy/replayIndex";
 import { ReplayView } from "@/features/patchPolicy/ReplayView";
@@ -127,8 +128,18 @@ export function PatchPolicyPage() {
   useLayoutEffect(() => {
     latest.current = params;
   }, [params]);
+  // A stop or a built-in policy definition (#954), as the address names it. The day-walk draws either,
+  // and says why it opens the first stop for one it does not offer; the reference replays draw the
+  // stops only, so an address naming a definition or anything else opens their first stop, in words.
   const asked = params.get("policy");
   const stop: SliderStop = isSliderStop(asked) ? asked : SLIDER_STOPS[0];
+  const first = copy.stops[SLIDER_STOPS[0]];
+  const fallbackNote =
+    asked === null || isSliderStop(asked)
+      ? null
+      : isDefinitionId(asked)
+        ? words.definitionOnFallback(words.definitionNames[asked] ?? asked, first)
+        : words.policyUnknown(asked, first);
 
   // `null` until each read lands. A read that FAILED is not an empty answer (#150), so each has its sentence.
   const [titles, setTitles] = useState<CatalogTitle[] | null>(null);
@@ -270,11 +281,13 @@ export function PatchPolicyPage() {
                       {answer.failed.unreadable ? words.walkUnreadable(answer.failed.unreadable) : words.walkFailed(answer.failed.status)}
                     </p>
                   )}
-                  {answer?.refusal && <RefusedWalk refusal={answer.refusal} app={app.name} track={trackLabel} source={source} words={words} stops={copy.stops} />}
+                  {answer?.refusal && (
+                    <RefusedWalk refusal={answer.refusal} app={app.name} track={trackLabel} source={source} words={words} stops={{ ...copy.stops, ...words.definitionNames }} />
+                  )}
                   {answer?.walk && (
                     <WalkView
                       walk={answer.walk}
-                      stop={stop}
+                      stop={asked ?? SLIDER_STOPS[0]}
                       onStop={(next) => set({ policy: next })}
                       onPage={(next) => set({ page: next > 1 ? String(next) : null })}
                       copy={copy}
@@ -285,8 +298,11 @@ export function PatchPolicyPage() {
               )}
             </div>
           ) : (
-            <>
+            // One column beside the app list: the address's sentence, when it names what the replays do
+            // not draw, sits above whatever the replay draws.
+            <div className="min-w-0 space-y-4">
               {!entry && <p className="text-sm">{appId === null ? copy.noReplays : copy.unknownApp(appId)}</p>}
+              {entry && fallbackNote && <p className="text-sm">{fallbackNote}</p>}
               {entry && !result && <p className="text-sm text-muted-foreground">{copy.replayLoading}</p>}
               {entry && result?.refusal && (
                 <div className="space-y-1 text-sm">
@@ -297,7 +313,7 @@ export function PatchPolicyPage() {
               {entry && result?.replay && (
                 <ReplayView replay={result.replay} appName={entry.name} stop={stop} onStop={(next) => set({ policy: next })} copy={copy} />
               )}
-            </>
+            </div>
           )}
         </div>
       )}

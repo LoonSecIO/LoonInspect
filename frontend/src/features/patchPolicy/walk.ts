@@ -1,4 +1,5 @@
 import { ApiError, apiRequest } from "@/config/api";
+import { definitionsOf, type DefinitionRefusal, type InstallCause, type KnowableFact, type PolicyDefinition, type TriggerKind } from "@/features/patchPolicy/definitions";
 import { SLIDER_STOPS, type SliderStop } from "@/features/patchPolicy/replay";
 import type { PatchPolicyApp, PatchPolicySourceTrack } from "@/features/support/patchPolicyFeed";
 
@@ -36,7 +37,8 @@ export interface WalkSeries {
 }
 
 export interface WalkPolicy {
-  stop: SliderStop;
+  /** The stop's id, or a built-in definition's (#954). */
+  stop: string;
   install_delay_days: number | null;
   never_seen: number;
   never_seen_outside_affected_range: number;
@@ -51,7 +53,10 @@ export interface WalkPolicy {
   update_events: number;
   initial_version: string | null;
   final_version: string | null;
-  installs: { date: string; version: string | null }[];
+  /** On a definition's run, each install names what installed it (`by`). */
+  installs: { date: string; version: string | null; by?: InstallCause }[];
+  /** On a definition's run: what installed the release the window opens on. */
+  opening_by?: InstallCause | null;
   series: WalkSeries;
 }
 
@@ -100,7 +105,11 @@ export interface WalkCve {
   configurations_changed_after_detectable?: boolean | null;
   /** Absent from an instance older than the ruling: read as none. */
   fix_dated_by?: WalkFixDating[];
-  outcomes: Partial<Record<SliderStop, WalkOutcome>>;
+  /** The day each trigger's fact was knowable for this CVE, and its basis (ruled 2026-11-28): null where
+   *  it is not of the kind. Absent from an instance without the policy definitions. */
+  knowable?: Partial<Record<TriggerKind, KnowableFact | null>>;
+  /** Under each stop, and each built-in definition the walk ran. */
+  outcomes: Partial<Record<string, WalkOutcome>>;
 }
 
 export interface WalkShortened {
@@ -189,16 +198,23 @@ export interface PatchPolicyWalk {
     placed_by_clock: { detectable_at: number; published: number };
     /** The `fix_dated_by` entries of the rows `cves` lists, by `how`. Absent from an older instance. */
     fix_dating?: { fix: number; next_dated: number; undated: number };
+    /** The rows `cves` lists, per trigger kind, by the basis of the day its fact was knowable. */
+    knowable?: Partial<Record<TriggerKind, Record<string, number>>>;
   };
   exclusions: {
     by_reason: Record<string, number>;
     cves: { cve_id: string; reason: string; clock: string | null; clock_date: string | null; published: string | null; detail: string | null }[];
     before_window_by_reason: Record<string, number>;
   };
-  policies: Record<SliderStop, WalkPolicy>;
+  /** Every stop, then each built-in definition the walk ran (#954), under its id. */
+  policies: Record<SliderStop, WalkPolicy> & Partial<Record<string, WalkPolicy>>;
+  /** Each built-in definition walked, as data; absent from an instance without them. */
+  policy_definitions?: PolicyDefinition[];
+  /** Each definition the walk could not run on this data, with its reason and the instance's sentence. */
+  policy_refusals?: Record<string, DefinitionRefusal>;
   cves: WalkCve[];
   cves_page: { page: number; page_size: number; pages: number; total: number };
-  intervals_for: SliderStop | null;
+  intervals_for: string | null;
   check: { state: "matched" | "unchecked_window"; detail: string };
   definitions: Record<string, string>;
   document_definitions: Record<string, unknown>;
@@ -229,8 +245,9 @@ export interface WalkRequest {
   page: number;
 }
 
-/** The request, as its query string. No `stop`: the page reads each CVE's outcome under every stop,
- *  which the answer always carries, and draws no day intervals, so a slider move asks for nothing. */
+/** The request, as its query string. No `stop`: the page reads each CVE's outcome under every stop and
+ *  built-in definition, which the answer always carries, and draws no day intervals, so a slider move,
+ *  or loading a definition, asks for nothing. */
 export function walkQuery(request: WalkRequest): string {
   const query = new URLSearchParams({
     app: request.app,
@@ -255,7 +272,8 @@ export function unreadable(body: unknown): string | null {
   if (!isObject(window) || typeof window.days !== "number" || typeof window.since !== "string") return "window";
   const policies = body.policies;
   if (!isObject(policies)) return "policies";
-  for (const stop of SLIDER_STOPS) {
+  // Every stop, and every definition the walk ran: the page draws each one's series.
+  for (const stop of [...SLIDER_STOPS, ...Object.keys(policies).filter((key) => !(SLIDER_STOPS as readonly string[]).includes(key))]) {
     const policy = policies[stop];
     const series = isObject(policy) ? policy.series : undefined;
     if (!isObject(series)) return `policies.${stop}.series`;
@@ -275,6 +293,24 @@ export function channelsSetAside(value: unknown): WalkChannelSetAside[] {
     if (!isObject(row) || typeof row.label !== "string" || typeof row.count !== "number") return [];
     const versions = Array.isArray(row.versions) ? row.versions.filter((each): each is string => typeof each === "string") : [];
     return [{ channel: typeof row.channel === "string" ? row.channel : row.label, label: row.label, source: typeof row.source === "string" ? row.source : "", count: row.count, versions }];
+  });
+}
+
+/** One built-in definition as the page offers it: its data, and either its run or why the walk did
+ *  not run it on this data. A definition the answer names but neither ran nor refused is left out. */
+export interface OfferedDefinition {
+  definition: PolicyDefinition;
+  run?: WalkPolicy;
+  refusal?: DefinitionRefusal;
+}
+
+/** The built-in definitions a walk offers, in its order (#954). An instance without them offers none. */
+export function offeredDefinitions(walk: Pick<PatchPolicyWalk, "policies" | "policy_definitions" | "policy_refusals">): OfferedDefinition[] {
+  return definitionsOf(walk.policy_definitions).flatMap((definition): OfferedDefinition[] => {
+    const run = walk.policies[definition.id];
+    const refusal = walk.policy_refusals?.[definition.id];
+    if (run) return [{ definition, run }];
+    return refusal && typeof refusal.sentence === "string" ? [{ definition, refusal }] : [];
   });
 }
 

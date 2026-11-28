@@ -1,3 +1,4 @@
+import type { InstallCause, KnowableFact, PolicyDefinition } from "@/features/patchPolicy/definitions";
 import type { WalkSource } from "@/features/patchPolicy/walk";
 
 /**
@@ -31,6 +32,19 @@ const opening = (words: string) => words.charAt(0).toUpperCase() + words.slice(1
 const answered = (status: number | null) => (status === null ? "no answer" : `HTTP ${status}`);
 /** The walk's own refusals over a timeline's versions read in the Jamf or the Fleet step of §33. */
 const joinStep = (sourceId: WalkSource) => (sourceId === "fleet" ? 5 : 4);
+
+/** A trigger's kind in the page's words: what a release it names fixes, and the fact whose day counts. */
+const TRIGGER_EN: Record<string, { what: string; fact: string }> = {
+  kev_listed: { what: "a CVE on CISA's KEV list", fact: "the CVE was added to the list" },
+  critical: { what: "a critical CVE", fact: "LoonSec's data says it first scored critical" },
+  critical_or_high: { what: "a high or critical CVE", fact: "LoonSec's data says it first scored high or critical" }
+};
+
+const TRIGGER_DE: Record<string, { what: string; fact: string }> = {
+  kev_listed: { what: "eine CVE auf der KEV-Liste der CISA", fact: "die CVE in die Liste aufgenommen wurde" },
+  critical: { what: "eine kritische CVE", fact: "sie laut den Daten von LoonSec zuerst als kritisch bewertet wurde" },
+  critical_or_high: { what: "eine hohe oder kritische CVE", fact: "sie laut den Daten von LoonSec zuerst als hoch oder kritisch bewertet wurde" }
+};
 
 export const walkEnglish = {
   appsLoading: "Reading LoonSec's patch-policy data on this instance…",
@@ -144,7 +158,14 @@ export const walkEnglish = {
     timeline_invalid: () =>
       "LoonInspect refused the release timeline it built for the walk. That is a defect in this build (troubleshooting.md §33 step 8, state AE).",
     request_invalid: () =>
-      "LoonInspect refused the walk this page asked for. That is a defect in this build (troubleshooting.md §33 step 8, state AE)."
+      "LoonInspect refused the walk this page asked for. That is a defect in this build (troubleshooting.md §33 step 8, state AE).",
+    // A built-in policy definition the walk did not run on this data (#954); every stop still walks.
+    kev_unknown: () =>
+      "LoonSec's patch-policy data cannot say whether a CVE is on CISA's KEV list, so this definition is not walked; every stop is. Nothing on this instance can fix it (troubleshooting.md §33 step 7, state AD).",
+    severity_unknown: () =>
+      "LoonSec's patch-policy data gives a severity, or a first-scored day, this build cannot read, so this definition is not walked; every stop is (troubleshooting.md §33 step 7, state AD).",
+    definition_invalid: () =>
+      "This build's definition names a trigger or a day count its walk does not run, so it is not walked; every stop is. That is a defect in this build (troubleshooting.md §33 step 8, state AE)."
   } as Record<string, (context: ReasonContext) => string>,
   reasonUnknown: (reason: string) => `The walk is not shown (${reason}). Report the instance's words below with the build from Settings › Support (troubleshooting.md §33).`,
   serverSaid: (sentence: string) => `This instance's words: ${sentence}`,
@@ -316,8 +337,71 @@ export const walkEnglish = {
     "Not checked itself: LoonSec publishes totals only for its own release dates, over the window asked for without alignment. This view is shown because that walk, below, matched them.",
   evidenceInput: "Input",
   evidenceRun: "Run",
-  definitionsHeading: "Definitions and clocks, in the walk's own words"
+  definitionsHeading: "Definitions and clocks, in the walk's own words",
+
+  // --- the built-in policy definitions (#954, ruled 2026-11-28) ---
+  /** By id: the walk names each in English, so the page names it in the reader's language. */
+  definitionNames: {
+    "kev-only": "Patch on a KEV",
+    "critical-only": "Patch only on a critical",
+    "30d-or-kev": "30 days, same day on a KEV"
+  } as Record<string, string>,
+  definitionsLegend: "Or load a policy definition",
+  definitionsHint:
+    "Built in, beside the stops: each installs the release that fixes a CVE of its kind, on the later of the day the release is out and the day the fact is known.",
+  definitionUnavailable: "Not walked on this data",
+  compareHeading: "Every stop on the slider, and each policy definition",
+  /** A definition's rule, in one sentence, from its data. `standIns` is how many of the listed CVEs a
+   *  severity trigger reads on their clock day, with today's severity (ruled 2026-11-28). */
+  definitionSaid: (definition: PolicyDefinition, standIns: number) => {
+    const triggers = definition.when.map((trigger) => {
+      const kind = TRIGGER_EN[trigger.fixes] ?? { what: `a CVE of the kind ${trigger.fixes}`, fact: "its fact was known" };
+      const when = trigger.within_days === 0 ? "on" : `${trigger.within_days} ${plural(trigger.within_days, "day", "days")} after`;
+      return `${kind.what}, ${when} the day it is out or the day ${kind.fact}, whichever is later`;
+    });
+    const fixes = triggers.join(", and one that fixes ");
+    const severity = definition.when.some((trigger) => trigger.fixes === "critical" || trigger.fixes === "critical_or_high");
+    const clock = severity
+      ? `; where LoonSec's data states no first-scored day, the CVE's clock day stands in, with today's severity (${standIns} of the listed CVEs)`
+      : "";
+    if (definition.otherwise === "never") return `No release is installed except one that fixes ${fixes}${clock}.`;
+    const base =
+      definition.otherwise === 0
+        ? "Every release is installed on the date the release-date source above gives it"
+        : `Every release is installed ${definition.otherwise} ${plural(definition.otherwise, "day", "days")} after the date the release-date source above gives it`;
+    return triggers.length ? `${base}, or sooner if it fixes ${fixes}${clock}.` : `${base}.`;
+  },
+  /** What a trigger names a release for: the CVE, and the day its fact was known, by its basis. */
+  causeWords: (by: InstallCause) => {
+    const cve = by.cve_id ?? "a CVE";
+    const what = by.rule === "critical" ? "critical" : by.rule === "critical_or_high" ? "high or critical" : null;
+    if (by.rule === "kev_listed") return `${cve}, on KEV since ${by.on}`;
+    if (what && by.basis === "first_scored") return `${cve}, ${what} since ${by.on}`;
+    if (what && by.basis === "clock_day") return `${cve}, ${what} today, its clock day ${by.on} standing in`;
+    return `${cve} (${by.rule})`;
+  },
+  installedFor: (reason: string) => `for ${reason}`,
+  installedOtherwise: (days: number) => (days === 0 ? "on its date" : `${days} ${plural(days, "day", "days")} after its date`),
+  openedBy: (version: string, reason: string) => `${version} was installed before the window opened, for ${reason}.`,
+  /** Beside a CVE's severity, under a definition that reads it: the day that counted, and its basis. */
+  rowBasis: (kind: string, fact: KnowableFact) =>
+    fact.basis === "first_scored"
+      ? `first ${kind === "critical" ? "critical" : "high or critical"} ${fact.on}`
+      : fact.basis === "clock_day"
+        ? "today's severity; its clock day stands in"
+        : fact.basis,
+  /** The address names a policy this build does not have. */
+  policyUnknown: (id: string, first: string) =>
+    `The address names a patch policy this page does not have ("${id}"), so it opens on the first stop, ${first} (troubleshooting.md §33 step 10).`,
+  /** The address names a definition while the page draws the reference replays. */
+  definitionOnFallback: (name: string, first: string) =>
+    `${name} is a policy definition, which this page walks only over LoonSec's patch-policy data, never over the reference replays it shows until that data arrives, so it opens on the first stop, ${first} (troubleshooting.md §22 step 11).`,
+  definitionRefusedHere: (name: string, first: string) =>
+    `${name} is not walked on this data (the reason is beside it, under the slider), so the page opens on the first stop, ${first}.`,
+  definitionNotOffered: (name: string, first: string) =>
+    `This instance's walk carries no ${name}, as a build without the policy definitions answers, so the page opens on the first stop, ${first}. Reload once: a page left open across an update does this (troubleshooting.md §33 step 10).`
 };
+
 
 export type WalkCopy = typeof walkEnglish;
 
@@ -430,7 +514,13 @@ export const walkGerman: WalkCopy = {
     timeline_invalid: () =>
       "LoonInspect hat die Release-Zeitleiste abgelehnt, die es für den Durchlauf gebaut hat. Das ist ein Fehler dieses Builds (troubleshooting.md §33 Schritt 8, Zustand AE).",
     request_invalid: () =>
-      "LoonInspect hat den Durchlauf abgelehnt, den diese Seite angefragt hat. Das ist ein Fehler dieses Builds (troubleshooting.md §33 Schritt 8, Zustand AE)."
+      "LoonInspect hat den Durchlauf abgelehnt, den diese Seite angefragt hat. Das ist ein Fehler dieses Builds (troubleshooting.md §33 Schritt 8, Zustand AE).",
+    kev_unknown: () =>
+      "Die Patch-Policy-Daten von LoonSec können nicht sagen, ob eine CVE auf der KEV-Liste der CISA steht; diese Definition wird daher nicht nachgespielt, jede Stufe schon. Auf dieser Instanz lässt sich das nicht beheben (troubleshooting.md §33 Schritt 7, Zustand AD).",
+    severity_unknown: () =>
+      "Die Patch-Policy-Daten von LoonSec nennen einen Schweregrad oder einen Tag der ersten Bewertung, den dieser Build nicht lesen kann; diese Definition wird daher nicht nachgespielt, jede Stufe schon (troubleshooting.md §33 Schritt 7, Zustand AD).",
+    definition_invalid: () =>
+      "Die Definition dieses Builds nennt einen Auslöser oder eine Zahl von Tagen, die sein Durchlauf nicht ausführt; sie wird daher nicht nachgespielt, jede Stufe schon. Das ist ein Fehler dieses Builds (troubleshooting.md §33 Schritt 8, Zustand AE)."
   },
   reasonUnknown: (reason: string) =>
     `Der Durchlauf wird nicht angezeigt (${reason}). Melden Sie den Wortlaut der Instanz unten mit dem Build aus Einstellungen › Support (troubleshooting.md §33).`,
@@ -584,8 +674,66 @@ export const walkGerman: WalkCopy = {
     "Nicht selbst geprüft: LoonSec veröffentlicht Summen nur für die eigenen Release-Daten, über das angefragte Zeitfenster ohne Ausrichtung. Diese Ansicht wird gezeigt, weil dieser Durchlauf, unten genannt, mit ihnen übereinstimmte.",
   evidenceInput: "Eingabe",
   evidenceRun: "Lauf",
-  definitionsHeading: "Definitionen und Uhren, im Wortlaut des Durchlaufs"
+  definitionsHeading: "Definitionen und Uhren, im Wortlaut des Durchlaufs",
+
+  definitionNames: {
+    "kev-only": "Patchen bei KEV",
+    "critical-only": "Nur bei Kritisch patchen",
+    "30d-or-kev": "30 Tage, bei KEV am selben Tag"
+  },
+  definitionsLegend: "Oder eine Richtliniendefinition laden",
+  definitionsHint:
+    "Eingebaut, neben den Stufen: Jede installiert das Release, das eine CVE ihrer Art behebt, am späteren von zwei Tagen: an dem das Release erscheint und an dem der Umstand bekannt ist.",
+  definitionUnavailable: "Mit diesen Daten nicht nachgespielt",
+  compareHeading: "Jede Stufe des Reglers und jede Richtliniendefinition",
+  definitionSaid: (definition: PolicyDefinition, standIns: number) => {
+    const triggers = definition.when.map((trigger) => {
+      const kind = TRIGGER_DE[trigger.fixes] ?? { what: `eine CVE der Art ${trigger.fixes}`, fact: "ihr Umstand bekannt wurde" };
+      const timing =
+        trigger.within_days === 0
+          ? `an dem Tag, an dem es erscheint, oder an dem Tag, an dem ${kind.fact}, je nachdem, was später ist`
+          : `${trigger.within_days} ${mehrzahl(trigger.within_days, "Tag", "Tage")} nach dem Tag, an dem es erscheint, oder nach dem Tag, an dem ${kind.fact}, je nachdem, was später ist`;
+      return `${kind.what} behebt, ${timing}`;
+    });
+    const fixes = triggers.join(", und eines, das ");
+    const severity = definition.when.some((trigger) => trigger.fixes === "critical" || trigger.fixes === "critical_or_high");
+    const clock = severity
+      ? `; wo die Daten von LoonSec keinen Tag der ersten Bewertung nennen, steht der Uhrtag der CVE dafür, mit dem heutigen Schweregrad (${standIns} der aufgeführten CVEs)`
+      : "";
+    if (definition.otherwise === "never") return `Kein Release wird installiert außer einem, das ${fixes}${clock}.`;
+    const base =
+      definition.otherwise === 0
+        ? "Jedes Release wird an dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt"
+        : `Jedes Release wird ${definition.otherwise} ${mehrzahl(definition.otherwise, "Tag", "Tage")} nach dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt`;
+    return triggers.length ? `${base}, oder früher, wenn es ${fixes}${clock}.` : `${base}.`;
+  },
+  causeWords: (by: InstallCause) => {
+    const cve = by.cve_id ?? "eine CVE";
+    const what = by.rule === "critical" ? "kritisch" : by.rule === "critical_or_high" ? "hoch oder kritisch" : null;
+    if (by.rule === "kev_listed") return `${cve}, seit ${by.on} auf der KEV-Liste`;
+    if (what && by.basis === "first_scored") return `${cve}, seit ${by.on} ${what}`;
+    if (what && by.basis === "clock_day") return `${cve}, heute ${what}, ihr Uhrtag ${by.on} steht dafür`;
+    return `${cve} (${by.rule})`;
+  },
+  installedFor: (reason: string) => `wegen ${reason}`,
+  installedOtherwise: (days: number) => (days === 0 ? "an seinem Datum" : `${days} ${mehrzahl(days, "Tag", "Tage")} nach seinem Datum`),
+  openedBy: (version: string, reason: string) => `${version} wurde vor Beginn des Zeitfensters installiert, wegen ${reason}.`,
+  rowBasis: (kind: string, fact: KnowableFact) =>
+    fact.basis === "first_scored"
+      ? `zuerst ${kind === "critical" ? "kritisch" : "hoch oder kritisch"} ${fact.on}`
+      : fact.basis === "clock_day"
+        ? "heutiger Schweregrad; ihr Uhrtag steht dafür"
+        : fact.basis,
+  policyUnknown: (id: string, first: string) =>
+    `Die Adresse nennt eine Patch-Richtlinie, die diese Seite nicht hat („${id}“); sie öffnet daher auf der ersten Stufe, ${first} (troubleshooting.md §33 Schritt 10).`,
+  definitionOnFallback: (name: string, first: string) =>
+    `${name} ist eine Richtliniendefinition, die diese Seite nur über die Patch-Policy-Daten von LoonSec nachspielt, nie über die Referenz-Replays, die sie bis zu deren Ankunft zeigt; sie öffnet daher auf der ersten Stufe, ${first} (troubleshooting.md §22 Schritt 11).`,
+  definitionRefusedHere: (name: string, first: string) =>
+    `${name} wird mit diesen Daten nicht nachgespielt (der Grund steht daneben, unter dem Regler); die Seite öffnet daher auf der ersten Stufe, ${first}.`,
+  definitionNotOffered: (name: string, first: string) =>
+    `Der Durchlauf dieser Instanz enthält kein ${name}, wie ein Build ohne die Richtliniendefinitionen antwortet; die Seite öffnet daher auf der ersten Stufe, ${first}. Laden Sie einmal neu: Eine Seite, die über ein Update hinweg offen blieb, tut das (troubleshooting.md §33 Schritt 10).`
 };
+
 
 /** A state word's sentence in the reader's language. A word this build has no sentence for is the
  *  instance's own sentence, or, with none, a sentence that names the word. */

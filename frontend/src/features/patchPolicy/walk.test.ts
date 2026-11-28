@@ -3,7 +3,9 @@
  *  the day graph reads off a stop's series. Node lane: `fetch` is stubbed, nothing is drawn. */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appFixture, walkFixture } from "@/features/patchPolicy/testing/walkFixtures";
+import { DEFINITIONS_FIXTURE, appFixture, walkFixture } from "@/features/patchPolicy/testing/walkFixtures";
+import { POLICY_DEFINITION_IDS, definitionsOf, isDefinitionId, readsSeverity } from "@/features/patchPolicy/definitions";
+import { isSliderStop } from "@/features/patchPolicy/replay";
 import { patchPolicyEnglish, patchPolicyGerman } from "@/features/patchPolicy/copy";
 import { walkEnglish, walkGerman } from "@/features/patchPolicy/walkCopy";
 import {
@@ -14,6 +16,7 @@ import {
   fixBelowNamedBuild,
   getPatchPolicyWalk,
   movedDays,
+  offeredDefinitions,
   seriesDay,
   sourceTrack,
   summarise,
@@ -83,6 +86,55 @@ describe("the three answers", () => {
     delete six["3d"];
     expect(unreadable({ ...walk, policies: six })).toBe("policies.0d.series");
     expect(unreadable({ ...walk, cves: null })).toBe("cves");
+    // A definition's run is drawn as a stop's is, so its series is held the same (#954).
+    const shortDefinition = { ...walk.policies, "kev-only": { ...walk.policies["kev-only"]!, series: { ...walk.policies["kev-only"]!.series, open: [0] } } };
+    expect(unreadable({ ...walk, policies: shortDefinition })).toBe("policies.kev-only.series.open");
+  });
+});
+
+describe("the built-in policy definitions a walk offers (#954)", () => {
+  it("are the ones it carries as data, each with its run or its refusal, in the walk's order", () => {
+    const walk = walkFixture();
+    expect(offeredDefinitions(walk).map((each) => [each.definition.id, Boolean(each.run), each.refusal])).toEqual([
+      ["kev-only", true, undefined],
+      ["critical-only", true, undefined],
+      ["30d-or-kev", true, undefined]
+    ]);
+    const refusal = { reason: "kev_unknown", sentence: "cannot say (fixture)" };
+    const refused = walkFixture({ policy_refusals: { "kev-only": refusal } });
+    delete (refused.policies as Record<string, unknown>)["kev-only"];
+    expect(offeredDefinitions(refused)[0]).toEqual({ definition: DEFINITIONS_FIXTURE[0], refusal });
+    // An instance without them offers none; one it neither ran nor refused is left out; an entry this
+    // build cannot read is skipped.
+    expect(offeredDefinitions({ ...walk, policy_definitions: undefined })).toEqual([]);
+    const lost = walkFixture();
+    delete (lost.policies as Record<string, unknown>)["critical-only"];
+    expect(offeredDefinitions(lost).map((each) => each.definition.id)).toEqual(["kev-only", "30d-or-kev"]);
+    expect(definitionsOf([{ id: "x" }, null, { id: "y", name: "Y", otherwise: "soon", when: [] }, DEFINITIONS_FIXTURE[1]])).toEqual([DEFINITIONS_FIXTURE[1]]);
+  });
+
+  it("are known to the build by id, so an address can name one before a walk has loaded", () => {
+    expect(POLICY_DEFINITION_IDS).toEqual(["kev-only", "critical-only", "30d-or-kev"]);
+    expect(POLICY_DEFINITION_IDS.every((id) => isDefinitionId(id) && !isSliderStop(id))).toBe(true);
+    expect([isDefinitionId("7d"), isDefinitionId("kev"), isDefinitionId(null)]).toEqual([false, false, false]);
+    expect(readsSeverity(DEFINITIONS_FIXTURE[1])).toBe(true);
+    expect(readsSeverity(DEFINITIONS_FIXTURE[0])).toBe(false);
+    // Every built-in one has its name in both languages.
+    for (const id of POLICY_DEFINITION_IDS) expect([walkEnglish.definitionNames[id], walkGerman.definitionNames[id]].every(Boolean)).toBe(true);
+  });
+
+  it("say their rule in one sentence from the data, a wait and several triggers included, in English and German", () => {
+    const both = { id: "t", name: "T", otherwise: 7, when: [{ fixes: "kev_listed", within_days: 3 }, { fixes: "critical_or_high", within_days: 0 }] };
+    expect(walkEnglish.definitionSaid(both, 2)).toBe(
+      "Every release is installed 7 days after the date the release-date source above gives it, or sooner if it fixes a CVE on CISA's KEV list, 3 days after the day it is out or the day the CVE was added to the list, whichever is later, and one that fixes a high or critical CVE, on the day it is out or the day LoonSec's data says it first scored high or critical, whichever is later; where LoonSec's data states no first-scored day, the CVE's clock day stands in, with today's severity (2 of the listed CVEs)."
+    );
+    expect(walkGerman.definitionSaid({ ...both, when: [both.when[0]] }, 0)).toBe(
+      "Jedes Release wird 7 Tage nach dem Datum installiert, das die oben genannte Quelle der Release-Daten ihm gibt, oder früher, wenn es eine CVE auf der KEV-Liste der CISA behebt, 3 Tage nach dem Tag, an dem es erscheint, oder nach dem Tag, an dem die CVE in die Liste aufgenommen wurde, je nachdem, was später ist."
+    );
+    expect(walkEnglish.definitionSaid({ ...both, otherwise: 0, when: [] }, 0)).toBe(patchPolicyEnglish.policySaid("0d"));
+    expect(walkEnglish.rowBasis("critical", { on: "2026-02-10", basis: "first_scored" })).toBe("first critical 2026-02-10");
+    expect(walkGerman.rowBasis("critical_or_high", { on: "2026-02-10", basis: "first_scored" })).toBe("zuerst hoch oder kritisch 2026-02-10");
+    expect(walkEnglish.causeWords({ rule: "critical_or_high", cve_id: "CVE-2099-0001", on: "2026-02-10", basis: "first_scored" })).toBe("CVE-2099-0001, high or critical since 2026-02-10");
   });
 });
 
