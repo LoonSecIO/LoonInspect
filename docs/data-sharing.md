@@ -448,10 +448,12 @@ ignores it, which is the same clause every other field of this response lives un
 
 **The patch-policy document rides the same response** (#614, consent-gated as ruled R21 on
 2026-11-24). Beside `corpus`, the response may carry `patch_policy`, a map from the algorithm
-that reads the document to a link of the corpus's shape, all three keys or none:
+that reads the document to a link of the corpus's shape, all three keys or none. This build reads
+`patch_walk/2`, the walk of the eight stops whose labels are the days waited; publication starts
+there, and `patch_walk/1` is never published (ruled 2026-11-27):
 
 ```jsonc
-"patch_policy": { "patch_walk/1": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…",
+"patch_policy": { "patch_walk/2": { "signature": "<doc_id>", "asof": "2026-11-23T20:00:00Z", "url": "https://…",
                                     "built_at": "2026-11-24T07:12:03Z" } }
 ```
 
