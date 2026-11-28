@@ -38,6 +38,7 @@ _PAGE_SENTENCES = (
     "AI search unavailable — the filters below still work.",
     "No Jamf Patch titles synced yet.",
     "is available, and this build does not contain it.",
+    "No passkey can be added or used at",
 )
 
 

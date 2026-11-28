@@ -204,6 +204,7 @@ RETENTION_CLOCKS=(
   'ai-usage|AI usage aggregates'
   'submission-content|coverage request or match report'
   'change-log|change log'
+  'passkey-challenges|passkey challenges'
 )
 
 # file:Model of every statement-level delete that is not a clock.
@@ -232,6 +233,9 @@ RETENTION_NOT_A_CLOCK=(
   # LoonSec's patch-policy document past the last two copies (#614): by count when a newer one
   # is stored, never by age, so a stopped publisher leaves the held copy answering.
   backend/app/core/patch_policy_feed.py:PatchPolicyDoc
+  # Spent on use: a passkey challenge is deleted by the answer that redeems it, which is what makes
+  # it single-use (#955). The sweep of the unanswered ones beside it is the passkey-challenges clock.
+  backend/app/core/passkeys.py:PasskeyChallenge
 )
 
 # `comm` wants one line per item and an empty set as an empty stream, not a blank line.
@@ -329,6 +333,13 @@ claim guard scim \
 claim guard mfa \
   'WebAuthn|FIDO2|YubiKey|Touch ID|\bMFA\b|multi-factor|two-factor|\bTOTP\b' \
   "grep -rqiE 'webauthn|fido2|pyotp|totp_secret' backend/app frontend/src"
+
+# A passkey sign-in is irreducibly a public route: the challenge and the answer are reached before
+# any session exists, so they are in the allowlist or they are not built (#955). Comments about
+# passkeys would pass a looser grep the day they were only planned.
+claim guard passkey \
+  '\bpasskeys?\b' \
+  "grep -q '\"/api/auth/login/passkey\"' backend/app/core/auth.py"
 
 # Not a bare 'vulnerability': the README legitimately says the word about Jamf
 # Patch state and about the community feeds. The claim being guarded is scoring

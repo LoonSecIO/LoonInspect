@@ -2,4 +2,4 @@ FROM mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791c
 WORKDIR /smoke
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY smoke.spec.js playwright.config.js ./
+COPY smoke.spec.js passkey.spec.js playwright.config.js ./

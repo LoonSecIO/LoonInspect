@@ -396,6 +396,71 @@ membership, so a single-tenant pod — every pod today — shows nothing. Granti
 membership has no surface yet: that belongs to the tenant management work (#30), and the
 switch is exercised in the database lane with a second tenant seeded there.
 
+### 4.10 Passkeys (INSPECT-0955)
+
+A passkey signs a person in, in a browser, beside the password; nothing is taken away. The four defaults the
+issue put up for overruling are built as written: a passkey alone signs in, with user verification required on
+every ceremony, and satisfies `mfa_required`; its relying-party id is the host in the address bar when it was
+added, recorded on its row, with no setting; any authenticator is accepted and attestation is not checked; adding
+one asks for the current password, as changing the password does. The code is `app/core/passkeys.py` (the
+checks, the challenge, the sentences) and `app/api/passkeys.py` (the routes); the library is §9's.
+
+**Storage.** One more `auth_identities` row, provider `webauthn`, several to an account. A credential id may be
+1,023 bytes and `subject` holds 255 characters, so `subject` is the SHA-256 of the id, which keeps
+`uq_auth_identity_provider_subject` meaning what it meant, and the id itself sits whole in `credential_id`, a
+`bytea` with a check constraint at 1,023; a longer one is refused with a sentence before it reaches the database.
+Beside it: the COSE public key, the signature counter, the transports the browser reported, the two backup flags,
+the host (`rp_id`) and the name its owner gave it. A `local` or `totp` row leaves them all null.
+
+**The challenge is a row, accepted once.** A synced passkey reports a signature counter of zero for good, so the
+counter cannot be the replay defence `last_otp_step` is for a code, and the TOTP challenge token is stateless.
+Each challenge handed out is a `passkey_challenges` row keyed by the challenge's SHA-256, which the browser's
+answer carries back in its client data; the answer deletes the row in one `DELETE … RETURNING` and commits that
+before anything is checked, so a replay, a second tab, a refused answer or two copies racing on two connections
+all find nothing. That holds across uvicorn workers, restarts and every container on the database, which process
+memory would not (this app runs one worker today, and a pod's container restarts). Five minutes to live; issuing
+the next challenge of the same purpose deletes the ones nobody answered (`retention-clock: passkey-challenges`).
+Tenant-scoped under row-level security like everything else: a sign-in's challenge lands in the tenant an
+unauthenticated request is bound to, exactly as the lockout counter does (§4.8), and a registration's at home.
+
+**The address** (the issue's traps 1 and 2). A relying-party id cannot be an IP address, and a browser offers
+WebAuthn only to a secure context, which over plain HTTP is a loopback host alone. So the challenge routes refuse,
+with a sentence naming the address and what to open instead, a request reached at an IP address or over plain HTTP
+anywhere but `localhost`; the page applies the same rule from its own address and shows no control there, and My
+Account says why. The address is the request's scheme as uvicorn leaves it (`FORWARDED_ALLOW_IPS` decides whether
+a proxy's `X-Forwarded-Proto` is believed) and its `Host` header. The browser's own `Origin` header is compared
+with it first: behind a proxy that terminated HTTPS without saying so, or rewrote the host, the two differ, and the
+refusal names both. The challenge row records the origin it was handed out at, and the answer's signed origin must
+be exactly that one, which is fido2's origin hook held to the same line.
+
+**Sign-in** is two public routes, the only additions to `_PUBLIC_EXACT`: `POST /api/auth/login/passkey/options`
+takes nothing, names nobody and answers every caller alike apart from the challenge (no allow-list, so it says
+nothing about which accounts exist or hold a passkey); `POST /api/auth/login/passkey` verifies the answer and
+mints the session in the same step, `auth_method` `passkey`. An unknown passkey, a removed one, a disabled or
+service account, a user handle that is not the account's and a signature that does not verify all get one
+sentence. The password lockout (§4.6) neither counts a refused passkey nor holds one back: it exists to slow the
+guessing of a low-entropy secret, a signature over a fresh challenge is not a guess, and a person who mistyped the
+password five times is the one most likely to reach for the passkey. The current-password check that starts
+**Add a passkey** does count, and waits on it, as a wrong code on *New recovery codes* does.
+
+**The policy** (`mfa_required`, §9): a session a passkey signed in satisfies it, and so does a password session
+that adds a passkey, whose ceremony proved the device and the person just then (`auth_method`
+`password+passkey`, as a confirmed code marks a session). A password sign-in of an account that merely holds a
+passkey does not: the policy is about how a session signed in, and the literal alternative would let `everyone`
+be met by adding a passkey and never using it. A held session reaches the passkey list and **Add a passkey**
+(`_ENROLMENT_EXACT`), so a passkey is a way to answer the policy as well as a code.
+
+**Removal.** On My Account a person removes one passkey, and every session it signed in ends, this one included
+if it did: a passkey removed for a lost device takes that device's sessions with it. An administrator removes
+every passkey of another account at once from Accounts, the way its second factor goes (§9): an audit record with
+both people, and every session of the account revoked. The password stays on every account, so a lost device or a
+renamed host is an inconvenience, not a lockout. Audit: `auth.passkey.added`, `auth.passkey.removed` and
+`auth.passkey.refused` (with the refusal's reason), beside `auth.login.succeeded` with `auth_method: passkey`.
+
+**Left out**, as #955 ruled: a session list and "sign out everywhere", attestation and allow-lists of
+authenticator models, removing the password, API tokens and MCP credentials (which mint no session), OIDC, SAML,
+SCIM and `local_login_policy` (#303), and the Mac app's window (#956), which is at `127.0.0.1` besides.
+
 ## 5. Authorization
 
 ### 5.1 Permissions, not role strings
@@ -589,7 +654,7 @@ The existing `features/auth/index.ts` stub already has the right shape (`AuthSta
 | **4** ✅ | API tokens + management UI | Unblocks the macOS client |
 | **5** ✅ | Account management: create/disable, role assignment, password reset and self-change | RBAC was unusable without it — four roles and no way to grant any of them |
 | **6** ✅ | TLS modes (`off` / `self-signed` / `provided`), proxy-header trust | Phase 1 made HTTPS load-bearing; see below |
-| **Later** | OIDC/Okta, SCIM, WebAuthn (TOTP shipped in v2.0.0: §9) | Additive by construction if §3.1 holds |
+| **Later** | OIDC/Okta, SCIM (TOTP shipped in v2.0.0, and passkeys since #955: §4.10 and §9) | Additive by construction if §3.1 holds |
 | **Deferred** ✅ | Webhook header auth (§4.7) | Was deferred out of the phase train; since shipped as #14 |
 
 ### Phase 5 notes — account management
@@ -665,7 +730,25 @@ MFA was explicitly out of scope for v1. The model above doesn't block it: TOTP s
 | --- | --- | --- |
 | `argon2-cffi` | Password hashing | Direct, not via `passlib` — passlib is effectively unmaintained |
 | `pyotp` | TOTP (#653) | The secret is an `auth_identities` row, provider `totp`, encrypted with `EncryptedString`; recovery codes are argon2id hashes on the same row |
+| `fido2` | Passkeys (#955): the WebAuthn checks on a registration and a sign-in | Yubico's python-fido2, 2.2. Its one dependency is `cryptography`, already here; §4.10 is what the app puts around it |
 | *(none for OIDC yet)* | | `authlib` when Phase "Later" starts |
+
+**Why `fido2` and not `webauthn` (py_webauthn), the other maintained library (#955).** Three reasons, in the
+order they weighed. It adds nothing to the dependency tree: py_webauthn 3.x brings `pyOpenSSL`, `cbor2`,
+`pyasn1` and `pyasn1-modules` with it. With no attestation verifier passed it verifies no attestation at all,
+which is the ruled default (any authenticator, attestation not checked), where py_webauthn checks whatever
+attestation statement a browser forwards and can refuse a working authenticator over it. And it takes an origin
+check as a function, so the comparison stays the app's exact one (§4.10) rather than its own rule, which accepts
+any HTTPS origin under the relying-party id. Its cost is a ceiling: it pins `cryptography` below 52, so a
+`cryptography` bump past that waits for a `fido2` release that lifts it, and Dependabot's bump of either says so.
+
+**No frontend helper.** The browser's own JSON methods (`PublicKeyCredential.parseCreationOptionsFromJSON()`,
+`parseRequestOptionsFromJSON()` and `toJSON()`) are in Chrome and Edge 129, Firefox 119 and Safari 18.4, every
+engine current since March 2025, so the page sends the server's options and the browser's answer as JSON with no
+base64url code of its own. The bundle still loads in older browsers (Vite's default build target reaches
+Safari 16); there the methods are absent, the sign-in page shows no passkey control, My Account says the browser
+is too old for one, and the password works as it always did. A helper library would buy those browsers a passkey
+at the price of a dependency on the sign-in page; that trade can be made later, additively, if anyone asks.
 
 TOTP's delivery phase is v2.0.0 (#653): the identity and the second sign-in step, enrolment and recovery codes,
 then the `mfa_required` policy (`off` | `admins` | `everyone`, default `off`, break-glass exempt) with its gate,

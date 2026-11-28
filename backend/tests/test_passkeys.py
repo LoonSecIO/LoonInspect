@@ -3,6 +3,7 @@ policy counts as answered by one. No database; the ceremonies themselves are tes
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -129,3 +130,85 @@ def test_a_passkey_session_method_fits_the_column_that_records_it() -> None:
 
     width = UserSession.__table__.c.auth_method.type.length
     assert all(len(method) <= width for method in passkeys.SESSION_METHODS)
+
+
+# --- every refusal has its line in docs/troubleshooting.md §34 (docs/diagnosability.md rule 4) -------------------
+
+_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _flat(text: str) -> str:
+    """Prose as a reader sees it: emphasis gone, every line break and run of spaces one space."""
+    return " ".join(text.replace("*", "").split())
+
+
+def _step_through() -> str:
+    document = (_ROOT / "docs" / "troubleshooting.md").read_text()
+    heading = '## 34. "My passkey is not offered, or it is refused"'
+    assert heading in document, "§34's heading has been reworded"
+    return _flat(document.split(heading, 1)[1].split("\n## ", 1)[0])
+
+
+def test_every_refusal_the_server_words_is_in_the_step_through() -> None:
+    """Each sentence a passkey refusal can end in, by its opening words: rewording the code without §34 fails here,
+    and so does the reverse."""
+    from app.api.passkeys import SESSION_ONLY
+
+    address = passkeys.parse_origin("http://inspect.example.com:8001")
+    sentences = [
+        *passkeys.SPENT.values(),
+        passkeys.UNREADABLE,
+        passkeys.NOT_ACCEPTED,
+        passkeys.NOT_VERIFIED,
+        passkeys.COUNTER,
+        passkeys.OTHER_HOST,
+        passkeys.ALREADY_ADDED,
+        passkeys.UNSUPPORTED_KEY,
+        passkeys.NAME_REQUIRED,
+        passkeys.NO_ADDRESS,
+        passkeys.ip_address_refusal(address),
+        passkeys.plain_http_refusal(address),
+        passkeys.proxy_refusal("https://inspect.example.com", "http://inspect.example.com"),
+        passkeys.signed_origin_refusal("https://elsewhere.example.com", "https://inspect.example.com"),
+        passkeys.too_long(1024),
+        SESSION_ONLY,
+        "Current password is incorrect",
+        "Too many failed attempts. Try again later.",
+        "Passkey not found",
+        "You cannot remove your own passkeys here. Remove them under My Account › Passkeys.",
+        "That account has no passkeys to remove.",
+    ]
+    step_through = _step_through()
+    for sentence in sentences:
+        # Up to seven words, stopping short of the first address: the step quotes an example address, or an ellipsis.
+        words = sentence.split()[:7]
+        opening = " ".join(words[: next((i for i, word in enumerate(words) if "://" in word), len(words))]).rstrip(",")
+        assert len(opening.split()) >= 3, f"too few words before the address to look for: {sentence}"
+        assert opening in step_through, f"docs/troubleshooting.md §34 has no line for: {sentence}"
+
+
+# The page's own sentences (frontend/src/i18n/en.ts), each a fragment that holds still across its placeholders.
+_PAGE = (
+    "No passkey can be added or used at",
+    "it is an IP address, and a passkey is bound to a host name.",
+    "browsers offer passkeys only over HTTPS, or over plain HTTP at localhost.",
+    "This browser offers no passkeys here: it answers that it has none of its own and no way to use one",
+    "Not offered at this address: it works only at",
+    "A passkey answers this too: add one here, or sign out and sign in with one you added before.",
+    "The passkey request was cancelled or timed out, or this browser holds no passkey for this address.",
+    "No passkey was made: the request was cancelled or timed out.",
+    "This device or password manager already holds a passkey for this account at this address.",
+    "This browser refused a passkey at",
+    "Over HTTPS, the usual cause is a certificate this browser does not trust,",
+    "This browser has no passkey or security key it can use here.",
+    "The passkey request failed in this browser before LoonInspect saw an answer.",
+    "LoonInspect's answer did not arrive or could not be read.",
+    "Every session it signed in ends, this one included if it did.",
+)
+
+
+@pytest.mark.parametrize("fragment", _PAGE)
+def test_every_sentence_the_page_says_is_in_en_ts_and_the_step_through(fragment: str) -> None:
+    english = _flat((_ROOT / "frontend" / "src" / "i18n" / "en.ts").read_text())
+    assert fragment in english, f"frontend/src/i18n/en.ts no longer says: {fragment}"
+    assert fragment in _step_through(), f"docs/troubleshooting.md §34 has no line for: {fragment}"

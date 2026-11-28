@@ -9,7 +9,7 @@ it was filed.
 Each path is ordered — *check this; if X, then that* — and ends in a fix or in a **named,
 reportable state**. When you reach a reportable state, §8 says what to include.
 
-**What is in here.** The paths run §1–§7 and §10–§33, in the order they were written
+**What is in here.** The paths run §1–§7 and §10–§34, in the order they were written
 rather than in order of likelihood. §0 is what you can read before you start; §8 and §9 are
 about the paths rather than about a symptom, and they sit mid-file because that is where
 they were written — §9 ends by saying the paths continue at §10.
@@ -77,6 +77,8 @@ they were written — §9 ends by saying the paths continue at §10.
   refused"](#32-loonsecs-patch-policy-data-has-not-arrived-is-old-or-was-refused)
 - **§33** ["A patch-policy walk is refused, or Jamf or Fleet cannot date
   it"](#33-a-patch-policy-walk-is-refused-or-jamf-or-fleet-cannot-date-it)
+- **§34** ["My passkey is not offered, or it is
+  refused"](#34-my-passkey-is-not-offered-or-it-is-refused)
 
 **The reportable states**, lettered in the order they were written, so they do not run in
 section order and never will — code, tests and the README cite them where they are. When a
@@ -116,6 +118,7 @@ spreadsheet columns do — **AA**, **AB**, … **AZ**, **BA** — and never star
 | **AC** | §32 | The patch-policy link is refused, or is not a link, two exchanges running, with the clock right |
 | **AD** | §33 | A patch-policy walk refused because LoonSec's data does not hold up: its totals disagree, none match, it fails the walk's check, it leaves a held line undated, or a channel it names misses builds |
 | **AE** | §33 | A patch-policy walk refused as a defect in LoonInspect: its own totals disagree, a timeline or request it built is refused, or the page cannot read or draw it |
+| **AF** | §34 | A passkey not offered where My Account offers to add one, or one listed at this host on an active account refused as not accepted |
 
 ## 0. The four things you can read
 
@@ -180,6 +183,7 @@ words nobody sees.
 | *The last check, … did not get an answer.* above the Fleet catalog table | §27 step 3 |
 | *Version history: … read* not climbing, or a line under it that begins "Paused until" | §27 step 8 |
 | *The last version history read, … did not finish.* above the Fleet catalog table | §27 step 9 |
+| *No passkey can be added or used at …* under My Account › Passkeys | §34 step 1 |
 
 ### The front page is not the same for every role
 
@@ -4818,3 +4822,122 @@ fix by a version it does not name (`fix_dated_by` with `how: fix` or `next_dated
 (`how: next_dated`, step 12). Report the sentence as worded (or the CVE row), the refusal's
 `facts`, the app, track, source and window asked for (the page's address carries all four), and
 the build (§8).
+
+## 34. "My passkey is not offered, or it is refused"
+
+A passkey (#955) signs a person in by itself, in a browser, at the host it was added at: from the email field's
+autofill menu, where a password manager offers it beside a saved password, or with **Sign in with a passkey** under
+the password form. It is added under *Passkeys* on My Account, for the current password, and the password keeps
+working on every account, so nothing here is a lockout: sign in with the password, then come back to the step.
+Each refusal is quoted as it reads: the server's own sentence, or the page's where the step says so. The server's
+refusals are in the container log too: `docker compose logs app --since 30m | grep passkey` shows each one's
+`reason` beside its `detail`.
+
+1. **No *Sign in with a passkey* on the sign-in page.** Sign in with the password and open My Account: *Passkeys*
+   says why, in one of three of the page's own sentences.
+   - ***No passkey can be added or used at http://10.0.0.5:8001: it is an IP address, and a passkey is bound to a
+     host name. …*** A passkey belongs to a host name, and no browser makes one for an IP address. Open LoonInspect
+     at a host name: an HTTPS address with a certificate the browser trusts (a proxy in front that terminates TLS,
+     or `TLS_MODE=provided` with your certificate), or `http://localhost:8001` in a browser on the machine it runs
+     on, as the sentence says. The Mac app's window is at `127.0.0.1`, so it says this too (#956).
+   - ***No passkey can be added or used at http://inspect.corp.example:8001: browsers offer passkeys only over
+     HTTPS, or over plain HTTP at localhost. …*** Plain HTTP anywhere but `localhost` is not a secure context, and a
+     browser offers no passkey to a page that is not. Serve this host name over HTTPS, or use `http://localhost`
+     on the machine itself. `TLS_MODE=self-signed` gets you HTTPS that browsers do not trust, which step 9 covers.
+   - ***This browser offers no passkeys here: it answers that it has none of its own and no way to use one, or it
+     is older than Safari 18.4, Chrome 129 or Firefox 119. …*** The address can hold a passkey; this browser
+     cannot. Update it, or use a current browser. An embedded browser, the Mac app's window among them, answers
+     this way even when the computer has passkeys.
+   - *Passkeys* says none of these and still offers **Add a passkey**: the sign-in page asks the browser the same
+     two questions, so reload it. Still no button: reportable **AF**.
+2. **The button is there, but the autofill menu offers no passkey.** A password manager lists a passkey only at
+   the host it was added at, and only when you click into the email field. My Account lists each passkey with
+   ***Works at inspect.example.com***, and, when this page is somewhere else (a host renamed, `localhost` where it
+   was added at a host name, another port's host), ***Not offered at this address: it works only at …*** Open the
+   address it names, or add a passkey here. A browser without the autofill form for passkeys (Safari before 18,
+   older Firefox) never lists one there: use **Sign in with a passkey**.
+3. ***Passkeys need a host name, and this page was reached at …, which is an IP address.*** or ***Passkeys need
+   HTTPS, and this page was reached at … over plain HTTP.*** The server's, under **Sign in with a passkey** or
+   **Add a passkey**, or to anything that asks the API: the same two rules as step 1, read from the address the
+   request arrived at. The fixes are step 1's. ***This request named no host, so LoonInspect cannot tell which
+   address a passkey would be for. …*** is a client that sent no `Host` header, which a browser always sends: open
+   LoonInspect in a browser.
+4. ***This browser is at https://inspect.corp.example, and LoonInspect sees the request as
+   http://inspect.corp.example. …*** Something in front of LoonInspect changed the address on the way, and a passkey
+   is checked against the address the browser is at. Check, in order:
+   - the proxy's address is in `FORWARDED_ALLOW_IPS`: `docker compose logs app | grep binding` shows
+     `forwarded_allow_ips`, which is `127.0.0.1` unless set. A proxy not named there is not believed when it says
+     the page was HTTPS (`X-Forwarded-Proto`), so the scheme reads `http`;
+   - the proxy sends `X-Forwarded-Proto` at all (nginx: `proxy_set_header X-Forwarded-Proto $scheme;`);
+   - the proxy passes the `Host` header through unchanged: a second address with the container's own name or port,
+     `https://looninspect-app:8001` say, is a proxy that rewrote it (nginx: `proxy_set_header Host $host;`).
+   `docker compose up -d` after a change to `.env`, then **Sign in with a passkey** again.
+5. ***This browser signed the passkey for …, and LoonInspect handed the request out at ….*** The answer was signed at
+   another address than the one its challenge was handed out at: the page moved between the two (a second tab at
+   another address, a bookmark), or something in front rewrote the address after the challenge. Start again from
+   the page at the address you use; behind a proxy, step 4's checks.
+6. ***That passkey request was already answered or has expired. Choose Sign in with a passkey to start a new
+   one.*** (or ***… Choose Add a passkey to start again.***) Each passkey request is good for one answer within
+   five minutes, and a refused answer spends it too. A sign-in page or My Account left open, a second tab, or a
+   double click: choose it again. The sign-in page opens a new request in the autofill menu by itself.
+7. ***This passkey was not accepted here: it may have been removed from its account, or the account may be
+   disabled. Sign in with your password, or ask an administrator.*** One sentence for every reason that would say
+   which accounts and passkeys exist, so check them in turn:
+   - sign in with the password. Refused as well: the account is disabled or its password is wrong, which Accounts
+     shows an administrator;
+   - My Account › *Passkeys* lists none at this host: it was removed, by you or by an administrator
+     (`auth.passkey.removed` in the audit log names who), or it was added to an install that has since been set up
+     again. The password manager still holds it: delete it there, and **Add a passkey** again;
+   - it is listed, at this host, on an active account, and still refused: reportable **AF**.
+8. ***Your device did not verify you for this passkey (a fingerprint, a face or the device's own password), and
+   LoonInspect asks for that every time. …*** Finish the check the device asks for. A security key with no PIN set
+   cannot verify anyone: set a PIN in its maker's tool, or use another passkey.
+9. ***This browser refused a passkey at https://…. Over HTTPS, the usual cause is a certificate this browser does
+   not trust, …*** The page's own. Browsers offer no passkey to a page whose certificate they do not trust, the one
+   `TLS_MODE=self-signed` makes included. Use a certificate the browser trusts (`TLS_MODE=provided`, or a proxy in
+   front with one), and open LoonInspect at the host name that certificate names.
+10. ***The passkey request was cancelled or timed out, or this browser holds no passkey for this address. …*** The
+    page's own: the browser's dialog was closed, it waited past its time, or the browser found no passkey for this
+    host (step 2). Choose **Sign in with a passkey** again, or use the password.
+11. ***This passkey's signature counter went backwards, which is how a copied security key shows itself, so it
+    was not accepted. …*** A security key counts every signature, and this one presented a count it had already
+    used. Remove it on My Account and add it again; `auth.passkey.refused` in the audit log, with `reason`
+    `counter_went_backwards`, names the account and the passkey. If nobody copied the key, report it (§8) with
+    the key's make and model. A passkey a password manager syncs always counts zero and never meets this.
+12. **Add a passkey refused.** Each sentence, and what it means:
+    - ***Current password is incorrect***: the password, not the passkey. Wrong ones count toward the sign-in
+      lockout, so five answer ***Too many failed attempts. Try again later.*** (§20 step 4): wait it out;
+    - ***Give the passkey a name of 1 to 64 characters, such as the device or password manager that holds it.***;
+    - ***No passkey was made: the request was cancelled or timed out. …*** (the page's own): choose it again;
+    - ***This device or password manager already holds a passkey for this account at this address. …*** (the
+      page's own): one is enough per device and host; it is the one My Account already lists here, unless it was
+      removed there, in which case delete it in the password manager first;
+    - ***This passkey is already added here, so it was not added again.***: the same passkey, sent twice;
+    - ***This passkey's ID is 1,024 bytes long, and WebAuthn allows at most 1,023, so it was not added. …***,
+      ***This passkey uses a kind of key LoonInspect does not accept. …*** or ***This passkey was made for another
+      host than this page's, …***: what the password manager or key made is not a passkey LoonInspect can use.
+      Use another, and report the one that made it (§8);
+    - ***Adding or removing a passkey requires a signed-in browser session***: an API token asked. A leaked token
+      must not add a way in, so only a signed-in browser adds or removes a passkey.
+13. ***The browser's answer could not be read as a passkey. …***, ***This browser has no passkey or security key
+    it can use here. …*** or ***The passkey request failed in this browser before LoonInspect saw an answer. …***
+    The browser, an extension or a password manager sent something that is not a passkey, or failed on its own.
+    Try another browser or password manager; if one keeps failing, report it with its name and version (§8).
+    ***LoonInspect's answer did not arrive or could not be read. …*** (the page's own) is the app not answering:
+    restarting, or [a proxy in front](#a-proxy-in-front-answers-for-itself) answering for it; a `"status_code"`
+    of 500 or more on a `/api/auth/…passkey…` line in `docker compose logs app --since 30m` is to report (§8).
+14. **Under the two-step policy** (Settings › Accounts, §20 step 5). A passkey sign-in answers it: user
+    verification proved the device and the person. A password sign-in of an account that has only a passkey does
+    not, and is held on My Account with §20 step 5's sentence, where *Passkeys* adds ***A passkey answers this too:
+    add one here, or sign out and sign in with one you added before.*** Adding one in that session lets it go.
+15. **Removing.** My Account's **Remove** takes one passkey after ***Remove … ? Every session it signed in ends,
+    this one included if it did. …***; if it signed in this browser, the sign-in page follows. ***Passkey not
+    found*** is one already removed, in another tab. An administrator's Accounts › **Remove passkey** (or *Remove N
+    passkeys*) removes every passkey of another account and signs out every session it has; it answers ***You
+    cannot remove your own passkeys here. Remove them under My Account › Passkeys.*** for your own, and ***That
+    account has no passkeys to remove.*** when there are none left.
+
+**AF.** A passkey is not offered where *Passkeys* offers **Add a passkey** (step 1), or one listed at this host on
+an active account is refused as not accepted (step 7). Report the browser and its version, the address in the
+address bar, what My Account › *Passkeys* lists for it (*Works at …*, *Added …*, *Last signed in …*), the
+`auth.passkey.refused` line from the audit log with its `reason`, and the build from Settings › Support (§8).
