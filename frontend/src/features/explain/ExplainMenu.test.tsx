@@ -6,17 +6,34 @@ import { ExplainButton, ExplainMenuProvider } from "./ExplainMenu";
 import { useExplainable, type ExplainTarget } from "./useExplainable";
 
 const target = { kind: "attribute_value", subject: { deviceId: 7, key: "os_version" } };
+const outer = { kind: "group_membership", subject: { deviceId: 7, groupId: 3 } };
+const rendered = vi.fn();
+const onRow = vi.fn();
+const onKey = vi.fn();
 
 function Marked() {
+  rendered();
   const props = useExplainable(target);
-  return <div {...props}><span>Example value</span><a href="#example">Nested link</a><ExplainButton target={target} /></div>;
+  return <div {...props} onClick={onRow}><span>Example value</span><a href="#example">Nested link</a><ExplainButton target={target} /></div>;
 }
 
-function page(onExplain: (target: ExplainTarget, opener: HTMLElement) => void, aiAvailable: boolean, marked: boolean) {
-  return <LocaleProvider><ExplainMenuProvider aiAvailable={aiAvailable} onExplain={onExplain}>
-    {marked && <Marked />}
+/** A marked row holding a marked value, and a mark with no ask inside it. */
+function Awkward() {
+  const row = useExplainable(outer);
+  const value = useExplainable(target);
+  const bare = useExplainable(target);
+  return <>
+    <div {...row}><div {...value}><span>Inner value</span><ExplainButton target={target} /></div><span>Row text</span><ExplainButton target={outer} /></div>
+    <div {...bare}><span>Bare value</span></div>
+  </>;
+}
+
+type Handler = (target: ExplainTarget, opener: HTMLElement) => void;
+function page(onExplain: Handler, aiAvailable: boolean, marked: boolean, children = <Marked />) {
+  return <LocaleProvider><div onKeyDown={onKey}><ExplainMenuProvider aiAvailable={aiAvailable} onExplain={onExplain}>
+    {marked && children}
     <div>Other value</div>
-  </ExplainMenuProvider></LocaleProvider>;
+  </ExplainMenuProvider></div></LocaleProvider>;
 }
 
 function show(aiAvailable = true, handler?: (target: ExplainTarget, opener: HTMLElement) => void) {
@@ -27,11 +44,12 @@ function show(aiAvailable = true, handler?: (target: ExplainTarget, opener: HTML
     marked: screen.getByText("Example value").parentElement!,
     other: screen.getByText("Other value"),
     ask: screen.getByRole("button"),
-    unmark: () => view.rerender(page(onExplain, aiAvailable, false))
+    unmark: () => view.rerender(page(onExplain, aiAvailable, false)),
+    swap: (next: Handler) => view.rerender(page(next, aiAvailable, true))
   };
 }
 
-afterEach(() => { cleanup(); localStorage.clear(); });
+afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
 
 it("intercepts marked text and leaves unmarked text, nested links and Shift to the browser", () => {
   const { other, marked, ask, onExplain } = show();
@@ -65,7 +83,9 @@ it.each([{ key: "F10", shiftKey: true }, { key: "ContextMenu" }])(
     const item = screen.getByRole("menuitem");
     expect(document.activeElement).toBe(item);
     for (const key of ["ArrowDown", "ArrowUp", "Home", "End"]) expect(fireEvent.keyDown(item, { key })).toBe(false);
+    onKey.mockClear();
     expect(fireEvent.keyDown(item, { key: "Escape" })).toBe(false);
+    expect(onKey).not.toHaveBeenCalled(); // an enclosing dialog must not close with the menu
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(ask);
   }
@@ -80,6 +100,7 @@ it("keeps focus where it is when the menu is clicked, and cancels the menu's own
   expect(fireEvent.mouseDown(item)).toBe(false);
   expect(item.tabIndex).toBe(-1);
   expect(fireEvent.contextMenu(item)).toBe(false);
+  fireEvent.pointerDown(item);
   expect(screen.getByRole("menu")).toBeTruthy();
   fireEvent.focusOut(item, { relatedTarget: null });
   expect(screen.queryByRole("menu")).toBeNull();
@@ -130,3 +151,40 @@ it.each([["en", "What is this?"], ["de", "Was ist das?"]])(
     expect(onExplain.mock.calls).toEqual([[target, ask], [target, ask]]);
   }
 );
+
+it("keeps the ask's click from the row, the newest handler, and marked elements still while it opens and closes", () => {
+  const first = vi.fn();
+  const { ask, marked, swap } = show(true, first);
+  fireEvent.click(ask);
+  expect(onRow).not.toHaveBeenCalled();
+  expect(first).toHaveBeenCalledTimes(1);
+  const before = rendered.mock.calls.length;
+  fireEvent.contextMenu(marked);
+  fireEvent.keyDown(screen.getByRole("menuitem"), { key: "Escape" });
+  expect(rendered.mock.calls.length).toBe(before);
+  const second = vi.fn();
+  swap(second);
+  fireEvent.click(ask);
+  expect([first.mock.calls.length, second.mock.calls.length]).toEqual([1, 1]);
+});
+
+it("opens for the mark that was pressed when marks nest, and returns focus to a mark with no ask", () => {
+  let focused: Element | null = null;
+  const onExplain = vi.fn<Handler>(() => { focused = document.activeElement; });
+  render(page(onExplain, true, true, <Awkward />));
+  const [innerAsk, rowAsk] = screen.getAllByRole("button");
+  // Identity, not equality: the two asks are the same markup, and equal as nodes.
+  const last = () => onExplain.mock.lastCall!;
+  fireEvent.contextMenu(screen.getByText("Row text"));
+  fireEvent.click(screen.getByRole("menuitem"));
+  expect([last()[0] === outer, last()[1] === rowAsk, focused === rowAsk]).toEqual([true, true, true]);
+  fireEvent.contextMenu(screen.getByText("Inner value"));
+  fireEvent.click(screen.getByRole("menuitem"));
+  expect([last()[0] === target, last()[1] === innerAsk, focused === innerAsk]).toEqual([true, true, true]);
+  const bare = screen.getByText("Bare value").parentElement!;
+  fireEvent.contextMenu(bare);
+  fireEvent.click(screen.getByRole("menuitem"));
+  expect(last()[1]).toBe(bare);
+  expect(focused).toBe(bare);
+  expect(bare.tabIndex).toBe(-1);
+});

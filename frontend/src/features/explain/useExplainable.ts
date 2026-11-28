@@ -33,9 +33,18 @@ function marks(event: { target: EventTarget; currentTarget: Element }) {
   return (event.target as Element).closest(OWNERS) === event.currentTarget;
 }
 
+/** The ask button that belongs to this mark, and not to a mark nested inside it. */
+function askOf(marked: HTMLElement): HTMLElement | null {
+  for (const ask of marked.querySelectorAll<HTMLElement>("[data-explain-ask]")) {
+    if (ask.closest("[data-explainable]") === marked) return ask;
+  }
+  return null;
+}
+
 /** Spread on the value or row, with an ExplainButton for the same target inside it. The
  *  button is the keyboard's way in, so the marked element is not a tab stop of its own: a
- *  page that marks fifty values gains fifty stops, not a hundred. */
+ *  page that marks fifty values gains fifty stops, not a hundred. A mark with no button
+ *  inside it can still be right-clicked, and has no keyboard route. */
 export function useExplainable(target: ExplainTarget) {
   const { open } = useExplainMenu();
   return {
@@ -44,7 +53,7 @@ export function useExplainable(target: ExplainTarget) {
       if (event.shiftKey || event.defaultPrevented || !marks(event)) return;
       event.preventDefault();
       const marked = event.currentTarget;
-      const opener = marked.querySelector<HTMLElement>("[data-explain-ask]") ?? marked;
+      const opener = askOf(marked) ?? marked;
       open({ target, opener, x: event.clientX, y: event.clientY });
     },
     onKeyDown(event: KeyboardEvent<HTMLElement>) {

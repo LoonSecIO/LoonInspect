@@ -15,7 +15,11 @@ export function ExplainButton({ target }: { target: ExplainTarget }) {
 }
 
 function refocus(opener: HTMLElement) {
-  if (opener.isConnected) opener.focus({ preventScroll: true });
+  if (!opener.isConnected) return;
+  // A mark with no ask inside it cannot take focus. Let it, for this return and without
+  // making it a tab stop, or focus falls to <body> and a dialog opened next closes to nowhere.
+  if (opener.tabIndex < 0 && !opener.hasAttribute("tabindex")) opener.setAttribute("tabindex", "-1");
+  opener.focus({ preventScroll: true });
 }
 
 export function ExplainMenuProvider({ aiAvailable, onExplain, children }: PropsWithChildren<{
