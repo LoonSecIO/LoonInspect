@@ -1,0 +1,7 @@
+/* On touch the ask stays visible. On a pointing device reserve its place until hover or focus. */
+@media (hover: hover) and (pointer: fine) {
+  [data-explainable]:not(:hover):not(:focus-within) .explain-ask {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
