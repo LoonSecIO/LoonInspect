@@ -150,15 +150,28 @@ interface DeviceTableProps {
 // `vuln` filter nothing can answer (409, #535).
 const REFUSALS = new Set([408, 409, 422]);
 
+/** The API's own sentence for a refusal, and only that. A validation 422 (`?page=0`) arrives
+ *  with a list for its detail, which `ApiError` joins into text that names no parameter; the
+ *  page's own line says more than that does. */
+function refusalSentence(caught: unknown): string | null {
+  if (!(caught instanceof ApiError) || !REFUSALS.has(caught.status)) return null;
+  const detail = (caught.body as { detail?: unknown } | null)?.detail;
+  return typeof detail === "string" && detail ? detail : null;
+}
+
 export function DeviceTable({ query, onPageChange, extraColumn, actions }: DeviceTableProps) {
   const { t } = useLocale();
   // A page builds `query` as it renders, or memoises it on something that moves for other
   // reasons (the whole URL, as the Devices page does). Compared by identity, each such
   // render was a new question: "Loading" again and one more request, and a parent that
   // re-rendered faster than the debounce below never loaded at all. The serialised query
-  // is the question, so only a different one asks again.
+  // is the question, so only a different one asks again. The object kept is the caller's
+  // own and not a copy read back from that string, where a `page` of NaN (a hand-edited
+  // `?page=abc`) would come back as no page at all and quietly show page 1.
   const question = JSON.stringify(query);
-  const filters = useMemo(() => JSON.parse(question) as DeviceFilters, [question]);
+  const [held, setHeld] = useState({ question, filters: query });
+  if (held.question !== question) setHeld({ question, filters: query });
+  const filters = held.question === question ? held.filters : query;
   const [devices, setDevices] = useState<Device[]>([]);
   const [total, setTotal] = useState(0);
   // The stamp the counts came from (#535). Null is "nothing is answering", which is why
@@ -202,7 +215,7 @@ export function DeviceTable({ query, onPageChange, extraColumn, actions }: Devic
           // with an empty page (#535), and the refusal names both of its causes. Printing
           // "Could not load devices" over it would throw those words away — a pasted link
           // is exactly how someone arrives here.
-          setError(caught instanceof ApiError && REFUSALS.has(caught.status) && caught.detail ? caught.detail : t.devices.errorLoading);
+          setError(refusalSentence(caught) ?? t.devices.errorLoading);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
