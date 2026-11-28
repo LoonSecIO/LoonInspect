@@ -47,7 +47,7 @@ def _another(as_of: str = "2026-11-24T20:00:00Z", **changes) -> tuple[dict, byte
 
 
 def _offer(signature: str, url: str = LINK) -> feed.Offer:
-    return feed.read_offer({"patch_walk/1": {"signature": signature, "asof": "2026-11-23T20:00:00Z", "url": url}})
+    return feed.read_offer({"patch_walk/2": {"signature": signature, "asof": "2026-11-23T20:00:00Z", "url": url}})
 
 
 def _serving(payload: bytes, seen: list[str] | None = None, status: int = 200) -> httpx.MockTransport:
@@ -119,7 +119,7 @@ async def test_a_moved_signature_downloads_checks_and_stores_and_an_unmoved_one_
     assert (state.source, state.outcome, state.host) == ("exchange", "stored", "patch-policy.example-bucket.s3.amazonaws.com")
 
     stored = (await db.execute(select(PatchPolicyDoc))).scalar_one()
-    assert stored.body_gz == GZ and stored.schema == 1 and stored.algorithm == "patch_walk/1"
+    assert stored.body_gz == GZ and stored.schema == 1 and stored.algorithm == "patch_walk/2"
     assert stored.as_of == datetime(2026, 11, 23, 20, tzinfo=UTC)
 
     # The same signature tomorrow: nothing is downloaded, and the state row says so.
@@ -233,7 +233,7 @@ async def test_the_exchange_end_to_end_records_what_each_response_said(db, clean
 
         return httpx.MockTransport(handler)
 
-    pointer = {"patch_walk/1": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK}}
+    pointer = {"patch_walk/2": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK}}
     try:
         await sharing.run_exchange(db, transport=answering({"contract": "v1", "patch_policy": pointer}))
         assert await _held(db) == [(DOC["doc_id"], True)]
@@ -246,11 +246,30 @@ async def test_the_exchange_end_to_end_records_what_each_response_said(db, clean
         view = await feed.feed_view(db, now=datetime(2026, 11, 24, tzinfo=UTC))
         assert view.state == "not_published" and view.sentence.endswith("Showing the copy dated 2026-11-23.")
 
-        newer = {"patch_walk/2": {"signature": "b" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}}
+        newer = {"patch_walk/3": {"signature": "b" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}}
         await sharing.run_exchange(db, transport=answering({"contract": "v1", "patch_policy": newer}))
         state = await _state(db)
-        assert (state.outcome, state.detail) == ("algorithm_unknown", "patch_walk/2")
+        assert (state.outcome, state.detail) == ("algorithm_unknown", "patch_walk/3")
         assert await _held(db) == [(DOC["doc_id"], True)]
+        view = await feed.feed_view(db, now=datetime(2026, 11, 24, tzinfo=UTC))
+        assert view.sentence == (
+            "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/3. If the next exchange names "
+            "the same, update LoonInspect. Showing the copy dated 2026-11-23."
+        )
+
+        # Only the older algorithm, which only older builds read (patch_walk/1 is never published):
+        # nothing is downloaded, the copy held keeps answering, and the sentence says no update helps.
+        older = {"patch_walk/1": {"signature": "c" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}}
+        await sharing.run_exchange(db, transport=answering({"contract": "v1", "patch_policy": older}))
+        state = await _state(db)
+        assert (state.outcome, state.detail) == ("algorithm_unknown", "patch_walk/1")
+        assert await _held(db) == [(DOC["doc_id"], True)]
+        view = await feed.feed_view(db, now=datetime(2026, 11, 24, tzinfo=UTC))
+        assert (view.state, view.document is not None) == ("algorithm_unknown", True)
+        assert view.sentence == (
+            "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/1, which older builds read. "
+            "Nothing on this instance needs updating; report it if it lasts a day. Showing the copy dated 2026-11-23."
+        )
 
         # A revoke brings nothing, and records nothing about the document either.
         await sharing.run_exchange(db, transport=answering({"contract": "v1", "revoke": True, "patch_policy": pointer}))
@@ -258,6 +277,37 @@ async def test_the_exchange_end_to_end_records_what_each_response_said(db, clean
     finally:
         await db.execute(delete(ShareLog).where(ShareLog.tier != "ai"))
         await db.commit()
+
+
+async def test_a_build_offered_only_patch_walk_1_says_so_holds_nothing_and_falls_back(db, clean, viewer, caplog) -> None:  # noqa: F811
+    """A v1.5 build that the exchange offers only `patch_walk/1`, the six stops counted the old way,
+    which LoonSec never publishes (ruled 2026-11-27, "Start at 2"). The link is not followed, so
+    nothing is downloaded or walked, and no parity refusal can arise: the route answers no apps, which
+    is the page's cue to draw the reference replays, under a sentence that names both ways of reading
+    the data and says no update helps (docs/troubleshooting.md §32 step 4). The log line says the
+    same, and the next check."""
+    offer = feed.read_offer({"patch_walk/1": {"signature": "d" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}})
+    assert (offer.kind, offer.algorithms, offer.pointer) == ("algorithm_unknown", ("patch_walk/1",), None)
+    assert await feed.deliver_from_exchange(db, offer, transport=httpx.MockTransport(_never_dials)) == "algorithm_unknown"
+    assert await _held(db) == []
+    assert "this build reads patch_walk/2 and LoonSec's exchange named only patch_walk/1, which older builds read" in caplog.text
+    assert "Nothing on this instance needs updating" in caplog.text and "update LoonInspect" not in caplog.text
+
+    body = (await viewer.get("/api/patch-policy/apps")).json()
+    assert body["apps"] is None
+    assert (body["feed"]["state"], body["feed"]["algorithm"], body["feed"]["detail"]) == (
+        "algorithm_unknown",
+        "patch_walk/2",
+        "patch_walk/1",
+    )
+    assert body["feed"]["sentence"] == (
+        "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/1, which older builds read. "
+        "Nothing on this instance needs updating; report it if it lasts a day. This instance holds no copy yet."
+    )
+    # And the walk route answers the same sentence, never a parity refusal.
+    refused = await viewer.get("/api/patch-policy/walk", params={"app": "chrome"})
+    assert refused.status_code == 409
+    assert (refused.json()["reason"], refused.json()["detail"]) == ("algorithm_unknown", body["feed"]["sentence"])
 
 
 # --- the tier gate -------------------------------------------------------------------------------
@@ -286,7 +336,7 @@ async def test_the_route_answers_each_app_with_its_tracks_and_sources(db, clean,
         "feed": body["feed"] | {"state": "never", "sentence": feed.NEVER_SENTENCE},
         "apps": None,
     }
-    assert body["feed"]["algorithm"] == "patch_walk/1" and body["feed"]["fromFile"] is False
+    assert body["feed"]["algorithm"] == "patch_walk/2" and body["feed"]["fromFile"] is False
 
     # The fixture as LoonVD publishes it, each track's `check` filled in: an app's sources are
     # offered only once the walk of LoonSec's own dates matches those totals (§33 step 7).
@@ -320,7 +370,7 @@ async def test_a_fresh_build_over_a_four_day_old_copy_reads_stale_with_the_stall
     the build only names the cause."""
     offer = feed.read_offer(
         {
-            "patch_walk/1": {
+            "patch_walk/2": {
                 "signature": DOC["doc_id"],
                 "asof": "2026-11-23T20:00:00Z",
                 "url": LINK,

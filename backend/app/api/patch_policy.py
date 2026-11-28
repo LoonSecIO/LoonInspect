@@ -32,7 +32,7 @@ from app.schemas.patch_policy import (
 
 router = APIRouter(prefix="/api/patch-policy", tags=["patch-policy"])
 
-Stop = Literal["1d", "7d", "14d", "30d", "60d", "never"]
+Stop = Literal["0d", "1d", "3d", "7d", "14d", "30d", "60d", "never"]
 assert set(get_args(Stop)) == set(STOPS)  # the query's words are the walk's stops
 
 

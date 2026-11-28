@@ -215,7 +215,8 @@ class PatchPolicyWalkOut(BaseModel):
     window: dict[str, Any]
     counts: dict[str, Any]
     exclusions: dict[str, Any]
-    # One entry per stop (1d, 7d, 14d, 30d, 60d, never): totals, installs, and the per-day series.
+    # One entry per stop (0d, 1d, 3d, 7d, 14d, 30d, 60d, never; a day stop's label is the days it
+    # waits, `install_delay_days`): totals, installs, and the per-day series.
     policies: dict[str, Any]
     cves: list[dict[str, Any]]
     cves_page: PatchPolicyWalkPageOut

@@ -31,7 +31,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "patch_policy" / "reference.json"
 RAW = FIXTURE.read_bytes()
 DOC = json.loads(RAW)
 GZ = gzip.compress(RAW, mtime=0)
-LINK = "https://patch-policy.example-bucket.s3.amazonaws.com/patch-policy/patch_walk/1/docs/x.json.gz?X-Amz-Signature=secret"
+LINK = "https://patch-policy.example-bucket.s3.amazonaws.com/patch-policy/patch_walk/2/docs/x.json.gz?X-Amz-Signature=secret"
 
 _ROOT = Path(__file__).resolve().parents[2]
 _EN_TS = (_ROOT / "frontend" / "src" / "i18n" / "en.ts").read_text()
@@ -58,7 +58,7 @@ def _refusal(data: bytes, **kwargs) -> str:
 def test_the_fixture_is_checked_whole_and_its_doc_id_is_its_contents() -> None:
     assert feed.canonical_doc_id(DOC) == DOC["doc_id"], f"recompute the fixture's doc_id: {feed.canonical_doc_id(DOC)}"
     doc = feed.read_document(GZ, expected_doc_id=DOC["doc_id"])
-    assert (doc.doc_id, doc.schema, doc.algorithm) == (DOC["doc_id"], 1, "patch_walk/1")
+    assert (doc.doc_id, doc.schema, doc.algorithm) == (DOC["doc_id"], 1, "patch_walk/2")
     assert doc.as_of.isoformat() == "2026-11-23T20:00:00+00:00"
     # The bytes as they arrived are what is kept, and what `sha256` names.
     assert doc.body_gz == GZ
@@ -127,7 +127,8 @@ def test_a_document_that_is_not_the_one_the_exchange_named_is_refused() -> None:
     [
         ("kind", "patch_policy_replay", 'its kind is "patch_policy_replay", not patch_policy_reference'),
         ("schema", 2, "its schema is 2; this build reads schema 1"),
-        ("algorithm", "patch_walk/2", 'its algorithm is "patch_walk/2"; this build reads patch_walk/1'),
+        ("algorithm", "patch_walk/3", 'its algorithm is "patch_walk/3"; this build reads patch_walk/2'),
+        ("algorithm", "patch_walk/1", 'its algorithm is "patch_walk/1"; this build reads patch_walk/2'),
     ],
 )
 def test_a_kind_schema_or_algorithm_this_build_does_not_read_is_refused_by_name(key, value, said) -> None:
@@ -503,23 +504,26 @@ def test_the_pointer_is_read_tolerantly_and_says_which_of_four_things_it_is() ->
     assert feed.read_offer(None).kind == "not_published"
     assert feed.read_offer({}).kind == "not_published"
 
-    newer = feed.read_offer({"patch_walk/2": {"signature": "a" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}})
-    assert (newer.kind, newer.algorithms) == ("algorithm_unknown", ("patch_walk/2",))
+    newer = feed.read_offer({"patch_walk/3": {"signature": "a" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}})
+    assert (newer.kind, newer.algorithms) == ("algorithm_unknown", ("patch_walk/3",))
+    # patch_walk/1 is never published (ruled 2026-11-27), and is not this build's to download either.
+    older = feed.read_offer({"patch_walk/1": {"signature": "a" * 64, "asof": "2026-11-23T20:00:00Z", "url": LINK}})
+    assert (older.kind, older.algorithms) == ("algorithm_unknown", ("patch_walk/1",))
 
-    offer = feed.read_offer({"patch_walk/1": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK}})
+    offer = feed.read_offer({"patch_walk/2": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK}})
     assert offer.kind == "pointer" and offer.pointer.signature == DOC["doc_id"] and offer.pointer.url == LINK
     # The signed link is a credential: never in a repr, so never in a log line by accident.
     assert "secret" not in repr(offer)
 
     for broken, said in (
         ([], "the exchange's patch_policy field is a list, not an object"),
-        ({"patch_walk/1": {"url": LINK}}, "the exchange's patch_walk/1 entry carries no sha256 signature"),
-        ({"patch_walk/1": {"signature": "a" * 64}}, "the exchange's patch_walk/1 entry carries no link"),
+        ({"patch_walk/2": {"url": LINK}}, "the exchange's patch_walk/2 entry carries no sha256 signature"),
+        ({"patch_walk/2": {"signature": "a" * 64}}, "the exchange's patch_walk/2 entry carries no link"),
     ):
         unusable = feed.read_offer(broken)
         assert (unusable.kind, unusable.detail) == ("unusable", said)
 
-    refused = feed.read_offer({"patch_walk/1": {"signature": "a" * 64, "url": "http://169.254.169.254/latest/"}})
+    refused = feed.read_offer({"patch_walk/2": {"signature": "a" * 64, "url": "http://169.254.169.254/latest/"}})
     assert refused.kind == "unusable" and refused.host == "169.254.169.254"
     assert refused.detail.startswith("the exchange named a link this container refuses (the patch-policy link must be")
 
@@ -533,7 +537,7 @@ def test_the_entry_may_say_when_loonsecs_publisher_last_built_and_absence_is_not
 
     def entry(**extra) -> feed.Offer:
         return feed.read_offer(
-            {"patch_walk/1": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}}
+            {"patch_walk/2": {"signature": DOC["doc_id"], "asof": "2026-11-23T20:00:00Z", "url": LINK, **extra}}
         )
 
     assert entry(built_at="2026-11-24T07:12:03Z").pointer.built_at == datetime(2026, 11, 24, 7, 12, 3, tzinfo=UTC)
@@ -695,7 +699,8 @@ async def test_each_app_says_which_sources_can_date_it() -> None:
         "2025-10-28",
     )
     assert public["ids"] == ["chrome-mac-stable"] and public["matched"] == 4 and public["sentence"] is None
-    assert public["tracks"][0]["since"] == "2025-11-28" and public["tracks"][0]["until"] == "2026-11-22"
+    # The first release, 2025-09-30, and the 60 days the 60-day stop waits.
+    assert public["tracks"][0]["since"] == "2025-11-29" and public["tracks"][0]["until"] == "2026-11-22"
     assert wireshark["public"]["ids"] == ["wireshark-tags"]
     assert [t["since"] for t in wireshark["public"]["tracks"]] == ["2024-11-22", "2024-11-22"]
     for app in (chrome, wireshark):
@@ -735,10 +740,58 @@ def test_every_state_has_its_sentence_on_the_page_and_its_step_in_the_runbook(st
     from datetime import date
 
     sentence = feed.sentence_for(state, as_of=date(2026, 11, 23), source="exchange", host="store.example", detail="x")
-    fixed = re.split(r"\b(?:2026-11-2\d|store\.example|patch_walk/1)\b|\(x\)|: x\.", sentence)[0]
+    fixed = re.split(r"\b(?:2026-11-2\d|store\.example|patch_walk/\d+)\b|\(x\)|: x\.", sentence)[0]
     opening = fixed.split(". ")[0].strip().rstrip(".")
     assert len(opening) >= 15, f"{state}'s sentence starts with a value: {sentence!r}"
     assert opening in _EN_TS, f"the page does not say {state}'s sentence: {opening!r}"
     section = re.sub(r"\s+", " ", _RUNBOOK.split('\n## 32. "', 1)[1]).replace("*", "")
     if state != "current":  # an answer, not a path
         assert opening in section, f"§32 does not walk {state}: {opening!r}"
+
+
+def test_the_feed_downloads_only_what_the_walk_reads() -> None:
+    """One way of reading the data on both sides: the exchange's entry this build follows, and the
+    document it stores, are the walk's algorithm (#953 moved both to `patch_walk/2`)."""
+    from app.core import patch_policy_walk as walk
+
+    assert feed.ALGORITHM == walk.ALGORITHM == "patch_walk/2"
+
+
+@pytest.mark.parametrize(
+    ("named", "older"),
+    [
+        ("patch_walk/1", True),
+        ("patch_walk/1, patch_walk/0", True),
+        ("patch_walk/3", False),
+        ("patch_walk/1, patch_walk/3", False),  # a newer one is there: updating can reach it
+        ("other_walk/1", False),
+        ("x", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_an_exchange_that_names_only_older_algorithms_is_told_apart(named, older) -> None:
+    assert feed.only_older(named) is older
+
+
+def test_an_exchange_that_names_only_an_older_algorithm_says_no_update_helps() -> None:
+    """A build offered only `patch_walk/1` (ruled 2026-11-27: never published) says what it read
+    and what it reads, and that updating changes nothing, which is the reverse of what an older
+    build offered only a newer algorithm reads. Both have the page's words (`en.ts`) and §32 step
+    4's: the shared opening is held by the test above, this the clause that tells them apart."""
+    from datetime import date
+
+    older = feed.sentence_for("algorithm_unknown", detail="patch_walk/1")
+    assert older == (
+        "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/1, which older builds read. "
+        "Nothing on this instance needs updating; report it if it lasts a day. This instance holds no copy yet."
+    )
+    assert feed.sentence_for("algorithm_unknown", as_of=date(2026, 11, 23), detail="patch_walk/3") == (
+        "This build reads patch_walk/2; LoonSec's last exchange named only patch_walk/3. If the next exchange names the "
+        "same, update LoonInspect. Showing the copy dated 2026-11-23."
+    )
+    clause = ", which older builds read. Nothing on this instance needs updating; report it if it lasts a day."
+    assert clause in older and clause in _EN_TS
+    section = re.sub(r"\s+", " ", _RUNBOOK.split('\n## 32. "', 1)[1].split("\n## ", 1)[0]).replace("*", "")
+    assert "…, which older builds read. Nothing on this instance needs updating…" in section
+    assert "… If the next exchange names the same, update LoonInspect." in section
